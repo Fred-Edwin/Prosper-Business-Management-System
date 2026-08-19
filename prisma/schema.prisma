@@ -1,0 +1,607 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────
+
+enum Role {
+  admin
+  store_manager
+  cashier
+  canteen_attendant
+}
+
+enum LocationType {
+  restaurant
+  canteen
+  store
+}
+
+enum ProductKind {
+  ingredient
+  dish
+  goods
+}
+
+enum MovementType {
+  opening
+  purchase_payment
+  purchase_receipt
+  issue
+  production
+  transfer
+  sale
+  non_sale_consumption
+  stock_count
+  closing
+}
+
+enum NonSaleReason {
+  staff_meal
+  complimentary
+  spoiled
+  damaged
+  other
+}
+
+enum OrderType {
+  dine_in
+  takeaway
+  delivery
+}
+
+enum PaymentMethod {
+  cash
+  mpesa
+  credit
+}
+
+enum MoneyAccount {
+  cash
+  mpesa_bank
+}
+
+enum MoneySourceType {
+  handover_receipt
+  expense
+  purchase_payment
+  owner_draw
+  owner_return
+  account_transfer
+}
+
+enum ExpenseCategory {
+  rent
+  utilities
+  transport
+  gas_fuel
+  salaries
+  repairs
+  other
+}
+
+enum OwnerTransactionType {
+  draw
+  return
+}
+
+enum StaffPayAdjustmentType {
+  advance
+  deduction
+}
+
+enum AuditAction {
+  create
+  correct
+  soft_delete
+  hard_delete
+  login
+}
+
+// ── Identity & Access ───────────────────────────────────────────────────
+
+model User {
+  id                 String    @id @default(uuid())
+  name               String    @unique
+  pinHash            String    @map("pin_hash")
+  role               Role
+  staffId            String?   @unique @map("staff_id")
+  staff              Staff?    @relation(fields: [staffId], references: [id])
+  active             Boolean   @default(true)
+  failedPinAttempts  Int       @default(0) @map("failed_pin_attempts")
+  lockedUntil        DateTime? @map("locked_until")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  stockMovementsRecorded StockMovement[]      @relation("StockMovementRecordedBy")
+  ordersAsCashier        Order[]              @relation("OrderCashier")
+  stockCountsCounted     StockCount[]         @relation("StockCountCountedBy")
+  moneyMovementsRecorded MoneyMovement[]      @relation("MoneyMovementRecordedBy")
+  receiptsOfHandover     ReceiptOfHandover[]  @relation("ReceiptRecordedBy")
+  repaymentsRecorded     Repayment[]          @relation("RepaymentRecordedBy")
+  expensesRecorded       Expense[]            @relation("ExpenseRecordedBy")
+  auditLogs              AuditLog[]           @relation("AuditLogUser")
+
+  @@map("user")
+}
+
+model Staff {
+  id         String   @id @default(uuid())
+  name       String
+  role       Role
+  locationId String   @map("location_id")
+  location   Location @relation(fields: [locationId], references: [id])
+  dailyRate  Decimal  @map("daily_rate") @db.Decimal(12, 2)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user                User?
+  attendance          Attendance[]
+  payAdjustments      StaffPayAdjustment[]
+  handovers           Handover[]
+  handoverShortfalls  HandoverShortfall[]
+
+  @@map("staff")
+}
+
+// ── Locations & Catalog ─────────────────────────────────────────────────
+
+model Location {
+  id        String       @id @default(uuid())
+  name      String
+  type      LocationType
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  staff                    Staff[]
+  productLocations         ProductLocation[]
+  stockMovements           StockMovement[]          @relation("StockMovementLocation")
+  stockMovementsCounterpart StockMovement[]         @relation("StockMovementTransferCounterpart")
+  orders                   Order[]
+  stockCounts              StockCount[]
+  handovers                Handover[]
+  assets                   Asset[]
+
+  @@map("location")
+}
+
+model Product {
+  id           String      @id @default(uuid())
+  name         String
+  kind         ProductKind
+  buyingPrice  Decimal?    @map("buying_price") @db.Decimal(12, 2)
+  unitLabel    String      @map("unit_label")
+  deletedAt    DateTime?   @map("deleted_at")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  productLocations   ProductLocation[]
+  stockMovements     StockMovement[]
+  orderLines         OrderLine[]
+  stockCounts        StockCount[]
+  recipe             Recipe?
+  recipeIngredientOf RecipeIngredient[]
+
+  @@map("product")
+}
+
+model ProductLocation {
+  id            String   @id @default(uuid())
+  productId     String   @map("product_id")
+  product       Product  @relation(fields: [productId], references: [id])
+  locationId    String   @map("location_id")
+  location      Location @relation(fields: [locationId], references: [id])
+  sellingPrice  Decimal? @map("selling_price") @db.Decimal(12, 2)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([productId, locationId])
+  @@map("product_location")
+}
+
+// ── Recipes (informational only — ADR-33) ──────────────────────────────
+
+model Recipe {
+  id             String   @id @default(uuid())
+  dishProductId  String   @unique @map("dish_product_id")
+  dishProduct    Product  @relation(fields: [dishProductId], references: [id])
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  ingredients RecipeIngredient[]
+
+  @@map("recipe")
+}
+
+model RecipeIngredient {
+  id                   String   @id @default(uuid())
+  recipeId             String   @map("recipe_id")
+  recipe               Recipe   @relation(fields: [recipeId], references: [id])
+  ingredientProductId  String   @map("ingredient_product_id")
+  ingredientProduct    Product  @relation(fields: [ingredientProductId], references: [id])
+  quantityPerUnit      Decimal  @map("quantity_per_unit") @db.Decimal(12, 4)
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("recipe_ingredient")
+}
+
+// ── Stock Ledger ─────────────────────────────────────────────────────────
+
+model StockMovement {
+  id         String        @id @default(uuid())
+  productId  String        @map("product_id")
+  product    Product       @relation(fields: [productId], references: [id])
+  locationId String        @map("location_id")
+  location   Location      @relation("StockMovementLocation", fields: [locationId], references: [id])
+
+  movementType MovementType @map("movement_type")
+  quantity     Decimal      @db.Decimal(14, 4)
+
+  recordedById String   @map("recorded_by")
+  recordedBy   User     @relation("StockMovementRecordedBy", fields: [recordedById], references: [id])
+
+  occurredAt DateTime @map("occurred_at")
+
+  reason     NonSaleReason?
+  reasonNote String?        @map("reason_note")
+
+  orderId String? @map("order_id")
+  order   Order?  @relation(fields: [orderId], references: [id])
+
+  stockCountId String?     @map("stock_count_id")
+  stockCount   StockCount? @relation(fields: [stockCountId], references: [id])
+
+  transferCounterpartLocationId String?   @map("transfer_counterpart_location_id")
+  transferCounterpartLocation   Location? @relation("StockMovementTransferCounterpart", fields: [transferCounterpartLocationId], references: [id])
+
+  purchasePaymentId String? @map("purchase_payment_id")
+
+  correctsMovementId String?         @map("corrects_movement_id")
+  correctsMovement   StockMovement?  @relation("StockMovementCorrection", fields: [correctsMovementId], references: [id])
+  corrections        StockMovement[] @relation("StockMovementCorrection")
+
+  note String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  moneyMovements MoneyMovement[]
+
+  @@map("stock_movement")
+}
+
+// ── Restaurant Sales ─────────────────────────────────────────────────────
+
+model Order {
+  id         String   @id @default(uuid())
+  locationId String   @map("location_id")
+  location   Location @relation(fields: [locationId], references: [id])
+
+  cashierId String @map("cashier_id")
+  cashier   User   @relation("OrderCashier", fields: [cashierId], references: [id])
+
+  orderType     OrderType     @map("order_type")
+  deliveryFee   Decimal?      @map("delivery_fee") @db.Decimal(12, 2)
+  paymentMethod PaymentMethod @map("payment_method")
+
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  total Decimal @db.Decimal(12, 2)
+
+  correctsOrderId String? @map("corrects_order_id")
+  correctsOrder   Order?  @relation("OrderCorrection", fields: [correctsOrderId], references: [id])
+  corrections     Order[] @relation("OrderCorrection")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  lines          OrderLine[]
+  stockMovements StockMovement[]
+  debts          Debt[]
+
+  @@map("order")
+}
+
+model OrderLine {
+  id        String  @id @default(uuid())
+  orderId   String  @map("order_id")
+  order     Order   @relation(fields: [orderId], references: [id])
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+
+  quantity  Decimal @db.Decimal(14, 4)
+  unitPrice Decimal @map("unit_price") @db.Decimal(12, 2)
+  subtotal  Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("order_line")
+}
+
+// ── Canteen Derived Sales ────────────────────────────────────────────────
+
+model StockCount {
+  id         String   @id @default(uuid())
+  productId  String   @map("product_id")
+  product    Product  @relation(fields: [productId], references: [id])
+  locationId String   @map("location_id")
+  location   Location @relation(fields: [locationId], references: [id])
+
+  countedById String @map("counted_by")
+  countedBy   User   @relation("StockCountCountedBy", fields: [countedById], references: [id])
+
+  countedQuantity Decimal  @map("counted_quantity") @db.Decimal(14, 4)
+  occurredAt      DateTime @map("occurred_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stockMovements StockMovement[]
+
+  @@map("stock_count")
+}
+
+// ── Money Ledger ──────────────────────────────────────────────────────────
+
+model MoneyMovement {
+  id      String       @id @default(uuid())
+  account MoneyAccount
+  amount  Decimal      @db.Decimal(12, 2)
+
+  sourceType MoneySourceType @map("source_type")
+  sourceId   String?         @map("source_id")
+
+  stockMovementId String?        @map("stock_movement_id")
+  stockMovement   StockMovement? @relation(fields: [stockMovementId], references: [id])
+
+  recordedById String @map("recorded_by")
+  recordedBy   User   @relation("MoneyMovementRecordedBy", fields: [recordedById], references: [id])
+
+  occurredAt DateTime @map("occurred_at")
+
+  correctsMovementId String?          @map("corrects_movement_id")
+  correctsMovement   MoneyMovement?   @relation("MoneyMovementCorrection", fields: [correctsMovementId], references: [id])
+  corrections        MoneyMovement[]  @relation("MoneyMovementCorrection")
+
+  note String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("money_movement")
+}
+
+// ── Handover & Reconciliation ────────────────────────────────────────────
+
+model Handover {
+  id         String   @id @default(uuid())
+  staffId    String   @map("staff_id")
+  staff      Staff    @relation(fields: [staffId], references: [id])
+  locationId String   @map("location_id")
+  location   Location @relation(fields: [locationId], references: [id])
+
+  cashDeclared  Decimal  @map("cash_declared") @db.Decimal(12, 2)
+  mpesaDeclared Decimal  @map("mpesa_declared") @db.Decimal(12, 2)
+  occurredAt    DateTime @map("occurred_at")
+
+  correctsHandoverId String?    @map("corrects_handover_id")
+  correctsHandover   Handover?  @relation("HandoverCorrection", fields: [correctsHandoverId], references: [id])
+  corrections        Handover[] @relation("HandoverCorrection")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  receipts ReceiptOfHandover[]
+
+  @@map("handover")
+}
+
+model ReceiptOfHandover {
+  id         String   @id @default(uuid())
+  handoverId String   @map("handover_id")
+  handover   Handover @relation(fields: [handoverId], references: [id])
+
+  cashReceived  Decimal @map("cash_received") @db.Decimal(12, 2)
+  mpesaReceived Decimal @map("mpesa_received") @db.Decimal(12, 2)
+  cashVariance  Decimal @map("cash_variance") @db.Decimal(12, 2)
+  mpesaVariance Decimal @map("mpesa_variance") @db.Decimal(12, 2)
+
+  recordedById String @map("recorded_by")
+  recordedBy   User   @relation("ReceiptRecordedBy", fields: [recordedById], references: [id])
+
+  occurredAt DateTime @map("occurred_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  shortfalls HandoverShortfall[]
+
+  @@map("receipt_of_handover")
+}
+
+// ── Customers & Credit ───────────────────────────────────────────────────
+
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  orders      Order[]
+  debts       Debt[]
+  repayments  Repayment[]
+
+  @@map("customer")
+}
+
+model Debt {
+  id         String   @id @default(uuid())
+  customerId String   @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id])
+  orderId    String   @map("order_id")
+  order      Order    @relation(fields: [orderId], references: [id])
+  amount     Decimal  @db.Decimal(12, 2)
+  occurredAt DateTime @map("occurred_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("debt")
+}
+
+model Repayment {
+  id         String   @id @default(uuid())
+  customerId String   @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id])
+  amount     Decimal  @db.Decimal(12, 2)
+
+  recordedById String @map("recorded_by")
+  recordedBy   User   @relation("RepaymentRecordedBy", fields: [recordedById], references: [id])
+
+  occurredAt DateTime @map("occurred_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("repayment")
+}
+
+// ── Expenses & Owner Transactions ────────────────────────────────────────
+
+model Expense {
+  id              String          @id @default(uuid())
+  category        ExpenseCategory
+  amount          Decimal         @db.Decimal(12, 2)
+  date            DateTime
+  paidFromAccount MoneyAccount    @map("paid_from_account")
+  note            String?
+
+  recordedById String @map("recorded_by")
+  recordedBy   User   @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
+
+  correctsExpenseId String?   @map("corrects_expense_id")
+  correctsExpense   Expense?  @relation("ExpenseCorrection", fields: [correctsExpenseId], references: [id])
+  corrections       Expense[] @relation("ExpenseCorrection")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("expense")
+}
+
+model OwnerTransaction {
+  id     String               @id @default(uuid())
+  type   OwnerTransactionType
+  amount Decimal              @db.Decimal(12, 2)
+  date   DateTime
+  note   String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("owner_transaction")
+}
+
+// ── Staff, Attendance, Pay ───────────────────────────────────────────────
+
+model Attendance {
+  id      String   @id @default(uuid())
+  staffId String   @map("staff_id")
+  staff   Staff    @relation(fields: [staffId], references: [id])
+  date    DateTime @db.Date
+  present Boolean  @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([staffId, date])
+  @@map("attendance")
+}
+
+model StaffPayAdjustment {
+  id      String                  @id @default(uuid())
+  staffId String                  @map("staff_id")
+  staff   Staff                   @relation(fields: [staffId], references: [id])
+  type    StaffPayAdjustmentType
+  amount  Decimal                 @db.Decimal(12, 2)
+  date    DateTime                @db.Date
+  note    String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("staff_pay_adjustment")
+}
+
+model HandoverShortfall {
+  id                  String            @id @default(uuid())
+  receiptOfHandoverId String            @map("receipt_of_handover_id")
+  receiptOfHandover   ReceiptOfHandover @relation(fields: [receiptOfHandoverId], references: [id])
+  staffId             String            @map("staff_id")
+  staff               Staff             @relation(fields: [staffId], references: [id])
+  note                String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("handover_shortfall")
+}
+
+// ── Assets ────────────────────────────────────────────────────────────────
+
+model Asset {
+  id               String    @id @default(uuid())
+  name             String
+  locationId       String    @map("location_id")
+  location         Location  @relation(fields: [locationId], references: [id])
+  purchaseDate     DateTime  @map("purchase_date") @db.Date
+  purchaseCost     Decimal   @map("purchase_cost") @db.Decimal(12, 2)
+  conditionStatus  String    @map("condition_status")
+  deletedAt        DateTime? @map("deleted_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("asset")
+}
+
+// ── Day Close ─────────────────────────────────────────────────────────────
+
+model DayClose {
+  id       String   @id @default(uuid())
+  date     DateTime @unique @db.Date
+  closedBy String   @map("closed_by")
+  closedAt DateTime @default(now()) @map("closed_at")
+
+  @@map("day_close")
+}
+
+// ── Audit Trail ───────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  userId     String      @map("user_id")
+  user       User        @relation("AuditLogUser", fields: [userId], references: [id])
+  action     AuditAction
+  entityType String      @map("entity_type")
+  entityId   String      @map("entity_id")
+  oldValue   Json?       @map("old_value")
+  newValue   Json?       @map("new_value")
+  occurredAt DateTime    @map("occurred_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("audit_log")
+}

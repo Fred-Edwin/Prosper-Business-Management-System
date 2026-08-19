@@ -25,15 +25,19 @@ rules.
 ## 1. Identity & Access
 
 ### `User`
-Login account.
+Login account. Login is by unique display name + 4-digit PIN, not
+email/password (see `DECISIONS.md` ADR-5 addendum) — this is a staff app
+used on shared devices at the till, not a general web login.
 
 | Column | Notes |
 |---|---|
-| email / username | unique |
-| password_hash | |
+| name | unique — what staff type in at login |
+| pin_hash | hash of a 4-digit PIN, not a free-text password |
 | role | enum: `admin`, `store_manager`, `cashier`, `canteen_attendant` |
 | staff_id | nullable FK → `Staff` (Admin has none) |
 | active | |
+| failed_pin_attempts | count since last successful login, for lockout |
+| locked_until | nullable — set after repeated failed attempts (ADR-5 addendum) |
 
 ### `Staff`
 Pay/attendance profile, distinct from login credentials.

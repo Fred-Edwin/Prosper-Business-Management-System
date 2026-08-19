@@ -1,0 +1,14 @@
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth/config";
+import { roleHomePath } from "@/lib/auth/roles";
+
+export default async function HomePage() {
+  const session = await getServerSession(authOptions);
+
+  if (!session) {
+    redirect("/login");
+  }
+
+  redirect(roleHomePath(session.user.role));
+}

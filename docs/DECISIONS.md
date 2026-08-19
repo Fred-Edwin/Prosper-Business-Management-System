@@ -82,6 +82,27 @@ password), database-backed sessions (not JWT).
 sessions allow immediate revocation — relevant for a small business managing
 hourly/informal staff.
 
+**Addendum (Sprint 01 — session strategy):** next-auth v4's Credentials
+provider only supports JWT session strategy; it cannot be paired with
+database sessions (confirmed against the library during implementation).
+Switched to `session.strategy = "jwt"`. Instant revocation — the original
+reason for wanting database sessions — is preserved differently instead:
+the `session` callback (`lib/auth/config.ts`) re-checks `User.active`
+against the database on every session read, so deactivating a user takes
+effect on their very next request without waiting for the JWT to expire.
+
+**Addendum (Sprint 01 — login credential):** Changed from email + password
+to **unique display name + 4-digit PIN**. This is a staff app used on
+shared devices at the till (Restaurant/Canteen/Store), not a general web
+login — staff don't have or want email addresses for this, and a short PIN
+matches how they already think about till access. `User.name` is unique
+(enforced at the DB level); `User.pin_hash` stores a bcrypt hash of the
+4-digit PIN, same as the password before it. Because a 4-digit PIN is a
+small keyspace (10,000 combinations), brute-force protection is
+non-negotiable: `User.failed_pin_attempts` and `locked_until` implement a
+lockout after repeated failures, checked in the `authorize` callback
+before comparing the PIN. See `SCHEMA.md` §1 for the updated `User` table.
+
 ---
 
 ## ADR-6: Hosting

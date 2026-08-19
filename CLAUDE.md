@@ -72,6 +72,11 @@ rules here, each sprint's acceptance criteria, and `docs/TEST_PLAN.md`
 instead. (Ad hoc subagent use — e.g. spawning a general-purpose agent
 for a one-off search — is fine; there's just nothing pre-configured.)
 
+## Package manager
+
+Use **pnpm** for all install/run/script commands in this repo (`pnpm
+install`, `pnpm dev`, `pnpm test`, etc.) — never `npm` or `yarn`.
+
 ## Non-negotiable rules (see CONVENTIONS.md / ARCHITECTURE.md for full detail)
 
 - **Ledgers, not stored totals.** Stock and money balances are always
@@ -89,9 +94,39 @@ for a one-off search — is fine; there's just nothing pre-configured.)
   during a Design Sprint. Must be resolved by the matching Development
   Sprint — grep for it before calling a feature done.
 
+## Visible progress during a session
+
+The user wants to see progress as it happens during multi-step work
+(implementing a sprint, migrating a schema, working through a checklist of
+fixes) — not just a summary at the end.
+
+- If the `TodoWrite` tool is available in this session, use it — mark each
+  item in-progress/completed as you actually do the work, not in a batch
+  afterward.
+- If `TodoWrite` is not available in this session's toolset, reproduce the
+  same effect manually: post a markdown checklist (`- [ ]` / `- [x]`) of
+  the concrete steps before starting, then re-post the updated checklist
+  after completing each step (not just at the end) so progress is visible
+  in real time. Keep it short and concrete — one line per real step, no
+  vague entries like "make progress."
+- Either way, this is not optional busywork — it's how the user tracks
+  where a session is without reading the whole transcript. Don't skip it
+  for "small" multi-step tasks; a 4-step task still benefits from a
+  4-item checklist.
+
 ## Updating memory across sessions
 
 At the end of every sprint session: update that sprint file's `Status:`
 field, and add an entry to `docs/PROGRESS.md` (what shipped, what's
 blocked, what changed from plan). The next session has no memory beyond
 what's written down.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

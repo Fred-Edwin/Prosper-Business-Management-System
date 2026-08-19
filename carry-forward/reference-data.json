@@ -1,0 +1,1810 @@
+{
+  "_meta": {
+    "source": "prosper-hotel production database, final dump 2026-08-19",
+    "purpose": "Reference data carried forward to the next iteration",
+    "note": "Money values are given in major units (KES). Original columns were *Minor (cents)."
+  },
+  "locations": [
+    {
+      "code": "restaurant",
+      "name": "Prosper Restaurant"
+    },
+    {
+      "code": "canteen",
+      "name": "Prosper Canteen"
+    }
+  ],
+  "categories": [
+    {
+      "name": "Beverages",
+      "active": true
+    },
+    {
+      "name": "cyber",
+      "active": true
+    },
+    {
+      "name": "dawa",
+      "active": true
+    },
+    {
+      "name": "fruits",
+      "active": true
+    },
+    {
+      "name": "meals",
+      "active": true
+    },
+    {
+      "name": "snacks",
+      "active": true
+    },
+    {
+      "name": "stationery",
+      "active": true
+    }
+  ],
+  "ingredients": [
+    {
+      "name": "Baking Powder",
+      "unitOfMeasure": "Pcs",
+      "lastKnownCost": "47.86",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Bar Soap Menengai",
+      "unitOfMeasure": "Kg",
+      "lastKnownCost": "170.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Beans",
+      "unitOfMeasure": "Cups",
+      "lastKnownCost": "60.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Cabbage",
+      "unitOfMeasure": "Pcs",
+      "lastKnownCost": "21.11",
+      "lowStockLevel": "1.00",
+      "active": true
+    },
+    {
+      "name": "Carrots",
+      "unitOfMeasure": "Kg",
+      "lastKnownCost": "50.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Cooking oil",
+      "unitOfMeasure": "litre",
+      "lastKnownCost": "253.33",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Dhania",
+      "unitOfMeasure": "Portions",
+      "lastKnownCost": "10.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Garlic",
+      "unitOfMeasure": "Pcs",
+      "lastKnownCost": "30.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Ginger",
+      "unitOfMeasure": "Pcs",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Githeri",
+      "unitOfMeasure": "Cups",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Godget",
+      "unitOfMeasure": "pcs",
+      "lastKnownCost": "10.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Hoho",
+      "unitOfMeasure": "pcs",
+      "lastKnownCost": "10.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Kanyuria",
+      "unitOfMeasure": "Portion",
+      "lastKnownCost": "25.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Khaki 1/2",
+      "unitOfMeasure": "pcs",
+      "lastKnownCost": "2.25",
+      "lowStockLevel": "50.00",
+      "active": true
+    },
+    {
+      "name": "Lemon",
+      "unitOfMeasure": "Pcs",
+      "lastKnownCost": "7.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Meat Stew",
+      "unitOfMeasure": "Portions",
+      "lastKnownCost": "130.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Melon",
+      "unitOfMeasure": "Full",
+      "lastKnownCost": "175.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Milk",
+      "unitOfMeasure": "lit",
+      "lastKnownCost": "65.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Minced Meat",
+      "unitOfMeasure": "gm",
+      "lastKnownCost": "500.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Nescafe",
+      "unitOfMeasure": "Pcs",
+      "lastKnownCost": "9.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Onions",
+      "unitOfMeasure": "kg",
+      "lastKnownCost": "73.40",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Papers No.7",
+      "unitOfMeasure": "pcs",
+      "lastKnownCost": "1.20",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Peas",
+      "unitOfMeasure": "Cups",
+      "lastKnownCost": "90.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Pilipili",
+      "unitOfMeasure": "gm",
+      "lastKnownCost": "50.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Pineaple",
+      "unitOfMeasure": "Full",
+      "lastKnownCost": "100.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Porridge Floor",
+      "unitOfMeasure": "Kg",
+      "lastKnownCost": "140.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Potatoes",
+      "unitOfMeasure": "Kasuku",
+      "lastKnownCost": "326.81",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Powder soap",
+      "unitOfMeasure": "500g",
+      "lastKnownCost": "80.00",
+      "lowStockLevel": "1.00",
+      "active": true
+    },
+    {
+      "name": "Printing Papers 30",
+      "unitOfMeasure": "pcs",
+      "lastKnownCost": "1.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Rice",
+      "unitOfMeasure": "Cups",
+      "lastKnownCost": "90.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Royco Cubes",
+      "unitOfMeasure": "pcs",
+      "lastKnownCost": "5.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Salt",
+      "unitOfMeasure": "Kg",
+      "lastKnownCost": "40.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Salt Takeaway",
+      "unitOfMeasure": "Pc",
+      "lastKnownCost": "0.80",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Serviettes",
+      "unitOfMeasure": "Pcs",
+      "lastKnownCost": "65.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Smokies",
+      "unitOfMeasure": "Pkt",
+      "lastKnownCost": "560.00",
+      "lowStockLevel": "5.00",
+      "active": false
+    },
+    {
+      "name": "Spinach",
+      "unitOfMeasure": "Kg",
+      "lastKnownCost": "40.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Sugar",
+      "unitOfMeasure": "kg",
+      "lastKnownCost": "140.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Token Rm 5",
+      "unitOfMeasure": "Token",
+      "lastKnownCost": "30.00",
+      "lowStockLevel": "10.00",
+      "active": true
+    },
+    {
+      "name": "Tomato sauce",
+      "unitOfMeasure": "Lit",
+      "lastKnownCost": "85.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Tomato sauce Takeaway",
+      "unitOfMeasure": "Pcs",
+      "lastKnownCost": "5.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Tomatoes",
+      "unitOfMeasure": "kg",
+      "lastKnownCost": "50.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Wheat Flour Samosa",
+      "unitOfMeasure": "Pkt 2kg",
+      "lastKnownCost": "160.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Wheat flour",
+      "unitOfMeasure": "Pkt 2kg",
+      "lastKnownCost": "160.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    }
+  ],
+  "products": [
+    {
+      "name": "Beef Stew",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "200.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "3.00",
+      "active": true
+    },
+    {
+      "name": "Chicken Stew",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "200.00",
+      "lastKnownCost": "110.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Chips Full",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "100.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Chips Mlima",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "150.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Githeri Vegetables",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "80.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Githeri Vegetables (120)",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "120.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Mchele Vegetables",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "80.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Mukimo Beef",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "280.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Mukimo Stew",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "140.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "1.00",
+      "active": true
+    },
+    {
+      "name": "Mukimo Stew (180)",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "180.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "1.00",
+      "active": true
+    },
+    {
+      "name": "Mukimo Vegetables",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "100.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "1.00",
+      "active": true
+    },
+    {
+      "name": "Pilau Beef",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "300.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "1.00",
+      "active": true
+    },
+    {
+      "name": "Pilau Stew",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "150.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Pilau Veges",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "120.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Porridge ya 30",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Stew Minji & Vegetables",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "100.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Ugali Beef",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "260.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Ugali Vegetables",
+      "kind": "cooked_food",
+      "category": "meals",
+      "homeLocation": "restaurant",
+      "price": "80.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "#15 Canteen",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "5.00",
+      "lastKnownCost": "2.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "#22 Canteen",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "10.00",
+      "lastKnownCost": "3.50",
+      "lowStockLevel": null,
+      "active": true
+    },
+    {
+      "name": "#44",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "30.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": null,
+      "active": true
+    },
+    {
+      "name": "20",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "20.00",
+      "lastKnownCost": "8.00",
+      "lowStockLevel": null,
+      "active": true
+    },
+    {
+      "name": "A4 120pg",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "80.00",
+      "lastKnownCost": "52.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "A4 200pg",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "115.00",
+      "lastKnownCost": "74.75",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "A4 80pg",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "55.00",
+      "lastKnownCost": "35.75",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "A5 120pg",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "45.00",
+      "lastKnownCost": "29.25",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "A5 200pg",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "65.00",
+      "lastKnownCost": "42.25",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "A5 80pg",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "30.00",
+      "lastKnownCost": "19.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "African Tea 20",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "20.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Avocados",
+      "kind": "goods",
+      "category": "fruits",
+      "homeLocation": "restaurant",
+      "price": "15.00",
+      "lastKnownCost": "8.25",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Bananas",
+      "kind": "goods",
+      "category": "fruits",
+      "homeLocation": "restaurant",
+      "price": "10.00",
+      "lastKnownCost": "6.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Bic Pen",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "25.00",
+      "lastKnownCost": "16.25",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Bisc za 10/=",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "canteen",
+      "price": "10.00",
+      "lastKnownCost": "8.75",
+      "lowStockLevel": null,
+      "active": true
+    },
+    {
+      "name": "Bisc za 15/=",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "canteen",
+      "price": "15.00",
+      "lastKnownCost": "9.00",
+      "lowStockLevel": "48.00",
+      "active": true
+    },
+    {
+      "name": "Bisc za 25/=",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "25.00",
+      "lastKnownCost": "18.00",
+      "lowStockLevel": "15.00",
+      "active": true
+    },
+    {
+      "name": "Biscuits za 30",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "canteen",
+      "price": "30.00",
+      "lastKnownCost": "19.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Biscuits za 40",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "canteen",
+      "price": "40.00",
+      "lastKnownCost": "26.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Black / White Milo",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "60.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Black Tea",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Black/White Coffee (40)",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "40.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Bottles (Canteen)",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "0.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "163.00",
+      "active": true
+    },
+    {
+      "name": "Bottles (Restaurant)",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "0.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "117.00",
+      "active": true
+    },
+    {
+      "name": "Cakes",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "canteen",
+      "price": "15.00",
+      "lastKnownCost": "8.25",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Chapati",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "restaurant",
+      "price": "20.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Chocolate Tea",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "40.00",
+      "lastKnownCost": "10.00",
+      "lowStockLevel": "3.00",
+      "active": true
+    },
+    {
+      "name": "Dasani 1 lit",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "70.00",
+      "lastKnownCost": "49.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Dasani 1lit",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "canteen",
+      "price": "70.00",
+      "lastKnownCost": "45.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Dasani 500ml (Canteen)",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "canteen",
+      "price": "40.00",
+      "lastKnownCost": "24.80",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Dasani 500ml (Restaurant)",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "40.00",
+      "lastKnownCost": "27.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "ENO Sachet",
+      "kind": "goods",
+      "category": "dawa",
+      "homeLocation": "canteen",
+      "price": "20.00",
+      "lastKnownCost": "13.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "ENO Tabs",
+      "kind": "goods",
+      "category": "dawa",
+      "homeLocation": "canteen",
+      "price": "15.00",
+      "lastKnownCost": "9.75",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Eggs Kienyenji",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "restaurant",
+      "price": "40.00",
+      "lastKnownCost": "16.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Eggs Layers",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "14.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Envelops 10 (Canteen)",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "10.00",
+      "lastKnownCost": "3.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Envelops 10 (Restaurant)",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "10.00",
+      "lastKnownCost": "3.00",
+      "lowStockLevel": "10.00",
+      "active": true
+    },
+    {
+      "name": "Eraser",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "5.00",
+      "lastKnownCost": "3.25",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Foolscaps",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "2.50",
+      "lastKnownCost": "1.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Fruit Juice/Smoothie",
+      "kind": "goods",
+      "category": "fruits",
+      "homeLocation": "canteen",
+      "price": "50.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Handkerchief 50",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "50.00",
+      "lastKnownCost": "32.50",
+      "lowStockLevel": "10.00",
+      "active": true
+    },
+    {
+      "name": "Ice cream",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "16.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Kefir Milk",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "60.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Kefir Milk (180)",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "180.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Kibuyu 2lit (Canteen)",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "20.00",
+      "lastKnownCost": "5.00",
+      "lowStockLevel": "2.00",
+      "active": true
+    },
+    {
+      "name": "Kibuyu 2lit (Restaurant)",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "20.00",
+      "lastKnownCost": "5.00",
+      "lowStockLevel": "2.00",
+      "active": true
+    },
+    {
+      "name": "Kibuyu 5lit",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Lanyard",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "35.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "10.00",
+      "active": true
+    },
+    {
+      "name": "Lemon Tea",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "80.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Lotta",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "1.67",
+      "lastKnownCost": "1.00",
+      "lowStockLevel": "80.00",
+      "active": true
+    },
+    {
+      "name": "Mandazi (15)",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "canteen",
+      "price": "15.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Mandazi (20)",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "restaurant",
+      "price": "20.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Mangoes",
+      "kind": "goods",
+      "category": "fruits",
+      "homeLocation": "restaurant",
+      "price": "35.00",
+      "lastKnownCost": "19.25",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Mara Moja",
+      "kind": "goods",
+      "category": "dawa",
+      "homeLocation": "canteen",
+      "price": "10.00",
+      "lastKnownCost": "6.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Masks",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "10.00",
+      "lastKnownCost": "6.50",
+      "lowStockLevel": "10.00",
+      "active": true
+    },
+    {
+      "name": "Milk 200ml",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "canteen",
+      "price": "35.00",
+      "lastKnownCost": "25.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Milk 500ml",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "canteen",
+      "price": "60.00",
+      "lastKnownCost": "55.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Milk Glass",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "50.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Milo",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "50.00",
+      "lastKnownCost": "15.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Minute maid",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "90.00",
+      "lastKnownCost": "67.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Minute maid 400g",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "canteen",
+      "price": "90.00",
+      "lastKnownCost": "71.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Mitungi 10lit (Canteen)",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "50.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Mitungi 10lit (Restaurant)",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "50.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "2.00",
+      "active": true
+    },
+    {
+      "name": "Mitungi 20lit (Canteen)",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "100.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Mitungi 20lit (Restaurant)",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "100.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "2.00",
+      "active": true
+    },
+    {
+      "name": "Nduma",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "restaurant",
+      "price": "80.00",
+      "lastKnownCost": "60.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Nescafe",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "canteen",
+      "price": "10.00",
+      "lastKnownCost": "9.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Obama",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "10.00",
+      "lastKnownCost": "6.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Oranges",
+      "kind": "goods",
+      "category": "fruits",
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "16.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Panandol Extra",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "20.00",
+      "lastKnownCost": "13.00",
+      "lowStockLevel": "10.00",
+      "active": true
+    },
+    {
+      "name": "PawPaw",
+      "kind": "goods",
+      "category": "fruits",
+      "homeLocation": "canteen",
+      "price": "30.00",
+      "lastKnownCost": "16.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Pencil",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "15.00",
+      "lastKnownCost": "9.75",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Pineaple",
+      "kind": "goods",
+      "category": "fruits",
+      "homeLocation": "restaurant",
+      "price": "20.00",
+      "lastKnownCost": "11.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Porridge ya 20",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "20.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "1.00",
+      "active": true
+    },
+    {
+      "name": "Pudding",
+      "kind": "goods",
+      "category": "fruits",
+      "homeLocation": "canteen",
+      "price": "50.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Samosa",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "restaurant",
+      "price": "35.00",
+      "lastKnownCost": "35.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Sausage",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "restaurant",
+      "price": "50.00",
+      "lastKnownCost": "28.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Serviettes",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": null,
+      "lastKnownCost": "70.00",
+      "lowStockLevel": null,
+      "active": true
+    },
+    {
+      "name": "Sharpener",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "5.00",
+      "lastKnownCost": "2.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Smokies",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "restaurant",
+      "price": "40.00",
+      "lastKnownCost": "26.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Soda 200ml",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "16.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Soda 300ml",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "45.00",
+      "lastKnownCost": "33.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Soda 350ml",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "60.00",
+      "lastKnownCost": "42.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Soda 500ml",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "55.00",
+      "lastKnownCost": "50.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Soda 500ml TA",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "55.00",
+      "lastKnownCost": "30.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Spoons",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "15.00",
+      "lastKnownCost": "9.33",
+      "lowStockLevel": "12.00",
+      "active": true
+    },
+    {
+      "name": "Sunny Girl Pads",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "65.00",
+      "lastKnownCost": "50.00",
+      "lowStockLevel": "6.00",
+      "active": true
+    },
+    {
+      "name": "Sweetpotatoes",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "restaurant",
+      "price": "60.00",
+      "lastKnownCost": "27.56",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Sweets",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "1.67",
+      "lastKnownCost": "1.00",
+      "lowStockLevel": "80.00",
+      "active": true
+    },
+    {
+      "name": "Tag pin",
+      "kind": "goods",
+      "category": "stationery",
+      "homeLocation": "canteen",
+      "price": "5.00",
+      "lastKnownCost": "10.00",
+      "lowStockLevel": null,
+      "active": true
+    },
+    {
+      "name": "Take away Coffee cups",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "15.00",
+      "lastKnownCost": "9.75",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Take away dishes",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "20.00",
+      "lastKnownCost": "6.00",
+      "lowStockLevel": "10.00",
+      "active": true
+    },
+    {
+      "name": "To be typed",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Toast Mayai 2 4pcs",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "restaurant",
+      "price": "100.00",
+      "lastKnownCost": "45.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Toast Siagi 4pcs",
+      "kind": "goods",
+      "category": "snacks",
+      "homeLocation": "restaurant",
+      "price": "40.00",
+      "lastKnownCost": "22.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Toilex",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "45.00",
+      "lastKnownCost": "33.00",
+      "lowStockLevel": "6.00",
+      "active": true
+    },
+    {
+      "name": "Tropical",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "canteen",
+      "price": "5.00",
+      "lastKnownCost": "2.50",
+      "lowStockLevel": "80.00",
+      "active": true
+    },
+    {
+      "name": "Tumbler 250ml",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "10.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Tumbler 500ml",
+      "kind": "goods",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "13.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Yoghurt 150ml",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "40.00",
+      "lastKnownCost": "32.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Yoghurt 250ml",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "60.00",
+      "lastKnownCost": "45.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Yoghurt 500ml",
+      "kind": "goods",
+      "category": "Beverages",
+      "homeLocation": "restaurant",
+      "price": "110.00",
+      "lastKnownCost": "85.31",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "#15 Hotel",
+      "kind": "packaging",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "2.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "#22 Hotel",
+      "kind": "packaging",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "3.50",
+      "lowStockLevel": null,
+      "active": true
+    },
+    {
+      "name": "#25 Hotel",
+      "kind": "packaging",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "7.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "#Ngunia Hotel",
+      "kind": "packaging",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "30.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Logbook CHSA Hotel",
+      "kind": "packaging",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "240.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "8.00",
+      "active": true
+    },
+    {
+      "name": "Tag pins",
+      "kind": "packaging",
+      "category": null,
+      "homeLocation": "restaurant",
+      "price": "25.00",
+      "lastKnownCost": "10.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Binding",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "restaurant",
+      "price": "50.00",
+      "lastKnownCost": "17.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Blue Forms",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "restaurant",
+      "price": "15.00",
+      "lastKnownCost": "5.25",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Logbook",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "restaurant",
+      "price": "240.00",
+      "lastKnownCost": "84.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Logbook Assessment",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "restaurant",
+      "price": "300.00",
+      "lastKnownCost": "105.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Logbook HSA",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "restaurant",
+      "price": "240.00",
+      "lastKnownCost": "84.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Logbook Industrial",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "restaurant",
+      "price": "120.00",
+      "lastKnownCost": "20.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Paste",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "restaurant",
+      "price": "390.00",
+      "lastKnownCost": "270.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Photocopy",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "restaurant",
+      "price": "5.00",
+      "lastKnownCost": "1.75",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Printing/Papers",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "restaurant",
+      "price": "10.00",
+      "lastKnownCost": "1.00",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Research",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "canteen",
+      "price": "7.00",
+      "lastKnownCost": "2.45",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "SHA & Others",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "restaurant",
+      "price": "50.00",
+      "lastKnownCost": "0.00",
+      "lowStockLevel": "0.00",
+      "active": true
+    },
+    {
+      "name": "Spiral Binding",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "canteen",
+      "price": "70.00",
+      "lastKnownCost": "24.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Spiral Binding (70)",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "restaurant",
+      "price": "70.00",
+      "lastKnownCost": "24.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    },
+    {
+      "name": "Tape Binding",
+      "kind": "service",
+      "category": "cyber",
+      "homeLocation": "canteen",
+      "price": "50.00",
+      "lastKnownCost": "17.50",
+      "lowStockLevel": "5.00",
+      "active": true
+    }
+  ],
+  "staff": [
+    {
+      "name": "Admin Owner",
+      "role": "owner",
+      "location": "restaurant",
+      "dailyRate": "1000.00",
+      "active": true
+    },
+    {
+      "name": "Anne Gitonga",
+      "role": "cashier",
+      "location": "restaurant",
+      "dailyRate": "550.00",
+      "active": false
+    },
+    {
+      "name": "Canteen Attendant",
+      "role": "attendant",
+      "location": "canteen",
+      "dailyRate": "600.00",
+      "active": true
+    },
+    {
+      "name": "Makena",
+      "role": "attendant",
+      "location": "canteen",
+      "dailyRate": "600.00",
+      "active": true
+    },
+    {
+      "name": "Mercy Wanjohi",
+      "role": "cashier",
+      "location": "restaurant",
+      "dailyRate": "550.00",
+      "active": true
+    },
+    {
+      "name": "Restaurant Cashier",
+      "role": "cashier",
+      "location": "restaurant",
+      "dailyRate": "550.00",
+      "active": true
+    },
+    {
+      "name": "Sarah Makena",
+      "role": "cashier",
+      "location": "restaurant",
+      "dailyRate": "550.00",
+      "active": true
+    },
+    {
+      "name": "Store Manager",
+      "role": "store_manager",
+      "location": "restaurant",
+      "dailyRate": "700.00",
+      "active": true
+    }
+  ]
+}

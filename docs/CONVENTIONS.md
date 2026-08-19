@@ -10,10 +10,10 @@ the correction-entry pattern used throughout the codebase.
 ```
 prosper/
 ├── app/
-│   ├── (admin)/               # Admin-only screens
-│   ├── (store-manager)/       # Store Manager screens
-│   ├── (cashier)/             # Cashier screens
-│   ├── (canteen)/             # Canteen Attendant screens
+│   ├── admin/                  # Admin-only screens         → /admin
+│   ├── store-manager/          # Store Manager screens      → /store-manager
+│   ├── cashier/                 # Cashier screens            → /cashier
+│   ├── canteen/                  # Canteen Attendant screens  → /canteen
 │   ├── api/
 │   │   ├── products/
 │   │   ├── locations/
@@ -62,6 +62,14 @@ or a query beyond "fetch the thing I was asked for," that logic belongs in
 folder corresponds to a section of `SCHEMA.md`. When adding a new feature,
 find its home by matching it to a schema section first — do not create a
 new top-level module without updating `SCHEMA.md` and `ARCHITECTURE.md`.
+
+**Rule: role folders under `app/` are plain paths, not Next.js route
+groups.** Do not wrap them in parentheses (e.g. `(admin)`). Route groups
+strip out of the URL entirely, so `app/(admin)/page.tsx` and
+`app/(cashier)/page.tsx` would both resolve to `/` and collide. Each role
+needs its own real URL prefix (`/admin`, `/store-manager`, `/cashier`,
+`/canteen`) for middleware-based role gating, so plain folders are used
+instead.
 
 ---
 
