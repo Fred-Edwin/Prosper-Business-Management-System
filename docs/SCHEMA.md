@@ -1,0 +1,488 @@
+# Prosper — Data Model
+
+**Status:** Approved. Reflects `DECISIONS.md` ADR-13 through ADR-26.
+
+Conventions: all tables have `id` (uuid), `created_at`, `updated_at` unless
+noted. Money/price columns are `NUMERIC`. See `CONVENTIONS.md` for naming
+rules.
+
+---
+
+## Core principles (apply throughout this schema)
+
+- **Ledgers, not totals.** Anywhere a "current amount" is needed (stock
+  level, cash balance, customer balance, monthly pay), it is *derived* by
+  summing rows in an append-only ledger table — never stored as a single
+  mutable column. See ADR-14, ADR-17.
+- **Corrections are new rows.** No row in a ledger table is ever updated
+  after creation (except non-ledger metadata edits, e.g. a product's name).
+  A correction is a new row referencing the one it corrects. See ADR-15.
+- **Soft-delete via `deleted_at`.** Hard-delete only permitted where zero
+  linked history exists (ADR-23).
+
+---
+
+## 1. Identity & Access
+
+### `User`
+Login account.
+
+| Column | Notes |
+|---|---|
+| email / username | unique |
+| password_hash | |
+| role | enum: `admin`, `store_manager`, `cashier`, `canteen_attendant` |
+| staff_id | nullable FK → `Staff` (Admin has none) |
+| active | |
+
+### `Staff`
+Pay/attendance profile, distinct from login credentials.
+
+| Column | Notes |
+|---|---|
+| name | |
+| role | same enum as User.role |
+| location_id | FK → `Location` |
+| daily_rate | NUMERIC |
+| active | |
+
+---
+
+## 2. Locations & Catalog
+
+### `Location`
+| Column | Notes |
+|---|---|
+| name | |
+| type | enum: `restaurant`, `canteen`, `store` |
+| active | |
+
+### `Product`
+| Column | Notes |
+|---|---|
+| name | |
+| kind | enum: `ingredient`, `dish`, `goods` |
+| buying_price | NUMERIC, nullable — Ingredient only. Dish is always `0` (see ADR-33) — its real cost is captured at the ingredient level, never per unit, to avoid double-counting. |
+| unit_label | e.g. kg, pcs, crate, ream |
+| deleted_at | nullable — soft-delete |
+
+### `ProductLocation`
+Join table: which locations sell a product, and at what price.
+
+| Column | Notes |
+|---|---|
+| product_id | FK → `Product` |
+| location_id | FK → `Location` |
+| selling_price | NUMERIC, nullable — Dish/Goods only |
+| active | sold at this location currently |
+
+Unique on (`product_id`, `location_id`).
+
+---
+
+## 2a. Recipes (Informational Only — ADR-33)
+
+Recipes never affect stock movements, COGS, or any profit figure (§14).
+They exist purely so the Admin can see an estimated per-dish cost and spot
+production-yield anomalies.
+
+### `Recipe`
+| Column | Notes |
+|---|---|
+| dish_product_id | FK → `Product` (kind = `dish`) |
+| active | |
+
+### `RecipeIngredient`
+| Column | Notes |
+|---|---|
+| recipe_id | FK → `Recipe` |
+| ingredient_product_id | FK → `Product` (kind = `ingredient`) |
+| quantity_per_unit | NUMERIC — how much of this ingredient one unit of the dish is expected to use |
+
+**Estimated cost per dish** (informational only, not COGS):
+```
+Estimated Dish Cost = Σ (RecipeIngredient.quantity_per_unit × Ingredient.buying_price)
+```
+
+**Yield anomaly flag** (Admin-only, informational, does not block anything):
+compares actual recorded `production` StockMovement quantity for a Dish
+against the yield the recipe would predict from the ingredient `issue`
+quantity over the same period, and flags a meaningful divergence for the
+Admin to investigate.
+
+---
+
+## 3. Stock Ledger
+
+### `StockMovement`
+Single unified ledger for every stock event. Current stock for a
+product/location = signed sum of its rows.
+
+| Column | Notes |
+|---|---|
+| product_id | FK → `Product` |
+| location_id | FK → `Location` |
+| movement_type | enum: `opening`, `purchase_payment`, `purchase_receipt`, `issue`, `production`, `transfer`, `sale`, `non_sale_consumption`, `stock_count`, `closing` |
+| quantity | signed NUMERIC |
+| recorded_by | FK → `User` |
+| occurred_at | timestamp (business-day relevant — see CONVENTIONS.md) |
+| reason | enum, nullable — required when `movement_type = non_sale_consumption`: `staff_meal`, `complimentary`, `spoiled`, `damaged`, `other` |
+| reason_note | text, nullable — required if reason = `other` |
+| order_id | FK → `Order`, nullable — set when `movement_type = sale` (Restaurant) |
+| stock_count_id | FK → `StockCount`, nullable — set when derived from a canteen count |
+| transfer_counterpart_location_id | FK → `Location`, nullable — set when `movement_type = transfer` |
+| purchase_payment_id | FK → purchase payment record, nullable — links a receipt back to its payment, if any |
+| corrects_movement_id | FK → `StockMovement`, nullable, self-referencing — set when this row is a correction of an earlier row (ADR-15) |
+| note | text, nullable |
+
+**`purchase_payment_id` / purchase receipt matching:** payment and receipt
+are both rows in this ledger (`purchase_payment` has no stock effect;
+`purchase_receipt` does). They are linked when known but a receipt may
+exist without a matching payment and vice versa — surfaced to the Admin as
+"awaiting receipt" / "unmatched receipt" (PRD §4.2).
+
+**Opening/closing stock:** not pre-written by a job (ADR-11). Computed on
+read as the prior day's closing (sum of movements up to that day's close),
+with any Admin manual adjustment applied as an `opening`-type correction
+row.
+
+---
+
+## 4. Restaurant Sales
+
+### `Order`
+| Column | Notes |
+|---|---|
+| location_id | FK → `Location` (always Restaurant) |
+| cashier_id | FK → `User` |
+| order_type | enum: `dine_in`, `takeaway`, `delivery` |
+| delivery_fee | NUMERIC, nullable — only if `order_type = delivery` |
+| payment_method | enum: `cash`, `mpesa`, `credit` |
+| customer_id | FK → `Customer`, nullable — required if `payment_method = credit` |
+| total | NUMERIC, derived from lines + delivery fee (stored for convenience, recomputed on correction) |
+| corrects_order_id | FK → `Order`, nullable, self-referencing |
+
+### `OrderLine`
+| Column | Notes |
+|---|---|
+| order_id | FK → `Order` |
+| product_id | FK → `Product` |
+| quantity | |
+| unit_price | NUMERIC — captured at time of sale, not looked up later |
+| subtotal | NUMERIC |
+
+Each completed `Order` writes a matching `StockMovement` row
+(`movement_type = sale`, `order_id` set).
+
+---
+
+## 5. Canteen Derived Sales
+
+### `StockCount`
+| Column | Notes |
+|---|---|
+| product_id | FK → `Product` |
+| location_id | FK → `Location` (always Canteen) |
+| counted_by | FK → `User` |
+| counted_quantity | |
+| occurred_at | |
+
+On save: sold quantity since the product's last count is derived as
+`opening + received (transfer/production) − non_sale_consumption −
+counted_quantity`, and written as a `StockMovement` row
+(`movement_type = sale`, `stock_count_id` set). No credit sales at Canteen
+(PRD §4.4).
+
+---
+
+## 6. Money Ledger
+
+### `MoneyMovement`
+Single unified ledger for everything affecting Cash at hand or
+M-Pesa/Bank. Current balance of either account = signed sum of its rows.
+
+| Column | Notes |
+|---|---|
+| account | enum: `cash`, `mpesa_bank` |
+| amount | signed NUMERIC |
+| source_type | enum: `handover_receipt`, `expense`, `purchase_payment`, `owner_draw`, `owner_return`, `account_transfer` |
+| source_id | polymorphic FK → the originating record (ReceiptOfHandover, Expense, StockMovement[purchase_payment], OwnerTransaction) |
+| recorded_by | FK → `User` |
+| occurred_at | |
+| corrects_movement_id | FK → `MoneyMovement`, nullable, self-referencing |
+| note | text, nullable |
+
+---
+
+## 7. Handover & Reconciliation
+
+### `Handover`
+Staff-declared amounts at day end.
+
+| Column | Notes |
+|---|---|
+| staff_id | FK → `Staff` |
+| location_id | FK → `Location` |
+| cash_declared | NUMERIC |
+| mpesa_declared | NUMERIC |
+| occurred_at | |
+| corrects_handover_id | FK → `Handover`, nullable, self-referencing |
+
+### `ReceiptOfHandover`
+Admin-confirmed amounts actually received.
+
+| Column | Notes |
+|---|---|
+| handover_id | FK → `Handover` |
+| cash_received | NUMERIC |
+| mpesa_received | NUMERIC |
+| cash_variance | NUMERIC — `cash_received − cash_declared`, stored permanently at time of receipt (ADR-18), not recalculated |
+| mpesa_variance | NUMERIC — same, for M-Pesa |
+| recorded_by | FK → `User` (Admin) |
+| occurred_at | |
+
+Writes a `MoneyMovement` row per account for the received amounts.
+
+> **Open item (PRD §7, Q2):** M-Pesa routing (direct-to-Admin vs.
+> staff-held) is unconfirmed. This schema assumes the physical-handover
+> model. Revisit if M-Pesa is confirmed to bypass staff.
+
+---
+
+## 8. Customers & Credit
+
+### `Customer`
+| Column | Notes |
+|---|---|
+| name | |
+| phone | |
+
+Running balance is derived: sum of `Debt.amount` minus sum of
+`Repayment.amount` for that customer.
+
+### `Debt`
+| Column | Notes |
+|---|---|
+| customer_id | FK → `Customer` |
+| order_id | FK → `Order` — created automatically on a Credit order |
+| amount | NUMERIC |
+| occurred_at | |
+
+### `Repayment`
+| Column | Notes |
+|---|---|
+| customer_id | FK → `Customer` |
+| amount | NUMERIC |
+| recorded_by | FK → `User` (Admin or Cashier) |
+| occurred_at | |
+
+No supplier credit is tracked (PRD §4.6).
+
+---
+
+## 9. Expenses & Owner Transactions
+
+### `Expense`
+| Column | Notes |
+|---|---|
+| category | enum: `rent`, `utilities`, `transport`, `gas_fuel`, `salaries`, `repairs`, `other` |
+| amount | NUMERIC |
+| date | |
+| paid_from_account | enum: `cash`, `mpesa_bank` |
+| note | text, nullable |
+| recorded_by | FK → `User` |
+| corrects_expense_id | FK → `Expense`, nullable, self-referencing |
+
+Writes a `MoneyMovement` row (negative, on `paid_from_account`).
+
+### `OwnerTransaction`
+| Column | Notes |
+|---|---|
+| type | enum: `draw`, `return` |
+| amount | NUMERIC |
+| date | |
+| note | text, nullable |
+
+Writes a `MoneyMovement` row (Cash at hand). "Owed to business" balance is
+derived: sum of `draw` amounts minus sum of `return` amounts.
+
+---
+
+## 10. Staff, Attendance, Pay
+
+### `Attendance`
+| Column | Notes |
+|---|---|
+| staff_id | FK → `Staff` |
+| date | |
+| present | boolean, default true |
+
+Unique on (`staff_id`, `date`).
+
+### `Advance` / `Deduction`
+| Column | Notes |
+|---|---|
+| staff_id | FK → `Staff` |
+| type | enum: `advance`, `deduction` |
+| amount | NUMERIC |
+| date | |
+| note | text, nullable |
+
+Monthly pay is derived, not stored: `daily_rate × days_present −
+advances/deductions for the month`, computed on demand.
+
+### `HandoverShortfall`
+| Column | Notes |
+|---|---|
+| receipt_of_handover_id | FK → `ReceiptOfHandover` |
+| staff_id | FK → `Staff` |
+| note | required |
+
+Does not auto-deduct pay or block day-close (PRD §4.8).
+
+---
+
+## 11. Assets
+
+### `Asset`
+| Column | Notes |
+|---|---|
+| name | |
+| location_id | FK → `Location` |
+| purchase_date | |
+| purchase_cost | NUMERIC |
+| condition_status | text/enum |
+| deleted_at | nullable — soft-delete |
+
+Hard-delete permitted only if no linked history exists (ADR-23).
+
+---
+
+## 12. Day Close
+
+### `DayClose`
+| Column | Notes |
+|---|---|
+| date | unique |
+| closed_by | FK → `User` (Admin) |
+| closed_at | |
+
+Presence of a row for a date is the single source of truth that date is
+locked. Checked wherever the "closed day → Admin-only correction" rule
+applies (ADR-15, ADR-24).
+
+---
+
+## 13. Audit Trail
+
+### `AuditLog`
+| Column | Notes |
+|---|---|
+| user_id | FK → `User` |
+| action | e.g. `create`, `correct`, `soft_delete`, `hard_delete`, `login` |
+| entity_type | e.g. `Product`, `Expense` |
+| entity_id | |
+| old_value | JSON, nullable |
+| new_value | JSON, nullable |
+| occurred_at | |
+
+Primarily captures what isn't already self-evident from ledger tables:
+logins, non-ledger metadata edits, deletes. Ledger corrections are already
+traceable via `corrects_*_id` self-references but are also logged here for
+a single unified audit view.
+
+---
+
+## 14. Financial Reporting Formulas
+
+None of these are stored — every figure below is computed on read, for a
+given date range and optionally a given location, from the ledger tables
+already defined above. This section is the single source of truth for how
+`GET /api/financials/summary` and `GET /api/reports/*` (see `API.md`)
+calculate each number.
+
+### Revenue
+```
+Revenue = value of all `sale`-type StockMovement rows in the period
+        (Restaurant Order lines + Canteen derived sales, at selling price)
+```
+
+### Cost of Goods Sold (COGS)
+
+**Goods** — COGS uses the real per-unit buying price:
+```
+Goods COGS = Σ (quantity sold × Product.buying_price) over `sale` movements in the period
+```
+
+**Dishes** — COGS is *not* per-dish. It's the blended cost of all
+ingredients actually consumed across the whole business in the period,
+regardless of which dish they went into (ADR-33). This is why `Dish.
+buying_price` is always `0` — counting a per-dish cost on top of this
+would double-count:
+```
+Dish COGS (period) = opening Ingredient stock (period start)
+                    + Ingredient purchase receipts (period)
+                    − closing Ingredient stock (period end)
+```
+This is computed once across all locations/ingredients combined, not
+per-location and not per-dish. (Recipes, §2a, give an informational
+per-dish estimate for the Admin's own reference — never used in this
+calculation.)
+
+**Ingredients** — never sold directly, no COGS entry of their own; their
+cost is captured via the Dish COGS formula above.
+
+```
+Total COGS = Goods COGS + Dish COGS
+```
+
+### Gross Profit
+```
+Gross Profit = Revenue − COGS
+```
+
+### Total Expenses
+```
+Total Expenses = Σ Expense.amount in the period
+```
+Includes a `salaries` category `Expense` entry when the Admin manually
+logs a salary payment. Calculated `Staff` pay (ADR-21) is a separate,
+informational "amount owed" figure — it does **not** automatically feed
+into Total Expenses, since payroll disbursement happens outside the system
+(PRD §6) and the Admin logs what she actually paid as its own Expense.
+This is a deliberate choice, confirmed during design: keeps "what's owed"
+and "what was paid" distinctly visible rather than assumed equal.
+
+### Net Profit
+```
+Net Profit = Gross Profit − Total Expenses
+```
+
+### Cash Position
+```
+Cash at Hand balance = Σ MoneyMovement.amount where account = cash
+M-Pesa/Bank balance  = Σ MoneyMovement.amount where account = mpesa_bank
+```
+
+### Debts Outstanding
+```
+Total Debt Outstanding = Σ Debt.amount − Σ Repayment.amount (per customer, and summed)
+```
+
+### Owed to Business (from owner draws)
+```
+Owed to Business = Σ OwnerTransaction.amount where type = draw
+                  − Σ OwnerTransaction.amount where type = return
+```
+
+### Handover Variance
+```
+Variance = ReceiptOfHandover.cash_received  − Handover.cash_declared
+Variance = ReceiptOfHandover.mpesa_received − Handover.mpesa_declared
+```
+Stored permanently at time of receipt (ADR-18), not recalculated.
+
+All of the above respect corrections: since every ledger row a correction
+touches is itself just another row (ADR-15), summing "all rows in the
+period" automatically reflects corrections with no special-casing needed
+in these formulas.
