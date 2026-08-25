@@ -1,18 +1,21 @@
 import { requireRole } from "@/lib/auth/session";
-import { SignOutButton } from "@/app/sign-out-button";
+import { StaffShellClient } from "@/components/layout/staff-shell-client";
 
-// Proof-of-routing shell only — no screens designed yet for this role
-// group (see CLAUDE.md's Design/Development/QA process).
+function initials(name: string): string {
+  return name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+}
+
 export default async function CashierLayout({ children }: { children: React.ReactNode }) {
   const session = await requireRole("cashier");
 
   return (
-    <div>
-      <nav>
-        <span>Cashier — {session.user.name}</span>
-        <SignOutButton />
-      </nav>
+    <StaffShellClient
+      basePath="/cashier"
+      roleLabel="Cashier"
+      locationLabel="Restaurant"
+      accountInitials={initials(session.user.name)}
+    >
       {children}
-    </div>
+    </StaffShellClient>
   );
 }

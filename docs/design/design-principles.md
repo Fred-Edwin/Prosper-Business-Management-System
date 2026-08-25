@@ -1,0 +1,326 @@
+# Prosper — Design Principles
+
+**Status:** Approved — binding on every Design Sprint and Development Sprint
+from this point forward.
+**Source:** Extracted from `docs/design/DESIGN_SYSTEM_PLAN.md` (approved
+plan) and `docs/design/ENTERPRISE_UI_DESIGN_PRINCIPLES.md` (house style),
+after the Phase 2B execution session that built the full component library
+in Paper.design. Where this document and the plan disagree, this document
+wins — it reflects what was actually built and approved, including
+corrections made during execution.
+
+**Paper.design file:** "Prosper Hotel" (fileId `01M0EZ7TAHZM26KBMWNYT0928X`)
+— the canonical visual source of truth. This document is the *why and
+when*; the Paper file is the *what*.
+
+---
+
+## 1. House style (binding, inherited from ENTERPRISE_UI_DESIGN_PRINCIPLES.md)
+
+Every rule in `docs/design/ENTERPRISE_UI_DESIGN_PRINCIPLES.md` applies as
+written, **except accent color** (§3 below). In summary:
+
+- Dense, compact-by-default, hairline dividers only — no card borders, no
+  drop shadows on content containers.
+- Light mode only. Inter, 14px base, `tabular-nums` on every numeric
+  column.
+- Full-bleed desktop layout, not centered/document-style.
+- One primary accent color at ≲5% of pixels; neutrals do 90%+ of the work.
+- Radius: 6px default, 4px dense controls, 8px maximum — **except tables,
+  which use square corners (0px) by explicit correction, see §4**.
+- No gradients, no glassmorphism, no purple-and-cream over-correction, no
+  equal-weight KPI tile grids, no bounce/spring motion.
+
+---
+
+## 2. Two shells, one system
+
+- **Admin shell** (desktop-primary): 48px top bar, 240px side nav
+  (collapsible to 56px), fluid content, 360px inspector. Built for the
+  Admin's dense, analysis-heavy, laptop-first workflow.
+- **Staff mobile shell** (Cashier, Store Manager, Canteen Attendant):
+  48px header, single-column task content, 56px bottom nav, sticky bottom
+  action bar. Built for speed, one-handed use, fast entry, minimal
+  friction — a distinct design direction from the Admin shell, not a
+  squeezed-down version of it. See `DESIGN_SYSTEM_PLAN.md` §1.3 for the
+  full staff-facing criteria (unchanged, carried forward verbatim).
+- Both shells share the same token file and component library.
+
+**Shell-level maximize/restore pattern** (added during execution, not in
+original plan): any Admin screen with a wide table can collapse the side
+nav to its 56px icon rail and hide the inspector, reclaiming width for the
+content pane. Entry point: a small icon-only toggle button (expand-corners
+glyph) in the table's toolbar. Restore: the same glyph, mirrored, in the
+maximized view's header. This is a shell-level state, not a separate
+component — see the "Admin Shell — Ledger Maximized" artboard in Paper.
+Even maximized, a very wide table may still need a few pixels of
+horizontal scroll on a 1440px screen — accepted deliberately in favor of
+readable column spacing over cramming, per Admin decision.
+
+---
+
+## 3. The accent color exception
+
+**Binding, explicit override of the house guideline's purple ban.**
+
+- `--color-accent: #3D1E70` — a deep violet drawn from the Prosper Hotel
+  logo, deliberately chosen by the business owner as a brand-continuity
+  decision. This is the **final** value (darker/more saturated than the
+  plan's original provisional anchor of `#4C3B73`–`#5B4785` — the Admin
+  reviewed it live in Paper and kept the deeper tone).
+- `--color-accent-hover: #4A3480` — tuned to sit one step lighter than the
+  final accent value.
+- Gold from the logo (`--color-gold-brand: #B8923F`) is **not** a
+  component token — it appears only in the two masthead contexts named in
+  the original plan (Admin top bar brand mark, login/splash screen), never
+  as a button, link, chip, or status color.
+- The semantic palette (success/warning/danger/info) stays fully
+  independent of the accent. Warning is amber, not gold — deliberately, so
+  a selected-row purple tint and a low-stock amber chip never collide.
+- Every other rule in the house guideline's anti-slop block still applies
+  without exception — the override is scoped to hue only.
+
+---
+
+## 4. Corrections made during execution (binding — supersede the original plan text)
+
+These came from Admin review of the live Paper build and are now the
+standard, not exceptions:
+
+1. **Tables use square corners (0px radius), not the house 6px default.**
+   Applies to every table variant: the dense Ledger, the Simple Table, and
+   any future table.
+2. **No avatar in attribution columns.** "Recorded by" / "Added by" style
+   columns show the plain name as text only — no initials-circle avatar.
+   Avatars remain valid elsewhere (top bar account, audit trail entry
+   header, bottom-sheet context) — the correction is scoped to dense table
+   attribution columns specifically, where an avatar was assessed as
+   noise at that density.
+3. **The Ledger is a table, not a separate visual pattern.** Earlier
+   drafts treated "Ledger" as a distinct component (description-style rows
+   + a footer balance). The approved shape instead is: **one row = one
+   product, one day, one location**, with one column per movement type
+   (Opening → Purchases → Issues → Production → Transfer In → Transfer Out
+   → Sold → Sold Value → Closing → Closing Value), reconciliation-sheet
+   style. This is the Admin's single most-used screen — treat changes to
+   it as high-stakes.
+   - A **per-row running balance** is not part of this shape (balance is
+     the Closing/Closing Value columns, once per row, not per movement).
+   - A **sticky footer summary row** (dark background, larger type) sits
+     below the visible rows showing the current total for the active
+     product/location filter.
+   - **Correction rows** are visually flagged inline with a small
+     "CORRECTED" chip next to the movement-type cell — never a silent
+     overwrite. Matches `CONVENTIONS.md` §4's correction-entry pattern.
+   - The Ledger has its own **filter bar** (chip-based: Location, Date
+     range, +Filter) and a **Columns visibility control** directly above
+     it, per the wide-table, many-column use case.
+   - Wide ledgers scroll horizontally inside a bounded container sized to
+     the real content-pane width (not the artboard) — never let a table
+     silently overflow its shell. **Location and Product stay pinned as a
+     sticky-left column group** (`position: sticky; left: 0` in the real
+     app — Paper's canvas cannot preview sticky positioning, this is a
+     Development Sprint implementation note, not an undecided design
+     question) with a hairline divider immediately after Product marking
+     the boundary between the pinned block and the horizontally-scrolling
+     movement/value columns. This applies to the header row, every data
+     row, and the sticky footer alike, so the divider forms one
+     continuous vertical line down the table.
+   - **The amount of horizontal scroll needed depends on Admin Shell
+     sidebar state**, since collapsing the sidebar (56px icon rail
+     instead of 240px) reclaims ~184px of content-pane width:
+     - **Sidebar open (default, ~1200px content pane):** at the Ledger's
+       full 11 movement/value columns plus Location/Product/Edit, the
+       table exceeds the available width — expect horizontal scroll
+       under the sticky Location/Product columns to be the normal case,
+       not an edge case.
+     - **Sidebar collapsed (icon rail, ~1384px content pane):** most or
+       all columns fit without scrolling at the Ledger's default column
+       count — this is the intended reason a user reaches for the
+       shell-level maximize/collapse control on this specific screen (see
+       §2's maximize/restore pattern), not just a general width nice-to-have.
+     - Practically: the sticky-left pinned columns and the horizontal
+       scroll container are the *same* component in both states — there
+       is no separate "narrow" vs "wide" table variant to build. Sidebar
+       state only changes how much of the scrollable region is visible
+       before scrolling kicks in.
+4. **A separate, simpler Table component exists alongside the Ledger** —
+   for plain record lists (Customers, Staff, Assets) with a handful of
+   columns and no per-movement breakdown. Same square-corner, no-avatar,
+   hairline rules; status shown as plain colored text (e.g. "Owes" /
+   "Settled"), not a dot+pill chip, at this lower density.
+5. **Segmented control active-segment treatment**: the active segment
+   needs both a subtle shadow lift (legitimate small-control affordance,
+   not a banned container shadow) *and* accent-colored label text — a
+   plain white pill with no shadow read as too weak to register as
+   "selected" against the house's restrained palette.
+
+---
+
+## 5. Icon library
+
+**Lucide** (thin 1.5px stroke, 24px viewbox source, rendered at 16px
+content / 20px nav per the house guideline). Chosen over Phosphor/Radix
+icons specifically because it ships as `lucide-react` with real React
+components, letting the Development Sprint swap each hand-drawn Paper
+placeholder for the real component by visual match — no re-drawing, no
+icon-mapping guesswork.
+
+---
+
+## 6. Design tokens (as built — final values)
+
+**The Paper file is authoritative for tokens, full stop.** This section is
+a convenience copy, re-pulled live via `get_tokens({format: "css"})` —
+whenever this snapshot and the file disagree, the file wins and this
+snapshot gets overwritten, not reconciled by hand. Colors are OKLCH (see
+§7's kit facts) — do not re-derive to hex.
+
+```css
+:root {
+  --color-gray-50: oklch(98.5% 0 0);
+  --color-gray-100: oklch(97% 0.002 247.8);
+  --color-gray-200: oklch(93.6% 0.005 258.3);
+  --color-gray-300: oklch(88.2% 0.009 264.5);
+  --color-gray-400: oklch(78.5% 0.014 262.4);
+  --color-gray-500: oklch(65.5% 0.021 263);
+  --color-gray-600: oklch(49.4% 0.025 261.7);
+  --color-gray-700: oklch(38.2% 0.020 262.6);
+  --color-gray-800: oklch(26.8% 0.010 260.7);
+  --color-gray-900: oklch(17.7% 0.009 264.3);
+
+  --surface-page: oklch(100% 0 0);
+  --surface-subtle: var(--color-gray-50);
+  --surface-hover: var(--color-gray-100);
+  --surface-selected: rgb(76 59 115 / 7%);
+  --surface-panel-tint: #A690B838; /* floating drawer/dialog veil, see §7 kit facts — approved raw-hex exception */
+
+  --text-primary: var(--color-gray-900);
+  --text-secondary: var(--color-gray-600);
+  --text-tertiary: var(--color-gray-500);
+  --text-disabled: var(--color-gray-400);
+
+  --border-subtle: oklch(93.6% 0.005 258.3);
+  --border-strong: var(--color-gray-300);
+
+  --color-accent: oklch(28% 0.126 296);
+  --color-accent-hover: oklch(39.2% 0.123 293.2);
+
+  --color-success: oklch(52.8% 0.121 155);
+  --color-success-bg: oklch(52.8% 0.121 155 / 10%);
+  --color-warning: oklch(61.6% 0.130 70.8);
+  --color-warning-bg: oklch(61.6% 0.130 70.8 / 10%);
+  --color-danger: oklch(53.8% 0.190 21.2);
+  --color-danger-bg: oklch(53.8% 0.190 21.2 / 10%);
+  --color-info: oklch(53.7% 0.146 252.3);
+  --color-info-bg: oklch(53.7% 0.146 252.3 / 10%);
+
+  --color-gold-brand: oklch(68% 0.110 84.2); /* masthead-only, never a component token */
+
+  /* Dark nav fill (sidebar, bottom nav) — see §7 kit facts */
+  --nav-bg: oklch(20% 0.092 310);
+  --nav-bg-active: rgb(255 255 255 / 12%);
+  --nav-bg-hover: rgb(255 255 255 / 6%);
+  --nav-bg-avatar: rgb(0 0 0 / 18%);
+  --nav-bg-chip: rgb(255 255 255 / 8%);
+  --nav-bg-divider-strong: rgb(255 255 255 / 16%);
+  --nav-text: rgb(255 255 255 / 68%);
+  --nav-text-active: #FFFFFF;
+  --nav-text-label: rgb(255 255 255 / 40%);
+  --nav-text-subtle: rgb(255 255 255 / 60%);
+  --nav-text-strong: rgb(255 255 255 / 85%);
+  --nav-border: rgb(255 255 255 / 10%);
+
+  --font-ui: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", monospace;
+  --text-micro: 11px;   --leading-micro: 16px;
+  --text-caption: 12px; --leading-caption: 16px;
+  --text-sm: 13px;      --leading-sm: 18px;
+  --text-body: 14px;    --leading-body: 20px;
+  --text-h3: 14px;      --leading-h3: 20px;
+  --text-h2: 16px;      --leading-h2: 24px;
+  --text-h1: 20px;      --leading-h1: 28px;
+  --text-display: 24px; --leading-display: 32px;
+  --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600;
+
+  --sp-1: 2px;   --sp-2: 4px;   --sp-3: 6px;   --sp-4: 8px;
+  --sp-5: 12px;  --sp-6: 16px;  --sp-7: 20px;  --sp-8: 24px;
+  --sp-9: 32px;  --sp-10: 40px; --sp-11: 48px; --sp-12: 64px;
+
+  --radius-sm: 4px;  /* dense controls */
+  --radius-md: 6px;  /* default */
+  --radius-lg: 8px;  /* maximum, and status chips */
+  /* Tables: 0px, see §4.1 */
+}
+```
+
+(Live-pulled at end of Sprint 05, `contentHash.tokens: 710ac1c5`. The 6
+`--nav-*` alpha tokens beyond `--nav-bg`/`--nav-bg-active`/`--nav-bg-hover`/
+`--nav-text`/`--nav-text-active`/`--nav-border` were added during Sprint 05
+to replace raw hex values found on the shell chrome — see §7.)
+
+---
+
+## 7. Component inventory — built and approved
+
+All components live in the Paper file (`01M0EZ7TAHZM26KBMWNYT0928X`, page
+"Shell+Component kit") across these 16 kit artboards — this table replaces
+an earlier, stale grouping that didn't match what was actually built:
+
+| Artboard | id | Contents |
+|---|---|---|
+| Admin Shell — Desktop (Full-Height Sidebar) | `649-0` | Top bar, side nav (11 items), toolbar, content pane |
+| Admin Shell — Desktop (Sidebar Collapsed, Icon Rail) | `67T-0` | Collapsed 56px icon-rail variant, see §2 |
+| Mobile Shell — Admin (Drawer Closed) | `6B1-0` | Status bar, hamburger header, content |
+| Mobile Shell — Staff (Drawer Closed) | `4Y-0` | Status bar, hamburger header, content, Sticky Action Bar, Bottom Nav |
+| Mobile Shell — Sidebar Drawer Open (Admin & Staff) | `1ZP-0` | Drawer-open state for both mobile roles |
+| Component Kit — Buttons & Actions | `6BR-0` | Primary/secondary/tertiary/destructive, disabled, icon button |
+| Component Kit — Form Controls | `6CG-0` | Text input, select, segmented control, **toggle switch (on/off)** |
+| Component Kit — Chips & Status | `6DJ-0` | Semantic status chips, ledger correction/condition chips |
+| Component Kit — Tables | `6ET-0` | Simple Table, Dense Ledger |
+| Component Kit — Tabs & Filters | `6IW-0` | Underline tabs, pill filter |
+| Component Kit — Drawers & Dialogs | `6OE-0` | Friction Delete Dialog (2 states), Edit Drawer |
+| Component Kit — Stat Tiles & KPI | `6R4-0` | Hairline stat strip, Dense Summary Strip |
+| Component Kit — Banners & Cards | `6SB-0` | Transfer Banner, Match Card, **Calculated Impact Banner** |
+| Component Kit — Bulk Entry Grid | `6TT-0` | Per-location editable grid, Valuation Footer |
+| Component Kit — Utility & Layout | `6WD-0` | Search/location/avatar row, date picker, breadcrumb, instructional banner, action-tile grid, **Bottom Nav sample, Back-Navigation Flow Header** |
+| Component Kit — Bottom Sheet | `6Z4-0` | Peek + open states |
+
+Four patterns were built ad hoc during Sprint 05 screen reassembly and have
+since been formalized into the kit (no longer exceptions):
+
+- **Toggle switch** (On/Off) — Form Controls kit. 40×22 track, 2px padding,
+  18px white circular knob. On: `--color-accent` track, knob pushed right
+  via `margin-left: auto`. Off: `--border-strong` track, knob at rest on
+  the left. Originated on the Product Drawer's per-location availability
+  rows.
+- **Calculated Impact banner** — Banners & Cards kit. Warning-amber
+  (`--color-warning-bg` background, `--color-warning` icon/text), used in
+  correction/adjustment drawers to preview the numeric consequence of an
+  edit before it's saved. Distinct from the neutral info banner
+  (`--color-info-bg`) used for static instructional copy. Originated on
+  the Stock Ledger's Movement Correction drawer.
+- **Back-navigation flow header** — Utility & Layout kit. A distinct
+  header variant from the hamburger-menu header the Staff mobile shell
+  ships with by default: back-chevron + title (left) and an
+  origin→destination direction badge in `--color-info` (right), 48px
+  height, `--border-subtle` bottom hairline. Used on every staff
+  "flow" screen (Issue Ingredients, Record Batch Production, Transfer
+  Stock, Log Non-Sale, Canteen Transfer Dispatch) — a coverage audit
+  found it built identically five times without ever being added to the
+  kit; now formalized so it isn't rebuilt ad hoc again.
+- **Bottom Nav** — Utility & Layout kit, and also added directly to the
+  canonical Mobile Shell — Staff component (`4Y-0`) itself as a 5th
+  child alongside the Sticky Action Bar. Persistent Hub/Stock/History
+  tab bar — the primary nav for the staff shell's frequent destinations,
+  distinct from the hamburger drawer (reserved for secondary/rare
+  items). Not every staff screen uses both the Sticky Action Bar and the
+  Bottom Nav — use whichever fits the screen's need.
+
+Every component was built directly against the token file (`var(--color-*)`
+etc.), reviewed via screenshot at each step, and checked against the house
+guideline's Pre-Ship Checklist (spacing scale, contrast, one primary button
+per screen, tabular-nums, no forbidden patterns).
+
+---
+

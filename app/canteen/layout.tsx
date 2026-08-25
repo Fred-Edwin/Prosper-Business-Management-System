@@ -1,18 +1,21 @@
 import { requireRole } from "@/lib/auth/session";
-import { SignOutButton } from "@/app/sign-out-button";
+import { StaffShellClient } from "@/components/layout/staff-shell-client";
 
-// Proof-of-routing shell only — no screens designed yet for this role
-// group (see CLAUDE.md's Design/Development/QA process).
+function initials(name: string): string {
+  return name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+}
+
 export default async function CanteenLayout({ children }: { children: React.ReactNode }) {
   const session = await requireRole("canteen_attendant");
 
   return (
-    <div>
-      <nav>
-        <span>Canteen Attendant — {session.user.name}</span>
-        <SignOutButton />
-      </nav>
+    <StaffShellClient
+      basePath="/canteen"
+      roleLabel="Canteen Attendant"
+      locationLabel="Canteen"
+      accountInitials={initials(session.user.name)}
+    >
       {children}
-    </div>
+    </StaffShellClient>
   );
 }

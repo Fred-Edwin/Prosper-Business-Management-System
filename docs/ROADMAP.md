@@ -2,6 +2,10 @@
 
 **Status:** Stage 1 approved. Sprint breakdown (Stage 2) in progress — see
 `docs/sprints/` for individual sprint files as they're approved.
+Milestone 1's design + design-export phases are complete (Sprints 01–06);
+its backend/domain sprints (07–10) are next — see
+`docs/milestones/milestone-01-the-business-exists.md` §0/§5 for current
+status.
 
 This roadmap groups the system's features into milestones, ordered by
 dependency, and framed around what the business can actually *do* once
@@ -41,6 +45,8 @@ Design/Development/QA pattern.
 ---
 
 ## Milestone 1 — The business exists in the system
+
+**Detailed Plan & Progress Tracking:** See [`docs/milestones/milestone-01-the-business-exists.md`](milestones/milestone-01-the-business-exists.md)
 
 | Feature | PRD |
 |---|---|

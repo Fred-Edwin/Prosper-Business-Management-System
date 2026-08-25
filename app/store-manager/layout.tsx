@@ -1,18 +1,21 @@
 import { requireRole } from "@/lib/auth/session";
-import { SignOutButton } from "@/app/sign-out-button";
+import { StaffShellClient } from "@/components/layout/staff-shell-client";
 
-// Proof-of-routing shell only — no screens designed yet for this role
-// group (see CLAUDE.md's Design/Development/QA process).
+function initials(name: string): string {
+  return name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+}
+
 export default async function StoreManagerLayout({ children }: { children: React.ReactNode }) {
   const session = await requireRole("store_manager");
 
   return (
-    <div>
-      <nav>
-        <span>Store Manager — {session.user.name}</span>
-        <SignOutButton />
-      </nav>
+    <StaffShellClient
+      basePath="/store-manager"
+      roleLabel="Store Manager"
+      locationLabel="Store"
+      accountInitials={initials(session.user.name)}
+    >
       {children}
-    </div>
+    </StaffShellClient>
   );
 }

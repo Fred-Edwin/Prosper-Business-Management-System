@@ -1,0 +1,122 @@
+@import "tailwindcss";
+@import "../lib/tokens.css";
+@import "tw-animate-css";
+
+@theme inline {
+  --color-gray-50: var(--color-gray-50);
+  --color-gray-100: var(--color-gray-100);
+  --color-gray-200: var(--color-gray-200);
+  --color-gray-300: var(--color-gray-300);
+  --color-gray-400: var(--color-gray-400);
+  --color-gray-500: var(--color-gray-500);
+  --color-gray-600: var(--color-gray-600);
+  --color-gray-700: var(--color-gray-700);
+  --color-gray-800: var(--color-gray-800);
+  --color-gray-900: var(--color-gray-900);
+
+  --color-surface-page: var(--surface-page);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-selected: var(--surface-selected);
+  --color-surface-panel-tint: var(--surface-panel-tint);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-disabled: var(--text-disabled);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+
+  --color-success: var(--color-success);
+  --color-success-bg: var(--color-success-bg);
+  --color-warning: var(--color-warning);
+  --color-warning-bg: var(--color-warning-bg);
+  --color-danger: var(--color-danger);
+  --color-danger-bg: var(--color-danger-bg);
+  --color-info: var(--color-info);
+  --color-info-bg: var(--color-info-bg);
+
+  --color-gold-brand: var(--color-gold-brand);
+
+  --color-nav-bg: var(--nav-bg);
+  --color-nav-bg-active: var(--nav-bg-active);
+  --color-nav-bg-hover: var(--nav-bg-hover);
+  --color-nav-bg-avatar: var(--nav-bg-avatar);
+  --color-nav-bg-chip: var(--nav-bg-chip);
+  --color-nav-bg-divider-strong: var(--nav-bg-divider-strong);
+  --color-nav-text: var(--nav-text);
+  --color-nav-text-active: var(--nav-text-active);
+  --color-nav-text-label: var(--nav-text-label);
+  --color-nav-text-subtle: var(--nav-text-subtle);
+  --color-nav-text-strong: var(--nav-text-strong);
+  --color-nav-border: var(--nav-border);
+
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
+  /* Display serif — login screen only, not a system-wide type choice. */
+  --font-display: var(--font-display);
+
+  --text-micro: var(--text-micro);
+  --text-micro--line-height: var(--leading-micro);
+  --text-caption: var(--text-caption);
+  --text-caption--line-height: var(--leading-caption);
+  --text-sm: var(--text-sm);
+  --text-sm--line-height: var(--leading-sm);
+  --text-body: var(--text-body);
+  --text-body--line-height: var(--leading-body);
+  --text-h3: var(--text-h3);
+  --text-h3--line-height: var(--leading-h3);
+  --text-h2: var(--text-h2);
+  --text-h2--line-height: var(--leading-h2);
+  --text-h1: var(--text-h1);
+  --text-h1--line-height: var(--leading-h1);
+  --text-display: var(--text-display);
+  --text-display--line-height: var(--leading-display);
+
+  --font-weight-regular: var(--weight-regular);
+  --font-weight-medium: var(--weight-medium);
+  --font-weight-semibold: var(--weight-semibold);
+
+  --spacing-1: var(--sp-1);
+  --spacing-2: var(--sp-2);
+  --spacing-3: var(--sp-3);
+  --spacing-4: var(--sp-4);
+  --spacing-5: var(--sp-5);
+  --spacing-6: var(--sp-6);
+  --spacing-7: var(--sp-7);
+  --spacing-8: var(--sp-8);
+  --spacing-9: var(--sp-9);
+  --spacing-10: var(--sp-10);
+  --spacing-11: var(--sp-11);
+  --spacing-12: var(--sp-12);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+
+  /*
+   * Radix/shadcn scaffold components reference these generic names
+   * (border-border, ring-ring, bg-background, etc.) — mapped onto our
+   * own semantic tokens rather than shadcn's default palette below, per
+   * DESIGN_SYSTEM_PLAN.md §2.1 ("behavioral scaffold only").
+   */
+  --color-background: var(--surface-page);
+  --color-foreground: var(--text-primary);
+  --color-border: var(--border-subtle);
+  --color-input: var(--border-subtle);
+  --color-ring: var(--color-accent);
+  --color-destructive: var(--color-danger);
+  --radius: var(--radius-md);
+}
+
+body {
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
