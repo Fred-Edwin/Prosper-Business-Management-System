@@ -70,6 +70,8 @@ export interface AdminShellProps {
   activeNavKey: string;
   onNavigate: (href: string) => void;
   toolbarTitle: string;
+  toolbarSubtitle?: string;
+  toolbarActions?: React.ReactNode;
   accountName: string;
   accountRole: string;
   accountInitials: string;
@@ -83,6 +85,8 @@ export function AdminShell({
   activeNavKey,
   onNavigate,
   toolbarTitle,
+  toolbarSubtitle,
+  toolbarActions,
   accountName,
   accountRole,
   accountInitials,
@@ -191,8 +195,19 @@ export function AdminShell({
       )}
 
       <div className="flex min-w-0 grow flex-col">
-        <header className="flex h-11 shrink-0 items-center gap-2 border-b border-solid border-border-subtle pl-6 pr-6">
+        <header className="flex h-11 shrink-0 items-center gap-4 border-b border-solid border-border-subtle pl-6 pr-6">
           <h1 className="font-ui text-h1/h1 font-semibold text-text-primary">{toolbarTitle}</h1>
+          {toolbarSubtitle && <span className="font-ui text-sm/sm text-text-secondary">{toolbarSubtitle}</span>}
+          <div className="ml-auto flex items-center gap-3">
+            {toolbarActions}
+            <button
+              type="button"
+              onClick={onAccountClick}
+              className="flex size-[26px] shrink-0 items-center justify-center rounded-full bg-gray-700 font-ui text-caption/caption text-white outline-none"
+            >
+              {accountInitials}
+            </button>
+          </div>
         </header>
         <div className="flex min-h-0 grow flex-col overflow-y-auto">{children}</div>
       </div>
