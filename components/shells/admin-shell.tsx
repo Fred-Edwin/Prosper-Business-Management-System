@@ -107,7 +107,7 @@ export function AdminShell({
             </button>
           </div>
           <div className="h-px w-full shrink-0 bg-nav-border" />
-          <div className="flex grow flex-col items-center gap-1 py-4">
+          <div className="flex grow flex-col items-center gap-1 pt-3">
             {allItems.map((item) => {
               const Icon = item.icon;
               const active = item.key === activeNavKey;
@@ -117,7 +117,7 @@ export function AdminShell({
                   type="button"
                   onClick={() => onNavigate(item.href)}
                   title={item.label}
-                  className={cn("flex size-9 shrink-0 items-center justify-center rounded-sm outline-none", active ? "bg-nav-bg-active" : "hover:bg-nav-bg-hover")}
+                  className={cn("flex size-10 shrink-0 items-center justify-center rounded-sm outline-none", active ? "bg-nav-bg-active" : "hover:bg-nav-bg-hover")}
                 >
                   <Icon className={cn("size-4", active ? "text-nav-text-active" : "text-nav-text")} strokeWidth={1.5} aria-hidden />
                 </button>
@@ -128,7 +128,7 @@ export function AdminShell({
             <button
               type="button"
               onClick={onAccountClick}
-              className="flex size-7 items-center justify-center rounded-full bg-nav-bg-divider-strong font-ui text-caption/caption text-nav-text-active outline-none"
+              className="flex size-[30px] items-center justify-center rounded-full bg-nav-bg-divider-strong font-ui text-caption/caption text-nav-text-active outline-none"
             >
               {accountInitials}
             </button>

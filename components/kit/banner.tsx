@@ -82,7 +82,7 @@ export function PurchaseDeliveryBanner({
 
 export function CalculatedImpactBanner({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("flex items-start gap-2 rounded-sm bg-warning-bg p-3", className)}>
+    <div className={cn("flex items-start gap-2 rounded-sm bg-warning-bg p-5", className)}>
       <AlertCircle className="mt-0.5 size-4 shrink-0 text-warning" strokeWidth={1.5} aria-hidden />
       <p className="font-ui text-sm/sm text-warning">{children}</p>
     </div>

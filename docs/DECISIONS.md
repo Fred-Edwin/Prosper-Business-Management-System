@@ -552,3 +552,134 @@ no unusual learning curve, fits the TypeScript/Next.js stack. Playwright is
 the current standard for full-flow browser/API testing in Next.js
 projects, with good support for testing API routes directly as well as
 real browser flows.
+
+---
+
+## ADR-36: Open design decisions carried out of the Sprint 05/06 design-export effort
+
+**Status: 36a / 36c / 36d RESOLVED (Design Sprint Session 2, 2026-08-27).
+36b still OPEN (Development Sprint question).**
+
+Four UI questions surfaced during the Sprint 05 screen reassembly and the
+Sprint 06 export (both scrapped and being redone). Each was flagged rather
+than decided. They are recorded here (and, for the UI-rule ones, in
+`docs/design/design-principles.md` §8 "Open design decisions") so a future
+session finds them instead of re-deriving an answer ad hoc.
+
+**Resolutions (Session 2 — Product Designer, with the owner):**
+
+- **36a — RESOLVED: no chip. Corrected ledger cells render as the value
+  in the semantic color (`--color-danger` for a negative movement,
+  `--color-success` for a positive one) with a 1px underline in the same
+  color.** The cell is the click target for the correction drawer
+  (original vs corrected + who/when). Rationale: this is what all three
+  approved ledger screen artboards (`798-0` / `7G9-0` / `7LJ-0`) already
+  show, and it fits the ledger's "one row = one product/day/location,
+  one column per movement type" shape — a correction lands in a specific
+  *column*, not on the row as a whole, so there is no single
+  movement-type cell to hang a chip on. `design-principles.md` §4.3's
+  chip bullet is rewritten to describe the underlined cell;
+  `design-principles.md` §8 item 1 is closed; the kit ledger artboard
+  (`6ET-0`) is updated to match the screens (it previously showed the
+  corrected value as plain, non-underlined color — see D1). Session 3
+  builds `dense-ledger.tsx` with the underlined-cell treatment and drops
+  the amber "Corrected" pill.
+
+- **36c — RESOLVED: `FrictionDeleteDialog` takes optional
+  `cancelLabel` / `confirmLabel` / `title` / `bodyCopy` /
+  `showArchiveLink` props.** Each entity passes its own text
+  ("Keep Product" / "Keep Asset", "Delete Product" / "Delete Asset
+  Record", etc.). The retype-gate mechanic is identical across entities
+  — only the copy varies. This matches how Paper's Asset Delete Dialog
+  (`8IV-0`) was actually drawn vs the Product Delete Dialog (`797-0`).
+  The `showArchiveLink` prop exists because the Asset dialog omits the
+  "Archive instead" link the Product dialog has. Defaults keep the
+  generic "Cancel" / "Permanently Delete" so callers that pass nothing
+  are unchanged. Session 3 builds this when rebuilding the component.
+
+- **36d — RESOLVED: Prosper gets a real `EmptyState` kit component AND
+  an `ErrorState` variant.** Both are designed in Paper this session
+  with their states. `EmptyState`: icon + title + one-line guidance +
+  optional single action button; two artboards — `EmptyState — default`
+  and `EmptyState — filtered / no results` ("Clear filters" action,
+  different copy). `ErrorState`: same layout, `--color-danger` icon,
+  "Retry" action. Rationale: five M1 surfaces (Assets Register with no
+  assets, Product Catalog with no products / no search results, Dense
+  Ledger with no movements for the active filter, mobile Activity
+  timeline with nothing logged today, Financials reconciliation with
+  nothing to match) all want one consistent treatment; inlining five
+  different empties is exactly the divergence this session exists to
+  prevent. `design-principles.md` §7 inventory gains a 17th kit area
+  ("Component Kit — Empty & Error States"); §8 item 4 is closed. The
+  four role home-page inline placeholders are replaced by `EmptyState`
+  in a later session (their `TODO(mock)` markers become plain `TODO`).
+
+- **36b — STILL OPEN.** Unchanged; see below. It is a Development Sprint
+  question (where the `collapsed` state lives), not a design question,
+  so Session 2 does not resolve it.
+
+### 36a. "CORRECTED" chip on ledger correction rows — RESOLVED (see above): no chip, underlined semantic-color cell
+
+- `design-principles.md` §4.3 describes an amber "CORRECTED" chip next to
+  the movement-type cell as **approved**.
+- `sprint-05-screen-reassembly-handover.md` §3 said **no such chip
+  exists** — "removed pending a future, more subtle design decision,"
+  corrected values shown as plain colored text.
+- The Sprint 06 completion session pulled the live Paper Ledger artboards
+  (`798-0` / `7G9-0` / `7LJ-0`) via `get_node_info` and confirmed **none
+  of the example rows carry a chip child** — matching the older handover,
+  not §4.3.
+- `components/kit/dense-ledger.tsx` currently **implements the chip**
+  (amber "Corrected" pill), left in place because no exported screen
+  needed it removed to match Paper.
+
+**What needs deciding:** whether correction rows get a chip, plain colored
+text, or some third treatment — and then `design-principles.md` §4.3,
+`dense-ledger.tsx`, and the Paper artboards all get reconciled to that one
+answer. This must be settled **before Session 3 rebuilds the kit** (that
+session touches `dense-ledger.tsx`) and before any Stock development
+sprint wires correction rows. Owner: Admin/user call.
+
+### 36b. Ledger "Maximize" / sidebar-collapse persistence — unconfirmed
+
+The Ledger's Maximize button triggers the general Admin-shell Icon Rail
+collapse (`components/shells/admin-shell.tsx` `collapsed` prop), not a
+bespoke "maximized" component — **that part is settled** (ADR context:
+`sprint-05` §5.6).
+
+**Still open:** does the collapsed state **persist app-wide** after the
+user navigates away from the Ledger, or **snap back** to expanded when
+leaving that screen? Not decided either way. This is a Development Sprint
+question (it affects where the `collapsed` state lives — screen-local
+`useState` vs. shell-level/persisted). Resolve it with the Admin at the
+start of the Stock development sprint, before wiring the toggle.
+
+### 36c. `FrictionDeleteDialog` button labels — hardcoded vs. per-entity
+
+`components/kit/friction-delete-dialog.tsx` hardcodes "Cancel" /
+"Permanently Delete". Paper's **Asset Delete Dialog** (`8IV-0`) shows
+"Keep Asset" / "Permanently Delete Asset". The kit component was used
+as-is per the "don't invent one-offs" rule.
+
+**What needs deciding:** whether the dialog takes optional
+`cancelLabel` / `confirmLabel` props (so each entity reads "Keep
+Product" / "Keep Asset" / …), or the generic labels are accepted
+everywhere. Kit note for **Session 3** (kit rebuild) — decide when
+rebuilding this component from Paper; check what every delete-dialog
+artboard actually shows before choosing.
+
+### 36d. EmptyState — inline placeholder vs. kit component
+
+"Empty State" is **not** in the approved 16-artboard kit inventory
+(`design-principles.md` §7). The four role home pages
+(`app/{admin,cashier,store-manager,canteen}/page.tsx`) currently inline a
+placeholder `<div>` each (carrying a `TODO(mock)` marker that is
+technically misapplied — it's deferred UI, not mock data).
+
+**What needs deciding:** does Prosper get a real `EmptyState` /
+`ErrorState` kit component (designed in Paper first, with its states), or
+do screens keep inlining empties case-by-case? Several real screens
+(reports, history, filtered tables with no results) will want a
+consistent empty treatment. Decide during **Session 2** (Product Designer
+Paper pass) — if yes, it gets an artboard with states there and is built
+in Session 3.

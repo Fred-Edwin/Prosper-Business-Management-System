@@ -109,9 +109,17 @@ standard, not exceptions:
    - A **sticky footer summary row** (dark background, larger type) sits
      below the visible rows showing the current total for the active
      product/location filter.
-   - **Correction rows** are visually flagged inline with a small
-     "CORRECTED" chip next to the movement-type cell — never a silent
-     overwrite. Matches `CONVENTIONS.md` §4's correction-entry pattern.
+   - **Corrected cells** are flagged inline: a movement value that has
+     been corrected renders in its semantic color (`--color-danger` for
+     a negative movement, `--color-success` for a positive one) with a
+     1px underline in the same color — never a silent overwrite. The
+     cell is the click target for the correction drawer (original vs
+     corrected value, who, when). There is **no "CORRECTED" chip** — a
+     correction lands in a specific movement *column* (Issues,
+     Purchases, …), not on the row as a whole, so the flag is on the
+     cell, not the row. Matches `CONVENTIONS.md` §4's correction-entry
+     pattern. (Resolved: `DECISIONS.md` ADR-36a, Design Sprint Session
+     2. This supersedes the earlier "amber CORRECTED chip" text.)
    - The Ledger has its own **filter bar** (chip-based: Location, Date
      range, +Filter) and a **Columns visibility control** directly above
      it, per the wide-table, many-column use case.
@@ -285,6 +293,16 @@ an earlier, stale grouping that didn't match what was actually built:
 | Component Kit — Bulk Entry Grid | `6TT-0` | Per-location editable grid, Valuation Footer |
 | Component Kit — Utility & Layout | `6WD-0` | Search/location/avatar row, date picker, breadcrumb, instructional banner, action-tile grid, **Bottom Nav sample, Back-Navigation Flow Header** |
 | Component Kit — Bottom Sheet | `6Z4-0` | Peek + open states |
+| Component Kit — Empty & Error States | `9U3-0` | `EmptyState` (default + filtered/no-results), `ErrorState` (retry) — see ADR-36d |
+
+**17th kit area added (Design Sprint Session 2):** `EmptyState` /
+`ErrorState`. `EmptyState` = icon + title + one-line guidance + optional
+single action button; two states (default; filtered / no-results with a
+"Clear filters" action). `ErrorState` = same layout, `--color-danger`
+icon, "Retry" action. Consumes five M1 surfaces (Assets Register,
+Product Catalog, Dense Ledger filtered-empty, mobile Activity timeline,
+Financials reconciliation) plus the four role home pages. Resolved:
+`DECISIONS.md` ADR-36d.
 
 Four patterns were built ad hoc during Sprint 05 screen reassembly and have
 since been formalized into the kit (no longer exceptions):
@@ -321,6 +339,118 @@ Every component was built directly against the token file (`var(--color-*)`
 etc.), reviewed via screenshot at each step, and checked against the house
 guideline's Pre-Ship Checklist (spacing scale, contrast, one primary button
 per screen, tabular-nums, no forbidden patterns).
+
+---
+
+## 8. Open design decisions
+
+Full context and ownership in `docs/DECISIONS.md` ADR-36. Three of the
+four are now resolved (Design Sprint Session 2, 2026-08-27). A session
+that hits the remaining open one **stops and gets a decision** — it does
+not pick an answer ad hoc.
+
+1. **RESOLVED — "CORRECTED" chip on ledger correction rows.** No chip.
+   Corrected cells render in their semantic color with a 1px underline
+   in the same color; the cell is the correction-drawer click target
+   (§4.3, as rewritten). `components/kit/dense-ledger.tsx` drops the
+   amber pill when rebuilt in Session 3. (ADR-36a)
+
+2. **OPEN — Ledger Maximize / sidebar-collapse persistence.** Settled:
+   the Maximize button uses the general Icon Rail collapse, not a
+   bespoke component (§2). Still open: whether that collapsed state
+   persists app-wide after leaving the Ledger or snaps back on
+   navigation. Development Sprint question — affects where the
+   `collapsed` state lives. Resolve with the Admin at the start of the
+   Stock admin-frontend session. (ADR-36b)
+
+3. **RESOLVED — `FrictionDeleteDialog` button labels.** The component
+   takes optional `cancelLabel` / `confirmLabel` / `title` / `bodyCopy`
+   / `showArchiveLink` props; each entity passes its own copy, defaults
+   keep the generic "Cancel" / "Permanently Delete". Built in Session 3.
+   (ADR-36c)
+
+4. **RESOLVED — EmptyState / ErrorState as a kit component.** Yes —
+   both, added as the 17th kit area (§7). Designed in Paper this session
+   with their states; built in Session 3. (ADR-36d)
+
+---
+
+## 9. Global interaction states (binding — applied once as global CSS)
+
+These are the interaction states that are **not** worth a per-component
+artboard. Session 3 (kit rebuild) encodes each of these **once** as
+global CSS / a shared utility, not by reading many near-identical
+artboards. The few states that *are* drawn as artboards (button
+disabled/loading, input focus/error, toggle disabled, ledger corrected
+cell, etc.) are enumerated in `docs/design/component-states.md` §2 and
+serve as the visual reference; everything below is the uniform rule for
+the rest.
+
+1. **Focus-visible ring.** Every interactive element
+   (button, icon button, input, textarea, select, tab, pill, toggle,
+   link, nav item, action tile, editable grid cell):
+   `outline: 2px solid var(--color-accent); outline-offset: 2px;` on
+   `:focus-visible` only (keyboard focus), never on mouse `:focus`. On
+   dark surfaces (side nav, bottom nav, sticky footer) the ring color
+   switches to `var(--nav-text-active)` (white) at the same width and
+   offset. The outline is **not** transitioned — it must appear
+   instantly.
+
+2. **Input focus border.** Text input / textarea / select / search /
+   date field / stepper number field: on *any* focus (mouse or
+   keyboard) the border becomes `1px solid var(--color-accent)`, in
+   addition to the keyboard-only ring from rule 1. Matches the
+   "Text Input — Focus" kit artboard.
+
+3. **Row / list hover tint.** Any clickable row — Simple Table body
+   row, Dense Ledger data row, Select menu option, Bottom Sheet list
+   item, a timeline row that links — gets `background:
+   var(--surface-hover)` on hover. Non-clickable rows get no hover
+   tint. This tint is load-bearing (it signals "this row opens
+   something"), so the Tables kit artboard also draws it once as a
+   labelled reference row.
+
+4. **Selected / active tint.** `var(--surface-selected)` (7% accent).
+   Used for the active pill and active underline-tab background, and for
+   any genuinely multi-selected row. Never stacked with the hover tint
+   — selected wins.
+
+5. **Button hover.** primary → `background: var(--color-accent-hover)`.
+   secondary / tertiary / icon button → `background:
+   var(--surface-hover)`. destructive → darken (a
+   `--color-danger-hover` token if Session 3 adds one, otherwise the
+   documented fallback `filter: brightness(0.92)`). No transform, no
+   scale, no shadow change.
+
+6. **Active / pressed.** Identical visual to hover, with no additional
+   transform. Prosper has **no** press-scale, bounce, or spring motion
+   (house rule, §1).
+
+7. **Disabled treatment.** `opacity: 0.5; pointer-events: none;` and,
+   where the element has its own text, set the text to
+   `var(--text-disabled)`. No greyscale filter, no special cursor
+   (removing pointer-events removes the pointer). The drawn
+   disabled-state artboards (button primary/destructive, text input,
+   toggle) are the reference; every other disabled state is this rule.
+
+8. **Error field pattern.** `border: 1px solid var(--color-danger)`;
+   an error/helper text row directly below the field in
+   `var(--color-danger)`, `var(--text-caption)` /
+   `var(--leading-caption)`, `margin-top: var(--sp-2)`. One pattern for
+   every field type (text input, textarea, select, quantity stepper,
+   bulk-grid cell).
+
+9. **Transition timing.** `transition: background-color 120ms ease,
+   border-color 120ms ease, opacity 120ms ease;` on interactive
+   elements. Nothing over 160ms except the drawer / bottom-sheet slide,
+   which is `transform 200ms ease` only. Focus outline is never
+   transitioned.
+
+10. **Loading / skeleton.** Table / list loading = 3 placeholder rows,
+    each a `var(--surface-subtle)` block with a `var(--surface-hover)`
+    shimmer sweep on a `1200ms` loop. A button in flight keeps its
+    variant color, dims its label to `opacity: 0.7`, shows a 14px
+    inline spinner in the label color, and sets `pointer-events: none`.
 
 ---
 

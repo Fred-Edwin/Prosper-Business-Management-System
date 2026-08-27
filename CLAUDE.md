@@ -37,6 +37,7 @@ silently reinvent a convention that already exists, or contradict one.
 | Feature sequencing, milestones | `docs/ROADMAP.md` |
 | Current sprint scope/status | `docs/sprints/sprint-XX-*.md` |
 | Product-wide UI/UX rules | `docs/design/design-principles.md` |
+| Paper → code export method (get_jsx, component-swap, screenshot-verify) | `docs/design/export-workflow.md` |
 | Per-feature user flow | `docs/design/flows/*.md` |
 | What shipped last, what's blocked | `docs/PROGRESS.md` |
 | Process this project follows | `docs/sdlc.md` |

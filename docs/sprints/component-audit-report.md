@@ -2,7 +2,10 @@
 
 **Session role:** QA Engineer (audit only — no files were fixed, edited, or
 touched in the codebase; no git commands were run). This report is the
-sole output of the session, per `docs/sprints/component-audit-handoff.md`.
+sole output of that audit session (its handoff brief has since been
+deleted as a spent husk). Kept as the record of what the kit audit found
+and the running checklist of known-suspect patterns for the kit-rebuild
+session.
 
 **Scope:** All 28 files in `components/kit/` and all 4 files in
 `components/shells/`, checked against every state shown on the 11

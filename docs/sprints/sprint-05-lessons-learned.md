@@ -2,10 +2,12 @@
 
 Retrospective on the Screen Reassembly design sprint: mistakes made and
 caught, corrections applied, and process decisions worth carrying
-forward. This is a companion to `sprint-05-screen-reassembly-handover.md`
-(what was built) and `docs/design/paper-workflow-lessons.md` (Paper tool
-mechanics specifically) — this file is the broader "what would we do
-differently" record.
+forward. Kept as a standing retrospective; the sprint's own handover
+doc (what-was-built, since scrapped) has been deleted.
+`docs/design/paper-workflow-lessons.md` covers Paper tool mechanics;
+`docs/design/export-workflow.md` codifies the design-sprint-vs-development-sprint
+boundary this retro flagged as needing to be explicit. This file is the
+broader "what would we do differently" record.
 
 ---
 

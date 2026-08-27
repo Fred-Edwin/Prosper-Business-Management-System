@@ -5,6 +5,111 @@ shipped, what's blocked, what changed from plan.
 
 ---
 
+## 2026-08-27 — Design Sprint Session 2: component states + consistency audit
+
+**Role:** Product Designer. **Touched:** Paper file "Prosper Hotel" only,
+plus `docs/design/component-states.md` (new), `docs/DECISIONS.md`,
+`docs/design/design-principles.md`, `docs/sprints/milestone-1-plan.md`.
+No application code.
+
+**Shipped:**
+
+- **`docs/design/component-states.md`** — the component-states spec:
+  32 components mapped to the 21 M1 screens; per-component state matrix
+  (which states are artboards vs which are global CSS); naming
+  convention; consistency-audit result.
+- **Four open decisions settled with the owner** (all recommendations
+  accepted) and recorded in `DECISIONS.md` ADR-36 + `design-principles.md`:
+  - **ADR-36a** — no "CORRECTED" chip on ledger correction rows.
+    Corrected cells render in their semantic color (`--color-danger` /
+    `--color-success`) with a 1px underline; the cell is the
+    correction-drawer click target. `design-principles.md` §4.3
+    rewritten; §8 item 1 closed.
+  - **ADR-36c** — `FrictionDeleteDialog` takes optional `cancelLabel` /
+    `confirmLabel` / `title` / `bodyCopy` / `showArchiveLink` props;
+    defaults keep the generic copy. §8 item 3 closed.
+  - **ADR-36d** — Prosper gets a real `EmptyState` + `ErrorState` kit
+    component (17th kit area, `design-principles.md` §7). Drawn in
+    Paper this session (artboard `9U3-0`) with 3 states. §8 item 4
+    closed.
+  - **D-FIN** — the `/admin/financials` KPI stat strip (liquidity /
+    cash / bank / outflows) is **Milestone 3, not M1**. M1's Financials
+    screen = stock-purchase table + reconciliation Match cards only.
+    Noted in `milestone-1-plan.md` §2. The kit "Stat tile row"
+    component is not touched this session.
+- **`design-principles.md` §9 (new)** — global interaction rules:
+  focus-visible ring, input focus border, row hover tint, selected
+  tint, button hover, active/pressed (no motion), disabled treatment,
+  error field pattern, transition timing, skeleton loading. These are
+  encoded **once** as global CSS by Session 3, not per-component.
+- **Paper file — state artboards added** to 7 existing kit areas +
+  1 new artboard (full list in `component-states.md` §8):
+  - Buttons: primary/destructive loading + disabled reference row.
+  - Form Controls: text-input/select/stepper **error**, **select-open**
+    (industry-standard attached popover), segmented **disabled**,
+    toggle **disabled**.
+  - Tables: ledger **corrected cell** (underlined — now matches
+    screens), **row hover**, **empty**; simple-table **row hover**.
+  - Drawers & Dialogs: friction-dialog **retype-mismatch** (3rd state).
+  - Banners & Cards: **PurchaseDeliveryBanner** (blue, extracted from a
+    screen into the kit), transfer-banner **flagged**, match-card
+    **matched** + **flagged**.
+  - Utility & Layout: search **filled** (with clear), date-picker
+    **open** (calendar popover), flow-header **no-badge**.
+  - Bulk Entry Grid: **cell error**.
+  - **NEW artboard "Component Kit — Empty & Error States" (`9U3-0`)** —
+    EmptyState default, EmptyState filtered/no-results, ErrorState.
+- **Consistency audit (Task 3):** every component that appears on more
+  than one M1 screen was compared instance-by-instance.
+  - **5 real divergences fixed in Paper:** kit ledger corrected-cell
+    was plain text vs underlined on the 3 screen ledgers → kit now
+    underlined; kit primary button / tertiary label / segmented active
+    label used a raw `oklch(28.4% …)` literal instead of
+    `var(--color-accent)` → retokenised; the Success status chip + all
+    3 condition chips used raw OKLCH literals → retokenised to
+    `--color-success` / `--color-warning` / `--color-danger`; kit
+    bottom-nav had an all-sides border vs border-top-only in real use
+    → fixed.
+  - **2 divergences kept as legitimate content variants:** the ledger
+    correction drawer's header carries a context subtitle (documented
+    as a `subtitle` prop for Session 3); the friction delete dialog's
+    per-entity labels (now the ADR-36c props).
+  - **1 divergence deferred:** the staff-mobile-shell order-type
+    segmented control (40px / `--radius-md`) differs from the kit
+    (36px / `--radius-sm`) — but it's on a **post-M1 Cashier screen**,
+    left for the Cashier design work.
+  - **CONSISTENT (one canonical version, safe to export as one
+    component):** Admin side nav, underline tabs, pill filter, dense
+    summary strip / sticky footer, Edit Drawer shell.
+- `milestone-1-plan.md` §5 Session 2 marked DONE; §2 gained the
+  Financials M1-cut note.
+
+**Blocked / open:** ADR-36b (ledger Maximize / sidebar-collapse
+**persistence** — does it persist app-wide or reset on navigation) is
+still open. It is a **Development Sprint** question (where the
+`collapsed` state lives), to be resolved with the Admin at the start of
+the Stock admin-frontend session (Session 7). Not a design question, so
+not resolved here.
+
+**Tooling note:** Paper's `write_html` intermittently dropped all
+layout/border/background styling when inserting complex nested flex into
+the large kit artboards (collapsed to unstyled stacked text). Worked
+around it by using `duplicate_nodes` + `update_styles` on existing
+canonical nodes for almost everything; `write_html` was only reliable
+on small isolated frames (the date-picker calendar, the Empty/Error
+artboard). Session 3 should expect the same and prefer `get_jsx` reads
+(which worked fine throughout).
+
+**Next:** Session 3 — Developer (Design Sprint): delete
+`components/kit/*` + `components/shells/*` and rebuild each from Paper
+via `get_jsx`, encoding the drawn states from the artboards and the
+interaction states from `design-principles.md` §9. Resolve nothing new
+— all design decisions are settled. Build
+`app/design-preview/_kit/page.tsx`. Screenshot-verify every component
+against its artboard.
+
+---
+
 ## 2026-08-19 — Planning & repo setup
 
 - Phase 0 (Discovery) and Phase 1 (Planning: PRD, Architecture, Roadmap)
@@ -490,3 +595,92 @@ Sprint 06 screen skeletons for Stock Movements, replacing every
 resolve the CORRECTED-chip doc conflict above before Sprint 07 touches
 `dense-ledger.tsx`'s consumers.
 
+---
+
+## 2026-08-27 — Tech Lead session: export workflow documented, stale docs cleaned, Milestone 1 scope pinned
+
+Documentation / planning session only — no feature code, no Paper, no
+export. Context: the Sprint 06 export (2026-08-25 entry above) was done
+by reconstruction-from-`get_computed_styles`, not `get_jsx`; its 21
+screens did not match Paper and were deleted. One screen
+(`admin-catalog-product-catalog`) was re-exported correctly as proof of
+method. This session turned the corrected workflow into permanent docs
+and reconciled the status docs to reality.
+
+**What this session changed:**
+
+1. **Corrected export workflow documented** —
+   `docs/design/export-workflow.md` (new): Phases A–D
+   (Design → Export → Implementation → QA), with the non-negotiable
+   rules named explicitly — `get_jsx` is required (never reconstruct
+   from computed styles), swap kit-component spans for kit imports
+   (don't rebuild markup), drop the Paper artboard frame so screens
+   fill the viewport, and screenshot-verify every screen and component
+   against its artboard. Pointers added from `docs/sdlc.md` (Phase
+   3.1/3.2 + document index) and `CLAUDE.md`'s "Where to look" table.
+   The `mock-data.ts` → `fixtures.ts` rename is specified for new work;
+   the reference screen keeps `mock-data.ts` until the re-export
+   normalizes it.
+
+2. **Open design decisions recorded** — `docs/DECISIONS.md` ADR-36 (new)
+   + `docs/design/design-principles.md` §8 (new): the CORRECTED-chip
+   conflict (design-principles §4.3 vs. deleted Sprint 05 handover vs.
+   live artboards showing no chip — still unresolved), the Ledger
+   Maximize / sidebar-collapse persistence question, the
+   `FrictionDeleteDialog` hardcoded-label vs. per-entity question, and
+   the EmptyState inline-vs-kit-component question. All flagged OPEN,
+   with which future session owns each.
+
+3. **Stale sprint docs audited and cleaned.** Deleted as spent husks
+   (all live content migrated first):
+   `sprint-06-design-export.md`, `sprint-06-design-export-handover.md`,
+   `sprint-05-screen-reassembly-handover.md`, `screen-audit-handoff.md`,
+   `component-audit-handoff.md`. Kept: `sprint-05-lessons-learned.md`
+   (standing retro), `component-audit-report.md` (kit-defect record +
+   known-suspect-pattern checklist for the kit rebuild). The master
+   21-screen artboard-ID table and the Sprint 05 §5 design decisions
+   were migrated into the new `docs/sprints/milestone-1-plan.md`.
+   Dangling references cleaned in `milestone-01-the-business-exists.md`,
+   `sprint-05-lessons-learned.md`, `component-audit-report.md`.
+   (Working-tree reversions of the two audit `.md` files to an older
+   stale copy were discarded — the committed versions are canonical.)
+
+4. **Milestone 1 scope pinned** — `docs/sprints/milestone-1-plan.md`
+   (new): 3 features (Catalog & Locations, Store & Stock Movements incl.
+   the `/admin/financials` stock+reconciliation slice, Assets); the
+   21-screen master table with artboard IDs and feature mapping; the 8
+   carried-forward design decisions; and the remaining session plan —
+   Session 2 (Product Designer Paper pass: component-states spec,
+   one-canonical-version check, resolve chip + EmptyState), Session 3
+   (Developer: delete + rebuild `components/kit`/`shells` from Paper via
+   `get_jsx`, build `/design-preview/_kit`, screenshot-verify), Session
+   4 (Developer: re-export all 20 remaining M1 screens, normalize the
+   reference screen, rewire role home pages, screenshot-verify),
+   Sessions 5–9 (Developer, N=5: implement F1 Catalog / F2 Stock backend
+   / F2 admin frontend / F2 staff frontend / F3 Assets), Final (QA
+   adversarial M1 pass). **Total remaining: 8 sessions.**
+
+5. **ROADMAP.md + PROGRESS.md reconciled.** ROADMAP's status header
+   corrected (it claimed "design + design-export phases complete
+   (Sprints 01–06)"); M1 feature table now shows per-feature status and
+   points at `milestone-1-plan.md`.
+   `milestone-01-the-business-exists.md` marked HISTORICAL with a
+   redirect to the new plan; its "Design Export ✅ Done" claims
+   corrected to "⚠ SCRAPPED, being redone."
+
+**Build state verified:** `pnpm tsc --noEmit` — clean, exit 0. The
+"broken routes" from the Sprint 06 handover §5 (role home pages, admin
+shell client, login brand panels) were fixed by that sprint's committed
+rewiring and are intact; nothing needs un-breaking. The four role home
+pages render an inline "coming later" placeholder (carrying a
+technically-misapplied `TODO(mock)` — it's deferred UI, not mock data;
+noted for Session 4 to switch to plain `TODO`). `components/kit/` has 29
+files (28 + `quantity-stepper.tsx` from the kit audit); one kit open
+item remains (`InfoBanner` padding — Session 3). These will all be
+deleted and rebuilt from Paper in Session 3 regardless.
+
+**Not touched (owned by later sessions):** `components/kit/*`,
+`components/shells/*`, the one reference screen, anything in Paper.
+
+**Next:** Session 2 — Product Designer: component-states spec + Paper
+pass (see `docs/sprints/milestone-1-plan.md` §5).

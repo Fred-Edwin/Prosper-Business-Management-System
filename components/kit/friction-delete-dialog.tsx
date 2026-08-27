@@ -44,7 +44,7 @@ export function FrictionDeleteDialog({ open, entityName, entityLabel, onCancel, 
           </div>
           <div className="flex flex-col gap-2">
             <label className="font-ui text-sm/sm text-text-secondary">To confirm, type the exact record name below:</label>
-            <div className="flex h-9 items-center rounded-sm border border-solid border-border-strong bg-surface-page px-3 has-[input:focus]:border-[1.5px] has-[input:focus]:border-accent">
+            <div className="flex h-9 items-center rounded-sm border border-solid border-danger bg-surface-page px-3 has-[input:focus]:border-[1.5px] has-[input:focus]:border-accent">
               <input
                 value={retyped}
                 onChange={(e) => setRetyped(e.target.value)}

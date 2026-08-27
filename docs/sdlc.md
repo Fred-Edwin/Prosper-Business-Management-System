@@ -138,6 +138,8 @@ Once the design foundation exists, every feature moves through this three-stage 
 
 Paper.design does not have a built-in clickable-prototype mode — its output is static, styled frames, not linked screens. Rather than building a throwaway prototype in a separate tool (which would mean building the UI twice), the approved screens are assembled directly by Claude Code into their **real Next.js routes and components**, wired with **mock data behind the same interface real data will eventually use**. This is not a sandbox copy — it is the first commit of the actual feature. Clicking through it validates the flow the same way a traditional prototype would, but nothing gets rebuilt later; the development sprint only replaces the mock data source, never the UI itself.
 
+> **Required method — read `docs/design/export-workflow.md` before any Paper-to-code export.** It defines the four phases (Design → Export → Implementation → QA), and the non-negotiable export rules: use `get_jsx` (never reconstruct from `get_computed_styles`), swap kit-component spans for kit-component imports instead of rebuilding markup, drop the Paper artboard frame so screens fill the viewport, and screenshot-verify every screen and component against its artboard before calling the export done. Sprint 06 skipped these and its 21 screens had to be scrapped and redone.
+
 **Convention:** every mock data source is marked with a `// TODO(mock):` comment at its definition, so a repo-wide search always shows exactly what's still fake and needs wiring in the development sprint.
 
 **Output:**
@@ -153,7 +155,7 @@ Paper.design does not have a built-in clickable-prototype mode — its output is
 
 **Agent role:** Developer / Tech Lead (implementation mode).
 
-**Process:** The UI already exists — it was built and approved in the design sprint, routed and functioning on mock data. This sprint's job is narrower than a traditional "build the feature" sprint: **replace every `TODO(mock)` data source with real logic** (API calls, database queries, business rules), without touching the approved UI. **No new UI/UX decisions get made in this sprint.** Design questions are out of scope here; if one surfaces, it goes back to a design sprint, not resolved ad hoc mid-build. Use Plan Mode before non-trivial implementation work. Delegate to subagents deliberately — an Explore subagent for unfamiliar code areas, an implementation subagent for the feature itself, a reviewer subagent to check the work before it's considered done. Use hooks to enforce what a human tech lead would otherwise have to nag about: run tests before stopping, lint/format on every edit, block edits outside intended paths.
+**Process:** The UI already exists — it was built and approved in the design sprint, routed and functioning on mock data. This sprint's job is narrower than a traditional "build the feature" sprint: **replace every `TODO(mock)` data source with real logic** (API calls, database queries, business rules), without touching the approved UI. This is Phase C of `docs/design/export-workflow.md` — move the screen skeleton from `docs/design/screens/<slug>/` to its real `app/**` route, wire orchestration (which drawer/tab/filter is active, what submit does), swap the fixtures import for real `lib/domain` calls, delete the `TODO(mock)` markers, and leave the `/design-preview/<slug>` route in place as the permanent visual-regression reference. **No new UI/UX decisions get made in this sprint.** Design questions are out of scope here; if one surfaces, it goes back to a design sprint, not resolved ad hoc mid-build. Use Plan Mode before non-trivial implementation work. Delegate to subagents deliberately — an Explore subagent for unfamiliar code areas, an implementation subagent for the feature itself, a reviewer subagent to check the work before it's considered done. Use hooks to enforce what a human tech lead would otherwise have to nag about: run tests before stopping, lint/format on every edit, block edits outside intended paths.
 
 **Output:** Working, committed code with all `TODO(mock)` sources replaced by real data/logic — including the tests defined in this sprint's scope, per the sprint-sizing rule from Phase 1, Session 3.
 
@@ -266,6 +268,7 @@ project-root/
 | `sprints/sprint-XX-[type]-[name].md` | Phase 1, Session 3 (per sprint) | Sprint type (Design/Development/QA), scope, acceptance criteria, status |
 | `design-principles.md` | Phase 2 | Product-wide UI/UX rules and anti-patterns |
 | Paper.design component library | Phase 2 | Reusable, stateful components |
+| `design/export-workflow.md` | Phase 2 (method), applied every Phase 3.1/3.2 | Required Paper-to-code export method: get_jsx, component-swap, screenshot-verify |
 | `design/flows/feature-name-flow.md` | Phase 3.1 (per feature) | User flow for that specific feature |
 | `PROGRESS.md` | Ongoing, updated per sprint | Running status log across sessions |
 

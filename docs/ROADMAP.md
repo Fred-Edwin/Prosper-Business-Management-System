@@ -1,11 +1,18 @@
 # Prosper — Roadmap
 
-**Status:** Stage 1 approved. Sprint breakdown (Stage 2) in progress — see
-`docs/sprints/` for individual sprint files as they're approved.
-Milestone 1's design + design-export phases are complete (Sprints 01–06);
-its backend/domain sprints (07–10) are next — see
-`docs/milestones/milestone-01-the-business-exists.md` §0/§5 for current
-status.
+**Status:** Stage 1 (this milestone list) approved.
+
+**Milestone 1 — in progress.** Foundation (Sprint 01) and the full
+design phase are done and approved in Paper. The design *export* (Sprint
+06) was done wrongly and scrapped — 20 of 21 screens deleted, being
+re-exported per `docs/design/export-workflow.md`. No M1 domain logic or
+API routes exist yet. The authoritative plan for finishing M1 — pinned
+features, the 21-screen master table, and the remaining ~8-session
+sequence — is **`docs/sprints/milestone-1-plan.md`**.
+`docs/milestones/milestone-01-the-business-exists.md` is retained for
+original intent/reasoning only.
+
+Milestones 2–5 below are unchanged and not yet broken into sprints.
 
 This roadmap groups the system's features into milestones, ordered by
 dependency, and framed around what the business can actually *do* once
@@ -46,13 +53,18 @@ Design/Development/QA pattern.
 
 ## Milestone 1 — The business exists in the system
 
-**Detailed Plan & Progress Tracking:** See [`docs/milestones/milestone-01-the-business-exists.md`](milestones/milestone-01-the-business-exists.md)
+**Current plan & session sequence:** [`docs/sprints/milestone-1-plan.md`](sprints/milestone-1-plan.md).
+Original intent/reasoning: [`docs/milestones/milestone-01-the-business-exists.md`](milestones/milestone-01-the-business-exists.md) (historical).
 
-| Feature | PRD |
-|---|---|
-| Catalog & Locations | §4.1 |
-| Store & Stock Movements | §4.2 |
-| Assets | §4.10 |
+| Feature | PRD | Status |
+|---|---|---|
+| Catalog & Locations | §4.1 | Designed (Paper, approved). Screen re-export + backend + wiring pending. |
+| Store & Stock Movements | §4.2 | Designed (Paper, approved). Screen re-export + backend + wiring pending. |
+| Assets | §4.10 | Designed (Paper, approved). Screen re-export + backend + wiring pending. |
+
+`/admin/financials` (stock-purchase + reconciliation slice only) is also
+in M1 scope, under Store & Stock Movements — the full Financials feature
+is Milestone 3.
 
 **Store & Stock Movements** covers the full `StockMovement` ledger:
 purchase payment (Admin); purchase receipt (Store Manager **or** Canteen

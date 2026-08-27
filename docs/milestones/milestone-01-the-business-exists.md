@@ -1,12 +1,17 @@
 # Milestone 1: The Business Exists in the System
 
-**Document Status:** Approved Milestone Plan — sections 1–3 (goal, key
-decisions, screen inventory) describe original intent and are
-superseded where noted in §0 below. Sections 4–6 (technical tasks,
-slice breakdown, progress checklist) are the **original plan**, not yet
-updated to match actual sprint execution — treat their sprint numbers
-and checkboxes as historical, not current status. See §0 for what's
-actually true today.
+**Document Status: HISTORICAL.** The authoritative, current plan for
+finishing Milestone 1 is **`docs/sprints/milestone-1-plan.md`** — pinned
+feature list, the 21-screen master table with artboard IDs, carried-forward
+design decisions, and the remaining session plan. Read that first.
+
+This document is kept for its original intent and reasoning: sections
+1–3 (goal, key architectural/UX decisions, screen inventory) still
+describe *why* M1 is shaped the way it is; sections 4–6 (technical
+tasks, slice breakdown, progress checklist) are the **original plan**
+and their sprint numbers / checkboxes are historical, not current
+status. §0 below was a mid-effort status note — now also superseded by
+`milestone-1-plan.md`.
 **Milestone Goal:** Establish the master product catalog, location pricing, asset register, and the complete append-only stock movement ledger across Restaurant, Canteen, and Store.
 
 ---
@@ -23,15 +28,13 @@ actually true today.
 - **Design tokens are finalized** — OKLCH color system, full spacing/
   type/radius scale, plus a `--nav-*` token set added during Sprint 05
   to eliminate raw hex values from the shell chrome.
-- **Design export is done (Sprint 06)** — the approved kit is real code:
-  `components/kit/` (28 files, 16 areas), `components/shells/` (4 files,
-  covering all 5 shell states), all 21 screens exported to
-  `docs/design/screens/<slug>/{page.tsx,mock-data.ts}` with real data
-  pulled from Paper and marked `TODO(mock)`, and a browsable
-  `/design-preview` route listing all 21. Real app routes
-  (`app/admin`, `app/{cashier,store-manager,canteen}`) are rewired to the
-  new shell components and compile/boot clean. See
-  `docs/sprints/sprint-06-design-export.md` for the full session record.
+- **Design export (Sprint 06) was scrapped.** It exported 21 screens by
+  reconstruction-from-computed-styles; they did not match Paper and were
+  deleted. The component kit and shells survived (kit later audited, 6
+  defects fixed). One reference screen was re-exported correctly. The
+  re-export is planned in `docs/sprints/milestone-1-plan.md` per
+  `docs/design/export-workflow.md`. Do not trust this bullet's original
+  claim that the export "is done."
 - **Not yet started:** any real domain logic, API routes, or database
   wiring for Catalog, Stock Movements, or Assets. Everything in §4's
   Backend & Domain Tasks checklist is still open.
@@ -39,9 +42,8 @@ actually true today.
 ### Decisions that superseded the original plan (§§1–3 below)
 
 These were made during the Sprint 05 design pass and change what's
-actually being built vs. what §§1–3 originally described. Full
-reasoning lives in `docs/sprints/sprint-05-screen-reassembly-handover.md`
-§5.
+actually being built vs. what §§1–3 originally described. They are
+carried forward, current, in `docs/sprints/milestone-1-plan.md` §4.
 
 1. **No `/admin/stock/reconciliation` screen** (contradicts §3A's row
    for it). Folded into a **Reconciliation section on `/admin/financials`**
@@ -71,10 +73,12 @@ reasoning lives in `docs/sprints/sprint-05-screen-reassembly-handover.md`
 
 | Question | See |
 |---|---|
-| What was actually built, screen by screen, with real data | `docs/sprints/sprint-05-screen-reassembly-handover.md` |
-| Binding design rules, current token set, component kit inventory | `docs/design/design-principles.md` |
-| What the next session (component/screen code export) will do | `docs/sprints/sprint-06-design-export.md` |
+| Current M1 plan: pinned features, 21-screen master table, session plan | `docs/sprints/milestone-1-plan.md` |
+| Binding design rules, current token set, component kit inventory, open design decisions | `docs/design/design-principles.md` |
+| Required Paper → code export method | `docs/design/export-workflow.md` |
+| Open, undecided design/dev questions | `docs/DECISIONS.md` ADR-36 |
 | Process lessons from the design sprint (mistakes, fixes, what to repeat) | `docs/sprints/sprint-05-lessons-learned.md` |
+| Kit audit findings / known-suspect patterns | `docs/sprints/component-audit-report.md` |
 | Paper-tool-specific extraction gotchas | `docs/design/paper-workflow-lessons.md` |
 
 ### What's left
@@ -232,9 +236,9 @@ session.
 │                                     │   receipts→hub banners, +2 new     │
 │                                     │   Stock Levels screens)             │
 ├────────────────────────────────────┼─────────────────────────────────────┤
-│ Design → Code scaffolding           │ Sprint 06: Design Export        ✅  │
-│ (components/kit, screen skeletons,  │   done — see                        │
-│ /design-preview route)              │   sprint-06-design-export.md        │
+│ Design → Code scaffolding           │ Sprint 06: Design Export   ⚠ SCRAP │
+│ (components/kit, screen skeletons,  │   screens deleted, being redone —   │
+│ /design-preview route)              │   see milestone-1-plan.md           │
 ├────────────────────────────────────┼─────────────────────────────────────┤
 │ SLICE 1 backend (Catalog domain)    │ Already covered by Sprints 03–04    │
 │                                     │ above — Slice 1 is fully done.      │
@@ -249,11 +253,13 @@ session.
 └────────────────────────────────────┴─────────────────────────────────────┘
 ```
 
-Sprint 06 must land before Sprint 07 can start — Sprint 07 wires real
-domain logic into the screen skeletons Sprint 06 produces, per the
-design-sprint/development-sprint boundary in `CLAUDE.md`'s SDLC (no
-domain logic gets written directly against Paper designs; it gets
-written against the exported component/screen scaffolding).
+**This slice/sprint table is superseded** by
+`docs/sprints/milestone-1-plan.md` §5 — the real remaining sequence is:
+Session 2 (Designer Paper pass) → Session 3 (rebuild kit via get_jsx) →
+Session 4 (re-export 20 screens) → Sessions 5–9 (implement F1 / F2×3 /
+F3) → QA. The design-sprint/development-sprint boundary still holds: no
+domain logic is written directly against Paper; it is written against
+the exported screen skeletons.
 
 ---
 
@@ -278,12 +284,12 @@ written against the exported component/screen scaffolding).
 - [x] Design `/store-manager/stock` and `/canteen/stock` (new screens, not in original plan — see §0).
 - [x] Full Component Kit built, coverage-audited, and token-hygiene-fixed across all 21 screens.
 
-### Design Export — ✅ Done (Sprint 06)
-- [x] Convert the 16 kit components + 5 shells into `components/kit/` and `components/shells/`.
-- [x] Export all 21 screens as skeletons (`docs/design/screens/<screen>/page.tsx` + `mock-data.ts`).
-- [x] Build `/design-preview` route for live fidelity checking.
-- [ ] Resolve the Ledger Maximize/Icon-Rail collapse-persistence sub-question with the Admin (see §0, item 5) — still open, not this sprint's job.
-- Full task spec: `docs/sprints/sprint-06-design-export.md`.
+### Design Export — ⚠ SCRAPPED (Sprint 06), being redone
+- [x] Convert the 16 kit components + 5 shells into `components/kit/` and `components/shells/` — kit survived (later audited, 6 defects fixed); to be rebuilt from Paper via `get_jsx` in Session 3.
+- [ ] ~~Export all 21 screens~~ — done wrongly (reconstruction, not `get_jsx`), 20 deleted; 1 reference screen re-exported correctly. Re-export is Session 4.
+- [x] Build `/design-preview` route — reduced to the one reference screen; rebuilt in Session 4.
+- [ ] Open items now tracked in `docs/DECISIONS.md` ADR-36 (Maximize persistence, CORRECTED chip, delete-dialog labels, EmptyState).
+- Current plan: `docs/sprints/milestone-1-plan.md`; method: `docs/design/export-workflow.md`.
 
 ### Slice 2: Stock Movements Ledger — ⏳ Not started (Sprints 07–08)
 - [ ] Implement `lib/domain/stock` movement ledger & delta calculation engine.
