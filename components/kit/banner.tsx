@@ -1,99 +1,116 @@
+// Verbatim transcription of Paper artboard "Component Kit — Banners & Cards" (6SB-0):
+//   "Transfer Banner" (6SG-0)              — amber, bg-warning-bg / border-warning
+//   "Purchase Delivery Banner (info)" (9Q9-0) — blue,  bg-info-bg / border-info
+//   "Transfer Banner — Flagged" (9QL-0)   — opacity-[0.7] + the actions row `hidden`
+//
+// Same markup in all three:
+//   container: flex flex-col p-(--sp-6) rounded-md gap-(--sp-5) border border-solid
+//   heading  : font-(--weight-semibold) text-sm/sm in the semantic color (text-warning /
+//              text-info); detail line font-ui [color:var(--text-secondary)] text-caption/micro
+//   actions  : flex items-center gap-(--sp-4); primary action `h-36 grow rounded-sm` with
+//              `bg-success` (transfer) or `bg-info` (purchase-delivery), label
+//              font-(--weight-semibold) text-white text-sm/sm; secondary "Flag Variance"
+//              `h-36 px-(--sp-6) rounded-sm bg-(--surface-page) border border-solid
+//              [border-color:var(--border-strong)]`.
+//
+// milestone-1-plan.md §4.7 requires both named variants — exported here as
+// <TransferBanner> and <PurchaseDeliveryBanner> wrapping a shared <Banner>.
+"use client";
+
 import * as React from "react";
-import { AlertCircle, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function TransferBanner({
-  title,
-  detail,
-  onAccept,
-  acceptLabel,
-  onFlagVariance,
-}: {
+type BannerTone = "warning" | "info";
+
+interface BannerProps {
+  tone: BannerTone;
   title: string;
   detail: string;
-  acceptLabel: string;
-  onAccept: () => void;
-  onFlagVariance: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-3 rounded-md border border-solid border-warning bg-warning-bg p-4">
-      <div className="flex flex-col gap-1">
-        <p className="font-ui text-sm/sm font-semibold text-warning">{title}</p>
-        <p className="font-ui text-caption/caption text-text-secondary">{detail}</p>
-      </div>
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onAccept}
-          className="flex h-9 grow items-center justify-center rounded-sm bg-success font-ui text-sm/sm font-semibold text-white outline-none hover:opacity-90"
-        >
-          {acceptLabel}
-        </button>
-        <button
-          type="button"
-          onClick={onFlagVariance}
-          className="flex h-9 shrink-0 items-center justify-center rounded-sm border border-solid border-border-strong bg-surface-page px-6 font-ui text-sm/sm font-medium text-text-primary outline-none hover:bg-surface-hover"
-        >
-          Flag Variance
-        </button>
-      </div>
-    </div>
-  );
+  /** Label for the primary (accept/match) action. */
+  primaryLabel?: string;
+  onPrimary?: () => void;
+  onFlag?: () => void;
+  /** Flagged state: actions removed, whole banner dimmed. */
+  flagged?: boolean;
+  className?: string;
 }
 
-export function PurchaseDeliveryBanner({
+const TONE: Record<BannerTone, { box: string; heading: string; primaryBg: string }> = {
+  warning: {
+    box: "bg-warning-bg border-warning",
+    heading: "text-warning",
+    primaryBg: "bg-success",
+  },
+  info: {
+    box: "bg-info-bg border-info",
+    heading: "text-info",
+    primaryBg: "bg-info",
+  },
+};
+
+function Banner({
+  tone,
   title,
   detail,
-  onAccept,
-  acceptLabel,
-  onFlagVariance,
-}: {
-  title: string;
-  detail: string;
-  acceptLabel: string;
-  onAccept: () => void;
-  onFlagVariance: () => void;
-}) {
+  primaryLabel,
+  onPrimary,
+  onFlag,
+  flagged = false,
+  className,
+}: BannerProps) {
+  const t = TONE[tone];
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-solid border-info bg-info-bg p-4">
-      <div className="flex flex-col gap-1">
-        <p className="font-ui text-sm/sm font-semibold text-info">{title}</p>
-        <p className="font-ui text-caption/caption text-text-secondary">{detail}</p>
+    <div
+      className={cn(
+        "[font-synthesis:none] flex flex-col p-(--sp-6) rounded-md gap-(--sp-5) border border-solid antialiased",
+        t.box,
+        flagged && "opacity-[0.7]",
+        className,
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-[2px]">
+          <div className={cn("font-ui font-(--weight-semibold) text-sm/sm", t.heading)}>
+            {title}
+          </div>
+          <div className="font-ui [color:var(--text-secondary)] text-caption/micro">
+            {detail}
+          </div>
+        </div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className={cn("flex items-center gap-(--sp-4)", flagged && "hidden")}>
         <button
           type="button"
-          onClick={onAccept}
-          className="flex h-9 grow items-center justify-center rounded-sm bg-success font-ui text-sm/sm font-semibold text-white outline-none hover:opacity-90"
+          onClick={onPrimary}
+          className={cn(
+            "flex items-center justify-center h-[36px] grow rounded-sm kit-interactive kit-focus-ring",
+            t.primaryBg,
+          )}
         >
-          {acceptLabel}
+          <span className="font-ui font-(--weight-semibold) text-white text-sm/sm">
+            {primaryLabel}
+          </span>
         </button>
         <button
           type="button"
-          onClick={onFlagVariance}
-          className="flex h-9 shrink-0 items-center justify-center rounded-sm border border-solid border-border-strong bg-surface-page px-6 font-ui text-sm/sm font-medium text-text-primary outline-none hover:bg-surface-hover"
+          onClick={onFlag}
+          className="flex items-center justify-center h-[36px] px-(--sp-6) rounded-sm shrink-0 bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-interactive kit-focus-ring"
         >
-          Flag Variance
+          <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-primary)] text-sm/sm">
+            Flag Variance
+          </span>
         </button>
       </div>
     </div>
   );
 }
 
-export function CalculatedImpactBanner({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn("flex items-start gap-2 rounded-sm bg-warning-bg p-5", className)}>
-      <AlertCircle className="mt-0.5 size-4 shrink-0 text-warning" strokeWidth={1.5} aria-hidden />
-      <p className="font-ui text-sm/sm text-warning">{children}</p>
-    </div>
-  );
+export type TransferBannerProps = Omit<BannerProps, "tone">;
+
+export function TransferBanner(props: TransferBannerProps) {
+  return <Banner tone="warning" {...props} />;
 }
 
-export function InfoBanner({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn("flex items-start gap-2 rounded-sm bg-info-bg p-3", className)}>
-      <Info className="mt-0.5 size-4 shrink-0 text-info" strokeWidth={1.5} aria-hidden />
-      <p className="font-ui text-sm/sm text-info">{children}</p>
-    </div>
-  );
+export function PurchaseDeliveryBanner(props: TransferBannerProps) {
+  return <Banner tone="info" {...props} />;
 }

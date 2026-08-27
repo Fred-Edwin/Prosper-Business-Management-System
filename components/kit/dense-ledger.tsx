@@ -1,149 +1,296 @@
+// Verbatim transcription of Paper artboard "Component Kit — Tables" (6ET-0):
+// "Ledger Shell" (6FR-0) — header (6KG-0), data rows (6MY-0 …), the "Ledger Row — Hover"
+// state (9OM-0), the "Ledger — Empty state" (9OZ-0) and the "Ledger Footer" (6O1-0).
+// Every fixed value is exactly as get_jsx emitted:
+//
+//   shell : flex flex-col [width:100%] border border-solid [border-color:var(--border-subtle)]
+//   header: h-[32px] px-(--sp-6) gap-(--sp-5) bg-info-bg border-b border-b-solid
+//           border-b-gray-600 ; cell font-(--weight-semibold) text-[10px] tracking-[0.04em]
+//           uppercase leading-[12px] text-info (numeric cols add text-right flex justify-end
+//           flex-wrap)
+//   data row: h-[38px] px-(--sp-6) gap-(--sp-5) border-b border-b-solid
+//             [border-bottom-color:var(--border-subtle)]
+//   data cell: font-mono font-(--weight-regular) text-sm/micro, numeric cols text-right
+//              flex justify-end flex-wrap. Value color: positive → text-success,
+//              negative → text-danger, empty ("—") → [color:var(--text-tertiary)].
+//              Closing / Closing Value cols → font-(--weight-semibold) [color:var(--text-primary)].
+//   corrected cell (ADR-36a / §4.3): the value in its semantic color PLUS
+//              `underline-offset-2 [text-decoration:underline_1px]`. NO chip. The cell is the
+//              correction-drawer click target.
+//   row hover: [background-color:var(--surface-hover)]  (the §9.3 load-bearing affordance)
+//   empty:    h-[38px] px-(--sp-6) justify-center py-(--sp-7); single centered
+//             font-(--weight-medium) [color:var(--text-tertiary)] text-sm/micro line
+//   footer:   h-[36px] px-(--sp-6) gap-(--sp-5) bg-gray-900; cell font-ui
+//             font-(--weight-semibold) text-sm/micro, text-white / text-success / text-danger;
+//             the trailing Edit slot is text-transparent.
+//
+// Column widths from the artboard header: Product `grow min-w-[140px]`, Opening `w-[90px]`,
+// Purchases `w-[100px]`, Issues `w-[90px]`, Production `w-[100px]`, Transfer In `w-[110px]`,
+// Transfer Out `w-[120px]`, Sold `w-[80px]`, Sold Value `w-[100px]`, Closing `w-[90px]`,
+// Closing Value `w-[110px]`, Edit `w-[50px]`.
+//
+// LOCATION COLUMN (added Session 4b, owner-authorised — see DECISIONS.md ADR-37a). The
+// Admin Stock ledger screens (798-0 / 7G9-0 / 7LJ-0) draw a leading Location column
+// (`w-[100px]`, `[color:var(--text-secondary)] text-sm/sm`) that the base kit artboard
+// (6ET-0) does not. It is OPT-IN via `showLocation` + `LedgerRow.location`; omitted, the
+// component is byte-identical to the 6ET-0 transcription. The Paper kit artboard 6ET-0 is
+// currently stale w.r.t. this prop — a follow-up Design Sprint adds the Location-column
+// state to 6ET-0 and this comment is removed.
+"use client";
+
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export interface LedgerRow {
-  id: string;
-  location?: string;
-  product: string;
-  opening: number;
-  purchases: number | null;
-  issues: number | null;
-  production: number | null;
-  transferIn: number | null;
-  transferOut: number | null;
-  sold: number | null;
-  soldValue: number | null;
-  closing: number;
-  closingValue: number;
+/** A single ledger cell value. `dash` renders the tertiary "—". */
+export interface LedgerCell {
+  /** Rendered text. Ignored when `dash` is true. */
+  value?: string;
+  dash?: boolean;
+  tone?: "success" | "danger" | "default";
+  /** Semantic-color + 1px underline; marks this cell as corrected (ADR-36a). */
   corrected?: boolean;
 }
 
-function fmt(value: number | null, signed: boolean): string {
-  if (value === null || value === undefined) return "—";
-  const abs = Math.abs(value).toLocaleString("en-KE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  if (!signed) return abs;
-  return value > 0 ? `+${abs}` : value < 0 ? `-${abs}` : abs;
+export interface LedgerRow {
+  id: string;
+  /** Optional leading Location cell — rendered only when the ledger has `showLocation`. */
+  location?: string;
+  product: string;
+  opening: LedgerCell;
+  purchases: LedgerCell;
+  issues: LedgerCell;
+  production: LedgerCell;
+  transferIn: LedgerCell;
+  transferOut: LedgerCell;
+  sold: LedgerCell;
+  soldValue: LedgerCell;
+  closing: LedgerCell;
+  closingValue: LedgerCell;
 }
 
-function fmtMoney(value: number | null): string {
-  if (value === null || value === undefined) return "—";
-  return value.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export interface LedgerTotals {
+  label: string;
+  opening: LedgerCell;
+  purchases: LedgerCell;
+  issues: LedgerCell;
+  production: LedgerCell;
+  transferIn: LedgerCell;
+  transferOut: LedgerCell;
+  sold: LedgerCell;
+  soldValue: LedgerCell;
+  closing: LedgerCell;
+  closingValue: LedgerCell;
 }
 
-const MOVEMENT_COLS: { key: keyof LedgerRow; header: string; width: number; signed: boolean }[] = [
-  { key: "opening", header: "Opening", width: 90, signed: false },
-  { key: "purchases", header: "Purchases (+)", width: 100, signed: true },
-  { key: "issues", header: "Issues (-)", width: 90, signed: true },
-  { key: "production", header: "Production (+)", width: 100, signed: true },
-  { key: "transferIn", header: "Transfer In (+)", width: 110, signed: true },
-  { key: "transferOut", header: "Transfer Out (-)", width: 120, signed: true },
-  { key: "sold", header: "Sold (-)", width: 80, signed: true },
+export interface DenseLedgerProps {
+  rows: LedgerRow[];
+  totals?: LedgerTotals;
+  emptyMessage?: string;
+  /**
+   * When true, a leading Location column (`w-[100px]`) is rendered before Product, using
+   * `LedgerRow.location`. The Admin Stock ledger screens set this (ADR-37a); the base
+   * catalog/reconciliation usages leave it off. Header label = "Location".
+   */
+  showLocation?: boolean;
+  /**
+   * When true, rows/header/footer are laid out `w-max min-w-full` so the table scrolls
+   * horizontally inside its own `overflow-x-auto` wrapper instead of squashing to
+   * `[width:100%]`. The Admin Stock ledger screens set this.
+   */
+  horizontalScroll?: boolean;
+  /** Called with (rowId, columnKey) when a data cell is clicked (correction target). */
+  onCellClick?: (rowId: string, columnKey: string) => void;
+  className?: string;
+}
+
+// (key, header, width class, whether numeric/right-aligned)
+const COLUMNS: [keyof LedgerRow & string, string, string, boolean][] = [
+  ["product", "Product", "grow min-w-[140px]", false],
+  ["opening", "Opening", "w-[90px]", true],
+  ["purchases", "Purchases (+)", "w-[100px]", true],
+  ["issues", "Issues (-)", "w-[90px]", true],
+  ["production", "Production (+)", "w-[100px]", true],
+  ["transferIn", "Transfer In (+)", "w-[110px]", true],
+  ["transferOut", "Transfer Out (-)", "w-[120px]", true],
+  ["sold", "Sold (-)", "w-[80px]", true],
+  ["soldValue", "Sold Value", "w-[100px]", true],
+  ["closing", "Closing", "w-[90px]", true],
+  ["closingValue", "Closing Value", "w-[110px]", true],
 ];
+
+const CLOSING_KEYS = new Set(["closing", "closingValue"]);
+
+function toneClass(cell: LedgerCell): string {
+  if (cell.dash) return "[color:var(--text-tertiary)]";
+  if (cell.tone === "success") return "text-success";
+  if (cell.tone === "danger") return "text-danger";
+  return "[color:var(--text-primary)]";
+}
+
+function DataCell({
+  cell,
+  colKey,
+  widthCls,
+  numeric,
+  onClick,
+}: {
+  cell: LedgerCell;
+  colKey: string;
+  widthCls: string;
+  numeric: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      className={cn(
+        "font-mono text-sm/micro shrink-0",
+        CLOSING_KEYS.has(colKey)
+          ? "font-(--weight-semibold)"
+          : "font-(--weight-regular)",
+        widthCls,
+        numeric && "text-right flex justify-end flex-wrap",
+        toneClass(cell),
+        cell.corrected && "underline-offset-2 [text-decoration:underline_1px]",
+        onClick && "cursor-pointer",
+      )}
+    >
+      {cell.dash ? "—" : cell.value}
+    </div>
+  );
+}
 
 export function DenseLedger({
   rows,
-  showLocation,
-  onEdit,
+  totals,
+  emptyMessage = "No movements recorded for this filter.",
+  showLocation = false,
+  horizontalScroll = false,
+  onCellClick,
   className,
-}: {
-  rows: LedgerRow[];
-  showLocation?: boolean;
-  onEdit?: (row: LedgerRow) => void;
-  className?: string;
-}) {
-  const totals = rows.reduce(
-    (acc, r) => {
-      acc.opening += r.opening;
-      acc.purchases += r.purchases ?? 0;
-      acc.issues += r.issues ?? 0;
-      acc.production += r.production ?? 0;
-      acc.transferIn += r.transferIn ?? 0;
-      acc.transferOut += r.transferOut ?? 0;
-      acc.sold += r.sold ?? 0;
-      acc.soldValue += r.soldValue ?? 0;
-      acc.closing += r.closing;
-      acc.closingValue += r.closingValue;
-      return acc;
-    },
-    { opening: 0, purchases: 0, issues: 0, production: 0, transferIn: 0, transferOut: 0, sold: 0, soldValue: 0, closing: 0, closingValue: 0 },
-  );
+}: DenseLedgerProps) {
+  // Row/header/footer width behaviour: `[width:100%]` (base) or `w-max min-w-full`
+  // (horizontalScroll — the Admin Stock ledger screens, so the wide table scrolls inside
+  // its own overflow-x-auto wrapper).
+  const lineWidth = horizontalScroll ? "w-max min-w-full" : "[width:100%]";
 
   return (
-    <div className={cn("w-full overflow-auto rounded-none border border-solid border-border-subtle", className)}>
-      <div className="min-w-max">
-        <div className="flex h-8 items-center gap-3 border-b border-solid border-gray-600 bg-info-bg pl-6">
-          {showLocation && <span className="w-[140px] shrink-0 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-info">Location</span>}
-          <span className="min-w-[140px] grow border-r border-solid border-border-subtle pr-3 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-info">Product</span>
-          {MOVEMENT_COLS.map((c) => (
-            <span key={c.key} style={{ width: c.width }} className="shrink-0 text-right font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-info">
-              {c.header}
-            </span>
-          ))}
-          <span className="w-[100px] shrink-0 text-right font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-info">Sold Value</span>
-          <span className="w-[90px] shrink-0 text-right font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-info">Closing</span>
-          <span className="w-[110px] shrink-0 pr-6 text-right font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-info">Closing Value</span>
-          {onEdit && <span className="w-[50px] shrink-0 pr-6 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-info">Edit</span>}
-        </div>
-
-        {rows.map((row) => (
-          <div key={row.id} className="flex h-[38px] items-center gap-3 border-b border-solid border-border-subtle pl-6 last:border-b-0">
-            {showLocation && <span className="w-[140px] shrink-0 font-ui text-sm/sm text-text-secondary">{row.location}</span>}
-            <span className="flex min-w-[140px] grow items-center gap-1.5 border-r border-solid border-border-subtle pr-3 font-ui text-sm/sm font-medium text-text-primary">
-              {row.product}
-              {row.corrected && (
-                <span className="rounded-sm bg-warning-bg px-1.5 py-0.5 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-warning">
-                  Corrected
-                </span>
-              )}
-            </span>
-            {MOVEMENT_COLS.map((c) => {
-              const value = row[c.key] as number | null;
-              return (
-                <span
-                  key={c.key}
-                  style={{ width: c.width }}
-                  className={cn(
-                    "shrink-0 text-right font-mono text-sm/sm",
-                    c.signed && value !== null && value > 0 && "text-success",
-                    c.signed && value !== null && value < 0 && "text-danger",
-                    (!c.signed || value === null) && "text-text-primary",
-                  )}
-                >
-                  {fmt(value, c.signed)}
-                </span>
-              );
-            })}
-            <span className="w-[100px] shrink-0 text-right font-mono text-sm/sm text-text-primary">{fmtMoney(row.soldValue)}</span>
-            <span className="w-[90px] shrink-0 text-right font-mono text-sm/sm font-semibold text-text-primary">{fmt(row.closing, false)}</span>
-            <span className="w-[110px] shrink-0 pr-6 text-right font-mono text-sm/sm font-semibold text-text-primary">{fmtMoney(row.closingValue)}</span>
-            {onEdit && (
-              <button
-                type="button"
-                onClick={() => onEdit(row)}
-                className="w-[50px] shrink-0 pr-6 text-left font-ui text-sm/sm font-medium text-accent outline-none hover:underline"
-              >
-                Edit
-              </button>
+    <div
+      className={cn(
+        "[font-synthesis:none] flex flex-col [width:100%] border border-solid [border-color:var(--border-subtle)] antialiased",
+        className,
+      )}
+    >
+      {/* Ledger Header */}
+      <div
+        className={cn(
+          "flex items-center h-[32px] px-(--sp-6) gap-(--sp-5) shrink-0 bg-info-bg border-b border-b-solid border-b-gray-600",
+          lineWidth,
+        )}
+      >
+        {showLocation && (
+          <div className="w-[100px] shrink-0 font-ui font-(--weight-semibold) tracking-[0.02em] uppercase inline-block text-info text-caption/micro">
+            Location
+          </div>
+        )}
+        {COLUMNS.map(([key, header, widthCls, numeric]) => (
+          <div
+            key={key}
+            className={cn(
+              "font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase leading-[12px] text-info shrink-0",
+              widthCls,
+              numeric && "text-right flex justify-end flex-wrap",
             )}
+          >
+            {header}
           </div>
         ))}
-
-        <div className="flex h-9 items-center gap-3 bg-gray-900 pl-6">
-          {showLocation && <span className="w-[140px] shrink-0" />}
-          <span className="min-w-[140px] grow border-r border-solid border-white/10 pr-3 font-ui text-sm/sm font-semibold text-white">
-            Totals (reconciled)
-          </span>
-          {MOVEMENT_COLS.map((c) => (
-            <span key={c.key} style={{ width: c.width }} className="shrink-0 text-right font-mono text-sm/sm font-semibold text-white">
-              {fmt(totals[c.key as keyof typeof totals] as number, c.signed)}
-            </span>
-          ))}
-          <span className="w-[100px] shrink-0 text-right font-mono text-sm/sm font-semibold text-white">{fmtMoney(totals.soldValue)}</span>
-          <span className="w-[90px] shrink-0 text-right font-mono text-sm/sm font-semibold text-white">{fmt(totals.closing, false)}</span>
-          <span className="w-[110px] shrink-0 pr-6 text-right font-mono text-sm/sm font-semibold text-white">{fmtMoney(totals.closingValue)}</span>
-          {onEdit && <span className="w-[50px] shrink-0 pr-6" />}
+        <div className="w-[50px] font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase shrink-0 justify-start leading-[12px] text-info">
+          Edit
         </div>
       </div>
+
+      {/* Data Rows / Empty */}
+      {rows.length === 0 ? (
+        <div className="flex items-center h-[38px] px-(--sp-6) [width:100%] justify-center py-(--sp-7) shrink-0">
+          <div className="font-ui font-(--weight-medium) min-w-[0px] text-center flex justify-center flex-wrap [color:var(--text-tertiary)] text-sm/micro">
+            {emptyMessage}
+          </div>
+        </div>
+      ) : (
+        rows.map((row) => (
+          <div
+            key={row.id}
+            className={cn(
+              "flex items-center h-[38px] px-(--sp-6) gap-(--sp-5) shrink-0 border-b border-b-solid [border-bottom-color:var(--border-subtle)] kit-row",
+              lineWidth,
+            )}
+          >
+            {showLocation && (
+              <div className="w-[100px] shrink-0 font-ui inline-block [color:var(--text-secondary)] text-sm/sm">
+                {row.location}
+              </div>
+            )}
+            <div className="font-ui font-(--weight-medium) grow min-w-[140px] [color:var(--text-primary)] text-sm/micro">
+              {row.product}
+            </div>
+            {COLUMNS.slice(1).map(([key, , widthCls, numeric]) => (
+              <DataCell
+                key={key}
+                cell={row[key] as LedgerCell}
+                colKey={key}
+                widthCls={widthCls}
+                numeric={numeric}
+                onClick={
+                  onCellClick ? () => onCellClick(row.id, key) : undefined
+                }
+              />
+            ))}
+            <div className="w-[50px] font-ui font-(--weight-medium) shrink-0 justify-start text-accent text-sm/micro">
+              Edit
+            </div>
+          </div>
+        ))
+      )}
+
+      {/* Ledger Footer */}
+      {totals && (
+        <div
+          className={cn(
+            "flex items-center h-[36px] px-(--sp-6) gap-(--sp-5) shrink-0 bg-gray-900",
+            lineWidth,
+          )}
+        >
+          {showLocation && <div className="w-[100px] shrink-0" />}
+          <div className="font-ui font-(--weight-semibold) grow min-w-[140px] text-white text-sm/micro">
+            {totals.label}
+          </div>
+          {COLUMNS.slice(1).map(([key, , widthCls]) => {
+            const cell = totals[key as keyof LedgerTotals] as LedgerCell;
+            const tone =
+              cell.tone === "success"
+                ? "text-success"
+                : cell.tone === "danger"
+                  ? "text-danger"
+                  : "text-white";
+            return (
+              <div
+                key={key}
+                className={cn(
+                  "font-ui font-(--weight-semibold) text-sm/micro text-right shrink-0 flex justify-end flex-wrap",
+                  widthCls,
+                  tone,
+                )}
+              >
+                {cell.dash ? "—" : cell.value}
+              </div>
+            );
+          })}
+          <div className="w-[50px] font-ui font-(--weight-semibold) shrink-0 justify-start text-transparent text-sm/micro">
+            Edit
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,45 +1,64 @@
+// Verbatim transcription of Paper artboard "Component Kit — Utility & Layout" (6WD-0):
+// "Textarea" (6XO-0) — label + a h-[72px] p-(--sp-5) rounded-sm box, border --border-strong.
+// focus (accent border) and error (danger border + danger helper) states were added to Form
+// Controls per component-states.md §2 C4 but follow the shared §9.2 / §9.8 patterns:
+// focus border via .kit-field, error border + helper via the same danger pattern as
+// text-input. disabled is the §9.7 global.
+"use client";
+
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+export interface TextareaProps
+  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
+  error?: boolean;
+  helperText?: string;
 }
 
-export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ label, id, className, disabled, rows = 3, ...props }, ref) => {
-    const field = (
+export function Textarea({
+  label,
+  error = false,
+  helperText,
+  disabled = false,
+  className,
+  id,
+  ...props
+}: TextareaProps) {
+  const reactId = React.useId();
+  const areaId = id ?? reactId;
+
+  return (
+    <div className="[font-synthesis:none] flex flex-col w-[340px] gap-[6px] shrink-0 antialiased">
+      {label && (
+        <label
+          htmlFor={areaId}
+          className="font-ui font-(--weight-medium) uppercase tracking-[0.04em] [color:var(--text-secondary)] text-caption/micro"
+        >
+          {label}
+        </label>
+      )}
       <div
         className={cn(
-          "flex rounded-sm border border-solid px-3 py-2",
-          disabled
-            ? "border-border-subtle bg-surface-subtle"
-            : "border-border-strong bg-surface-page has-[textarea:focus]:border-[1.5px] has-[textarea:focus]:border-accent",
+          "flex h-[72px] p-(--sp-5) rounded-sm shrink-0 border border-solid kit-field",
+          error ? "border-danger" : "[border-color:var(--border-strong)]",
+          className,
         )}
+        data-invalid={error || undefined}
       >
         <textarea
-          ref={ref}
-          id={id}
+          id={areaId}
           disabled={disabled}
-          rows={rows}
-          className={cn(
-            "min-w-0 grow resize-none border-none bg-transparent font-ui text-sm/sm text-text-primary outline-none placeholder:text-text-tertiary disabled:text-text-disabled",
-            className,
-          )}
+          aria-invalid={error || undefined}
+          className="font-ui [color:var(--text-primary)] text-sm/sm w-full h-full resize-none bg-transparent outline-none"
           {...props}
         />
       </div>
-    );
-
-    if (!label) return field;
-
-    return (
-      <div className="flex flex-col gap-2">
-        <label htmlFor={id} className="font-ui text-caption/caption font-medium uppercase tracking-[0.04em] text-text-secondary">
-          {label}
-        </label>
-        {field}
-      </div>
-    );
-  },
-);
-Textarea.displayName = "Textarea";
+      {helperText && (
+        <div className="font-ui font-(--weight-regular) text-danger text-caption/micro">
+          {helperText}
+        </div>
+      )}
+    </div>
+  );
+}

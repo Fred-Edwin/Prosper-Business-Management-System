@@ -120,3 +120,103 @@ body {
   font-size: var(--text-body);
   line-height: var(--leading-body);
 }
+
+/* ============================================================
+ * §9 Global interaction states — design-principles.md §9.
+ * Encoded ONCE here, not per component. The kit components opt
+ * in with the shared utility classes below (.kit-interactive,
+ * .kit-field, .kit-row) plus Tailwind hover:/focus-visible:/
+ * disabled: variants for the few states Paper draws as artboards.
+ * ============================================================ */
+
+/* 9.1 Focus-visible ring — keyboard focus only, never on mouse.
+ * On dark surfaces (side nav, bottom nav, sticky footer) the ring
+ * switches to white; opt in with .kit-focus-on-dark. Not transitioned. */
+.kit-focus-ring:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.kit-focus-ring.kit-focus-on-dark:focus-visible {
+  outline-color: var(--nav-text-active);
+}
+
+/* 9.9 Transition timing — 120ms on the interactive properties.
+ * Focus outline is deliberately excluded (must be instant). */
+.kit-interactive {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+
+/* 9.7 Disabled treatment — uniform rule for every interactive
+ * element beyond the few drawn disabled artboards. */
+.kit-interactive:disabled,
+.kit-interactive[aria-disabled="true"],
+.kit-interactive[data-disabled="true"] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* 9.3 Row / list hover tint — any clickable row. Selected wins
+ * over hover (9.4): a row with [data-selected] takes the accent
+ * tint and does not change on hover. */
+.kit-row {
+  transition: background-color 120ms ease;
+}
+.kit-row:hover {
+  background-color: var(--surface-hover);
+}
+.kit-row[data-selected="true"],
+.kit-row[data-selected="true"]:hover {
+  background-color: var(--surface-selected);
+}
+
+/* 9.2 Input focus border — text input / textarea / select / search /
+ * date field / stepper number field. Applies on ANY focus (mouse or
+ * keyboard), in addition to the keyboard-only ring from 9.1. */
+.kit-field {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+.kit-field:focus,
+.kit-field:focus-within {
+  border-color: var(--color-accent);
+}
+
+/* 9.8 Error field pattern — one treatment for every field type.
+ * The helper/error text row is authored by each component; this
+ * fixes the border. */
+.kit-field[data-invalid="true"],
+.kit-field[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+/* 9.10 Loading / skeleton — table & list loading = placeholder rows
+ * with a shimmer sweep on a 1200ms loop. */
+@keyframes kit-skeleton-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.kit-skeleton {
+  background-color: var(--surface-subtle);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--surface-hover) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: kit-skeleton-shimmer 1200ms ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kit-skeleton {
+    animation: none;
+  }
+}

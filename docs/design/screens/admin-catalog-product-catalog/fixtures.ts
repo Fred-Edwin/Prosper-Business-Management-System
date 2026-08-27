@@ -1,5 +1,6 @@
+// Design-export fixture for the "Admin Catalog — Product Catalog" screen (Paper artboard 6ZO-0).
+// Values transcribed verbatim from the artboard. Stays as the /design-preview visual-regression fixture.
 // TODO(mock): replace with real catalog query once lib/domain/catalog/listProducts is implemented.
-// Values transcribed verbatim from the Paper artboard "Admin Catalog — Product Catalog" (6ZO-0).
 
 export type CatalogCategory = "Ingredient" | "Dish" | "Goods";
 

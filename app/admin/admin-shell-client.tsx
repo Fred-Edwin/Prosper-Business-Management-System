@@ -27,7 +27,7 @@ export function AdminShellClient({
   return (
     <AdminShell
       activeNavKey={activeNavKeyFromPathname(pathname)}
-      onNavigate={(href) => router.push(href)}
+      onNavigate={(href: string) => router.push(href)}
       toolbarTitle="Prosper"
       accountName="Admin"
       accountRole="Admin"

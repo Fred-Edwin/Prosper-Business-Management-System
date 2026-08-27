@@ -7,7 +7,25 @@ import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 // Screens re-exported from Paper via get_jsx, one at a time. This list grows
 // as each screen is transcribed and verified against its Paper artboard.
 const SCREENS: { slug: string; label: string }[] = [
+  { slug: "kit", label: "Component Kit" },
+  // F1 — Catalog & Locations
   { slug: "admin-catalog-product-catalog", label: "Admin Catalog — Product Catalog" },
+  { slug: "admin-catalog-mobile", label: "Admin Catalog — Mobile" },
+  { slug: "product-drawer", label: "Product Drawer — Create / Edit" },
+  { slug: "product-delete-dialog", label: "Product Delete Dialog" },
+  // F2 — Store & Stock Movements (Financials slice)
+  { slug: "admin-financials-full-table", label: "Admin Financials — Full Table" },
+  { slug: "admin-financials-payment-drawer-open", label: "Admin Financials — Payment Drawer Open" },
+  // F2 — Store & Stock Movements (Admin Stock ledger cluster)
+  { slug: "admin-stock-ledger-full-width", label: "Admin Stock — Ledger (Full Width)" },
+  { slug: "admin-stock-ledger-sidebar-collapsed", label: "Admin Stock — Ledger (Sidebar Collapsed)" },
+  { slug: "admin-stock-ledger-drawer-open", label: "Admin Stock — Ledger (Drawer Open)" },
+  { slug: "admin-stock-mobile", label: "Admin Stock — Mobile" },
+  { slug: "bulk-opening-stock-grid", label: "Bulk Opening Stock Grid" },
+  // F3 — Assets
+  { slug: "admin-assets-register", label: "Admin Assets Register" },
+  { slug: "asset-delete-dialog", label: "Asset Delete Dialog" },
+  { slug: "asset-drawer", label: "Asset Drawer — Create / Edit" },
 ];
 
 const COLLAPSE_STORAGE_KEY = "design-preview-nav-collapsed";

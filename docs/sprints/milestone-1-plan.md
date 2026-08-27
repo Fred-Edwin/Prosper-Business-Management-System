@@ -227,26 +227,71 @@ M1 — ready for export.**
 
 ### Session 3 — Developer (Design Sprint): rebuild `components/kit/*` from Paper
 
-**Role:** Developer, Design-Sprint mode. **Touches:** `components/kit/*`,
-`components/shells/*`, `app/design-preview/_kit`.
+**Status: DONE (2026-08-27).** Split into two parts.
 
-- **Delete the current `components/kit/*` and `components/shells/*`
-  first** — they were exported by the non-compliant method. Rebuild each
-  from Paper via **`get_jsx`** (Phase B1 of `export-workflow.md`).
-- Encode every state from Session 2's `component-states.md`. Interactive
-  primitives (Drawer, Tabs, Select, BottomSheet) get minimal real
-  behavior.
-- Resolve **ADR-36c** (friction-delete-dialog label props) while
-  rebuilding that component. Re-check the `InfoBanner` padding open item
-  from `component-audit-report.md` (suspected same undersizing as
-  `CalculatedImpactBanner` — `p-3` vs. a likely `--sp-5`; confirm against
-  Paper now that there may be an artboard for it).
-- Build `app/design-preview/_kit/page.tsx` — every component, every
-  state.
-- **Screenshot-verify every component against its artboard** (Phase B5).
-  Flag mismatches; do not ship approximations.
+**Part 1 (kit):** all 24 M1 `components/kit/*` re-exported by verbatim
+`get_jsx` transcription; `stat-tile-row` deleted (M3);
+`app/design-preview/kit/page.tsx` gallery rewritten; `tsc` clean for
+`components/kit/*`. See `docs/PROGRESS.md` 2026-08-27 "Session 3 (part 1)".
+
+**Part 2 (shells + rewiring):** all 4 `components/shells/*`
+(`admin-shell` from `649-0` + `67T-0`, `staff-shell` from `4Y-0`,
+`mobile-shell-admin` from `6B1-0`, `mobile-nav-drawer` from `1ZP-0`)
+re-exported by verbatim `get_jsx` transcription.
+`app/admin/admin-shell-client.tsx` + `components/layout/staff-shell-client.tsx`
+rewired to the new shell + `BottomNavItem` (`{ key, label, activeIcon,
+inactiveIcon }`) API. `pnpm tsc --noEmit` exits 0. Role homes + kit
+gallery + reference screen smoke-checked (real login, no runtime error).
+admin full/collapsed + staff shells pixel-verified against their
+artboards. See `docs/PROGRESS.md` 2026-08-27 "Session 3 (part 2)".
+
+**Kit + shells ready for Session 4 screen export.**
+
+- Original scope (kept for reference): delete non-compliant
+  `components/kit/*` + `components/shells/*`; rebuild from Paper via
+  `get_jsx` (Phase B1); encode every `component-states.md` state;
+  interactive primitives get minimal real behavior; resolve ADR-36c;
+  re-check `InfoBanner` padding; build the kit gallery; screenshot-verify
+  every component.
 
 ### Session 4 — Developer (Design Sprint): re-export all M1 screens
+
+**Status: SPLIT — 4a DONE, 4b DONE (2026-08-27), 4c OUTSTANDING.**
+Per `export-workflow.md` "Session discipline" the 21-screen scope was
+split into 4a / 4b / 4c.
+
+**Session 4a (done):** F1 (4 screens) + F3 (3 screens) + **Financials
+(2 screens)** exported — `get_jsx` → frame-drop → component-swap →
+`fixtures.ts` → static skeleton → `/design-preview` route →
+screenshot-verified; reference screen `admin-catalog-product-catalog`
+normalised (`mock-data.ts` → `fixtures.ts`, frame dropped); `SCREENS`
+list `_kit` → `kit` fixed; `pnpm tsc --noEmit` exit 0. **9 of 9
+in-scope screens delivered.** See `docs/PROGRESS.md` 2026-08-27
+"Session 4a".
+- Financials: `7ZJ-0` was body-less in Paper; owner copied `85W-0`'s
+  body across mid-session, then it exported normally. Owner chose
+  **Option A** on the KPI stat strip — exported as drawn (contradicts
+  the D-FIN M1 cut; a later design sprint removes it).
+
+**Session 4b (done, 2026-08-27):** the **5 Admin Stock screens** —
+`admin-stock-ledger-full-width` (`798-0`),
+`admin-stock-ledger-sidebar-collapsed` (`7G9-0`),
+`admin-stock-ledger-drawer-open` (`7LJ-0`), `admin-stock-mobile`
+(`8Q4-0`), `bulk-opening-stock-grid` (`7UD-0`) — exported, kit-swapped
+(`PillFilter` / `Tabs` / `BulkEntryGrid` / `CalculatedImpactBanner` /
+`Button`), `fixtures.ts` written, shared `AdminStockSideNav` module
+extracted, `/design-preview` routes added, `SCREENS` list updated,
+`pnpm tsc --noEmit` exit 0, all 5 screenshot-verified. The ledger
+table + the bulk-grid instruction banner + valuation footer are
+transcribed **inline** (structural divergence from their kit
+components — the 4a Financials-table precedent). See `docs/PROGRESS.md`
+2026-08-27 "Session 4b" for the full flag list.
+
+**Session 4c (outstanding):** the **7 Store Manager + Canteen screens**
+(`8T3-0`, `8XH-0`, `92M-0`, `986-0`, `9BA-0`, `9FE-0`, `9GW-0`) + the
+Store Manager / Canteen **role-home swaps** (`app/store-manager/page.tsx`
+/ `app/canteen/page.tsx`). Full brief:
+**`docs/sprints/session-4c-handoff.md`**.
 
 **Role:** Developer, Design-Sprint mode. **Touches:**
 `docs/design/screens/*`, `app/design-preview/*`, and the four role home

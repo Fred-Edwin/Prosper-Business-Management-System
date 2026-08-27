@@ -262,6 +262,13 @@ D3 on the dot+pill vs dot+text rendering.)
 `6ET-0` Dense Ledger + the three screen artboards (`798-0`, `7G9-0`,
 `7LJ-0`).
 
+> **Kit extension (ADR-37a, Session 4b):** the three Admin Stock ledger
+> screens use a **leading Location column** + `w-max` horizontal scroll
+> that `6ET-0` does not draw. `components/kit/dense-ledger.tsx` gained
+> opt-in `showLocation` + `horizontalScroll` props for this; the base
+> `6ET-0` behaviour is unchanged. **`6ET-0` needs a Location-column
+> state added** so Paper and code agree — a follow-up Design Sprint.
+
 | State | artboard? |
 |---|---|
 | header row | ARTBOARD ✅ |
@@ -295,6 +302,14 @@ decides: per-entity label props, or unify. Recorded as §6 D2.
 
 `6OE-0` "Edit Asset" + screen artboards `796-0`, `8JO-0`, `7LJ-0`,
 `85W-0`.
+
+> **Kit extension (ADR-37b, Session 4b):** `7LJ-0` (ledger correction)
+> and `85W-0` (Financials payment) draw the panel as a **docked
+> right-edge rail** (`w-[420px]`, `border-l`, no radius,
+> `--surface-subtle` footer), not the `6OE-0` floating card.
+> `components/kit/drawer.tsx` gained a `variant="rail"` for this; the
+> `"panel"` default is unchanged. **`6OE-0` needs a `rail` variant
+> state added** — a follow-up Design Sprint.
 
 | State | artboard? |
 |---|---|

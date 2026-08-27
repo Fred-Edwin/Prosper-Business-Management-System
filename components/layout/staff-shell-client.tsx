@@ -7,34 +7,58 @@ import { LayoutGrid, Boxes, History, ShoppingCart } from "lucide-react";
 import { StaffShell } from "@/components/shells/staff-shell";
 import type { BottomNavItem } from "@/components/kit/bottom-nav";
 
-// Per-role bottom nav item sets, keyed by the role's base route. Only
-// routes that actually exist under app/<base>/ so far are wired here —
-// Stock/History routes for store-manager and canteen match the
-// Store Manager Mobile Hub / Canteen Mobile Operations Hub screens
-// exported in docs/design/screens/*, per their shared Hub/Stock/History
-// Bottom Nav pattern (design-principles.md §7, "Bottom Nav" kit entry).
-const NAV_ITEMS_BY_BASE: Record<string, BottomNavItem[]> = {
+// Per-role bottom nav item sets, keyed by the role's base route. The nav-item
+// definitions — including the icon JSX — live in this Client Component (not
+// passed down from a Server Component) so nothing non-serialisable crosses the
+// boundary. Each item carries the NEW BottomNavItem shape:
+// { key, label, activeIcon, inactiveIcon } — no href, no icon component ref.
+// The key doubles as the route segment under <basePath>/<key> ("hub" = the
+// bare base route). Only routes that exist under app/<base>/ so far are wired.
+interface StaffNavDef {
+  key: string;
+  label: string;
+  icon: typeof LayoutGrid;
+}
+
+const NAV_DEFS_BY_BASE: Record<string, StaffNavDef[]> = {
   "/cashier": [
-    { key: "new-order", label: "New Order", icon: ShoppingCart, href: "/cashier" },
-    { key: "history", label: "History", icon: History, href: "/cashier/history" },
+    { key: "new-order", label: "New Order", icon: ShoppingCart },
+    { key: "history", label: "History", icon: History },
   ],
   "/store-manager": [
-    { key: "hub", label: "Hub", icon: LayoutGrid, href: "/store-manager" },
-    { key: "stock", label: "Stock", icon: Boxes, href: "/store-manager/stock" },
-    { key: "history", label: "History", icon: History, href: "/store-manager/history" },
+    { key: "hub", label: "Hub", icon: LayoutGrid },
+    { key: "stock", label: "Stock", icon: Boxes },
+    { key: "history", label: "History", icon: History },
   ],
   "/canteen": [
-    { key: "hub", label: "Hub", icon: LayoutGrid, href: "/canteen" },
-    { key: "stock", label: "Stock", icon: Boxes, href: "/canteen/stock" },
-    { key: "history", label: "History", icon: History, href: "/canteen/history" },
+    { key: "hub", label: "Hub", icon: LayoutGrid },
+    { key: "stock", label: "Stock", icon: Boxes },
+    { key: "history", label: "History", icon: History },
   ],
 };
 
-function activeNavKeyFromPathname(basePath: string, pathname: string, items: BottomNavItem[]): string {
+function toNavItems(defs: StaffNavDef[]): BottomNavItem[] {
+  return defs.map(({ key, label, icon: Icon }) => ({
+    key,
+    label,
+    activeIcon: <Icon width={20} height={20} strokeWidth={1.5} stroke="var(--color-accent)" aria-hidden />,
+    inactiveIcon: <Icon width={20} height={20} strokeWidth={1.5} stroke="var(--text-tertiary)" aria-hidden />,
+  }));
+}
+
+// The nav "key" is the route segment: hub/first item = the bare base route.
+function activeNavKeyFromPathname(basePath: string, pathname: string, defs: StaffNavDef[]): string {
   const segment = pathname.replace(new RegExp(`^${basePath}/?`), "").split("/")[0];
-  if (!segment) return items[0]?.key ?? "";
-  const match = items.find((item) => item.href === `${basePath}/${segment}`);
-  return match?.key ?? items[0]?.key ?? "";
+  if (!segment) return defs[0]?.key ?? "";
+  const match = defs.find((d) => d.key === segment);
+  return match?.key ?? defs[0]?.key ?? "";
+}
+
+// "hub" / the first item maps to the bare base route; every other key is
+// <basePath>/<key>.
+function hrefForKey(basePath: string, defs: StaffNavDef[], key: string): string {
+  if (key === defs[0]?.key) return basePath;
+  return `${basePath}/${key}`;
 }
 
 export function StaffShellClient({
@@ -52,7 +76,8 @@ export function StaffShellClient({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const navItems = NAV_ITEMS_BY_BASE[basePath] ?? [];
+  const defs = NAV_DEFS_BY_BASE[basePath] ?? [];
+  const navItems = React.useMemo(() => toNavItems(defs), [defs]);
 
   return (
     <StaffShell
@@ -60,8 +85,8 @@ export function StaffShellClient({
       locationLabel={locationLabel}
       accountInitials={accountInitials}
       navItems={navItems}
-      activeNavKey={activeNavKeyFromPathname(basePath, pathname, navItems)}
-      onNavigate={(href) => router.push(href)}
+      activeNavKey={activeNavKeyFromPathname(basePath, pathname, defs)}
+      onNavigate={(key: string) => router.push(hrefForKey(basePath, defs, key))}
       onAccountClick={() => signOut({ callbackUrl: "/login" })}
     >
       {children}

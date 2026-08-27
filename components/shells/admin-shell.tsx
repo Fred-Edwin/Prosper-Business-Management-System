@@ -1,70 +1,181 @@
+// Verbatim transcription of Paper artboards:
+//   "Admin Shell — Desktop (Full-Height Sidebar)" (649-0) — the 240px sidebar
+//   "Admin Shell — Desktop (Sidebar Collapsed, Icon Rail)" (67T-0) — the 56px rail
+// One component, `collapsed` prop switches the sidebar markup between the two
+// artboards using each artboard's own emitted class strings. Body / toolbar
+// transcribed from 64A-0 (full) and 67Z-0 (collapsed — the expand toggle lives
+// in the content toolbar, NOT in the rail).
+//
+// The outer Paper artboard frame (w-[1440px] h-[900px]) is dropped: the shell
+// fills the viewport — h-screen w-full, fixed-width sidebar, flex-1 body which
+// is the only scroll region.
+//
+// §9 hover / focus-visible / disabled / pressed come from app/globals.css
+// utilities (.kit-interactive / .kit-focus-ring), not re-specified here.
+// `collapsed` is a plain prop — no persistence (ADR-36b).
+//
+// Nav icons are matched by SHAPE to the Paper hand-drawn placeholders; each of
+// the 11 nav rows carries its exact emitted SVG path data.
 "use client";
 
 import * as React from "react";
-import type { LucideIcon } from "lucide-react";
-import {
-  LayoutGrid,
-  Package,
-  Boxes,
-  ShoppingCart,
-  Repeat,
-  Users,
-  Wallet,
-  UserSquare2,
-  Archive,
-  BarChart3,
-  History,
-  LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export interface AdminNavItem {
+interface AdminNavItemDef {
   key: string;
   label: string;
-  icon: LucideIcon;
   href: string;
+  icon: React.ReactNode;
 }
 
-export interface AdminNavGroup {
+interface AdminNavGroupDef {
   label?: string;
-  items: AdminNavItem[];
+  items: AdminNavItemDef[];
 }
 
-const NAV_GROUPS: AdminNavGroup[] = [
-  { items: [{ key: "dashboard", label: "Dashboard", icon: LayoutGrid, href: "/admin" }] },
+const SW = { fill: "none", stroke: "#FFFFFF", strokeWidth: 1.5, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+
+function Svg({ children }: { children: React.ReactNode }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+      {children}
+    </svg>
+  );
+}
+
+const ICON_DASHBOARD = (
+  <Svg>
+    <rect x="3" y="3" width="7" height="7" {...SW} />
+    <rect x="14" y="3" width="7" height="7" {...SW} />
+    <rect x="3" y="14" width="7" height="7" {...SW} />
+    <rect x="14" y="14" width="7" height="7" {...SW} />
+  </Svg>
+);
+const ICON_CATALOG = (
+  <Svg>
+    <path d="M3 3h18" {...SW} />
+    <path d="M3 9h18" {...SW} />
+    <path d="M3 15h18" {...SW} />
+    <path d="M3 21h18" {...SW} />
+  </Svg>
+);
+const ICON_STOCK = (
+  <Svg>
+    <rect x="2" y="7" width="20" height="14" rx="2" {...SW} />
+    <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" {...SW} />
+  </Svg>
+);
+const ICON_SALES = (
+  <Svg>
+    <circle cx="9" cy="21" r="1" {...SW} />
+    <circle cx="20" cy="21" r="1" {...SW} />
+    <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" {...SW} />
+  </Svg>
+);
+const ICON_HANDOVERS = (
+  <Svg>
+    <polyline points="17 1 21 5 17 9" {...SW} />
+    <path d="M3 11V9a4 4 0 0 1 4-4h14" {...SW} />
+    <polyline points="7 23 3 19 7 15" {...SW} />
+    <path d="M21 13v2a4 4 0 0 1-4 4H3" {...SW} />
+  </Svg>
+);
+const ICON_CUSTOMERS = (
+  <Svg>
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" {...SW} />
+    <circle cx="9" cy="7" r="4" {...SW} />
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87" {...SW} />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" {...SW} />
+  </Svg>
+);
+const ICON_FINANCIALS = (
+  <Svg>
+    <rect x="1" y="4" width="22" height="16" rx="2" {...SW} />
+    <line x1="1" y1="10" x2="23" y2="10" {...SW} />
+  </Svg>
+);
+const ICON_STAFF = (
+  <Svg>
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" {...SW} />
+    <circle cx="12" cy="7" r="4" {...SW} />
+  </Svg>
+);
+const ICON_ASSETS = (
+  <Svg>
+    <rect x="3" y="3" width="18" height="18" rx="2" {...SW} />
+    <path d="M3 9h18" {...SW} />
+    <path d="M9 21V9" {...SW} />
+  </Svg>
+);
+const ICON_REPORTS = (
+  <Svg>
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" {...SW} />
+  </Svg>
+);
+const ICON_AUDIT = (
+  <Svg>
+    <circle cx="12" cy="12" r="10" {...SW} />
+    <polyline points="12 6 12 12 16 14" {...SW} />
+  </Svg>
+);
+
+const NAV_GROUPS: AdminNavGroupDef[] = [
+  { items: [{ key: "dashboard", label: "Dashboard", href: "/admin", icon: ICON_DASHBOARD }] },
   {
     label: "Operations",
     items: [
-      { key: "catalog", label: "Catalog", icon: Package, href: "/admin/catalog" },
-      { key: "stock", label: "Stock", icon: Boxes, href: "/admin/stock" },
-      { key: "sales", label: "Sales", icon: ShoppingCart, href: "/admin/sales" },
-      { key: "handovers", label: "Handovers", icon: Repeat, href: "/admin/handovers" },
+      { key: "catalog", label: "Catalog", href: "/admin/catalog", icon: ICON_CATALOG },
+      { key: "stock", label: "Stock", href: "/admin/stock", icon: ICON_STOCK },
+      { key: "sales", label: "Sales", href: "/admin/sales", icon: ICON_SALES },
+      { key: "handovers", label: "Handovers", href: "/admin/handovers", icon: ICON_HANDOVERS },
     ],
   },
   {
     label: "People & Money",
     items: [
-      { key: "customers", label: "Customers", icon: Users, href: "/admin/customers" },
-      { key: "financials", label: "Financials", icon: Wallet, href: "/admin/financials" },
+      { key: "customers", label: "Customers", href: "/admin/customers", icon: ICON_CUSTOMERS },
+      { key: "financials", label: "Financials", href: "/admin/financials", icon: ICON_FINANCIALS },
     ],
   },
   {
     label: "Team",
     items: [
-      { key: "staff", label: "Staff", icon: UserSquare2, href: "/admin/staff" },
-      { key: "assets", label: "Assets", icon: Archive, href: "/admin/assets" },
+      { key: "staff", label: "Staff", href: "/admin/staff", icon: ICON_STAFF },
+      { key: "assets", label: "Assets", href: "/admin/assets", icon: ICON_ASSETS },
     ],
   },
   {
     label: "Reporting",
     items: [
-      { key: "reports", label: "Reports", icon: BarChart3, href: "/admin/reports" },
-      { key: "audit-trail", label: "Audit trail", icon: History, href: "/admin/audit-trail" },
+      { key: "reports", label: "Reports", href: "/admin/reports", icon: ICON_REPORTS },
+      { key: "audit-trail", label: "Audit trail", href: "/admin/audit-trail", icon: ICON_AUDIT },
     ],
   },
 ];
+
+const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+
+const ICON_PANEL = (
+  <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <line x1="9" y1="3" x2="9" y2="21" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const ICON_PANEL_DARK = (
+  <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <line x1="9" y1="3" x2="9" y2="21" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const ICON_SIGNOUT = (
+  <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" fill="none" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <polyline points="16 17 21 12 16 7" fill="none" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <line x1="21" y1="12" x2="9" y2="12" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 export interface AdminShellProps {
   activeNavKey: string;
@@ -76,8 +187,8 @@ export interface AdminShellProps {
   accountRole: string;
   accountInitials: string;
   onAccountClick: () => void;
-  collapsed?: boolean;
-  onToggleCollapsed?: () => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   children: React.ReactNode;
 }
 
@@ -91,125 +202,215 @@ export function AdminShell({
   accountRole,
   accountInitials,
   onAccountClick,
-  collapsed = false,
+  collapsed,
   onToggleCollapsed,
   children,
 }: AdminShellProps) {
-  const allItems = NAV_GROUPS.flatMap((g) => g.items);
-
   return (
-    <div className="flex h-screen w-full overflow-hidden">
+    <div className="[font-synthesis:none] flex h-screen w-full antialiased text-caption/micro">
       {collapsed ? (
-        <nav className="flex h-full w-14 shrink-0 flex-col bg-nav-bg">
-          <div className="flex h-16 shrink-0 items-center justify-center">
-            <button type="button" onClick={onToggleCollapsed} className="flex size-8 items-center justify-center rounded-sm outline-none hover:bg-nav-bg-hover" aria-label="Expand sidebar">
-              <PanelLeftOpen className="size-4 text-nav-text" strokeWidth={1.5} aria-hidden />
-            </button>
+        /* Icon Rail — 6GN-0 */
+        <div className="flex flex-col w-[56px] h-full shrink-0 bg-(--nav-bg)">
+          <div className="flex flex-col items-center pt-[20px] pb-[16px] gap-[16px]">
+            <div
+              className="w-[28px] h-[28px] rounded-full shrink-0 bg-cover bg-position-[50%]"
+              style={{ backgroundImage: "url(https://app.paper.design/file-assets/01M0EZ7TAHZM26KBMWNYT0928X/01M0VN1VB5J2R3GSKCSMFMPMSW.jpg)" }}
+            />
           </div>
-          <div className="h-px w-full shrink-0 bg-nav-border" />
-          <div className="flex grow flex-col items-center gap-1 pt-3">
-            {allItems.map((item) => {
-              const Icon = item.icon;
+          <div className="w-[56px] h-px shrink-0 bg-(--nav-border)" />
+          <div className="flex flex-col items-center grow pt-[12px] gap-[4px] overflow-y-auto">
+            {ALL_ITEMS.map((item) => {
               const active = item.key === activeNavKey;
               return (
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => onNavigate(item.href)}
                   title={item.label}
-                  className={cn("flex size-10 shrink-0 items-center justify-center rounded-sm outline-none", active ? "bg-nav-bg-active" : "hover:bg-nav-bg-hover")}
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => onNavigate(item.href)}
+                  className={cn(
+                    "flex items-center justify-center w-[40px] h-[40px] shrink-0 rounded-sm kit-interactive kit-focus-ring kit-focus-on-dark",
+                    active && "bg-(--nav-bg-active)",
+                  )}
                 >
-                  <Icon className={cn("size-4", active ? "text-nav-text-active" : "text-nav-text")} strokeWidth={1.5} aria-hidden />
+                  {item.icon}
                 </button>
               );
             })}
           </div>
-          <div className="flex shrink-0 items-center justify-center border-t border-solid border-nav-border bg-nav-bg-avatar py-3">
+          <div className="flex items-center justify-center shrink-0 pt-[12px] pb-[16px]">
             <button
               type="button"
               onClick={onAccountClick}
-              className="flex size-[30px] items-center justify-center rounded-full bg-nav-bg-divider-strong font-ui text-caption/caption text-nav-text-active outline-none"
+              aria-label="Account"
+              className="w-[30px] h-[30px] flex items-center justify-center rounded-[50%] shrink-0 bg-(--nav-bg-divider-strong) kit-interactive kit-focus-ring kit-focus-on-dark"
             >
-              {accountInitials}
+              <span className="font-ui font-(--weight-semibold) inline-block text-(--nav-text-active) text-caption/micro">
+                {accountInitials}
+              </span>
             </button>
           </div>
-        </nav>
+        </div>
       ) : (
-        <nav className="flex h-full w-60 shrink-0 flex-col bg-nav-bg">
-          <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-4 pt-5">
-            <div className="flex items-center gap-2">
-              <div className="flex size-[30px] shrink-0 items-center justify-center rounded-md bg-accent font-ui text-sm/sm font-semibold text-white">P</div>
-              <span className="font-ui text-h2/h2 font-semibold text-nav-text-active">Prosper</span>
+        /* Side nav — 64I-0 */
+        <div className="flex flex-col w-[240px] shrink-0 self-stretch bg-(--nav-bg)">
+          <div className="flex items-center shrink-0 gap-(--sp-3) w-[240px] pt-[20px] pb-[16px] justify-between px-[16px]">
+            <div
+              className="w-[30px] h-[30px] rounded-full shrink-0 bg-cover bg-position-[50%]"
+              style={{ backgroundImage: "url(https://app.paper.design/file-assets/01M0EZ7TAHZM26KBMWNYT0928X/01M0VN1VB5J2R3GSKCSMFMPMSW.jpg)" }}
+            />
+            <div className="font-ui font-(--weight-semibold) inline-block text-(--nav-text-active) text-h1/body">
+              Prosper
             </div>
-            {onToggleCollapsed && (
-              <button type="button" onClick={onToggleCollapsed} className="flex size-6 items-center justify-center rounded-sm outline-none hover:bg-nav-bg-hover" aria-label="Collapse sidebar">
-                <PanelLeftClose className="size-3.5 text-nav-text" strokeWidth={1.5} aria-hidden />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-label="Collapse sidebar"
+              className="flex items-center justify-center w-[24px] h-[24px] shrink-0 rounded-sm bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark"
+            >
+              {ICON_PANEL}
+            </button>
           </div>
-          <div className="h-px w-full shrink-0 bg-nav-border" />
-          <div className="flex grow flex-col gap-1 overflow-y-auto px-3 py-3">
-            {NAV_GROUPS.map((group, gi) => (
-              <div key={gi} className="flex flex-col gap-0.5">
-                {group.label && (
-                  <div className="px-2.5 pb-1.5 pt-3 font-ui text-[10px] font-semibold uppercase tracking-[0.08em] text-nav-text-label">{group.label}</div>
-                )}
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-                  const active = item.key === activeNavKey;
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => onNavigate(item.href)}
+          <div className="w-[240px] h-px shrink-0 bg-(--nav-border)" />
+
+          {/* Nav Group — Top (Dashboard, active-marker variant) */}
+          <div className="flex flex-col pt-[8px] pb-[4px] px-[6px]">
+            {NAV_GROUPS[0].items.map((item) => {
+              const active = item.key === activeNavKey;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => onNavigate(item.href)}
+                  className={cn(
+                    "flex items-center h-[36px] px-[10px] rounded-sm gap-[8px] relative shrink-0 kit-interactive kit-focus-ring kit-focus-on-dark",
+                    active && "bg-(--nav-bg-active)",
+                  )}
+                >
+                  {item.icon}
+                  <span
+                    className={cn(
+                      "font-ui inline-block text-sm/micro",
+                      active ? "font-(--weight-medium) text-(--nav-text-active)" : "font-(--weight-regular) text-(--nav-text)",
+                    )}
+                  >
+                    {item.label}
+                  </span>
+                  {active && (
+                    <span className="absolute left-[0px] top-[6px] bottom-[6px] w-[2px] rounded-tr-[2px] rounded-br-[2px] bg-(--nav-text-active)" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Grouped nav */}
+          {NAV_GROUPS.slice(1).map((group, gi) => (
+            <div key={gi} className="flex flex-col py-[4px] px-[6px]">
+              <div className="font-ui font-(--weight-semibold) inline-block pt-[6px] pb-[4px] px-[10px]">
+                <div className="inline-block font-ui text-[10px] font-(--weight-semibold) tracking-[0.08em] uppercase leading-[12px] text-(--nav-text-label)">
+                  {group.label}
+                </div>
+              </div>
+              {group.items.map((item) => {
+                const active = item.key === activeNavKey;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => onNavigate(item.href)}
+                    className={cn(
+                      "flex items-center h-[36px] px-[10px] rounded-sm gap-[8px] shrink-0 kit-interactive kit-focus-ring kit-focus-on-dark",
+                      active && "bg-(--nav-bg-active)",
+                    )}
+                  >
+                    {item.icon}
+                    <span
                       className={cn(
-                        "relative flex h-9 shrink-0 items-center gap-2 rounded-sm px-2.5 outline-none",
-                        active ? "bg-nav-bg-active" : "hover:bg-nav-bg-hover",
+                        "font-ui inline-block text-sm/micro",
+                        active ? "font-(--weight-medium) text-(--nav-text-active)" : "font-(--weight-regular) text-(--nav-text)",
                       )}
                     >
-                      {active && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-r-sm bg-nav-text-active" />}
-                      <Icon className={cn("size-4 shrink-0", active ? "text-nav-text-active" : "text-nav-text")} strokeWidth={1.5} aria-hidden />
-                      <span className={cn("font-ui text-sm/sm", active ? "font-medium text-nav-text-active" : "text-nav-text")}>{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-          <div className="mt-auto flex shrink-0 items-center justify-between border-t border-solid border-nav-border bg-nav-bg-avatar px-3.5 py-3">
-            <div className="flex items-center gap-2">
-              <div className="flex size-[30px] shrink-0 items-center justify-center rounded-full bg-nav-bg-divider-strong font-ui text-sm/sm text-nav-text-active">
-                {accountInitials}
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+
+          {/* Sidebar Footer — Account */}
+          <div className="flex items-center justify-between mt-auto shrink-0 py-[12px] px-[14px] bg-(--nav-bg-avatar) border-t border-t-solid border-t-(--nav-border)">
+            <div className="flex items-center gap-[10px]">
+              <div className="w-[30px] h-[30px] flex items-center justify-center rounded-[50%] shrink-0 bg-(--nav-bg-divider-strong)">
+                <div className="font-ui font-(--weight-semibold) inline-block text-(--nav-text-active) text-caption/micro">
+                  {accountInitials}
+                </div>
               </div>
               <div className="flex flex-col">
-                <span className="font-ui text-sm/sm text-nav-text-strong">{accountName}</span>
-                <span className="font-ui text-[11px] leading-[14px] text-nav-text-subtle">{accountRole}</span>
+                <div className="font-ui font-(--weight-medium) inline-block text-(--nav-text-active) text-sm/micro">
+                  {accountName}
+                </div>
+                <div className="font-ui text-micro inline-block leading-[14px] text-(--nav-text-subtle)">
+                  {accountRole}
+                </div>
               </div>
             </div>
-            <button type="button" onClick={onAccountClick} className="flex items-center gap-1 rounded-sm bg-nav-bg-chip px-2 py-1.5 outline-none hover:bg-nav-bg-hover">
-              <LogOut className="size-3.5 text-nav-text" strokeWidth={1.5} aria-hidden />
-              <span className="font-ui text-[11px] leading-[14px] text-nav-text">Sign out</span>
-            </button>
-          </div>
-        </nav>
-      )}
-
-      <div className="flex min-w-0 grow flex-col">
-        <header className="flex h-11 shrink-0 items-center gap-4 border-b border-solid border-border-subtle pl-6 pr-6">
-          <h1 className="font-ui text-h1/h1 font-semibold text-text-primary">{toolbarTitle}</h1>
-          {toolbarSubtitle && <span className="font-ui text-sm/sm text-text-secondary">{toolbarSubtitle}</span>}
-          <div className="ml-auto flex items-center gap-3">
-            {toolbarActions}
             <button
               type="button"
               onClick={onAccountClick}
-              className="flex size-[26px] shrink-0 items-center justify-center rounded-full bg-gray-700 font-ui text-caption/caption text-white outline-none"
+              className="flex items-center py-[5px] px-[8px] rounded-sm gap-[4px] bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark"
             >
-              {accountInitials}
+              {ICON_SIGNOUT}
+              <span className="font-ui text-micro font-(--weight-medium) inline-block leading-[14px] text-(--nav-text-strong)">
+                Sign out
+              </span>
             </button>
           </div>
-        </header>
-        <div className="flex min-h-0 grow flex-col overflow-y-auto">{children}</div>
+        </div>
+      )}
+
+      {/* Body — 64A-0 / 67U-0 */}
+      <div className="flex grow min-w-0">
+        <div className="flex items-start flex-1 flex-col">
+          <div className="flex flex-col grow min-w-0 self-stretch h-screen">
+            <div className="flex items-center h-[44px] shrink-0 gap-(--sp-4) pr-[24px] pl-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+              {collapsed && (
+                <button
+                  type="button"
+                  onClick={onToggleCollapsed}
+                  aria-label="Expand sidebar"
+                  className="flex items-center justify-center w-[24px] h-[24px] shrink-0 rounded-sm [background-color:var(--surface-hover)] kit-interactive kit-focus-ring"
+                >
+                  {ICON_PANEL_DARK}
+                </button>
+              )}
+              <div className="font-ui font-(--weight-semibold) inline-block [color:var(--text-primary)] text-h1/h1">
+                {toolbarTitle}
+              </div>
+              {toolbarSubtitle && (
+                <div className="font-ui inline-block [color:var(--text-secondary)] text-sm/sm">
+                  {toolbarSubtitle}
+                </div>
+              )}
+              <div className="grow" />
+              {toolbarActions}
+              <button
+                type="button"
+                onClick={onAccountClick}
+                aria-label="Account"
+                className="w-[26px] h-[26px] flex items-center justify-center shrink-0 rounded-[50%] bg-gray-700 kit-interactive kit-focus-ring"
+              >
+                <span className="font-ui font-(--weight-medium) inline-block text-(--nav-text-active) text-micro/micro">
+                  {accountInitials}
+                </span>
+              </button>
+            </div>
+            <div className="flex flex-col grow min-h-0 overflow-y-auto">{children}</div>
+          </div>
+        </div>
       </div>
     </div>
   );

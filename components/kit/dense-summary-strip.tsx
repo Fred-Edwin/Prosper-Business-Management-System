@@ -1,29 +1,69 @@
+// Verbatim transcription of Paper artboard "Component Kit — Stat Tiles & KPI" (6R4-0):
+// "Strip" (6RT-0). Session 2 §8 verified this is one canonical version across the ledger
+// footer, the bulk-grid valuation footer and this sample.
+//
+//   container: flex items-center h-[44px] px-(--sp-6) rounded-md gap-(--sp-8) shrink-0
+//              bg-gray-900
+//   pair     : flex items-baseline gap-[6px]  (a trailing pair adds `ml-auto`)
+//   label    : font-ui font-(--weight-medium) text-[#FFFFFF99] text-caption/micro
+//   value    : font-mono font-(--weight-semibold) text-sm/micro; color is
+//              text-white (default) / text-warning / text-danger / text-success
+//
+// FLAG (raw literal): the label color is emitted as `text-[#FFFFFF99]` (white at 60%).
+// Kept verbatim per the transcription rule; there is a --nav-text-subtle token
+// (rgb(255 255 255 / 60%)) that matches, noted in docs/PROGRESS.md.
+//
+// NOTE: "Stat tile row" (the 4-tile KPI strip on the same artboard, 6R7-0) is Milestone 3
+// per milestone-1-plan.md §2 — deliberately NOT built this session.
+"use client";
+
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export type SummaryStripTone = "success" | "warning" | "danger" | "info";
-
-const toneClasses: Record<SummaryStripTone, string> = {
-  success: "text-success",
-  warning: "text-warning",
-  danger: "text-danger",
-  info: "text-info",
-};
-
 export interface SummaryStripItem {
-  key: string;
   label: string;
   value: string;
-  tone?: SummaryStripTone;
+  tone?: "default" | "warning" | "danger" | "success";
+  /** Pushes this pair (and any after it) to the right via `ml-auto`. */
+  alignEnd?: boolean;
 }
 
-export function DenseSummaryStrip({ items }: { items: SummaryStripItem[] }) {
+export interface DenseSummaryStripProps {
+  items: SummaryStripItem[];
+  className?: string;
+}
+
+const VALUE_TONE: Record<NonNullable<SummaryStripItem["tone"]>, string> = {
+  default: "text-white",
+  warning: "text-warning",
+  danger: "text-danger",
+  success: "text-success",
+};
+
+export function DenseSummaryStrip({ items, className }: DenseSummaryStripProps) {
   return (
-    <div className="flex h-11 shrink-0 items-center gap-8 rounded-md bg-gray-900 px-6">
-      {items.map((item) => (
-        <div key={item.key} className="flex items-center gap-1 font-ui text-sm/sm">
-          <span className="text-white/60">{item.label}:</span>
-          <span className={cn("font-medium", item.tone ? toneClasses[item.tone] : "text-white")}>{item.value}</span>
+    <div
+      className={cn(
+        "[font-synthesis:none] flex items-center h-[44px] px-(--sp-6) rounded-md gap-(--sp-8) shrink-0 bg-gray-900 antialiased",
+        className,
+      )}
+    >
+      {items.map((item, i) => (
+        <div
+          key={i}
+          className={cn("flex items-baseline gap-[6px]", item.alignEnd && "ml-auto")}
+        >
+          <div className="font-ui font-(--weight-medium) text-[#FFFFFF99] text-caption/micro">
+            {item.label}
+          </div>
+          <div
+            className={cn(
+              "font-mono font-(--weight-semibold) text-sm/micro",
+              VALUE_TONE[item.tone ?? "default"],
+            )}
+          >
+            {item.value}
+          </div>
         </div>
       ))}
     </div>

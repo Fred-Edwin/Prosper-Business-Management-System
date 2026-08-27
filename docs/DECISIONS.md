@@ -683,3 +683,80 @@ do screens keep inlining empties case-by-case? Several real screens
 consistent empty treatment. Decide during **Session 2** (Product Designer
 Paper pass) — if yes, it gets an artboard with states there and is built
 in Session 3.
+
+---
+
+## ADR-37: Kit component extensions for the Admin Stock ledger screens (Session 4b)
+
+**Status:** Accepted (owner-authorised in-session, 2026-08-27).
+**Context:** Session 4b (Developer, Design-Sprint — screen export) found
+two places where an Admin Stock screen (`798-0` / `7G9-0` / `7LJ-0`)
+structurally diverges from the kit component it should use. Normally a
+kit-structure change goes back to a Design Sprint (Paper artboard first,
+then code). The owner explicitly authorised making the code changes in
+Session 4b instead, backward-compatible and opt-in, with the Paper
+artboards to be reconciled by a later Design Sprint.
+
+### 37a. `DenseLedger` gains an opt-in Location column + horizontal-scroll mode
+
+**Divergence.** The base kit `DenseLedger` artboard (`6ET-0`) starts with
+the Product column and lays rows out `[width:100%]`. The three Admin
+Stock ledger screens draw a **leading Location column** (`w-[100px]`,
+`[color:var(--text-secondary)] text-sm/sm`; header "Location" in
+`text-info`) before Product, and lay rows/header/footer out
+`w-max min-w-full` so the wide table scrolls horizontally inside its own
+`overflow-x-auto` wrapper.
+
+**Decision.** `components/kit/dense-ledger.tsx` gains two optional props:
+- `showLocation?: boolean` — renders the leading Location cell from a new
+  optional `LedgerRow.location`. The dark totals footer renders a blank
+  `w-[100px]` spacer in that slot.
+- `horizontalScroll?: boolean` — switches header/row/footer width from
+  `[width:100%]` to `w-max min-w-full`.
+
+Both default to off; omitted, the component is byte-identical to the
+`6ET-0` transcription (verified in the kit gallery — the base
+`DenseLedger` case is unchanged). The catalog/reconciliation usages don't
+set them; the Admin Stock ledger screens set both.
+
+**Follow-up (Design Sprint):** add the Location-column + horizontal-scroll
+state to the Paper `6ET-0` artboard so Paper and code agree. Until then
+the `6ET-0` artboard is knowingly stale w.r.t. these props (noted in the
+component header).
+
+### 37b. `Drawer` gains a docked right-edge `rail` variant
+
+**Divergence.** The kit `Drawer` artboard (`6OE-0`) is a **floating card**
+(`w-[380px]`, `rounded-md`, `h-[560px]`, `bg-(--surface-panel-tint)`,
+padding-block header). Two M1 screen-states — the Admin Stock
+ledger-correction drawer (`7LJ-0`) and the Financials payment drawer
+(`85W-0`) — draw the panel as a **docked rail attached to the right edge**
+of the content area: `w-[420px]`, `h-full`, `border-l` (no radius, no
+full border), a `--surface-subtle` footer with left-aligned actions (a
+full-width primary via `<Button className="grow">`).
+
+**Decision.** `components/kit/drawer.tsx` gains
+`variant?: "panel" | "rail"` (default `"panel"`). `"rail"` switches the
+container to `w-[420px] h-full border-l` (no radius), the body to the
+tighter `py-(--sp-6) px-(--sp-8) gap-(--sp-5) overflow-clip` rhythm, and
+the footer to `[background-color:var(--surface-subtle)]` with actions
+left-aligned. The header (incl. the `subtitle` context-subtitle variant),
+close button, Esc/focus-trap behaviour and the `footer` slot are shared
+across both variants. `"panel"` is unchanged.
+
+`docs/design/screens/admin-stock-ledger-drawer-open/page.tsx` uses
+`<Drawer variant="rail">`. The Financials payment drawer
+(`admin-financials-payment-drawer-open`) still transcribes its rail
+inline (Session 4a) — a follow-up may migrate it to `variant="rail"` for
+consistency; not done in 4b to keep the change scoped.
+
+**Follow-up (Design Sprint):** add the `rail` variant state to the Paper
+`6OE-0` artboard. Until then `6OE-0` is knowingly stale w.r.t. this
+variant (noted in the component header).
+
+### Process note
+
+These are the **only** `components/kit/*` edits made outside a Session-3
+kit-rebuild pass. They were authorised explicitly, are additive +
+backward-compatible, and each carries a Paper-reconciliation follow-up.
+Future kit-structure changes still go back to a Design Sprint by default.

@@ -1,26 +1,55 @@
+// Verbatim transcription of Paper artboard "Component Kit — Utility & Layout" (6WD-0):
+// "Breadcrumb" (6XV-0). Session 2 verified this state-complete — parent link
+// [color:var(--text-tertiary)] text-sm/sm, "/" separator [color:var(--text-disabled)]
+// text-sm/micro, current font-(--weight-medium) [color:var(--text-primary)] text-sm/sm.
+// link hover (underline, --text-primary) is the §9 global.
+"use client";
+
 import * as React from "react";
-import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 export interface BreadcrumbItem {
   label: string;
   href?: string;
+  onClick?: () => void;
 }
 
-export function Breadcrumb({ items, className }: { items: BreadcrumbItem[]; className?: string }) {
+export interface BreadcrumbProps {
+  items: BreadcrumbItem[];
+  className?: string;
+}
+
+export function Breadcrumb({ items, className }: BreadcrumbProps) {
   return (
-    <nav className={cn("flex items-center gap-2 font-ui text-sm/sm", className)} aria-label="Breadcrumb">
-      {items.map((item, index) => {
-        const isLast = index === items.length - 1;
+    <nav
+      aria-label="Breadcrumb"
+      className={cn(
+        "[font-synthesis:none] flex items-center gap-(--sp-3) antialiased",
+        className,
+      )}
+    >
+      {items.map((item, i) => {
+        const isCurrent = i === items.length - 1;
         return (
-          <React.Fragment key={item.label}>
-            {index > 0 && <span className="text-text-disabled">/</span>}
-            {item.href && !isLast ? (
-              <Link href={item.href} className="text-text-tertiary hover:text-text-primary">
+          <React.Fragment key={i}>
+            {i > 0 && (
+              <span className="font-ui [color:var(--text-disabled)] text-sm/micro">/</span>
+            )}
+            {isCurrent ? (
+              <span
+                aria-current="page"
+                className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm"
+              >
                 {item.label}
-              </Link>
+              </span>
             ) : (
-              <span className={cn(isLast ? "font-medium text-text-primary" : "text-text-tertiary")}>{item.label}</span>
+              <a
+                href={item.href}
+                onClick={item.onClick}
+                className="font-ui [color:var(--text-tertiary)] text-sm/sm kit-focus-ring hover:underline hover:[color:var(--text-primary)]"
+              >
+                {item.label}
+              </a>
             )}
           </React.Fragment>
         );

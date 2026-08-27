@@ -1,6 +1,7 @@
 // Screen skeleton transcribed from the Paper artboard "Admin Catalog — Product Catalog" (6ZO-0)
 // via get_jsx (Tailwind format). Structure and classes are left as Paper emitted them; only
-// literal data was lifted into ./mock-data.ts and the brand image replaced with a local mark.
+// literal data was lifted into ./fixtures.ts and the brand image replaced with a local mark.
+// The Paper artboard frame (w-[1440px] h-[900px]) is dropped so the screen fills the viewport.
 // This is a static design-export skeleton: no interactivity, no data fetching, no auth.
 "use client";
 
@@ -15,11 +16,11 @@ import {
   catalogRows,
   catalogSearchPlaceholder,
   catalogTabs,
-} from "./mock-data";
+} from "./fixtures";
 
 export default function AdminCatalogProductCatalogScreen() {
   return (
-    <div className="[font-synthesis:none] flex overflow-clip w-[1440px] h-[900px] font-ui bg-(--surface-page) antialiased text-caption/micro">
+    <div className="[font-synthesis:none] flex overflow-clip w-full min-h-screen font-ui bg-(--surface-page) antialiased text-caption/micro">
       {/* Side nav */}
       <div className="flex flex-col w-[240px] shrink-0 self-stretch bg-(--nav-bg)">
         <div className="flex items-center shrink-0 gap-(--sp-3) w-[240px] pt-[20px] pb-[16px] justify-between px-[16px]">
@@ -194,9 +195,9 @@ export default function AdminCatalogProductCatalogScreen() {
       </div>
 
       {/* Body */}
-      <div className="flex w-[1200px] grow min-h-[0px] h-[900px]">
-        <div className="flex items-start flex-1 h-fit flex-col">
-          <div className="flex flex-col grow min-w-[0px] h-[900px] self-stretch">
+      <div className="flex grow min-h-[0px] self-stretch">
+        <div className="flex items-start flex-1 flex-col self-stretch">
+          <div className="flex flex-col grow min-w-[0px] self-stretch">
             {/* Toolbar */}
             <div className="flex items-center h-[44px] shrink-0 gap-(--sp-4) pr-[24px] pl-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
               <div className="font-ui font-(--weight-semibold) inline-block [color:var(--text-primary)] text-h1/h1">
