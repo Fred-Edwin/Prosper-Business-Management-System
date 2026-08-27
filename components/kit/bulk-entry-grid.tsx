@@ -78,7 +78,7 @@ export interface BulkEntryGridProps {
   className?: string;
 }
 
-function Cell({ cell }: { cell: BulkGridCell }) {
+function Cell({ cell, label }: { cell: BulkGridCell; label: string }) {
   const box = cell.error
     ? "border border-solid border-danger"
     : cell.editable
@@ -93,8 +93,9 @@ function Cell({ cell }: { cell: BulkGridCell }) {
 
   return (
     <div
+      role="gridcell"
       className={cn(
-        "flex items-center h-[32px] w-[110px] shrink-0 px-(--sp-4) rounded-sm kit-field",
+        "flex items-center h-(--control-sm) w-[110px] shrink-0 px-(--sp-4) rounded-sm kit-field",
         box,
       )}
       data-invalid={cell.error || undefined}
@@ -102,6 +103,9 @@ function Cell({ cell }: { cell: BulkGridCell }) {
       {cell.editable ? (
         <input
           value={cell.value}
+          inputMode="decimal"
+          aria-label={label}
+          aria-invalid={cell.error || undefined}
           onChange={(e) => cell.onChange?.(e.target.value)}
           className={cn("w-full bg-transparent outline-none", text)}
         />
@@ -125,31 +129,40 @@ export function BulkEntryGrid({
         className,
       )}
     >
-      <div className="flex flex-col [width:100%] border border-solid [border-color:var(--border-subtle)]">
+      <div
+        role="grid"
+        className="flex flex-col [width:100%] border border-solid [border-color:var(--border-subtle)]"
+      >
         {/* Grid Header */}
-        <div className="flex items-center h-[32px] px-(--sp-6) gap-(--sp-5) shrink-0 bg-info-bg border-b border-b-solid border-b-gray-600">
-          <div className="grow min-w-[200px] font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase leading-[12px] text-info">
-            Item name
-          </div>
-          <div className="w-[110px] font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase shrink-0 leading-[12px] text-info">
-            Category
-          </div>
-          <div className="w-[60px] font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase shrink-0 leading-[12px] text-info">
-            Unit
-          </div>
-          <div className="w-[110px] font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase shrink-0 leading-[12px] text-info">
-            Store
-          </div>
-          <div className="w-[110px] font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase shrink-0 leading-[12px] text-info">
-            Restaurant
-          </div>
-          <div className="w-[110px] font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase shrink-0 leading-[12px] text-info">
-            Canteen
-          </div>
-          <div className="w-[120px] font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase text-right shrink-0 leading-[12px] flex justify-end flex-wrap text-info">
+        <div
+          role="row"
+          className="flex items-center h-[32px] px-(--sp-6) gap-(--sp-5) shrink-0 bg-info-bg border-b border-b-solid border-b-gray-600"
+        >
+          {["Item name", "Category", "Unit", "Store", "Restaurant", "Canteen"].map(
+            (h, i) => (
+              <div
+                key={h}
+                role="columnheader"
+                className={cn(
+                  "font-ui font-(--weight-semibold) text-[10px] [letter-spacing:var(--tracking-caps)] uppercase leading-[12px] text-info",
+                  i === 0 ? "grow min-w-[200px]" : "shrink-0",
+                  i === 2 ? "w-[60px]" : i > 0 && "w-[110px]",
+                )}
+              >
+                {h}
+              </div>
+            ),
+          )}
+          <div
+            role="columnheader"
+            className="w-[120px] font-ui font-(--weight-semibold) text-[10px] [letter-spacing:var(--tracking-caps)] uppercase text-right shrink-0 leading-[12px] flex justify-end flex-wrap text-info"
+          >
             Cost / Buying
           </div>
-          <div className="w-[140px] font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase text-right shrink-0 leading-[12px] flex justify-end flex-wrap text-info">
+          <div
+            role="columnheader"
+            className="w-[140px] font-ui font-(--weight-semibold) text-[10px] [letter-spacing:var(--tracking-caps)] uppercase text-right shrink-0 leading-[12px] flex justify-end flex-wrap text-info"
+          >
             Total Value (KES)
           </div>
         </div>
@@ -158,12 +171,17 @@ export function BulkEntryGrid({
         {rows.map((row) => (
           <div
             key={row.id}
+            role="row"
             className="flex items-center h-[48px] px-(--sp-6) gap-(--sp-5) shrink-0 border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
           >
-            <div className="grow min-w-[200px] font-ui font-(--weight-medium) whitespace-pre-wrap [color:var(--text-primary)] text-sm/micro">
+            <div
+              role="rowheader"
+              className="grow min-w-[200px] font-ui font-(--weight-medium) whitespace-pre-wrap [color:var(--text-primary)] text-sm/micro"
+            >
               {row.item}
             </div>
             <div
+              role="gridcell"
               className={cn(
                 "w-[110px] font-ui font-(--weight-medium) shrink-0 text-sm/micro",
                 row.categoryTone === "warning" ? "text-warning" : "text-info",
@@ -171,28 +189,38 @@ export function BulkEntryGrid({
             >
               {row.category}
             </div>
-            <div className="w-[60px] font-mono font-(--weight-regular) shrink-0 [color:var(--text-secondary)] text-sm/micro">
+            <div
+              role="gridcell"
+              className="w-[60px] font-mono font-(--weight-regular) shrink-0 [color:var(--text-secondary)] text-sm/micro"
+            >
               {row.unit}
             </div>
-            <Cell cell={row.store} />
-            <Cell cell={row.restaurant} />
-            <Cell cell={row.canteen} />
-            <div className="w-[120px] font-mono font-(--weight-regular) text-right shrink-0 flex justify-end flex-wrap [color:var(--text-primary)] text-sm/micro">
+            <Cell cell={row.store} label={`${row.item} — Store`} />
+            <Cell cell={row.restaurant} label={`${row.item} — Restaurant`} />
+            <Cell cell={row.canteen} label={`${row.item} — Canteen`} />
+            <div
+              role="gridcell"
+              className="w-[120px] font-mono font-(--weight-regular) text-right shrink-0 flex justify-end flex-wrap [color:var(--text-primary)] text-sm/micro"
+            >
               {row.costBuying}
             </div>
-            <div className="w-[140px] font-mono font-(--weight-semibold) text-right shrink-0 flex justify-end flex-wrap [color:var(--text-primary)] text-sm/micro">
+            <div
+              role="gridcell"
+              className="w-[140px] font-mono font-(--weight-semibold) text-right shrink-0 flex justify-end flex-wrap [color:var(--text-primary)] text-sm/micro"
+            >
               {row.totalValue}
             </div>
           </div>
         ))}
       </div>
 
-      {/* Valuation Footer */}
+      {/* Valuation Footer.  --nav-text-subtle / --nav-bg-divider-strong are the
+          codified names for the raw #FFFFFF99 / #FFFFFF26 the artboard emitted. */}
       {(footerTitle || footerSegments) && (
         <div className="flex h-[44px] mt-(--sp-6) px-(--sp-6) rounded-md shrink-0 bg-gray-900">
           {footerTitle && (
             <div className="flex items-center font-ui font-(--weight-medium) pr-(--sp-8)">
-              <div className="flex font-ui font-(--weight-medium) tracking-[0.04em] uppercase text-[#FFFFFF99] text-caption/micro">
+              <div className="flex font-ui font-(--weight-medium) [letter-spacing:var(--tracking-caps)] uppercase text-(--nav-text-subtle) text-caption/micro">
                 {footerTitle}
               </div>
             </div>
@@ -201,7 +229,7 @@ export function BulkEntryGrid({
             const last = i === (footerSegments?.length ?? 0) - 1;
             return (
               <React.Fragment key={i}>
-                <div className="w-px self-stretch shrink-0 bg-[#FFFFFF26]" />
+                <div className="w-px self-stretch shrink-0 bg-(--nav-bg-divider-strong)" />
                 <div
                   className={cn(
                     "flex items-center gap-[6px]",
@@ -209,13 +237,13 @@ export function BulkEntryGrid({
                     last && "mr-0",
                   )}
                 >
-                  <div className="font-ui text-[#FFFFFF99] text-caption/micro">
+                  <div className="font-ui text-(--nav-text-subtle) text-caption/micro">
                     {seg.label}
                   </div>
                   <div
                     className={cn(
                       "font-mono font-(--weight-semibold) text-sm/micro",
-                      seg.tone === "success" ? "text-success" : "text-white",
+                      seg.tone === "success" ? "text-success" : "text-(--text-inverse)",
                     )}
                   >
                     {seg.value}

@@ -178,11 +178,29 @@ icon-mapping guesswork.
 
 ## 6. Design tokens (as built — final values)
 
-**The Paper file is authoritative for tokens, full stop.** This section is
-a convenience copy, re-pulled live via `get_tokens({format: "css"})` —
-whenever this snapshot and the file disagree, the file wins and this
-snapshot gets overwritten, not reconciled by hand. Colors are OKLCH (see
-§7's kit facts) — do not re-derive to hex.
+> **As of Session 9, the tokens live in code:
+> `app/design-system/tokens.css`** (the `:root` source of truth) **+
+> `app/design-system/tokens.ts`** (typed mirror; a drift-guard test keeps
+> them in sync). `app/globals.css` imports `tokens.css`. `lib/tokens.css`
+> is a retired redirect stub. The **full** set — including the categories
+> the snapshot below never had (z-index, motion, elevation, control /
+> icon sizing, opacity, breakpoints, border widths, tracking) — is
+> codified there against the owner-signed
+> `docs/design/token-reconciliation.md`. This section is now the
+> **human-readable mirror of the foundations subset**; the code files are
+> authoritative.
+>
+> **D2 / ADR-41:** `--surface-panel-tint` (the 38%-alpha veil that caused
+> "transparent modals") is **retired** for new use — drawer / dialog /
+> bottom-sheet panels use the opaque **`--surface-raised`**
+> (`oklch(93.3% 0.011 308.3)` — the veil flattened over white; still a
+> subtle lavender, never see-through). A deprecated alias is kept one
+> session for the not-yet-rebuilt feature screens.
+
+**The Paper file is authoritative for the visual values of the
+foundations.** Paper's token set and the codified foundations are
+identical (`contentHash 710ac1c5`). Colors are OKLCH (see §7's kit facts)
+— do not re-derive to hex.
 
 ```css
 :root {
@@ -201,7 +219,9 @@ snapshot gets overwritten, not reconciled by hand. Colors are OKLCH (see
   --surface-subtle: var(--color-gray-50);
   --surface-hover: var(--color-gray-100);
   --surface-selected: rgb(76 59 115 / 7%);
-  --surface-panel-tint: #A690B838; /* floating drawer/dialog veil, see §7 kit facts — approved raw-hex exception */
+  --surface-active: rgb(76 59 115 / 12%);      /* pressed tint (§9.6) — added Session 9 */
+  --surface-raised: oklch(93.3% 0.011 308.3);  /* opaque drawer/dialog panel — D2/ADR-41 */
+  /* --surface-panel-tint (#A690B838) RETIRED — was the "transparent modal" bug. Deprecated alias only. */
 
   --text-primary: var(--color-gray-900);
   --text-secondary: var(--color-gray-600);
@@ -451,6 +471,21 @@ the rest.
     shimmer sweep on a `1200ms` loop. A button in flight keeps its
     variant color, dims its label to `opacity: 0.7`, shows a 14px
     inline spinner in the label color, and sets `pointer-events: none`.
+
+> **As of Session 10 the §9 contract is implemented per-component.** The rules
+> above are authored **once** as shared CSS in `app/globals.css` (`.kit-focus-ring`,
+> `.kit-field`, `.kit-row`, `.kit-interactive`, `.kit-skeleton`, `.kit-scrim`,
+> `.kit-spinner`) plus the overlay slide utilities **added in Session 10**:
+> `.kit-drawer-panel` (right/left `transform` slide, `--ease-decelerate` in /
+> `--ease-accelerate` out), `.kit-sheet-panel` (bottom slide),
+> `.kit-dialog-panel` (opacity + subtle scale, no bounce — §1). Overlays
+> (`Drawer`, `FrictionDeleteDialog`, `BottomSheet`, `MobileNavDrawer`) get the
+> full contract — portal, `.kit-scrim`, focus-trap, scroll-lock, background
+> `inert`, focus-restore, a single-active-overlay guard — from
+> `components/kit/internal/overlay.ts`. The APG roving-tabindex keyboard pattern
+> for `Tabs` / `PillFilter` / `SegmentedControl` is
+> `components/kit/internal/roving.ts`. Per-component status:
+> `docs/design/component-states.md §9`. Kit audit: `docs/design/kit-audit.md`.
 
 ---
 

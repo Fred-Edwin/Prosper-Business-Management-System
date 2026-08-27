@@ -1,24 +1,22 @@
-// Verbatim transcription of Paper artboard "Component Kit — Banners & Cards" (6SB-0):
-//   "Transfer Banner" (6SG-0)              — amber, bg-warning-bg / border-warning
-//   "Purchase Delivery Banner (info)" (9Q9-0) — blue,  bg-info-bg / border-info
-//   "Transfer Banner — Flagged" (9QL-0)   — opacity-[0.7] + the actions row `hidden`
+// Verbatim REST transcription of Paper artboard "Component Kit — Banners & Cards"
+// (6SB-0): "Transfer Banner" (6SG-0, amber), "Purchase Delivery Banner (info)"
+// (9Q9-0, blue), "Transfer Banner — Flagged" (9QL-0). Layout unchanged.
 //
-// Same markup in all three:
-//   container: flex flex-col p-(--sp-6) rounded-md gap-(--sp-5) border border-solid
-//   heading  : font-(--weight-semibold) text-sm/sm in the semantic color (text-warning /
-//              text-info); detail line font-ui [color:var(--text-secondary)] text-caption/micro
-//   actions  : flex items-center gap-(--sp-4); primary action `h-36 grow rounded-sm` with
-//              `bg-success` (transfer) or `bg-info` (purchase-delivery), label
-//              font-(--weight-semibold) text-white text-sm/sm; secondary "Flag Variance"
-//              `h-36 px-(--sp-6) rounded-sm bg-(--surface-page) border border-solid
-//              [border-color:var(--border-strong)]`.
-//
-// milestone-1-plan.md §4.7 requires both named variants — exported here as
-// <TransferBanner> and <PurchaseDeliveryBanner> wrapping a shared <Banner>.
+// Session 10 rewire:
+//   - the two actions are the kit <Button> — Accept is a success/info filled
+//     button (variant="primary" with the fill + hover overridden via
+//     --kit-hover-bg to the new --color-success-hover / --color-info-hover
+//     tokens), Flag is variant="secondary". §9.5/§9.7/§9.10 from one place;
+//     no more hard-coded `text-white`.
+//   - flagged: actions removed AND a muted "Flagged — awaiting admin" status line
+//     shown (component-states.md §2 C22 — was only hiding the actions).
+//   - container role="region" with an accessible name (it's a persistent pinned
+//     banner with actions).
 "use client";
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { Button } from "./button";
 
 type BannerTone = "warning" | "info";
 
@@ -26,25 +24,31 @@ interface BannerProps {
   tone: BannerTone;
   title: string;
   detail: string;
-  /** Label for the primary (accept/match) action. */
   primaryLabel?: string;
   onPrimary?: () => void;
   onFlag?: () => void;
-  /** Flagged state: actions removed, whole banner dimmed. */
   flagged?: boolean;
+  /** Text shown in the flagged state. */
+  flaggedLabel?: string;
   className?: string;
 }
 
-const TONE: Record<BannerTone, { box: string; heading: string; primaryBg: string }> = {
+const TONE: Record<
+  BannerTone,
+  { box: string; heading: string; primaryFill: string }
+> = {
   warning: {
     box: "bg-warning-bg border-warning",
     heading: "text-warning",
-    primaryBg: "bg-success",
+    // Accept on a Transfer banner is green (success) per the artboard.
+    primaryFill:
+      "bg-success [--kit-hover-bg:var(--color-success-hover)] text-(--text-inverse)",
   },
   info: {
     box: "bg-info-bg border-info",
     heading: "text-info",
-    primaryBg: "bg-info",
+    primaryFill:
+      "bg-info [--kit-hover-bg:var(--color-info-hover)] text-(--text-inverse)",
   },
 };
 
@@ -56,11 +60,14 @@ function Banner({
   onPrimary,
   onFlag,
   flagged = false,
+  flaggedLabel = "Flagged — awaiting admin review",
   className,
 }: BannerProps) {
   const t = TONE[tone];
   return (
     <div
+      role="region"
+      aria-label={title}
       className={cn(
         "[font-synthesis:none] flex flex-col p-(--sp-6) rounded-md gap-(--sp-5) border border-solid antialiased",
         t.box,
@@ -78,29 +85,24 @@ function Banner({
           </div>
         </div>
       </div>
-      <div className={cn("flex items-center gap-(--sp-4)", flagged && "hidden")}>
-        <button
-          type="button"
-          onClick={onPrimary}
-          className={cn(
-            "flex items-center justify-center h-[36px] grow rounded-sm kit-interactive kit-focus-ring",
-            t.primaryBg,
-          )}
-        >
-          <span className="font-ui font-(--weight-semibold) text-white text-sm/sm">
+      {flagged ? (
+        <div className="font-ui font-(--weight-medium) [color:var(--text-secondary)] text-caption/micro">
+          {flaggedLabel}
+        </div>
+      ) : (
+        <div className="flex items-center gap-(--sp-4)">
+          <Button
+            variant="primary"
+            onClick={onPrimary}
+            className={cn("grow", t.primaryFill)}
+          >
             {primaryLabel}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={onFlag}
-          className="flex items-center justify-center h-[36px] px-(--sp-6) rounded-sm shrink-0 bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-interactive kit-focus-ring"
-        >
-          <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-primary)] text-sm/sm">
+          </Button>
+          <Button variant="secondary" onClick={onFlag}>
             Flag Variance
-          </span>
-        </button>
-      </div>
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

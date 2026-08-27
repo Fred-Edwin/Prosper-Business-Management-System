@@ -38,6 +38,7 @@ export function BottomNav({
 }: BottomNavProps) {
   return (
     <nav
+      aria-label="Primary"
       className={cn(
         "[font-synthesis:none] flex items-center w-[390px] h-[56px] shrink-0 bg-(--surface-page) border-t border-t-solid [border-top-color:var(--border-subtle)] antialiased text-caption/micro",
         className,

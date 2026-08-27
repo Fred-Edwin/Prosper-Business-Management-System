@@ -24,6 +24,7 @@ export function CalculatedImpactBanner({
 }: CalculatedImpactBannerProps) {
   return (
     <div
+      role="status"
       className={cn(
         "[font-synthesis:none] flex items-start p-(--sp-5) rounded-sm gap-(--sp-4) bg-warning-bg antialiased text-caption/micro",
         className,
@@ -33,7 +34,7 @@ export function CalculatedImpactBanner({
         width="16"
         height="16"
         viewBox="0 0 24 24"
-        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden
         style={{ flexShrink: 0, marginTop: 2 }}
       >
         <circle cx="12" cy="12" r="10" fill="none" stroke="var(--color-warning)" strokeWidth="1.5" />

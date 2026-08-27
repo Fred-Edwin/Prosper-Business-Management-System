@@ -1,13 +1,11 @@
-// Verbatim transcription of Paper artboard "Component Kit — Buttons & Actions" (6BR-0):
-// the "Icon Button" frame (6CB-0) / "Icon button — default" (9L0-0) — identical markup in
-// both the base row and the state row: a 32×32 rounded-sm box filled --surface-hover, with a
-// 16×16 Lucide-style glyph inside (the `+` is the artboard's sample icon).
+// Verbatim REST transcription of Paper artboard "Component Kit — Buttons & Actions"
+// (6BR-0): "Icon Button" (6CB-0) / "Icon button — default" (9L0-0) — a 32×32
+// rounded-sm box filled --surface-hover with a 16×16 glyph slot.
 //
-// The icon is a SLOT — callers pass the real Lucide icon as `children`. The sample `+` glyph
-// is kept as the default so the gallery renders the artboard's exact drawing.
-//
-// hover (--surface-hover fill), focus-visible ring, disabled (--text-disabled glyph, no
-// pointer) are design-principles.md §9 globals via .kit-interactive / .kit-focus-ring.
+// Session 10 rewire: §9.5 icon-button hover is --surface-hover (the .kit-interactive
+// default — no --kit-hover-bg needed). §9.7 disabled via the shared rule + `disabled`
+// attr (the redundant inline opacity is dropped). Focus ring via .kit-focus-ring.
+// The icon is a SLOT — callers pass the real Lucide icon as `children`.
 "use client";
 
 import * as React from "react";
@@ -22,31 +20,9 @@ export interface IconButtonProps
 }
 
 const DefaultPlusGlyph = (
-  <svg
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    xmlns="http://www.w3.org/2000/svg"
-    style={{ flexShrink: 0 }}
-  >
-    <line
-      x1="12"
-      y1="5"
-      x2="12"
-      y2="19"
-      stroke="var(--text-secondary)"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
-    <line
-      x1="5"
-      y1="12"
-      x2="19"
-      y2="12"
-      stroke="var(--text-secondary)"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
+  <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
+    <line x1="12" y1="5" x2="12" y2="19" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" />
+    <line x1="5" y1="12" x2="19" y2="12" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" />
   </svg>
 );
 
@@ -60,7 +36,7 @@ export function IconButton({
     <button
       type="button"
       className={cn(
-        "flex items-center justify-center w-[32px] h-[32px] shrink-0 rounded-sm [background-color:var(--surface-hover)]",
+        "flex items-center justify-center w-(--control-sm) h-(--control-sm) shrink-0 rounded-sm [background-color:var(--surface-hover)]",
         "kit-interactive kit-focus-ring",
         className,
       )}

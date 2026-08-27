@@ -1,34 +1,54 @@
-// Verbatim transcription of Paper artboard "Component Kit — Tabs & Filters" (6IW-0):
-// "Tab Row" (6J1-0). Session 2 verified state-complete (active / inactive / disabled all
-// drawn) and byte-identical to the Product Catalog usage. Row = flex items-center border-b
-// [border-bottom-color:var(--border-subtle)]. Each tab: h-[36px] px-(--sp-5) border-b-2
-// border-b-solid, with `border-b-accent` (active) or `border-b-[#00000000]` (inactive/
-// disabled). Label font-(--weight-medium) text-sm/sm, colored `text-accent` (active),
-// `[color:var(--text-secondary)]` (inactive), `[color:var(--text-disabled)]` (disabled).
+// Verbatim REST transcription of Paper artboard "Component Kit — Tabs & Filters"
+// (6IW-0): "Tab Row" (6J1-0). active / inactive / disabled drawn; layout unchanged.
 //
-// hover (inactive) and focus-visible ring are the §9 globals.
+// Session 10 rewire:
+//   - raw `border-b-[#00000000]` → `border-b-transparent`.
+//   - WAI-ARIA APG tabs pattern: roving tabIndex (only the selected tab is
+//     tabbable), ArrowLeft/Right + Home/End move + select (selection follows
+//     focus), via internal/roving.ts.
+//   - `aria-controls` → the panel id (caller supplies `panelId` per tab, or a
+//     derived one); the panel it points at must be role="tabpanel"
+//     aria-labelledby={tabId}. `id` per tab is derived so screens can wire the
+//     panel without threading ids.
+//   - hover / focus-visible ring stay the §9 globals (.kit-interactive /
+//     .kit-focus-ring).
 "use client";
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { useRovingGroup } from "./internal/roving";
 
 export interface TabItem {
   key: string;
   label: string;
   disabled?: boolean;
+  /** id of the tabpanel this tab controls (role="tabpanel" aria-labelledby=tabId). */
+  panelId?: string;
 }
 
 export interface TabsProps {
   tabs: TabItem[];
   activeKey: string;
   onChange?: (key: string) => void;
+  /** Prefix for the derived per-tab id (`${idBase}-tab-${key}`). */
+  idBase?: string;
   className?: string;
 }
 
-export function Tabs({ tabs, activeKey, onChange, className }: TabsProps) {
+export function Tabs({ tabs, activeKey, onChange, idBase, className }: TabsProps) {
+  const reactId = React.useId();
+  const base = idBase ?? `tabs-${reactId}`;
+  const { onKeyDown, tabIndexFor } = useRovingGroup({
+    items: tabs,
+    activeKey,
+    onChange,
+    orientation: "horizontal",
+  });
+
   return (
     <div
       role="tablist"
+      onKeyDown={onKeyDown}
       className={cn(
         "[font-synthesis:none] flex items-center border-b border-b-solid [border-bottom-color:var(--border-subtle)] antialiased",
         className,
@@ -41,12 +61,15 @@ export function Tabs({ tabs, activeKey, onChange, className }: TabsProps) {
             key={tab.key}
             type="button"
             role="tab"
+            id={`${base}-tab-${tab.key}`}
             aria-selected={isActive}
+            aria-controls={tab.panelId}
+            tabIndex={tabIndexFor(tab.key)}
             disabled={tab.disabled}
             onClick={() => onChange?.(tab.key)}
             className={cn(
-              "flex items-center justify-center h-[36px] px-(--sp-5) border-b-2 border-b-solid kit-interactive kit-focus-ring",
-              isActive ? "border-b-accent" : "border-b-[#00000000]",
+              "flex items-center justify-center h-(--control-md) px-(--sp-5) border-b-2 border-b-solid kit-interactive kit-focus-ring [--kit-hover-bg:transparent]",
+              isActive ? "border-b-accent" : "border-b-transparent",
             )}
           >
             <span

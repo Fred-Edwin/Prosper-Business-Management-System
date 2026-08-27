@@ -1,5 +1,26 @@
 # Session 4c Handoff — Developer (Design Sprint): export the 7 Store Manager + Canteen F2 screens
 
+**STATUS: DONE (2026-08-27).** All 7 screens exported + screenshot-verified,
+both role-home swaps done, `SCREENS` list updated, `pnpm tsc --noEmit`
+exit 0. Session 4 (4a + 4b + 4c) is fully complete; all 21 M1 screens
+exported.
+
+Export itself made **0 kit swaps** (every section diverges structurally
+from its kit component — the 4b `admin-stock-mobile` precedent). Two of
+the three flags raised were then **fixed same-session, owner-directed**:
+(1) `FlowHeader` gained a `directionTone` prop (`DECISIONS.md` ADR-37c)
+and the 3 flow screens now use the kit component; (2) a pre-existing
+`app/globals.css` `@theme` type-scale bug (missing concrete `--text-*`
+values + `--leading-*` keys → `text-h2/h2` etc. silently dropped →
+headings fell back to 14px) was fixed project-wide. The third flag —
+the two-phone-screen flow artboards — needs no fix (a Phase-C route
+split). The one remaining inline transcription flagged for a **future
+design sprint**: the Store Manager / Canteen hub "Purchase Delivery" /
+"Incoming Stock" banner is drawn amber-boxed (`bg-warning-bg
+border-warning`), not the blue box the kit `<PurchaseDeliveryBanner>`
+renders. See `docs/PROGRESS.md` 2026-08-27 "Session 4c".
+
+
 **Role:** Developer, **Design Sprint** mode, for the Prosper project.
 **Phase:** B2 / B3 / B5 of `docs/design/export-workflow.md` (screen
 export). This is the **third slice** of Session 4:

@@ -1,22 +1,17 @@
-// Verbatim transcription of Paper artboard "Component Kit — Empty & Error States" (9U3-0):
-// "EmptyState — Default" (9U9-0) and "EmptyState — Filtered / no results" (9UJ-0). The 17th
-// kit area (ADR-36d, design-principles.md §7).
+// Verbatim REST transcription of Paper artboard "Component Kit — Empty & Error
+// States" (9U3-0): "EmptyState — Default" (9U9-0) + "— Filtered / no results"
+// (9UJ-0). The 17th kit area (ADR-36d, design-principles.md §7). Layout unchanged.
 //
-//   container: flex flex-col items-center py-[40px] px-[24px] rounded-md gap-[8px]
-//              bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]
-//   icon     : 28×28 svg, stroke var(--text-tertiary); default = box glyph,
-//              filtered = search glyph
-//   title    : font-ui font-(--weight-semibold) text-center flex justify-center flex-wrap
-//              [color:var(--text-primary)] text-body/sm
-//   body     : font-ui text-center flex justify-center flex-wrap
-//              [color:var(--text-secondary)] text-sm/sm
-//   action   : h-[36px] mt-[4px] px-[16px] rounded-sm; default → bg-accent + white label
-//              (font-(--weight-medium) text-sm/micro); filtered → bg-(--surface-page)
-//              border border-solid [border-color:var(--border-strong)] + primary-color label.
+// Session 10 rewire: the action button is now the kit <Button> (variant primary
+// for default, secondary for filtered) so §9.5/§9.7/§9.10 come from one place
+// (was hand-rolled markup with a hard-coded `text-white`). off-scale literals
+// (py-[40px], px-[24px], gap-[8px]) → --sp-* (40=--sp-10, 24=--sp-8, 8=--sp-4).
+// The container is role="status" so a filter change is announced. Icon aria-hidden.
 "use client";
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { Button } from "./button";
 
 export type EmptyStateVariant = "default" | "filtered";
 
@@ -32,14 +27,14 @@ export interface EmptyStateProps {
 }
 
 const BOX_ICON = (
-  <svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+  <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
     <rect x="3" y="7" width="18" height="13" rx="2" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" />
     <path d="M3 7l3-4h12l3 4" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" />
   </svg>
 );
 
 const SEARCH_ICON = (
-  <svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+  <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
     <circle cx="11" cy="11" r="7" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" />
     <line x1="21" y1="21" x2="16.65" y2="16.65" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" />
   </svg>
@@ -58,8 +53,9 @@ export function EmptyState({
 
   return (
     <div
+      role="status"
       className={cn(
-        "[font-synthesis:none] flex flex-col items-center py-[40px] px-[24px] rounded-md gap-[8px] bg-(--surface-page) border border-solid [border-color:var(--border-subtle)] antialiased text-caption/micro",
+        "[font-synthesis:none] flex flex-col items-center py-(--sp-10) px-(--sp-8) rounded-md gap-(--sp-4) bg-(--surface-page) border border-solid [border-color:var(--border-subtle)] antialiased",
         className,
       )}
     >
@@ -71,25 +67,13 @@ export function EmptyState({
         {description}
       </div>
       {actionLabel && (
-        <button
-          type="button"
+        <Button
+          variant={variant === "filtered" ? "secondary" : "primary"}
           onClick={onAction}
-          className={cn(
-            "flex items-center justify-center h-[36px] mt-[4px] px-[16px] rounded-sm shrink-0 kit-interactive kit-focus-ring",
-            variant === "filtered"
-              ? "bg-(--surface-page) border border-solid [border-color:var(--border-strong)]"
-              : "bg-accent",
-          )}
+          className="mt-(--sp-2)"
         >
-          <span
-            className={cn(
-              "font-ui font-(--weight-medium) inline-block text-center text-sm/micro",
-              variant === "filtered" ? "[color:var(--text-primary)]" : "text-white",
-            )}
-          >
-            {actionLabel}
-          </span>
-        </button>
+          {actionLabel}
+        </Button>
       )}
     </div>
   );

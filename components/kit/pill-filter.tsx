@@ -1,17 +1,21 @@
-// Verbatim transcription of Paper artboard "Component Kit — Tabs & Filters" (6IW-0):
-// "Pill Row" (6JK-0). Session 2: 6IW-0 draws active + inactive only (no inactive outline,
-// no disabled row) and it is byte-identical to the Ledger usage. Row = flex items-center
-// gap-[6px]. Each pill: h-[32px] px-(--sp-6) rounded-lg, `bg-(--surface-selected)` when
-// active (else no bg). Label text-sm/sm: active = font-(--weight-medium) text-accent;
-// inactive = font-(--weight-regular) [color:var(--text-secondary)].
+// Verbatim REST transcription of Paper artboard "Component Kit — Tabs & Filters"
+// (6IW-0): "Pill Row" (6JK-0). active + inactive drawn; layout unchanged.
 //
-// hover (inactive → --surface-hover) and focus-visible ring are §9 globals. `disabled`
-// (component-states.md §2 C12 — a pill for a location with no data) uses the §9.7 rule;
-// do NOT invent an inactive outline.
+// Session 10 rewire (owner decision, kit-audit §1): PillFilter is a single-select
+// location filter → the WAI-ARIA APG **radiogroup** pattern, same as
+// SegmentedControl.
+//   - role="radiogroup" + role="radio" + aria-checked (replaces N× aria-pressed).
+//   - roving tabIndex (only the checked pill is tabbable); ArrowLeft/Right +
+//     Home/End move + select (selection follows focus), via internal/roving.ts.
+//   - the redundant inline `hover:[…surface-hover]` and `opacity-[0.5]
+//     pointer-events-none` are removed — §9.3 hover + §9.7 disabled come from
+//     .kit-interactive. active = --surface-selected (§9.4, selected wins — no
+//     hover bg on the active pill).
 "use client";
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { useRovingGroup } from "./internal/roving";
 
 export interface PillFilterOption {
   key: string;
@@ -23,6 +27,8 @@ export interface PillFilterProps {
   options: PillFilterOption[];
   activeKey: string;
   onChange?: (key: string) => void;
+  /** Accessible name for the group, e.g. "Filter by location". */
+  "aria-label"?: string;
   className?: string;
 }
 
@@ -31,9 +37,20 @@ export function PillFilter({
   activeKey,
   onChange,
   className,
+  ...props
 }: PillFilterProps) {
+  const { onKeyDown, tabIndexFor } = useRovingGroup({
+    items: options,
+    activeKey,
+    onChange,
+    orientation: "horizontal",
+  });
+
   return (
     <div
+      role="radiogroup"
+      aria-label={props["aria-label"]}
+      onKeyDown={onKeyDown}
       className={cn(
         "[font-synthesis:none] flex items-center gap-[6px] antialiased",
         className,
@@ -45,13 +62,14 @@ export function PillFilter({
           <button
             key={opt.key}
             type="button"
-            aria-pressed={isActive}
+            role="radio"
+            aria-checked={isActive}
+            tabIndex={tabIndexFor(opt.key)}
             disabled={opt.disabled}
             onClick={() => onChange?.(opt.key)}
             className={cn(
-              "flex items-center justify-center h-[32px] px-(--sp-6) rounded-lg kit-interactive kit-focus-ring",
-              isActive ? "bg-(--surface-selected)" : "hover:[background-color:var(--surface-hover)]",
-              opt.disabled && "opacity-[0.5] pointer-events-none",
+              "flex items-center justify-center h-(--control-sm) px-(--sp-6) rounded-lg kit-interactive kit-focus-ring",
+              isActive && "bg-(--surface-selected)",
             )}
           >
             <span

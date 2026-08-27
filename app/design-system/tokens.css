@@ -1,0 +1,260 @@
+/*
+ * ============================================================================
+ * Prosper — Design System Tokens (codified, Session 9)
+ * ============================================================================
+ *
+ * SOURCE OF TRUTH for every design value in the app. Every entry here traces
+ * to docs/design/token-reconciliation.md (owner-signed 2026-08-27). No value
+ * is added to this file without a row in that table.
+ *
+ *  - Foundations (color / type / spacing / radius): pulled verbatim from the
+ *    Paper.design "Prosper Hotel" file (01M0EZ7TAHZM26KBMWNYT0928X),
+ *    contentHash.tokens 710ac1c5 — identical to the retired lib/tokens.css.
+ *  - Interaction-state contract (sizing / elevation / z-index / motion /
+ *    opacity / breakpoints / borders + 4 semantic colors + tracking): the
+ *    "gap" rows of the reconciliation table, values chosen per best practice
+ *    (owner: "fill the gaps with best practice"). Rationale in-line below.
+ *
+ * Colors are OKLCH per design-principles.md §6 — do NOT re-derive to hex.
+ * app/design-system/tokens.ts mirrors this file for TS/test access by name.
+ * app/globals.css imports this file, then maps a subset into Tailwind's
+ * @theme and adds the §9 utility classes. Nothing else imports tokens.
+ * ============================================================================
+ */
+
+:root {
+  /* ==========================================================================
+   * TIER 1 — FOUNDATIONS  (Paper = code = §6, all ✓ match — unchanged values)
+   * ========================================================================== */
+
+  /* --- Color: neutral ramp ------------------------------------------------- */
+  --color-gray-50: oklch(98.5% 0 0);
+  --color-gray-100: oklch(97% 0.002 247.8);
+  --color-gray-200: oklch(93.6% 0.005 258.3);
+  --color-gray-300: oklch(88.2% 0.009 264.5);
+  --color-gray-400: oklch(78.5% 0.014 262.4);
+  --color-gray-500: oklch(65.5% 0.021 263);
+  --color-gray-600: oklch(49.4% 0.025 261.7);
+  --color-gray-700: oklch(38.2% 0.020 262.6);
+  --color-gray-800: oklch(26.8% 0.010 260.7);
+  --color-gray-900: oklch(17.7% 0.009 264.3);
+
+  /* --- Color: accent (deliberate override of the house purple ban, §3) ---- */
+  --color-accent: oklch(28% 0.126 296);
+  --color-accent-hover: oklch(39.2% 0.123 293.2);
+  /* GAP → codified (§9.5). Destructive-button hover: one lightness step below
+   * --color-danger, mirroring the accent/accent-hover relationship. Replaces
+   * §9.5's `filter: brightness(0.92)` fallback with a real token. */
+  --color-danger-hover: oklch(47% 0.190 21.2);
+
+  /* --- Color: semantic status (independent of accent; warning is amber) --- */
+  --color-success: oklch(52.8% 0.121 155);
+  --color-success-bg: oklch(52.8% 0.121 155 / 10%);
+  --color-warning: oklch(61.6% 0.130 70.8);
+  --color-warning-bg: oklch(61.6% 0.130 70.8 / 10%);
+  --color-danger: oklch(53.8% 0.190 21.2);
+  --color-danger-bg: oklch(53.8% 0.190 21.2 / 10%);
+  --color-info: oklch(53.7% 0.146 252.3);
+  --color-info-bg: oklch(53.7% 0.146 252.3 / 10%);
+  /* GAP → codified Session 10 (owner sign-off, kit-audit §1 decision). §9.5 hover
+   * for the two filled-color action buttons that are neither accent nor danger:
+   * Banner "Accept" (bg-success) and PurchaseDeliveryBanner "Match" (bg-info).
+   * One lightness step below the base, mirroring --color-accent-hover /
+   * --color-danger-hover. Replaces a `filter: brightness` fallback. */
+  --color-success-hover: oklch(46% 0.121 155);
+  --color-info-hover: oklch(46.5% 0.146 252.3);
+
+  /* --- Color: brand (masthead-only — never a component token, §3) --------- */
+  --color-gold-brand: oklch(68% 0.110 84.2);
+
+  /* --- Color: semantic surfaces ----------------------------------------- */
+  --surface-page: oklch(100% 0 0);
+  --surface-subtle: var(--color-gray-50);
+  --surface-hover: var(--color-gray-100);
+  --surface-selected: rgb(76 59 115 / 7%); /* 7% accent — §9.4 selected tint */
+  /* GAP → codified (§9.6). Pressed/active tint, one step past --surface-selected
+   * so "pressed" reads distinct from "hover" without a transform (§1: no
+   * press-scale). If it ever reads heavy, alias to var(--surface-hover). */
+  --surface-active: rgb(76 59 115 / 12%);
+  /* GAP → codified (D2 / ADR-41). OPAQUE drawer/dialog/bottom-sheet panel fill.
+   * = the old --surface-panel-tint (#A690B8 @ 38%) flattened over white
+   * → #EBE7EF. Subtle lavender, visibly distinct from the white body, never
+   * see-through. This fixes the reported "transparent modal" bug at the token
+   * level. Tunable in Storybook. */
+  --surface-raised: oklch(93.3% 0.011 308.3);
+
+  /* DEPRECATED — do NOT use in new code (D2 / ADR-41). This 38%-alpha fill,
+   * applied directly as a panel background, IS the "transparent modal" bug.
+   * Kept ONLY as a backward-compat alias so the off-limits feature screens
+   * and /design-preview washes don't break mid-remediation. Kit components
+   * are migrated to --surface-raised in Session 9 Deliverable 3; Session 10
+   * removes this line when it rebuilds the screens. New panels: --surface-raised. */
+  --surface-panel-tint: #a690b838;
+
+  /* --- Color: semantic text --------------------------------------------- */
+  --text-primary: var(--color-gray-900);
+  --text-secondary: var(--color-gray-600);
+  --text-tertiary: var(--color-gray-500);
+  --text-disabled: var(--color-gray-400);
+  /* GAP → codified. Label color on filled accent / danger / dark-nav surfaces,
+   * so components stop hard-coding #fff / text-white. */
+  --text-inverse: var(--surface-page);
+
+  /* --- Color: borders ------------------------------------------------------ */
+  --border-subtle: oklch(93.6% 0.005 258.3);
+  --border-strong: var(--color-gray-300);
+
+  /* --- Color: dark-nav set (side nav, bottom nav, sticky footer) --------- */
+  --nav-bg: oklch(20% 0.092 310);
+  --nav-bg-active: rgb(255 255 255 / 12%);
+  --nav-bg-hover: rgb(255 255 255 / 6%);
+  --nav-bg-avatar: rgb(0 0 0 / 18%);
+  --nav-bg-chip: rgb(255 255 255 / 8%);
+  --nav-bg-divider-strong: rgb(255 255 255 / 16%);
+  --nav-text: rgb(255 255 255 / 68%);
+  --nav-text-active: #ffffff;
+  --nav-text-label: rgb(255 255 255 / 40%);
+  --nav-text-subtle: rgb(255 255 255 / 60%);
+  --nav-text-strong: rgb(255 255 255 / 85%);
+  --nav-border: rgb(255 255 255 / 10%);
+
+  /* --- Typography: families --------------------------------------------- */
+  --font-ui: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", monospace;
+  /* Display serif — login / splash screen ONLY, not a system-wide type choice. */
+  --font-display: Newsreader, Georgia, "Times New Roman", serif;
+
+  /* --- Typography: scale (size + paired line-height) -------------------- */
+  --text-micro: 11px;
+  --leading-micro: 16px;
+  --text-caption: 12px;
+  --leading-caption: 16px;
+  --text-sm: 13px;
+  --leading-sm: 18px;
+  --text-body: 14px;
+  --leading-body: 20px;
+  --text-h3: 14px;
+  --leading-h3: 20px;
+  --text-h2: 16px;
+  --leading-h2: 24px;
+  --text-h1: 20px;
+  --leading-h1: 28px;
+  --text-display: 24px;
+  --leading-display: 32px;
+
+  /* --- Typography: weights -------------------------------------------------- */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* --- Typography: tracking (letter-spacing) ---------------------------- */
+  /* GAP → codified. Paper defines no letter-spacing tokens. House style +
+   * Paper guide: tighter on large display type, open on small all-caps
+   * labels, 0 on body. -0.01em is a restrained tightening (not marketing
+   * -0.02/-0.03). Applied only to display/h1 and micro/all-caps in globals. */
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0;
+  --tracking-caps: 0.04em;
+
+  /* --- Spacing: 2px base ramp -------------------------------------------- */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 12px;
+  --sp-6: 16px;
+  --sp-7: 20px;
+  --sp-8: 24px;
+  --sp-9: 32px;
+  --sp-10: 40px;
+  --sp-11: 48px;
+  --sp-12: 64px;
+
+  /* --- Radius --------------------------------------------------------------- */
+  --radius-sm: 4px; /* dense controls (buttons, inputs, chips-in-tables) */
+  --radius-md: 6px; /* default; drawer/dialog panels */
+  --radius-lg: 8px; /* maximum; status chips, pills */
+  /* GAP → codified. Pill / circle / knob / avatar radius. */
+  --radius-full: 9999px;
+  /* Tables use 0px radius — applied directly in table components (§4.1). */
+
+  /* ==========================================================================
+   * TIER 1 — INTERACTION-STATE CONTRACT  (gap rows — best-practice values)
+   * ========================================================================== */
+
+  /* --- Sizing: control heights (measured from Paper, now named) --------- */
+  --control-sm: 32px; /* pills, icon buttons, stepper +/- buttons */
+  --control-md: 36px; /* primary button (Paper 6BW-0), tabs, select, segmented */
+  --control-lg: 44px; /* staff-shell touch targets, sticky action-bar buttons */
+
+  /* --- Sizing: icons (Lucide 24px viewbox rendered down; §5) ------------ */
+  --icon-sm: 14px; /* inline spinner (§9.10), sign-out nav icon */
+  --icon-md: 16px; /* content icons — house guide "16px content" */
+  --icon-lg: 20px; /* nav rail icons — house guide "20px nav" */
+  --icon-xl: 24px; /* empty / error-state illustration */
+
+  /* --- Sizing: misc ---------------------------------------------------- */
+  --tap-min: 44px; /* WCAG 2.5.5 Enhanced / Apple HIG 44pt — staff is one-handed */
+  --content-max: 1200px; /* Paper admin Body frame; powers <PageShell> */
+  --avatar-sm: 24px;
+  --avatar-md: 30px; /* sidebar footer avatar (measured) */
+  --nav-item-pad-inline: 10px; /* D1: tokenise the consistent raw 10px on nav items */
+  --nav-item-radius: var(--radius-sm); /* D1: the raw 4px on nav items IS --radius-sm */
+
+  /* --- Borders --------------------------------------------------------- */
+  --border-width-hairline: 1px; /* every divider / field / panel border */
+  --border-width-focus: 2px; /* §9.1 focus ring; active tab underline */
+
+  /* --- Elevation / shadow -------------------------------------------------- */
+  /* House rule §1: NO shadow on content containers. Shadows only where an
+   * element genuinely floats above the page. Soft ambient (low-alpha black,
+   * no spread, downward offset). Drawer offsets leftward — it enters from
+   * the right edge. */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05); /* §4.5 segmented-active lift; select/date popover */
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.08); /* dropdown menus, bottom-sheet peek */
+  --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.12); /* reserve */
+  --shadow-drawer: -4px 0 16px rgb(0 0 0 / 0.1); /* Drawer panel + rail */
+  --shadow-dialog: 0 12px 32px rgb(0 0 0 / 0.16); /* FrictionDeleteDialog, centered modals */
+
+  /* --- Z-index scale (100-step, generous gaps for future intermediates) - */
+  --z-base: 0;
+  --z-dropdown: 1000; /* select / date popover */
+  --z-sticky: 1100; /* sticky table header, sticky footer, sticky action bar */
+  --z-overlay: 1200; /* .kit-scrim backdrop */
+  --z-drawer: 1300; /* Drawer panel / rail — above its scrim */
+  --z-dialog: 1400; /* FrictionDeleteDialog / BottomSheet panel */
+  --z-toast: 1500; /* Toast / Notifier — above everything */
+
+  /* --- Motion ---------------------------------------------------------- */
+  /* 120ms and 200ms are verbatim from §9.9. 320ms follows the ~1.6x ratio
+   * for toast travel / larger sheets. NO reduced-motion block this session
+   * (owner D4) — these durations always apply. */
+  --dur-fast: 120ms; /* §9.9 — bg / border / opacity on interactive elements */
+  --dur-base: 200ms; /* §9.9 — drawer / bottom-sheet slide (transform only) */
+  --dur-slow: 320ms; /* toast travel, larger sheet transitions */
+  /* No overshoot / spring — §1 forbids bounce. */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1); /* Material "standard" */
+  --ease-decelerate: cubic-bezier(0, 0, 0, 1); /* enter (slide-in) */
+  --ease-accelerate: cubic-bezier(0.4, 0, 1, 1); /* exit (slide-out) */
+
+  /* --- Opacity --------------------------------------------------------- */
+  --opacity-disabled: 0.5; /* §9.7 verbatim */
+  --opacity-loading-label: 0.7; /* §9.10 verbatim */
+  --opacity-scrim: 0.3; /* .kit-scrim dim — handoff Deliverable 2 */
+
+  /* --- Breakpoints --------------------------------------------------------- */
+  /* EXACTLY Tailwind v4's sm/md/lg/xl defaults — so these constants and the
+   * `md:` class strings the screens already use can never disagree. CSS vars
+   * can't be used in @media directly; tokens.ts is the value source for any
+   * JS matchMedia. --bp-md (768) is the mobile-card <-> desktop-table swap. */
+  --bp-sm: 640px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1280px;
+
+  /* --- Focus (rule params; the rule itself is in globals.css §9.1) ------ */
+  --focus-ring-color: var(--color-accent);
+  --focus-ring-color-on-dark: var(--nav-text-active);
+  --focus-ring-width: var(--border-width-focus);
+  --focus-ring-offset: 2px;
+}

@@ -29,32 +29,68 @@ value and computes the delta internally (ADR-15).
 
 ## Catalog
 
+> **Implemented Session 5 (2026-08-27).** The contract below reflects what
+> shipped. Changes from the original spec (see ADR-38): per-location
+> pricing is submitted *with* the product, not via a separate endpoint;
+> delete is `DELETE /api/products/:id` (with `?mode=archive` or a
+> `{ confirmName }` body), not `POST .../soft-delete` + `.../hard-delete`.
+> Field names are `camelCase` in the JSON (matching the domain types) —
+> `buyingPrice`, `unitLabel`, `sellingPrice`.
+
+Success envelope is `{ "data": ... }`; errors use the standard shape.
+
 ### `GET /api/locations`
-Roles: all. Returns active locations.
+Roles: Admin (M1 — widen to "all" when a second consumer appears).
+Returns active locations, `{ data: Location[] }`, sorted by name.
 
 ### `GET /api/products`
-Roles: all (buying price stripped for non-Admin).
-Query: `?location_id=` to scope to what's sellable at a location.
+Roles: Admin (buying price stripped to `null` for non-Admin roles once
+they consume this).
+Query: `?kind=ingredient|dish|goods`, `?search=` (case-insensitive `name`
+contains), `?includeArchived=true` (default excludes soft-deleted).
+Returns `{ data: ProductWithLocations[] }`, sorted kind→name. Each item:
+`{ id, name, kind, unitLabel, buyingPrice, deletedAt, createdAt,
+updatedAt, locations: [{ locationId, locationName, locationType,
+sellingPrice, active }] }`. Money fields are decimal **strings**
+(`"580.00"`); `sellingPrice` is `null` when the location is stocked but
+not sold.
 
 ### `POST /api/products`
-Roles: Admin. Body: `{ name, kind, buying_price?, unit_label }`.
-`buying_price` required for Ingredient/Goods; ignored (forced to `0`) for
-Dish — see ADR-33.
+Roles: Admin. Body:
+```json
+{ "name": "...", "kind": "ingredient|dish|goods", "unitLabel": "...",
+  "buyingPrice": "580.00",
+  "locations": [{ "locationId": "...", "sellingPrice": "850.00" | null, "active": true }] }
+```
+`buyingPrice` required for `ingredient`/`goods` (`>= 0`); ignored (forced
+to `"0.00"`) for `dish` — ADR-33. Writes the product + one
+`ProductLocation` per `locations[]` entry in one transaction. Returns
+`{ data: ProductWithLocations }`, `201`.
 
 ### `PATCH /api/products/:id`
-Roles: Admin. Non-ledger metadata edit (name, unit_label) — true edit, not
-a correction (product catalog entries aren't a ledger).
+Roles: Admin. Same body as `POST`. True edit, not a correction (a catalog
+entry is not a ledger). `locations[]` is reconciled to the submitted set:
+entries present are upserted; a previously-active location no longer in
+the array is **deactivated** (`active = false`), not deleted (ADR-38).
+Switching `kind` to `dish` zeroes `buyingPrice`. `404` if missing or
+soft-deleted.
 
-### `POST /api/products/:id/soft-delete`
+### `DELETE /api/products/:id`
 Roles: Admin.
+- `?mode=archive` — soft-delete: sets `deletedAt`, deactivates the
+  product's `ProductLocation` rows. Idempotent. Returns
+  `{ data: { archived: true } }`.
+- otherwise — hard delete. Body `{ "confirmName": "..." }` must equal the
+  product name **exactly** (case-sensitive) → else `400 VALIDATION_ERROR`
+  (`field: "confirmName"`). Returns `409 CONFLICT` if any linked
+  `StockMovement` / `OrderLine` / `StockCount` / `RecipeIngredient`
+  exists — the client turns this into the "Archive instead" path. Clean ⇒
+  deletes the `ProductLocation` rows then the product. Returns
+  `{ data: { deleted: true } }`.
 
-### `POST /api/products/:id/hard-delete`
-Roles: Admin. Body: `{ confirm_name }` (must match product name exactly).
-Returns `409 CONFLICT` if any linked `StockMovement`/`OrderLine` exists.
-
-### `POST /api/products/:id/locations`
-Roles: Admin. Sets/updates `ProductLocation` (selling price, active flag)
-for a location.
+### `GET /api/products/:id`
+Roles: Admin. Returns `{ data: ProductWithLocations }` for the edit
+drawer; `404` if missing or soft-deleted.
 
 ---
 
@@ -90,26 +126,93 @@ does not block anything.
 
 ## Stock Movements
 
+> **Implemented Session 6 (2026-08-27).** The contract below reflects what
+> shipped. Field names are **`camelCase`** in the JSON (matching the domain
+> types, as Session 5 did for Catalog) — the `snake_case` in earlier drafts
+> of this section is superseded. Quantities and money are decimal
+> **strings** (`"12.5000"`, `"6000.00"`), never floats. Changes from the
+> original spec: `opening` is a `POST` body here (not a separate endpoint);
+> `POST /api/stock-movements/:id/accept` is added for the 2-phase transfer;
+> `GET /api/stock-movements/balances` (batched derived-balance read) added
+> Session 7 (ADR-40); `recordPurchasePayment` does **not** yet write a
+> `MoneyMovement` (deferred to F3 — see ADR-39). Signed-quantity +
+> 2-phase-transfer model: ADR-39.
+> Success envelope is `{ "data": ... }`; errors use the standard shape.
+
 ### `GET /api/stock-movements`
-Roles: Admin (all), Store Manager/Attendant (their location only).
-Query: `?product_id=&location_id=&movement_type=&date=`.
+Roles: Admin (all locations), Store Manager / Canteen Attendant (their
+location only — resolved via `User.staff.locationId`). Cashier: `403`.
+Query: `?productId=&locationId=&movementType=&date=` (`date` is a
+`YYYY-MM-DD` business date, matched on `occurredAt` in the
+`Africa/Nairobi` day). A location-bound caller passing another location's
+`locationId` gets `[]`. Newest first.
+
+Each row: `{ id, productId, locationId, movementType, quantity (signed
+decimal string, from this row's location's perspective), recordedById,
+occurredAt (ISO), reason, reasonNote, orderId, stockCountId,
+transferCounterpartLocationId, purchasePaymentId, correctsMovementId,
+note, createdAt, updatedAt }`.
 
 ### `POST /api/stock-movements`
-Roles vary by `movement_type`:
-- `purchase_payment` — Admin only. Body: `{ product_id, location_id, supplier, quantity, cost, paid_from_account }`. Writes a `MoneyMovement` too; no stock effect.
-- `purchase_receipt` — Store Manager/Attendant. Body: `{ product_id, location_id, quantity, purchase_payment_id? }`. Updates stock.
-- `issue` — Store Manager. Body: `{ product_id, quantity }` (Store → cooking).
-- `production` — Store Manager. Body: `{ product_id, quantity }` (adds Dish stock to Restaurant).
-- `transfer` — Store Manager/Attendant. Body: `{ product_id, from_location_id, to_location_id, quantity }`.
-- `non_sale_consumption` — any staff. Body: `{ product_id, location_id, quantity, reason, reason_note? }`. `reason_note` required if `reason = other`.
+Body is discriminated on `movementType`. Role allowed **varies by type**;
+location-bound roles may only write at their own location (except
+`production`, which is inherently Store → Restaurant). All return `201`
+with the created row. Inputs take an **unsigned magnitude**; the domain
+applies the sign.
+
+- `opening` — Admin. `{ movementType: "opening", productId, locationId, businessDate (YYYY-MM-DD), quantity }`. Writes an `opening` row at that business day's start. A second call for the same product/location/date is a **correction** of the first (ADR-15), not a duplicate.
+- `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`; ordered magnitude + cost in `note`). The `MoneyMovement` debit is **not** written yet — F3 owns it (ADR-39).
+- `purchase_receipt` — Store Manager / Canteen Attendant. `{ movementType: "purchase_receipt", productId, locationId, quantity, purchasePaymentId? }`. `+quantity` at `locationId`. `purchasePaymentId`, if given, must reference a real `purchase_payment` row → `404` otherwise.
+- `issue` — Store Manager. `{ movementType: "issue", productId, locationId, quantity }`. `−quantity` at the Store (Store → cooking; single row).
+- `production` — Store Manager. `{ movementType: "production", productId, locationId, quantity }`. `+quantity` at `locationId`, which **must be a `restaurant` location**; `productId` **must be `kind = "dish"`** → `400` otherwise.
+- `transfer` — Store Manager / Canteen Attendant. `{ movementType: "transfer", productId, fromLocationId, toLocationId, quantity }`. **Phase 1 of 2:** writes the `−quantity` dispatch row at `fromLocationId` only (stock leaves now; `toLocationId` in `transferCounterpartLocationId`). Same from/to → `400`. Completed by `POST .../:id/accept`.
+- `non_sale_consumption` — Admin / Store Manager / Canteen Attendant, location-scoped. `{ movementType: "non_sale_consumption", productId, locationId, quantity, reason, reasonNote? }`. `−quantity`. `reason` ∈ `staff_meal | complimentary | spoiled | damaged | other`; `reasonNote` **required iff `reason = "other"`** → `400` on `reasonNote`.
+
+### `POST /api/stock-movements/:id/accept`
+Phase 2 of a 2-phase transfer. `:id` is the pending dispatch (`−q`) row.
+Roles: the receiving location's Store Manager / Canteen Attendant, or
+Admin.
+- No body / `{}` → **accept**: writes the `+quantity` counterpart at the
+  destination, linked to the dispatch (`correctsMovementId` = dispatch id).
+  `201`. Stock lands at the destination only now. Double-accept → `409`.
+- `{ "flag": true, "note": "..." }` → **flag a discrepancy**: records the
+  note on the pending dispatch row, releases **no** stock. `200`.
 
 ### `POST /api/stock-movements/:id/correct`
-Roles: Admin only if the movement's date is closed; original recorder if
-same-day and still open. Body: `{ corrected_quantity, note? }`.
+Body: `{ correctedQuantity (signed decimal string), note? }` — the
+*corrected final quantity* of the target row; the domain computes
+`delta = correctedQuantity − original.quantity` and writes a new row
+(same type/product/location, `quantity = delta`, `correctsMovementId` set,
+`occurredAt` = the original's). Returns `201` with the delta row.
+Roles: if a `DayClose` exists for the original's business day → **Admin
+only** (`403` otherwise); if the day is still open → Admin **or the
+original recorder**. `delta = 0` → `400`.
 
 ### `GET /api/stock-movements/outstanding`
-Roles: Admin. Returns purchase payments awaiting receipt and receipts
-without a matching payment (PRD §4.2).
+Roles: Admin only (`403` otherwise). Returns `{ awaitingReceipt: [...],
+unmatchedReceipts: [...] }` — `purchase_payment` rows no `purchase_receipt`
+links back to, and `purchase_receipt` rows with a null `purchasePaymentId`
+(PRD §4.2). Each entry is a full movement row (same shape as `GET
+/api/stock-movements`).
+
+### `GET /api/stock-movements/balances`
+**Added Session 7 (2026-08-27), ADR-40.** Batched derived-balance read —
+the ledger's Opening column source (opening = the prior business day's
+closing, ADR-11). Wraps the Session-6 domain fn
+`getDerivedStockBalances`; no stored total.
+
+Query: `?productIds=a,b,c&locationId=<id>&asOf=YYYY-MM-DD`. `productIds` is
+comma-separated. `asOf` is a **business date** — the balance sums every
+movement whose `occurredAt` is before the **end** of that Africa/Nairobi
+day (that day's closing figure); omit `asOf` for "as of now".
+
+Roles: same as `GET /api/stock-movements` — Admin (any location), Store
+Manager / Canteen Attendant (their own location only; a foreign
+`locationId` → `[]`). Cashier: `403`.
+
+Returns `{ data: [{ productId, locationId, quantity }] }` — one entry per
+requested id, `quantity` a signed decimal string, `"0.0000"` when the
+product has no rows.
 
 ---
 

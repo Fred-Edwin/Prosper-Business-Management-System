@@ -43,8 +43,7 @@ export function ActionTileGrid({ tiles, className }: ActionTileGridProps) {
           onClick={tile.onClick}
           className={cn(
             "flex flex-col w-[142px] p-(--sp-5) rounded-md gap-(--sp-3) shrink-0 border border-solid [border-color:var(--border-subtle)] text-left",
-            "kit-interactive kit-focus-ring",
-            tile.disabled && "opacity-[0.5] pointer-events-none",
+            "kit-interactive kit-focus-ring [--kit-hover-bg:var(--surface-hover)]",
           )}
         >
           {tile.icon}

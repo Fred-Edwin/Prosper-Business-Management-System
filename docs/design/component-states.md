@@ -840,3 +840,56 @@ divergences fixed, 2 documented as content variants, 1 deferred as
 post-M1). Session 3 can `get_jsx` each artboard and its labelled state
 rows and build `components/kit/*` directly, encoding the drawn states
 from the artboards and the interaction states from §9.
+
+---
+
+## 9. Implementation status — Session 10 (Deliverable 3), 2026-08-27
+
+Every component's §2 state matrix is now **implemented** in code, not just
+spec'd. Session 3–4 built the REST artboards; Session 9 authored the §9
+interaction contract as shared CSS; **Session 10 wired every component to it
+and added the keyboard + ARIA behaviour** (`docs/design/kit-audit.md` is the
+per-component before → after record).
+
+| Component | §2 states | Status |
+|---|---|---|
+| C1 Button | default×4, hover/active/focus (GLOBAL), disabled×4, loading | **implemented** — per-variant `--kit-hover-bg`; `data-loading` → §9.10 dim + `<Spinner>`; new `size` prop (`sm`/`lg` pending owner review) |
+| C2 IconButton | default, hover/active/focus, disabled | **implemented** |
+| C3 TextInput | default/focus/filled/error/disabled | **implemented** — `.kit-field` + `<FormField>` (helper row + `aria-describedby`) |
+| C4 Textarea | default/focus/error/disabled | **implemented** — as C3 |
+| C5 Select | closed/focus/**open**/filled/error/disabled | **implemented** — real APG listbox (arrow/Home-End/type-ahead/`aria-activedescendant`) |
+| C6 SegmentedControl | active/resting/hover/disabled | **implemented** — roving tabindex + arrows; `--shadow-sm` lift |
+| C7 ToggleSwitch | on/off/disabled/focus | **implemented** |
+| C8 SearchInput | default/focus/**filled+clear** | **implemented** — + `aria-label`, `role="search"`, Esc-to-clear |
+| C9 DatePicker | closed/focus/**open calendar**/disabled | **implemented** — real calendar (internal month state, grid ARIA, arrow/PageUp-Down/Home-End); legacy `weeks` prop kept. **API pending owner review** |
+| C10 QuantityStepper | default/**at-bound**/**focus (value)**/**error (typed)** | **implemented** — value is now `<input role="spinbutton">`. **Behaviour pending owner review** |
+| C11 Tabs | active/inactive/hover/disabled/focus | **implemented** — roving tabindex + `←→`/Home/End; `aria-controls` hook |
+| C12 PillFilter | active/inactive/hover/**disabled**/focus | **implemented** — now `role="radiogroup"` (was `aria-pressed`); arrows. **Pattern pending owner review** |
+| C13 StatusChip | 5 semantic variants | **no change needed** (display-only, verified) |
+| C14 ConditionChip | 3 variants | **no change needed** |
+| C15 SimpleTable | header/row/**row hover**/empty/loading | **implemented** — clickable rows are `<button>`s; `loading` skeleton; `<EmptyState>` slot; `sortable` + `aria-sort` |
+| C16 DenseLedger | header/row/**row hover**/**corrected cell**/empty/loading | **implemented** — `.kit-row` gated on `onCellClick`; cells are keyboard-operable; `loading` skeleton |
+| C17 FrictionDeleteDialog | pending/confirmed/**retype-mismatch**/submitting | **implemented** — full overlay contract; field neutral→danger on mismatch; footer `<Button>` |
+| C18 Drawer | shell/open/footer-disabled/submitting/scrolled | **implemented** — scrim + opaque panel + focus-trap + scroll-lock + inert + focus-restore + single-overlay guard + slide; `panel`/`rail` |
+| C19 BottomSheet | peek/open/dragging/backdrop | **implemented** — same overlay contract, slide from bottom |
+| C20 Stat tile row | — | **deferred to M3** (D-FIN) — not built |
+| C21 DenseSummaryStrip | default/±emphasis | **implemented** — raw whites → tokens |
+| C22 Transfer/PurchaseDelivery banner | transfer/purchase-delivery/actions/**flagged** | **implemented** — actions → `<Button>`; flagged now shows a muted status line; new `--color-success-hover`/`--color-info-hover` tokens (pending owner ratify) |
+| C23 CalculatedImpactBanner | default | **implemented** — `role="status"`, icon `aria-hidden` (D5 padding confirmed `--sp-5`) |
+| C24 MatchCard | awaiting/matched/flagged/submitting | **implemented** — awaiting action → `<Button loading>` |
+| C25 InstructionalBanner | default | **implemented** — `--text-inverse` on the numbered circle |
+| C26 BulkEntryGrid | header/editable/focused/non-editable/**error**/footer/Dish | **implemented** — grid ARIA; editable cells named + `inputMode`. No §9.8 helper row per cell (documented exception) |
+| C27 ActionTileGrid | default/badge/pressed/disabled | **implemented** — redundant disabled inline removed |
+| C28 ActivityTimeline | default/empty | **implemented** — empty `role="status"` |
+| C29 Breadcrumb | default/hover | **implemented** — `aria-hidden` separator |
+| C30 BottomNav | active/inactive/pressed | **implemented** — `<nav aria-label="Primary">` |
+| C31 FlowHeader | default/**no-badge**/back-pressed | **implemented** — `<header>` + `role="heading"` |
+| C32 Toolbar row | (composite) | n/a — its parts carry their states |
+
+**New primitives (no §2 row — added this session, `kit-audit.md §3`):**
+`Spinner`, `FormField` (mechanical); `Toast` / `ToastProvider` / `useToast()`,
+`PageShell` / `ContentRegion` (owner review in Session 10b).
+
+**Gate for "done":** proved this session by `pnpm tsc --noEmit` + `pnpm build`
++ 80 unit tests + a kit-gallery smoke render. The permanent per-state
+Playwright + axe gates are **Session 10b** (`session-10b-handoff.md`).

@@ -86,6 +86,9 @@ export interface DenseLedgerProps {
   rows: LedgerRow[];
   totals?: LedgerTotals;
   emptyMessage?: string;
+  /** Render N `.kit-skeleton` rows instead of data (§9.10). */
+  loading?: boolean;
+  loadingRows?: number;
   /**
    * When true, a leading Location column (`w-[100px]`) is rendered before Product, using
    * `LedgerRow.location`. The Admin Stock ledger screens set this (ADR-37a); the base
@@ -133,30 +136,40 @@ function DataCell({
   widthCls,
   numeric,
   onClick,
+  label,
 }: {
   cell: LedgerCell;
   colKey: string;
   widthCls: string;
   numeric: boolean;
   onClick?: () => void;
+  label?: string;
 }) {
-  return (
-    <div
+  const cls = cn(
+    "font-mono text-sm/micro shrink-0",
+    CLOSING_KEYS.has(colKey)
+      ? "font-(--weight-semibold)"
+      : "font-(--weight-regular)",
+    widthCls,
+    numeric && "text-right flex justify-end flex-wrap",
+    toneClass(cell),
+    // ADR-36a corrected cell — value in its semantic colour + a 1px underline.
+    cell.corrected &&
+      "underline [text-decoration-thickness:1px] underline-offset-2",
+  );
+  const content = cell.dash ? "—" : cell.value;
+  // Clickable cell = the correction-drawer target. Keyboard-operable.
+  return onClick ? (
+    <button
+      type="button"
       onClick={onClick}
-      className={cn(
-        "font-mono text-sm/micro shrink-0",
-        CLOSING_KEYS.has(colKey)
-          ? "font-(--weight-semibold)"
-          : "font-(--weight-regular)",
-        widthCls,
-        numeric && "text-right flex justify-end flex-wrap",
-        toneClass(cell),
-        cell.corrected && "underline-offset-2 [text-decoration:underline_1px]",
-        onClick && "cursor-pointer",
-      )}
+      aria-label={label}
+      className={cn(cls, "kit-interactive kit-focus-ring cursor-pointer bg-transparent")}
     >
-      {cell.dash ? "—" : cell.value}
-    </div>
+      {content}
+    </button>
+  ) : (
+    <div className={cls}>{content}</div>
   );
 }
 
@@ -166,6 +179,8 @@ export function DenseLedger({
   emptyMessage = "No movements recorded for this filter.",
   showLocation = false,
   horizontalScroll = false,
+  loading = false,
+  loadingRows = 3,
   onCellClick,
   className,
 }: DenseLedgerProps) {
@@ -189,7 +204,7 @@ export function DenseLedger({
         )}
       >
         {showLocation && (
-          <div className="w-[100px] shrink-0 font-ui font-(--weight-semibold) tracking-[0.02em] uppercase inline-block text-info text-caption/micro">
+          <div className="w-[100px] shrink-0 font-ui font-(--weight-semibold) [letter-spacing:var(--tracking-caps)] uppercase inline-block text-info text-caption/micro">
             Location
           </div>
         )}
@@ -197,7 +212,7 @@ export function DenseLedger({
           <div
             key={key}
             className={cn(
-              "font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase leading-[12px] text-info shrink-0",
+              "font-ui font-(--weight-semibold) text-[10px] [letter-spacing:var(--tracking-caps)] uppercase leading-[12px] text-info shrink-0",
               widthCls,
               numeric && "text-right flex justify-end flex-wrap",
             )}
@@ -205,13 +220,25 @@ export function DenseLedger({
             {header}
           </div>
         ))}
-        <div className="w-[50px] font-ui font-(--weight-semibold) text-[10px] tracking-[0.04em] uppercase shrink-0 justify-start leading-[12px] text-info">
+        <div className="w-[50px] font-ui font-(--weight-semibold) text-[10px] [letter-spacing:var(--tracking-caps)] uppercase shrink-0 justify-start leading-[12px] text-info">
           Edit
         </div>
       </div>
 
-      {/* Data Rows / Empty */}
-      {rows.length === 0 ? (
+      {/* Data Rows / Empty / Loading */}
+      {loading ? (
+        Array.from({ length: loadingRows }).map((_, i) => (
+          <div
+            key={i}
+            className={cn(
+              "flex items-center h-[38px] px-(--sp-6) shrink-0 border-b border-b-solid [border-bottom-color:var(--border-subtle)]",
+              lineWidth,
+            )}
+          >
+            <div className="kit-skeleton h-[12px] w-full" />
+          </div>
+        ))
+      ) : rows.length === 0 ? (
         <div className="flex items-center h-[38px] px-(--sp-6) [width:100%] justify-center py-(--sp-7) shrink-0">
           <div className="font-ui font-(--weight-medium) min-w-[0px] text-center flex justify-center flex-wrap [color:var(--text-tertiary)] text-sm/micro">
             {emptyMessage}
@@ -222,7 +249,10 @@ export function DenseLedger({
           <div
             key={row.id}
             className={cn(
-              "flex items-center h-[38px] px-(--sp-6) gap-(--sp-5) shrink-0 border-b border-b-solid [border-bottom-color:var(--border-subtle)] kit-row",
+              "flex items-center h-[38px] px-(--sp-6) gap-(--sp-5) shrink-0 border-b border-b-solid [border-bottom-color:var(--border-subtle)]",
+              // §9.3: the hover tint signals "this row does something" — only when
+              // cells are actually clickable.
+              onCellClick && "kit-row",
               lineWidth,
             )}
           >
@@ -234,13 +264,14 @@ export function DenseLedger({
             <div className="font-ui font-(--weight-medium) grow min-w-[140px] [color:var(--text-primary)] text-sm/micro">
               {row.product}
             </div>
-            {COLUMNS.slice(1).map(([key, , widthCls, numeric]) => (
+            {COLUMNS.slice(1).map(([key, colHeader, widthCls, numeric]) => (
               <DataCell
                 key={key}
                 cell={row[key] as LedgerCell}
                 colKey={key}
                 widthCls={widthCls}
                 numeric={numeric}
+                label={`Correct ${colHeader} for ${row.product}`}
                 onClick={
                   onCellClick ? () => onCellClick(row.id, key) : undefined
                 }
@@ -262,7 +293,7 @@ export function DenseLedger({
           )}
         >
           {showLocation && <div className="w-[100px] shrink-0" />}
-          <div className="font-ui font-(--weight-semibold) grow min-w-[140px] text-white text-sm/micro">
+          <div className="font-ui font-(--weight-semibold) grow min-w-[140px] text-(--text-inverse) text-sm/micro">
             {totals.label}
           </div>
           {COLUMNS.slice(1).map(([key, , widthCls]) => {
@@ -272,7 +303,7 @@ export function DenseLedger({
                 ? "text-success"
                 : cell.tone === "danger"
                   ? "text-danger"
-                  : "text-white";
+                  : "text-(--text-inverse)";
             return (
               <div
                 key={key}

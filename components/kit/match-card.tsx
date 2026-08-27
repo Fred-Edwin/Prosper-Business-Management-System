@@ -18,11 +18,15 @@
 //              text-sm/sm
 //   bottom   : flex items-center justify-center h-[36px] rounded-sm shrink-0
 //
-// submitting = primary-loading button (§9).
+// Session 10 rewire: the "awaiting" action is the kit <Button variant="primary">
+// (§9.5 hover → --color-accent-hover, §9.10 loading via `submitting`), not
+// hand-rolled markup with a hard-coded `text-white`. Container role="listitem"
+// (it lives in the reconciliation list). raw tracking-[0.04em] → --tracking-caps.
 "use client";
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { Button } from "./button";
 
 export type MatchCardStatus = "awaiting" | "matched" | "flagged";
 
@@ -33,6 +37,8 @@ export interface MatchCardProps {
   /** awaiting: the button label, e.g. "1-Tap Match & Receive (+50.0 kg)". */
   actionLabel?: string;
   onAction?: () => void;
+  /** awaiting: 1-tap match in flight. */
+  submitting?: boolean;
   /** matched / flagged: the result-bar text, e.g. "Matched & received  ·  +50.0 kg". */
   resultLabel?: string;
   className?: string;
@@ -50,6 +56,7 @@ export function MatchCard({
   status,
   actionLabel,
   onAction,
+  submitting = false,
   resultLabel,
   className,
 }: MatchCardProps) {
@@ -57,6 +64,8 @@ export function MatchCard({
 
   return (
     <div
+      role="listitem"
+      aria-label={supplier}
       className={cn(
         "[font-synthesis:none] flex flex-col p-(--sp-6) rounded-md gap-(--sp-5) border border-solid [border-color:var(--border-subtle)] antialiased",
         className,
@@ -69,7 +78,7 @@ export function MatchCard({
         <div className={cn("flex items-center h-[20px] px-[6px] rounded-sm", pill.box)}>
           <div
             className={cn(
-              "font-ui font-(--weight-medium) text-[10px] uppercase tracking-[0.04em] leading-[12px]",
+              "font-ui font-(--weight-medium) text-[10px] uppercase [letter-spacing:var(--tracking-caps)] leading-[12px]",
               pill.text,
             )}
           >
@@ -90,15 +99,14 @@ export function MatchCard({
       </div>
 
       {status === "awaiting" ? (
-        <button
-          type="button"
+        <Button
+          variant="primary"
           onClick={onAction}
-          className="flex items-center justify-center h-[36px] rounded-sm shrink-0 bg-accent kit-interactive kit-focus-ring"
+          loading={submitting}
+          className="w-full"
         >
-          <span className="font-ui font-(--weight-semibold) text-white text-sm/sm">
-            {actionLabel}
-          </span>
-        </button>
+          {actionLabel}
+        </Button>
       ) : (
         <div
           className={cn(

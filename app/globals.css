@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "../lib/tokens.css";
+@import "./design-system/tokens.css";
 @import "tw-animate-css";
 
 @theme inline {
@@ -18,12 +18,16 @@
   --color-surface-subtle: var(--surface-subtle);
   --color-surface-hover: var(--surface-hover);
   --color-surface-selected: var(--surface-selected);
-  --color-surface-panel-tint: var(--surface-panel-tint);
+  --color-surface-active: var(--surface-active);
+  /* Opaque drawer/dialog/bottom-sheet panel fill (D2 / ADR-41).
+   * --surface-panel-tint was retired — do not re-add it. */
+  --color-surface-raised: var(--surface-raised);
 
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);
   --color-text-disabled: var(--text-disabled);
+  --color-text-inverse: var(--text-inverse);
 
   --color-border-subtle: var(--border-subtle);
   --color-border-strong: var(--border-strong);
@@ -33,12 +37,15 @@
 
   --color-success: var(--color-success);
   --color-success-bg: var(--color-success-bg);
+  --color-success-hover: var(--color-success-hover);
   --color-warning: var(--color-warning);
   --color-warning-bg: var(--color-warning-bg);
   --color-danger: var(--color-danger);
   --color-danger-bg: var(--color-danger-bg);
+  --color-danger-hover: var(--color-danger-hover);
   --color-info: var(--color-info);
   --color-info-bg: var(--color-info-bg);
+  --color-info-hover: var(--color-info-hover);
 
   --color-gold-brand: var(--color-gold-brand);
 
@@ -60,22 +67,44 @@
   /* Display serif — login screen only, not a system-wide type choice. */
   --font-display: var(--font-display);
 
-  --text-micro: var(--text-micro);
-  --text-micro--line-height: var(--leading-micro);
-  --text-caption: var(--text-caption);
-  --text-caption--line-height: var(--leading-caption);
-  --text-sm: var(--text-sm);
-  --text-sm--line-height: var(--leading-sm);
-  --text-body: var(--text-body);
-  --text-body--line-height: var(--leading-body);
-  --text-h3: var(--text-h3);
-  --text-h3--line-height: var(--leading-h3);
-  --text-h2: var(--text-h2);
-  --text-h2--line-height: var(--leading-h2);
-  --text-h1: var(--text-h1);
-  --text-h1--line-height: var(--leading-h1);
-  --text-display: var(--text-display);
-  --text-display--line-height: var(--leading-display);
+  /*
+   * Type scale — literal values (must match app/design-system/tokens.css :root
+   * exactly, and the Paper token snapshot, design-principles.md §6).
+   *
+   * Two things are needed for the classes get_jsx emits to actually work:
+   *  1. A concrete value per `--text-*` (a self-referential `var(--text-h1)`
+   *     here resolves to nothing and Tailwind emits NO `.text-h1` rule — the
+   *     element silently falls back to the 14px body size).
+   *  2. Matching `--leading-*` theme keys. get_jsx emits the slash form
+   *     `text-h2/h2`, `text-display/display`, etc. — `font-size / line-height`.
+   *     The name after the `/` must resolve to a registered `--leading-*` key,
+   *     so every step's line-height is also exposed as `--leading-<step>`.
+   *     Without these, `text-h2/h2` is an invalid class and is dropped.
+   */
+  --text-micro: 11px;
+  --text-micro--line-height: 16px;
+  --leading-micro: 16px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --leading-caption: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 18px;
+  --leading-sm: 18px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --leading-body: 20px;
+  --text-h3: 14px;
+  --text-h3--line-height: 20px;
+  --leading-h3: 20px;
+  --text-h2: 16px;
+  --text-h2--line-height: 24px;
+  --leading-h2: 24px;
+  --text-h1: 20px;
+  --text-h1--line-height: 28px;
+  --leading-h1: 28px;
+  --text-display: 24px;
+  --text-display--line-height: 32px;
+  --leading-display: 32px;
 
   --font-weight-regular: var(--weight-regular);
   --font-weight-medium: var(--weight-medium);
@@ -121,81 +150,150 @@ body {
   line-height: var(--leading-body);
 }
 
-/* ============================================================
- * §9 Global interaction states — design-principles.md §9.
- * Encoded ONCE here, not per component. The kit components opt
- * in with the shared utility classes below (.kit-interactive,
- * .kit-field, .kit-row) plus Tailwind hover:/focus-visible:/
- * disabled: variants for the few states Paper draws as artboards.
- * ============================================================ */
+/* ============================================================================
+ * §9 Global interaction-state contract — design-principles.md §9, rules 1–10.
+ * Codified ONCE here (Session 9, Deliverable 2), never re-authored per
+ * component. Every kit component opts in with these `.kit-*` classes.
+ * Values come from app/design-system/tokens.css — no literals in this block.
+ *
+ * Utilities:
+ *   .kit-focus-ring [.kit-focus-on-dark]  §9.1  focus-visible ring
+ *   .kit-field                            §9.2 + §9.8  input focus border + error
+ *   .kit-row                              §9.3 + §9.4  clickable-row hover / selected
+ *   .kit-interactive                      §9.5 + §9.6 + §9.7 + §9.9  button-ish states
+ *   .kit-interactive[data-loading]        §9.10  control in flight
+ *   .kit-skeleton                         §9.10  list/table loading shimmer
+ *   .kit-scrim                            (new) overlay backdrop — blur + dim + z
+ *
+ * NOTE (owner D4, 2026-08-27): NO prefers-reduced-motion block is added this
+ * session beyond the single pre-existing .kit-skeleton exception (kept as an
+ * accessibility floor — a looping shimmer can cause vestibular discomfort).
+ * ========================================================================== */
 
-/* 9.1 Focus-visible ring — keyboard focus only, never on mouse.
- * On dark surfaces (side nav, bottom nav, sticky footer) the ring
- * switches to white; opt in with .kit-focus-on-dark. Not transitioned. */
+/* --- §9.1  Focus-visible ring ------------------------------------------------
+ * Keyboard focus ONLY (never mouse :focus). Instant — the outline is never
+ * transitioned (see the allow-list on .kit-interactive). On dark chrome
+ * (side nav, bottom nav, sticky footer) the ring goes white: add
+ * .kit-focus-on-dark. */
 .kit-focus-ring:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 .kit-focus-ring.kit-focus-on-dark:focus-visible {
-  outline-color: var(--nav-text-active);
+  outline-color: var(--focus-ring-color-on-dark);
 }
 
-/* 9.9 Transition timing — 120ms on the interactive properties.
- * Focus outline is deliberately excluded (must be instant). */
-.kit-interactive {
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    opacity 120ms ease;
-}
-
-/* 9.7 Disabled treatment — uniform rule for every interactive
- * element beyond the few drawn disabled artboards. */
-.kit-interactive:disabled,
-.kit-interactive[aria-disabled="true"],
-.kit-interactive[data-disabled="true"] {
-  opacity: 0.5;
-  pointer-events: none;
-}
-
-/* 9.3 Row / list hover tint — any clickable row. Selected wins
- * over hover (9.4): a row with [data-selected] takes the accent
- * tint and does not change on hover. */
-.kit-row {
-  transition: background-color 120ms ease;
-}
-.kit-row:hover {
-  background-color: var(--surface-hover);
-}
-.kit-row[data-selected="true"],
-.kit-row[data-selected="true"]:hover {
-  background-color: var(--surface-selected);
-}
-
-/* 9.2 Input focus border — text input / textarea / select / search /
- * date field / stepper number field. Applies on ANY focus (mouse or
- * keyboard), in addition to the keyboard-only ring from 9.1. */
+/* --- §9.2 + §9.8  Field: focus border + error pattern ----------------------
+ * Text input / textarea / select / search / date field / stepper number
+ * field. The accent border appears on ANY focus (mouse or keyboard), on top
+ * of the keyboard-only ring from §9.1. Error = danger border; the helper /
+ * error text row is authored by <FormField>, this only fixes the border. */
 .kit-field {
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    opacity 120ms ease;
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard);
+}
+@media (hover: hover) {
+  .kit-field:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: var(--border-strong);
+  }
 }
 .kit-field:focus,
 .kit-field:focus-within {
   border-color: var(--color-accent);
 }
-
-/* 9.8 Error field pattern — one treatment for every field type.
- * The helper/error text row is authored by each component; this
- * fixes the border. */
 .kit-field[data-invalid="true"],
-.kit-field[aria-invalid="true"] {
+.kit-field[aria-invalid="true"],
+.kit-field:has(:invalid) {
   border-color: var(--color-danger);
 }
+/* error border must win even while focused */
+.kit-field[data-invalid="true"]:focus,
+.kit-field[data-invalid="true"]:focus-within,
+.kit-field[aria-invalid="true"]:focus,
+.kit-field[aria-invalid="true"]:focus-within {
+  border-color: var(--color-danger);
+}
+.kit-field:disabled,
+.kit-field[aria-disabled="true"] {
+  opacity: var(--opacity-disabled);
+  pointer-events: none;
+}
 
-/* 9.10 Loading / skeleton — table & list loading = placeholder rows
- * with a shimmer sweep on a 1200ms loop. */
+/* --- §9.3 + §9.4  Clickable row: hover tint / selected tint --------------
+ * Apply .kit-row ONLY to rows that actually do something on click (open a
+ * drawer, select). Non-clickable rows get no tint. Selected (§9.4) wins over
+ * hover and never stacks with it. [aria-current] counts as selected too. */
+.kit-row {
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+@media (hover: hover) {
+  .kit-row:hover {
+    background-color: var(--surface-hover);
+  }
+}
+.kit-row:active {
+  background-color: var(--surface-active);
+}
+.kit-row[data-selected="true"],
+.kit-row[data-selected="true"]:hover,
+.kit-row[data-selected="true"]:active,
+.kit-row[aria-current="true"],
+.kit-row[aria-current="true"]:hover,
+.kit-row[aria-current="page"],
+.kit-row[aria-current="page"]:hover {
+  background-color: var(--surface-selected);
+}
+
+/* --- §9.5 + §9.6 + §9.7 + §9.9  Interactive control (button-ish) ---------
+ * §9.9 transition ALLOW-LIST: background-color, border-color, opacity,
+ * transform ONLY. Never a layout property. Never `outline` (§9.1 must be
+ * instant). §9.5/§9.6 hover & active shift the background to whatever the
+ * component sets on the --kit-hover-bg / --kit-active-bg custom properties
+ * (primary → --color-accent-hover; secondary/tertiary/icon → --surface-hover;
+ * destructive → --color-danger-hover). §9.6 pressed = same visual as hover,
+ * no transform (§1: Prosper has no press-scale / bounce). */
+.kit-interactive {
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+@media (hover: hover) {
+  .kit-interactive:hover:not(:disabled):not([aria-disabled="true"]):not([data-disabled="true"]):not([data-loading="true"]) {
+    background-color: var(--kit-hover-bg, var(--surface-hover));
+    border-color: var(--kit-hover-border, currentColor);
+  }
+}
+.kit-interactive:active:not(:disabled):not([aria-disabled="true"]):not([data-disabled="true"]):not([data-loading="true"]) {
+  background-color: var(--kit-active-bg, var(--kit-hover-bg, var(--surface-active)));
+}
+/* §9.7 disabled — uniform rule beyond the few drawn disabled artboards */
+.kit-interactive:disabled,
+.kit-interactive[aria-disabled="true"],
+.kit-interactive[data-disabled="true"] {
+  opacity: var(--opacity-disabled);
+  pointer-events: none;
+}
+
+/* --- §9.10  Control in flight ---------------------------------------------
+ * Button keeps its variant color + width; label dims; a 14px spinner shows
+ * in the label color; no pointer events. The component renders the actual
+ * <Spinner>; this fixes the label dim + interaction lock. */
+.kit-interactive[data-loading="true"] {
+  pointer-events: none;
+  cursor: default;
+}
+.kit-interactive[data-loading="true"] > :not(.kit-spinner) {
+  opacity: var(--opacity-loading-label);
+}
+
+/* --- §9.10  Skeleton loading -------------------------------------------------
+ * List / table loading = placeholder rows, --surface-subtle block with a
+ * --surface-hover shimmer sweep on a 1200ms loop. */
 @keyframes kit-skeleton-shimmer {
   0% {
     background-position: -200% 0;
@@ -213,10 +311,111 @@ body {
     transparent 100%
   );
   background-size: 200% 100%;
-  animation: kit-skeleton-shimmer 1200ms ease-in-out infinite;
+  border-radius: var(--radius-sm);
+  animation: kit-skeleton-shimmer 1200ms var(--ease-standard) infinite;
 }
+/* The ONE reduced-motion rule kept this session (owner D4) — a looping
+ * shimmer is a vestibular-trigger; stop it, keep the block visible. */
 @media (prefers-reduced-motion: reduce) {
   .kit-skeleton {
     animation: none;
+  }
+}
+
+/* --- Overlay backdrop  (Drawer / FrictionDeleteDialog / BottomSheet) -----
+ * The missing primitive: one shared blurred, dimmed, correctly-stacked
+ * scrim. The panel it wraps sits above it at --z-drawer / --z-dialog.
+ * Every overlay component renders its own .kit-scrim — screens stop
+ * hand-rolling `bg-black/30`. */
+.kit-scrim {
+  position: fixed;
+  inset: 0;
+  background-color: rgb(0 0 0 / var(--opacity-scrim));
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  z-index: var(--z-overlay);
+  /* Enter/exit fade — opacity only (allow-list), never layout. Paired with the
+   * panel slide below; both keyed off [data-state] set by useOverlayTransition. */
+  opacity: 1;
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+.kit-scrim[data-state="opening"],
+.kit-scrim[data-state="closing"] {
+  opacity: 0;
+}
+.kit-scrim[data-state="closed"],
+.kit-scrim[data-state="closing"] {
+  pointer-events: none;
+}
+
+/* --- Overlay panel slide (Drawer / BottomSheet) --------------------------
+ * §9.9: drawer / bottom-sheet slide is `transform` + --dur-base ONLY — enter
+ * decelerates, exit accelerates. Never a layout transition. The panel sets a
+ * direction class; [data-state] drives the offset. Dialogs (FrictionDelete)
+ * fade+scale instead — see .kit-dialog-panel. */
+.kit-drawer-panel {
+  transition: transform var(--dur-base) var(--ease-decelerate);
+}
+.kit-drawer-panel[data-state="closing"] {
+  transition-timing-function: var(--ease-accelerate);
+}
+/* Right-edge drawer / rail (slides in from the right). `--kit-panel-y` lets a
+ * vertically-centered floating panel keep its translateY while the slide drives
+ * translateX — default 0 for a full-height rail. */
+.kit-drawer-panel {
+  --kit-panel-y: 0px;
+  transform: translate(0, var(--kit-panel-y));
+}
+.kit-drawer-panel[data-side="right"][data-state="opening"],
+.kit-drawer-panel[data-side="right"][data-state="closing"] {
+  transform: translate(calc(100% + var(--sp-7)), var(--kit-panel-y));
+}
+/* Left-edge drawer (mobile nav) */
+.kit-drawer-panel[data-side="left"][data-state="opening"],
+.kit-drawer-panel[data-side="left"][data-state="closing"] {
+  transform: translate(-100%, var(--kit-panel-y));
+}
+/* Bottom sheet (slides up from the bottom) */
+.kit-sheet-panel {
+  transition: transform var(--dur-base) var(--ease-decelerate);
+}
+.kit-sheet-panel[data-state="closing"] {
+  transition-timing-function: var(--ease-accelerate);
+}
+.kit-sheet-panel[data-state="opening"],
+.kit-sheet-panel[data-state="closing"] {
+  transform: translateY(100%);
+}
+
+/* --- Dialog panel (FrictionDeleteDialog / centered modals) --------------
+ * A centered modal has no "edge" to slide from; §1 forbids bounce/spring, so
+ * this is a short opacity + subtle scale settle (transform-only, allow-list). */
+.kit-dialog-panel {
+  transition:
+    opacity var(--dur-fast) var(--ease-standard),
+    transform var(--dur-base) var(--ease-decelerate);
+}
+.kit-dialog-panel[data-state="closing"] {
+  transition-timing-function: var(--ease-accelerate);
+}
+.kit-dialog-panel[data-state="opening"],
+.kit-dialog-panel[data-state="closing"] {
+  opacity: 0;
+  transform: scale(0.97);
+}
+
+/* --- Inline spinner marker (rendered by <Spinner>) ------------------------ */
+.kit-spinner {
+  display: inline-block;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-full);
+  animation: kit-spinner-rotate 640ms linear infinite;
+}
+@keyframes kit-spinner-rotate {
+  to {
+    transform: rotate(360deg);
   }
 }

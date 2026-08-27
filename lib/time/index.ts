@@ -36,3 +36,18 @@ export function businessDateStartUtc(businessDate: string): Date {
 export function businessDateEndUtc(businessDate: string): Date {
   return new Date(`${businessDate}T24:00:00+03:00`);
 }
+
+/**
+ * The value to store/query for a Postgres `DATE` column (Prisma
+ * `@db.Date`) representing a business date — midnight **UTC** of that
+ * calendar date. `@db.Date` carries no time or zone; Prisma round-trips it
+ * as a `Date` at `00:00:00Z`, so anything else risks an off-by-one when
+ * the process TZ isn't UTC. `businessDate` must be `YYYY-MM-DD`.
+ *
+ * Use this for `DayClose.date` lookups, never `businessDateStartUtc`
+ * (which is a UTC *instant* — 21:00Z the previous day — not a date-only
+ * value).
+ */
+export function businessDateOnly(businessDate: string): Date {
+  return new Date(`${businessDate}T00:00:00Z`);
+}

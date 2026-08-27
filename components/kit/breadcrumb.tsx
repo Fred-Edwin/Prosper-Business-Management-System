@@ -33,7 +33,12 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
         return (
           <React.Fragment key={i}>
             {i > 0 && (
-              <span className="font-ui [color:var(--text-disabled)] text-sm/micro">/</span>
+              <span
+                aria-hidden
+                className="font-ui [color:var(--text-disabled)] text-sm/micro"
+              >
+                /
+              </span>
             )}
             {isCurrent ? (
               <span

@@ -256,9 +256,9 @@ artboards. See `docs/PROGRESS.md` 2026-08-27 "Session 3 (part 2)".
 
 ### Session 4 — Developer (Design Sprint): re-export all M1 screens
 
-**Status: SPLIT — 4a DONE, 4b DONE (2026-08-27), 4c OUTSTANDING.**
-Per `export-workflow.md` "Session discipline" the 21-screen scope was
-split into 4a / 4b / 4c.
+**Status: DONE (4a + 4b + 4c, 2026-08-27).** All 21 M1 screens exported
++ verified; ready for Session 5 (F1 implement). Per `export-workflow.md`
+"Session discipline" the 21-screen scope was split into 4a / 4b / 4c.
 
 **Session 4a (done):** F1 (4 screens) + F3 (3 screens) + **Financials
 (2 screens)** exported — `get_jsx` → frame-drop → component-swap →
@@ -287,11 +287,36 @@ transcribed **inline** (structural divergence from their kit
 components — the 4a Financials-table precedent). See `docs/PROGRESS.md`
 2026-08-27 "Session 4b" for the full flag list.
 
-**Session 4c (outstanding):** the **7 Store Manager + Canteen screens**
-(`8T3-0`, `8XH-0`, `92M-0`, `986-0`, `9BA-0`, `9FE-0`, `9GW-0`) + the
-Store Manager / Canteen **role-home swaps** (`app/store-manager/page.tsx`
-/ `app/canteen/page.tsx`). Full brief:
-**`docs/sprints/session-4c-handoff.md`**.
+**Session 4c (done, 2026-08-27):** the **7 Store Manager + Canteen
+screens** — `store-manager-mobile-hub` (`8T3-0`),
+`store-manager-flows-issues-production` (`8XH-0`),
+`store-manager-flows-transfers-consumption` (`92M-0`),
+`store-manager-stock-levels` (`986-0`),
+`canteen-mobile-operations-hub` (`9BA-0`),
+`canteen-transfer-dispatch` (`9FE-0`), `canteen-stock-levels`
+(`9GW-0`) — exported, `fixtures.ts` written, `/design-preview` routes
+added, `SCREENS` list updated, `pnpm tsc --noEmit` exit 0, all 7
+screenshot-verified. At export time **0 kit swaps** — every section
+diverges structurally from its kit component (banners with a leading
+icon, non-`PillFilter` category tabs, bespoke qty boxes / steppers,
+row-style workflow lists, `info-bg` stock-level tables), transcribed
+**inline verbatim** (the 4b `admin-stock-mobile` precedent). The two
+role homes (`app/store-manager/page.tsx`, `app/canteen/page.tsx`) now
+render the exported hub skeletons as staff-shell content (verified with
+a seeded login).
+
+**Post-export fixes (owner-directed, same session):**
+- **ADR-37c** — `components/kit/flow-header.tsx` gained
+  `directionTone?: "info" | "success" | "danger" | "warning"` (default
+  `"info"`); the 3 flow screens now use the kit `<FlowHeader>` instead
+  of an inline header.
+- **`app/globals.css` type-scale fix** — the `@theme` block was missing
+  concrete `--text-*` values and all `--leading-*` keys, so the slash
+  classes `get_jsx` emits (`text-h2/h2`, `text-display/display`, …) were
+  silently dropped and every heading fell back to 14px. Fixed
+  project-wide; verified across the design-preview + kit gallery.
+
+See `docs/PROGRESS.md` 2026-08-27 "Session 4c" for the full write-up.
 
 **Role:** Developer, Design-Sprint mode. **Touches:**
 `docs/design/screens/*`, `app/design-preview/*`, and the four role home
@@ -319,40 +344,98 @@ Phase C. Backend and frontend in either order per feature; `fixtures.ts`
 decouples them. Each session ends with its own tests (`sdlc.md` /
 `ADR-31`).
 
-- **Session 5 — M1-F1 Catalog & Locations.** `lib/domain/catalog`
-  (`createProduct` with Dish `buying_price=0` invariant, `updateProduct`,
-  soft/hard delete with `StockMovement`/`OrderLine` referential guard →
-  409). `app/api/products*`, `/api/locations`. Move
-  `admin-catalog-product-catalog` + mobile + `product-drawer` +
-  `product-delete-dialog` skeletons to `app/admin/catalog/*`; wire
-  orchestration; swap fixtures. Tests: Dish invariant, location-price
-  persistence, delete guard.
-- **Session 6 — M1-F2 Stock backend (domain + APIs).** `lib/domain/stock`
-  — `recordPurchasePayment`, `recordPurchaseReceipt`, `recordKitchenIssue`,
-  `recordProduction`, `recordTransfer` (2-phase), `recordNonSaleConsumption`,
-  `setOpeningStock`, `correctMovement` (day-close check + delta), plus
-  `getDerivedStockBalance` (sum-the-ledger, never a stored total). All
-  `app/api/stock-movements*` routes. Tests: derived-balance math,
-  correction deltas, 2-phase transfer state, day-close gating.
-- **Session 7 — M1-F2 Admin stock frontend.** Move ledger (full-width +
-  drawer-open correction drawer), stock-mobile, bulk-opening-stock-grid,
-  and the financials full-table + payment-drawer skeletons to their
-  `app/admin/*` routes. Wire the reconciliation section to Delivery
-  Status. Resolve **ADR-36a** consumers (chip or not) and **ADR-36b**
-  (collapse persistence) with the Admin before wiring. Swap fixtures.
-- **Session 8 — M1-F2 Store Manager + Canteen frontend.** Move the two
-  hubs, both Store Manager flow screens, Canteen transfer dispatch, and
-  both Stock Levels skeletons to `app/store-manager/*` and
-  `app/canteen/*`. Wire the persistent transfer/delivery banners
-  (pinned → accept/flag → timeline), the full-screen multi-item flows,
-  and the 2-phase transfer accept. Swap fixtures.
-- **Session 9 — M1-F3 Assets (backend + frontend, one session).** Assets
-  has no stock/money dependency and a small surface — `lib/domain/assets`
-  (CRUD, condition, friction-guarded delete), `app/api/assets*`, and move
-  the register + asset-drawer + asset-delete-dialog skeletons to
-  `app/admin/assets/*`. Tests: delete guard, condition transitions.
+- **Session 5 — M1-F1 Catalog & Locations. DONE (2026-08-27).**
+  `lib/domain/catalog` (`createProduct` with Dish `buying_price=0`
+  invariant, `updateProduct`, soft/hard delete with
+  `StockMovement`/`OrderLine` referential guard → 409). `app/api/products*`,
+  `/api/locations`. F1 skeletons moved to `app/admin/catalog/*`, wired,
+  fixtures dropped from the `app/**` copies; `/design-preview/*` +
+  `docs/design/screens/*` kept as regression fixtures. 11 new tests
+  (Dish invariant, location-price persistence, delete guard) — 35 total,
+  all green. F1 Catalog & Locations implemented + tested; ready for
+  Session 6 (F2 stock backend).
+- **Session 6 — M1-F2 Stock backend (domain + APIs). DONE (2026-08-27).**
+  `lib/domain/stock` — `recordPurchasePayment`, `recordPurchaseReceipt`,
+  `recordKitchenIssue`, `recordProduction`, `recordTransfer` +
+  `acceptTransfer` / `flagTransfer` (2-phase), `recordNonSaleConsumption`,
+  `setOpeningStock`, `correctMovement` (day-close gate + delta),
+  `getDerivedStockBalance` + batched `getDerivedStockBalances`
+  (sum-the-ledger, no stored total), `listMovements` (role/location
+  scoped), `listOutstandingPurchases`. `lib/validation/stock.ts`;
+  `lib/api/require-role-in.ts` + `actor-location.ts`;
+  `lib/time.businessDateOnly`. Routes: `GET`/`POST /api/stock-movements`,
+  `POST .../:id/correct`, `POST .../:id/accept`, `GET .../outstanding`.
+  **ADR-39** — signed-quantity convention, 2-phase transfer = two rows
+  (`+q` linked via `correctsMovementId`), `correctMovement` always a delta
+  row, `MoneyMovement` deferred to F3. API.md Stock section rewritten to
+  camelCase. 21 new tests, **56 green**. F2 stock backend (domain + APIs)
+  implemented + tested; ready for Session 7 (Admin stock frontend).
+- **Session 7 — M1-F2 Admin stock frontend. DONE (2026-08-27).** F2 Admin
+  stock frontend wired (ledger + correction drawer + mobile + bulk opening
+  grid + financials stock-purchase/reconciliation slice). Routes:
+  `app/admin/stock/` (ledger, responsive desktop+mobile, correction drawer
+  → `POST .../:id/correct`), `app/admin/stock/opening/` (bulk grid, one
+  `POST` per dirty row, re-submit = correction), `app/admin/financials/`
+  (purchase table from `?movementType=purchase_payment`/`purchase_receipt`,
+  Match cards from `.../outstanding`, record-payment drawer). Fetch hook
+  `app/admin/stock/use-stock.ts` (StockRequestError + `request<T>`, Session
+  5 shape). Pure `derive-ledger.ts` builds the 11 columns
+  (opening = prior-day closing via the new balances route; closing =
+  opening + Σday; correction delta counted once, ADR-39). **ADR-40** —
+  new `GET /api/stock-movements/balances` (batched derived-balance read;
+  Session 6 built the domain fn, no route). **ADR-36b closed** — collapse
+  persists app-wide via `localStorage` (state in
+  `app/admin/admin-shell-client.tsx`). KPI stat strip kept as markup but
+  unwired (`—`/"M3" — no F2 data source, F3 MoneyMovement owns it).
+  20 new tests, **76 green**. Ready for Session 8 (Store Manager + Canteen
+  frontend). Flagged: ledger aggregate cells backed by >1 movement have no
+  approved correction affordance (single-row case wired; multi-row → design
+  sprint).
+> **RE-SEQUENCED 2026-08-27 (see `session-9-handoff.md` "Note on
+> sequencing").** The kit built in Sessions 3–4 was a set of static
+> *pictures* of controls with no interaction states, and Sessions 5/7
+> wired data into them without fixing that. A two-part remediation
+> sprint was inserted before any more frontend work. Corrected order
+> from Session 8 on:
+>
+> - **Session 8 (was: Store Manager/Canteen) → Session 9** — *Kit
+>   remediation Part 1:* codify the design system as
+>   `app/design-system/tokens.{css,ts}`, complete the §9 interaction
+>   contract as shared CSS. **DONE** (Deliverables 1–2, Gates 1–2
+>   passed). ADR-41 (panel opacity / `--surface-panel-tint` retired),
+>   ADR-42 (Storybook adopted).
+> - **Session 10** — *Kit remediation Part 2:* audit + fix all 32
+>   `components/kit/*` to implement every §9 state + full keyboard +
+>   ARIA; add `Spinner` / `Toast` / `PageShell` / `FormField`; stand up
+>   Storybook + visual-regression + a11y gates.
+>   (`session-10-handoff.md`.)
+> - **Session 11** — rebuild the shipped screens (`/admin/catalog`,
+>   `/admin/stock` + `/opening` + `/financials`) as compositions of the
+>   proven kit; keep every hook / `lib/domain` / `app/api`; rewrite
+>   `export-workflow.md`.
+> - **Session 12** — M1-F2 Store Manager + Canteen frontend, built the
+>   new way (compose from kit + wire data). The scope below still
+>   applies; the method changes.
+> - **Session 13** — M1-F3 Assets, same method. Scope below unchanged.
+> - **Then** the QA pass.
 
-**N = 5** development sessions (Sessions 5–9).
+- **Session 12 (was Session 8) — M1-F2 Store Manager + Canteen
+  frontend.** Move the two hubs, both Store Manager flow screens, Canteen
+  transfer dispatch, and both Stock Levels skeletons to
+  `app/store-manager/*` and `app/canteen/*`. Wire the persistent
+  transfer/delivery banners (pinned → accept/flag → timeline), the
+  full-screen multi-item flows, and the 2-phase transfer accept. Compose
+  from the proven kit (not "move the skeleton + swap fixtures").
+- **Session 13 (was Session 9) — M1-F3 Assets (backend + frontend, one
+  session).** Assets has no stock/money dependency and a small surface —
+  `lib/domain/assets` (CRUD, condition, friction-guarded delete),
+  `app/api/assets*`, and compose the register + asset-drawer +
+  asset-delete-dialog from the kit at `app/admin/assets/*`. Tests: delete
+  guard, condition transitions.
+
+**N = 9** development sessions (Sessions 5–13): 5–7 shipped F1/F2
+backend+frontend; 9–10 kit remediation; 11 screen rebuild; 12–13
+F2-staff + F3.
 
 ### Final session — QA Engineer: adversarial M1 pass
 

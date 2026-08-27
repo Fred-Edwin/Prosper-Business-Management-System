@@ -22,6 +22,15 @@ const SCREENS: { slug: string; label: string }[] = [
   { slug: "admin-stock-ledger-drawer-open", label: "Admin Stock — Ledger (Drawer Open)" },
   { slug: "admin-stock-mobile", label: "Admin Stock — Mobile" },
   { slug: "bulk-opening-stock-grid", label: "Bulk Opening Stock Grid" },
+  // F2 — Store & Stock Movements (Store Manager)
+  { slug: "store-manager-mobile-hub", label: "Store Manager Mobile Hub" },
+  { slug: "store-manager-flows-issues-production", label: "Store Manager Flows — Issues & Production" },
+  { slug: "store-manager-flows-transfers-consumption", label: "Store Manager Flows — Transfers & Consumption" },
+  { slug: "store-manager-stock-levels", label: "Store Manager — Stock Levels" },
+  // F2 — Store & Stock Movements (Canteen)
+  { slug: "canteen-mobile-operations-hub", label: "Canteen Mobile Operations Hub" },
+  { slug: "canteen-transfer-dispatch", label: "Canteen — Transfer Dispatch" },
+  { slug: "canteen-stock-levels", label: "Canteen — Stock Levels" },
   // F3 — Assets
   { slug: "admin-assets-register", label: "Admin Assets Register" },
   { slug: "asset-delete-dialog", label: "Asset Delete Dialog" },

@@ -18,7 +18,16 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
+import {
+  useActiveOverlay,
+  useBackgroundInert,
+  useEscToClose,
+  useFocusTrap,
+  useOverlayTransition,
+  useScrollLock,
+} from "@/components/kit/internal/overlay";
 
 interface DrawerNavItemDef {
   key: string;
@@ -155,9 +164,9 @@ const NAV_GROUPS: DrawerNavGroupDef[] = [
 ];
 
 const ICON_CLOSE = (
-  <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-    <line x1="18" y1="6" x2="6" y2="18" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    <line x1="6" y1="6" x2="18" y2="18" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
+    <line x1="18" y1="6" x2="6" y2="18" stroke="var(--nav-text-active)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <line x1="6" y1="6" x2="18" y2="18" stroke="var(--nav-text-active)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
@@ -186,21 +195,45 @@ export function MobileNavDrawer({
   accountInitials,
   onAccountClick,
 }: MobileNavDrawerProps) {
-  React.useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const panelRef = React.useRef<HTMLDivElement>(null);
+  const brandId = React.useId();
 
-  if (!open) return null;
+  const { mounted, phase, endExit } = useOverlayTransition(open);
+  const active = mounted && phase !== "closing";
 
-  return (
-    <div className="[font-synthesis:none] fixed inset-0 z-50 flex antialiased text-caption/micro">
+  useActiveOverlay(active);
+  useScrollLock(mounted);
+  useBackgroundInert(rootRef, mounted);
+  useFocusTrap(panelRef, active);
+  useEscToClose(active, onClose);
+
+  const [host, setHost] = React.useState<HTMLElement | null>(null);
+  React.useEffect(() => setHost(document.body), []);
+
+  if (!mounted || !host) return null;
+
+  return createPortal(
+    <div
+      ref={rootRef}
+      className="[font-synthesis:none] fixed inset-0 flex antialiased text-caption/micro"
+    >
+      {/* Scrim — the shared blurred/dimmed backdrop (was `bg-black/30`). */}
+      <div className="kit-scrim" data-state={phase} onClick={onClose} aria-hidden />
       {/* Drawer Menu Container — 1ZQ-0 */}
-      <div className="flex flex-col w-[310px] h-full shrink-0 [box-shadow:#0000004D_4px_0px_20px] bg-(--nav-bg)">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={brandId}
+        tabIndex={-1}
+        data-state={phase}
+        data-side="left"
+        onTransitionEnd={(e) => {
+          if (e.target === panelRef.current && phase === "closing") endExit();
+        }}
+        className="kit-drawer-panel relative flex flex-col w-[310px] h-full shrink-0 [box-shadow:var(--shadow-drawer)] bg-(--nav-bg) [z-index:var(--z-drawer)]"
+      >
         {/* Drawer Brand Header — 1ZR-0 */}
         <div className="flex items-center justify-between pt-[24px] pb-[16px] h-[72px] shrink-0 px-[16px] border-b border-b-solid border-b-(--nav-border)">
           <div className="flex items-center gap-[10px]">
@@ -209,7 +242,10 @@ export function MobileNavDrawer({
               style={{ backgroundImage: "url(https://app.paper.design/file-assets/01M0EZ7TAHZM26KBMWNYT0928X/01M0SM71RCR7TRKDYY2ZD9PNTX.jpg)" }}
             />
             <div className="flex flex-col">
-              <div className="font-ui font-(--weight-semibold) inline-block text-(--nav-text-active) text-body/sm">
+              <div
+                id={brandId}
+                className="font-ui font-(--weight-semibold) inline-block text-(--nav-text-active) text-body/sm"
+              >
                 {brandLabel}
               </div>
               <div className="font-ui text-micro inline-block leading-[14px] text-(--nav-text-subtle)">
@@ -221,19 +257,19 @@ export function MobileNavDrawer({
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="flex items-center justify-center w-[28px] h-[28px] rounded-sm shrink-0 bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark"
+            className="flex items-center justify-center w-[28px] h-[28px] rounded-sm shrink-0 bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
           >
             {ICON_CLOSE}
           </button>
         </div>
 
         {/* Drawer Nav Body — 202-0 */}
-        <div className="flex flex-col grow basis-0 py-[8px] overflow-y-auto">
+        <nav aria-label="All destinations" className="flex flex-col grow basis-0 py-[8px] overflow-y-auto">
           {NAV_GROUPS.map((group, gi) => (
             <div key={gi} className="flex flex-col py-[4px] px-[8px]">
               {group.label && (
                 <div className="font-ui font-(--weight-semibold) inline-block pt-[6px] pb-[4px] px-[12px]">
-                  <div className="inline-block font-ui text-[10px] font-(--weight-semibold) tracking-[0.08em] uppercase leading-[12px] text-(--nav-text-label)">
+                  <div className="inline-block font-ui text-[10px] font-(--weight-semibold) [letter-spacing:0.08em] uppercase leading-[12px] text-(--nav-text-label)">
                     {group.label}
                   </div>
                 </div>
@@ -247,7 +283,7 @@ export function MobileNavDrawer({
                     aria-current={active ? "page" : undefined}
                     onClick={() => onNavigate(item.href)}
                     className={cn(
-                      "flex items-center h-[38px] px-[12px] rounded-sm gap-[10px] relative shrink-0 kit-interactive kit-focus-ring kit-focus-on-dark",
+                      "flex items-center h-[38px] px-[12px] rounded-(--nav-item-radius) gap-[10px] relative shrink-0 kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]",
                       active && "bg-(--nav-bg-active)",
                     )}
                   >
@@ -268,12 +304,13 @@ export function MobileNavDrawer({
               })}
             </div>
           ))}
-        </div>
+        </nav>
 
-        {/* Drawer Footer — 229-0 */}
-        <div className="flex items-center justify-between py-[14px] px-[16px] bg-[#00000026] border-t border-t-solid border-t-(--nav-border)">
+        {/* Drawer Footer — 229-0. Raw #00000026 / #FFFFFF2E → --nav-bg-avatar /
+            --nav-bg-divider-strong (the codified names). */}
+        <div className="flex items-center justify-between py-[14px] px-[16px] bg-(--nav-bg-avatar) border-t border-t-solid border-t-(--nav-border)">
           <div className="flex items-center gap-[10px]">
-            <div className="w-[32px] h-[32px] flex items-center justify-center rounded-[50%] shrink-0 bg-[#FFFFFF2E]">
+            <div className="w-[32px] h-[32px] flex items-center justify-center rounded-full shrink-0 bg-(--nav-bg-divider-strong)">
               <div className="font-ui font-(--weight-semibold) inline-block text-(--nav-text-active) text-caption/micro">
                 {accountInitials}
               </div>
@@ -290,7 +327,7 @@ export function MobileNavDrawer({
           <button
             type="button"
             onClick={onAccountClick}
-            className="flex items-center py-[6px] px-[10px] rounded-sm gap-[4px] bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark"
+            className="flex items-center py-[6px] px-[10px] rounded-sm gap-[4px] bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
           >
             <span className="font-ui text-micro font-(--weight-medium) inline-block leading-[14px] text-(--nav-text-strong)">
               Sign out
@@ -298,9 +335,7 @@ export function MobileNavDrawer({
           </button>
         </div>
       </div>
-
-      {/* Backdrop Dismiss Area — 22I-0 */}
-      <button type="button" onClick={onClose} aria-label="Close menu" className="grow bg-black/30" />
-    </div>
+    </div>,
+    host,
   );
 }

@@ -210,7 +210,10 @@ export function AdminShell({
     <div className="[font-synthesis:none] flex h-screen w-full antialiased text-caption/micro">
       {collapsed ? (
         /* Icon Rail — 6GN-0 */
-        <div className="flex flex-col w-[56px] h-full shrink-0 bg-(--nav-bg)">
+        <nav
+          aria-label="Primary"
+          className="flex flex-col w-[56px] h-full shrink-0 bg-(--nav-bg)"
+        >
           <div className="flex flex-col items-center pt-[20px] pb-[16px] gap-[16px]">
             <div
               className="w-[28px] h-[28px] rounded-full shrink-0 bg-cover bg-position-[50%]"
@@ -229,7 +232,7 @@ export function AdminShell({
                   aria-current={active ? "page" : undefined}
                   onClick={() => onNavigate(item.href)}
                   className={cn(
-                    "flex items-center justify-center w-[40px] h-[40px] shrink-0 rounded-sm kit-interactive kit-focus-ring kit-focus-on-dark",
+                    "flex items-center justify-center w-[40px] h-[40px] shrink-0 rounded-(--nav-item-radius) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]",
                     active && "bg-(--nav-bg-active)",
                   )}
                 >
@@ -243,17 +246,20 @@ export function AdminShell({
               type="button"
               onClick={onAccountClick}
               aria-label="Account"
-              className="w-[30px] h-[30px] flex items-center justify-center rounded-[50%] shrink-0 bg-(--nav-bg-divider-strong) kit-interactive kit-focus-ring kit-focus-on-dark"
+              className="w-[30px] h-[30px] flex items-center justify-center rounded-full shrink-0 bg-(--nav-bg-divider-strong) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
             >
               <span className="font-ui font-(--weight-semibold) inline-block text-(--nav-text-active) text-caption/micro">
                 {accountInitials}
               </span>
             </button>
           </div>
-        </div>
+        </nav>
       ) : (
         /* Side nav — 64I-0 */
-        <div className="flex flex-col w-[240px] shrink-0 self-stretch bg-(--nav-bg)">
+        <nav
+          aria-label="Primary"
+          className="flex flex-col w-[240px] shrink-0 self-stretch bg-(--nav-bg)"
+        >
           <div className="flex items-center shrink-0 gap-(--sp-3) w-[240px] pt-[20px] pb-[16px] justify-between px-[16px]">
             <div
               className="w-[30px] h-[30px] rounded-full shrink-0 bg-cover bg-position-[50%]"
@@ -266,7 +272,7 @@ export function AdminShell({
               type="button"
               onClick={onToggleCollapsed}
               aria-label="Collapse sidebar"
-              className="flex items-center justify-center w-[24px] h-[24px] shrink-0 rounded-sm bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark"
+              className="flex items-center justify-center w-[24px] h-[24px] shrink-0 rounded-sm bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
             >
               {ICON_PANEL}
             </button>
@@ -284,7 +290,7 @@ export function AdminShell({
                   aria-current={active ? "page" : undefined}
                   onClick={() => onNavigate(item.href)}
                   className={cn(
-                    "flex items-center h-[36px] px-[10px] rounded-sm gap-[8px] relative shrink-0 kit-interactive kit-focus-ring kit-focus-on-dark",
+                    "flex items-center h-[36px] px-(--nav-item-pad-inline) rounded-(--nav-item-radius) gap-[8px] relative shrink-0 kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]",
                     active && "bg-(--nav-bg-active)",
                   )}
                 >
@@ -322,7 +328,7 @@ export function AdminShell({
                     aria-current={active ? "page" : undefined}
                     onClick={() => onNavigate(item.href)}
                     className={cn(
-                      "flex items-center h-[36px] px-[10px] rounded-sm gap-[8px] shrink-0 kit-interactive kit-focus-ring kit-focus-on-dark",
+                      "flex items-center h-[36px] px-(--nav-item-pad-inline) rounded-(--nav-item-radius) gap-[8px] shrink-0 kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]",
                       active && "bg-(--nav-bg-active)",
                     )}
                   >
@@ -361,7 +367,7 @@ export function AdminShell({
             <button
               type="button"
               onClick={onAccountClick}
-              className="flex items-center py-[5px] px-[8px] rounded-sm gap-[4px] bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark"
+              className="flex items-center py-[5px] px-[8px] rounded-sm gap-[4px] bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
             >
               {ICON_SIGNOUT}
               <span className="font-ui text-micro font-(--weight-medium) inline-block leading-[14px] text-(--nav-text-strong)">
@@ -369,7 +375,7 @@ export function AdminShell({
               </span>
             </button>
           </div>
-        </div>
+        </nav>
       )}
 
       {/* Body — 64A-0 / 67U-0 */}

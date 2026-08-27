@@ -383,6 +383,12 @@ export default function KitGalleryPage() {
           <FlowHeader title="Flow Title" direction="Origin → Destination" />
           <FlowHeader title="Record Batch Production" />
         </Case>
+        <Case label="Flow header — directionTone (info default / success / danger / warning)">
+          <FlowHeader title="Transfer Stock" direction="Store → Canteen" directionTone="info" />
+          <FlowHeader title="Record Batch Production" direction="Kitchen → Restaurant" directionTone="success" />
+          <FlowHeader title="Issue Ingredients" direction="Store → Kitchen" directionTone="danger" />
+          <FlowHeader title="Log Non-Sale" direction="Staff Meals & Spoilage" directionTone="warning" />
+        </Case>
       </Section>
 
       <Section id="6IW-0" title="Tabs & Filters">

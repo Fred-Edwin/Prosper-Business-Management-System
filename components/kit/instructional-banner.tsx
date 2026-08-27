@@ -28,8 +28,10 @@ export function InstructionalBanner({
         className,
       )}
     >
-      <div className="flex items-center justify-center w-[28px] h-[28px] shrink-0 rounded-[50%] bg-accent">
-        <div className="font-ui font-(--weight-semibold) text-white text-sm/micro">{step}</div>
+      <div className="flex items-center justify-center w-[28px] h-[28px] shrink-0 rounded-full bg-accent">
+        <div className="font-ui font-(--weight-semibold) text-(--text-inverse) text-sm/micro">
+          {step}
+        </div>
       </div>
       <div className="flex flex-col gap-[2px]">
         <div className="font-ui font-(--weight-semibold) text-accent text-sm/sm">{title}</div>

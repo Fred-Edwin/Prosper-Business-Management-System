@@ -40,7 +40,10 @@ export function ActivityTimeline({
       )}
     >
       {rows.length === 0 ? (
-        <div className="py-(--sp-5) font-ui [color:var(--text-tertiary)] text-caption/micro">
+        <div
+          role="status"
+          className="py-(--sp-5) font-ui [color:var(--text-tertiary)] text-caption/micro"
+        >
           {emptyMessage}
         </div>
       ) : (

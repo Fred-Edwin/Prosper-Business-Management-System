@@ -5,6 +5,792 @@ shipped, what's blocked, what changed from plan.
 
 ---
 
+## 2026-08-27 — Development Sprint Session 10: Kit Remediation Part 2 — component audit & fix + 4 primitives (Deliverable 3) — DONE
+
+**Role:** Developer (Development Sprint). Second half of the Session 9
+remediation sprint. **Scope:** `docs/sprints/session-10-handoff.md`
+**Deliverable 3 only** — audit and fix every `components/kit/*` +
+`components/shells/*` nav to compose only tokens + the §9 `.kit-*` utilities,
+implement every applicable §9 interaction state, add full keyboard + ARIA, and
+fill the 4-primitive gap. **Deliverable 4 (Storybook / visual-regression /
+a11y gates) was split into its own session** — `session-10b-handoff.md` — at
+the owner's direction (2026-08-27). **No feature screen file touched.**
+
+### Shipped
+
+**`docs/design/kit-audit.md`** — the per-component before → after table; 16
+cross-cutting findings (X1–X16), all resolved or justified; 10 items flagged
+for owner sign-off at the 10b Storybook review.
+
+**Shared infrastructure (new)**
+- **`components/kit/internal/overlay.ts`** — one implementation of the overlay
+  contract: `createPortal` to `<body>`; `useActiveOverlay` (module-level
+  single-active-overlay guard); `useScrollLock` (`<html>` `overflow:hidden`,
+  restored exactly, scrollbar-compensated); `useBackgroundInert` (`inert` +
+  `aria-hidden` + `pointer-events:none` on every `<body>` child outside the
+  overlay); `useFocusTrap` (recomputes the focusable set on **every** Tab —
+  handles the no-focusable and dynamically-added-node cases the old
+  querySelectorAll snapshot missed — moves focus in on open, restores to the
+  opener on close); `useOverlayTransition` (mount-through-exit so the slide
+  actually runs); `useEscToClose`.
+- **`components/kit/internal/roving.ts`** — `useRovingGroup` — the WAI-ARIA APG
+  single-select group pattern (roving `tabIndex`, `←→`/`↑↓`/`Home`/`End`,
+  selection-follows-focus) shared by `Tabs` / `PillFilter` / `SegmentedControl`.
+- **`app/globals.css §9`** — added `.kit-drawer-panel` / `.kit-sheet-panel` /
+  `.kit-dialog-panel` (transform/opacity slide keyed off `[data-state]`,
+  `--ease-decelerate` in / `--ease-accelerate` out, allow-list only) and the
+  `.kit-scrim` enter/exit fade. This is the only `globals.css` change and it is
+  a genuine gap in the Deliverable-2 §9 contract (X6), not a re-author of an
+  existing utility.
+
+**4 new primitives (`components/kit/`)** — no Paper artboard; `Toast` +
+`PageShell` flagged for owner review (ADR-43):
+- **`spinner.tsx`** — `.kit-spinner` + `role="status"` + hidden label.
+- **`form-field.tsx`** — label + control slot + §9.8 helper/error row +
+  `aria-describedby`/`aria-invalid`, authored once.
+- **`toast.tsx`** — `ToastProvider` + `useToast()`; `role="status"`,
+  `--z-toast`, portal, auto-dismiss (~4 s, pause on hover/focus), `transform`
+  slide, stacks; `placement` prop (`top-right` / `bottom-center`).
+- **`page-shell.tsx`** — owns `--content-max` + page padding + a sticky
+  toolbar slot; `wide` / `flush` escapes.
+
+**2 new tokens** (owner sign-off; both `tokens.css` + `tokens.ts`; drift test
+green): `--color-success-hover` `oklch(46% 0.121 155)`, `--color-info-hover`
+`oklch(46.5% 0.146 252.3)` — §9.5 hover for `Banner`'s filled success/info
+actions (they had no hover colour and fell back to `--surface-hover`).
+
+**Priority components (the reported bugs)**
+- **`Drawer`** — own `.kit-scrim` (blur, `--opacity-scrim`, `--z-overlay`);
+  **opaque `--surface-raised`** panel (was `--surface-panel-tint` — the
+  "transparent modal") + `--shadow-drawer`; portal; focus-move-in + trap +
+  scroll-lock + background-`inert` + focus-restore + single-overlay guard;
+  `transform` slide. `panel` + `rail` variants; `subtitle` header variant and
+  the ADR-37b contract kept.
+- **`FrictionDeleteDialog`** — same overlay contract, `.kit-dialog-panel`
+  fade/scale, `--z-dialog`; footer → `<Button variant="secondary|destructive">`
+  (so §9.7/§9.10 come free); the retype field is **neutral** until a
+  non-matching non-empty string, then danger via `.kit-field[data-invalid]` +
+  `aria-describedby`. ADR-36c props kept.
+- **`BottomSheet`** — same contract, slide from bottom, grab handle is now a
+  real `<button>`.
+- **`MobileNavDrawer`** (shell) — same contract (was `bg-black/30` + no trap +
+  no scroll-lock); nav items get `--kit-hover-bg: var(--nav-bg-hover)` so they
+  tint correctly on `--nav-bg`; `<nav>` landmark; raw `#00000026`/`#FFFFFF2E`/
+  `#FFFFFF` → `--nav-bg-avatar` / `--nav-bg-divider-strong` / `--nav-text-active`.
+- **`Button`** — per-variant `--kit-hover-bg` (primary → `--color-accent-hover`,
+  destructive → `--color-danger-hover`, secondary/tertiary → `--surface-hover`);
+  `data-loading` drives the shared §9.10 dim + `<Spinner>` (width held);
+  `--text-inverse` labels; new `size` prop (`sm`/`md`/`lg` → `--control-*`;
+  `md` byte-identical).
+- **`Tabs` / `PillFilter` / `SegmentedControl`** — roving `tabIndex` + arrow
+  keys (`useRovingGroup`); correct roles (`tablist`/`tab`/`aria-selected`;
+  `radiogroup`/`radio`/`aria-checked`); `PillFilter` moved from `aria-pressed`
+  toggles to a radiogroup. `SegmentedControl` active lift → `--shadow-sm`.
+- **`Select`** — real APG listbox: open on click **or** `↓`/`↑`/`Enter`/`Space`,
+  `↓↑`/`Home`/`End` move the active option, type-ahead, `Enter` selects, `Tab`
+  selects+closes, `aria-activedescendant`, `role="listbox"`/`option` with ids.
+  `--shadow-md`, `--z-dropdown`.
+- **`DatePicker`** — real calendar: internal visible-month state, `selected:
+  Date`/`onSelect`, `role="grid"`/`gridcell`, `←→`/`↑↓`/`Home`/`End`/
+  `PageUp`/`PageDown`/`Shift+PageUp/Down`, focus on the selected/today cell on
+  open. Legacy `weeks` prop kept as an escape hatch. Visual byte-identical.
+- **`QuantityStepper`** — value is now `<input role="spinbutton">` (was a
+  `<span>`) with `aria-valuenow/-min/-max/-valuetext`, `↑`/`↓` step, typed
+  entry; the spec'd "focus / typed-error" states are now reachable.
+- **`TextInput` / `Textarea`** — compose `<FormField>` (API unchanged);
+  `.kit-field` + `data-invalid`; `--tracking-caps`.
+- **`SimpleTable`** — clickable rows are real `<button>`s inside `role="row"`;
+  `loading` → `.kit-skeleton` rows; `emptyState` → `<EmptyState>` slot;
+  `sortable` columns → header `<button>` + `aria-sort`; minimal table roles.
+- **`DenseLedger`** — `.kit-row` **only** when `onCellClick` is set; clickable
+  cells are keyboard-operable `<button>`s with an `aria-label`; `loading` →
+  skeleton rows; corrected-cell underline normalised
+  (`text-decoration-thickness:1px`); footer `text-white` → `--text-inverse`.
+  ADR-37a props kept.
+- **`BulkEntryGrid`** — `role="grid"`/`row`/`gridcell`/`columnheader`/
+  `rowheader`; editable cells get `inputMode="decimal"` + an `aria-label`; raw
+  `#FFFFFF99`/`#FFFFFF26` → `--nav-text-subtle` / `--nav-bg-divider-strong`;
+  `--tracking-caps`.
+- **`EmptyState` / `ErrorState`** — compose `<Button>`; container `role="status"`
+  / `role="alert"`; off-scale literals → `--sp-*`; icons `aria-hidden`.
+- **`Banner` / `MatchCard`** — actions → `<Button>`; `Banner` flagged state now
+  shows a muted "Flagged — awaiting admin" line (was only hiding the actions);
+  `role="region"` / `role="listitem"`.
+- **`AdminShell`** sidebar rail (allowed this session) — `--kit-hover-bg:
+  var(--nav-bg-hover)` on every nav item + toggle + account button; `<nav
+  aria-label="Primary">` landmarks (rail + full sidebar); raw `px-[10px]` →
+  `--nav-item-pad-inline`, `rounded-sm` → `rounded-(--nav-item-radius)`.
+- **`BottomNav`** — `<nav aria-label="Primary">`. **`FlowHeader`** — `<header>`
+  + `role="heading"` on the title; back button `--kit-hover-bg`.
+- **Smaller** — `ToggleSwitch` (`bg-white` → `--text-inverse`, `rounded-full`);
+  `ActionTileGrid` (drop redundant disabled inline); `Breadcrumb` (`aria-hidden`
+  separator); `CalculatedImpactBanner` / `ActivityTimeline` empty (`role=
+  "status"`); `InstructionalBanner` / `DenseSummaryStrip` (`--text-inverse`,
+  `--nav-text-subtle`).
+
+**`lib/tokens.css`** — deleted (grep-confirmed no importers; `globals.css`
+comment repointed).
+
+### Decisions
+- **ADR-43** drafted — the 4 primitives, the 2 hover tokens, and the
+  `DatePicker` / `QuantityStepper` behaviour changes. `Spinner` / `FormField`
+  / the tokens are accepted; `Toast` / `PageShell` layout + the two API shapes
+  are **pending the Session 10b owner review in Storybook** (that session
+  finalises the ADR).
+
+### Notes / flags (carried to Session 10b review)
+10 owner-sign-off items — see `kit-audit.md §"Remaining gaps"`: `PageShell`
+padding/clamp, `Toast` placement/timing, `DatePicker` API, `QuantityStepper`
+typed input, the 2 hover tokens, `Button` `sm`/`lg` sizes, `PillFilter`
+radiogroup, `0.06em`/`0.08em` tracking literals, no §9.8 helper row on a grid
+cell error, no grid cell-to-cell arrow nav.
+
+### Verification
+- `pnpm tsc --noEmit` — exit 0 (`.next` cleared first).
+- `pnpm build` — clean; "Compiled successfully"; all 43 routes.
+- `pnpm test` — **80 pass** (76 + 4 token drift-guards; the drift guard
+  confirms the 2 new hover tokens are in both token files).
+- `GET /design-preview/kit` (clean `.next`, fresh `pnpm dev`) → HTTP 200, 0
+  errors in the dev log.
+- `git diff --stat` — only `components/kit/**`, `components/shells/**`,
+  `app/globals.css`, `app/design-system/tokens.css` + `tokens.ts`, the new
+  primitive / `internal/` files, and docs. `app/admin/**`,
+  `app/store-manager/**`, `app/canteen/**`, `app/cashier/**`,
+  `app/design-preview/**`, `docs/design/screens/**` — untouched.
+
+### Not done / out of scope (as planned)
+- **Deliverable 4** — Storybook + `*.stories.tsx` per state + visual-regression
+  baselines + axe gates. Own session: `session-10b-handoff.md`.
+- Screen rebuild as kit compositions — Session 11.
+
+---
+
+## 2026-08-27 — Development Sprint Session 7: M1-F2 Admin stock frontend wired + tested — DONE
+
+**Role:** Developer (Development Sprint), Phase C. **Scope:**
+`docs/sprints/session-7-handoff.md` — move the five Admin F2 design
+skeletons (ledger full-width + its drawer-open / sidebar-collapsed
+states, stock-mobile, bulk-opening-stock-grid) **plus** the two
+Financials skeletons (full-table, payment-drawer) to their real
+`app/admin/*` routes and replace every `fixtures.ts` import with real
+calls to the Session-6 endpoints. **Frontend only — no new UI/UX
+decisions**; approved markup/layout unchanged.
+
+### Shipped
+
+**Routes moved + wired**
+- **`app/admin/stock/`** — `page.tsx` (thin server component) +
+  `stock-client.tsx`. One responsive route: the `798-0` desktop ledger
+  (`hidden md:flex`) and the `8Q4-0` mobile summary cards (`flex
+  md:hidden`) in one client, matching the Session-5 catalog precedent.
+  Location pill-tabs (`<PillFilter>`, keyed by location id), a native
+  date picker, an "Opening Stock" link to `/admin/stock/opening`. Ledger
+  renders via kit `<DenseLedger showLocation horizontalScroll
+  onCellClick>` — untouched. Cell click → correction drawer (single
+  movement behind the cell) or an inline "flagged for a design sprint"
+  note (multiple).
+- **`app/admin/stock/correction-drawer.tsx`** — wired from `7LJ-0` (kit
+  `<Drawer variant="rail">` + `<CalculatedImpactBanner>` + `<Button>`).
+  Shows the original quantity, a corrected-**final**-quantity input, the
+  cosmetic delta, and a note field. Submit → `POST
+  /api/stock-movements/:id/correct` `{ correctedQuantity, note? }` —
+  **never a delta** (ADR-15). On success refetches the ledger; the cell
+  moves to the derived post-correction value. `403` (closed day /
+  non-admin) surfaced via `error.code`, not the message string.
+- **`app/admin/stock/opening/`** — `page.tsx` + `opening-client.tsx`,
+  wired from `7UD-0` (kit `<Tabs>` + `<BulkEntryGrid>`). One editable
+  cell per product at its **home location** (ingredient/goods → Store,
+  dish → Restaurant). Per-row dirty state; submit fires **one `POST
+  /api/stock-movements` `{ movementType: "opening", … }` per dirty row**
+  (`Promise.allSettled`). A re-submit for the same product/location/date
+  is a correction server-side (ADR-15) — the row reflects it as
+  "corrected" vs "saved". Planning logic extracted to pure
+  `opening/opening-plan.ts` (`planOpeningPosts`) for testability.
+- **`app/admin/financials/`** — `page.tsx` + `financials-client.tsx` +
+  `payment-drawer.tsx`, wired from `7ZJ-0` / `85W-0`. Purchase table
+  from `GET /api/stock-movements?movementType=purchase_payment` +
+  `…=purchase_receipt` (two tabs); Delivery Status per row from
+  `GET /api/stock-movements/outstanding` (a payment not in
+  `awaitingReceipt` = Received). Reconciliation Match section lists
+  `awaitingReceipt` + `unmatchedReceipts`. Record-payment drawer → `POST
+  /api/stock-movements` `{ movementType: "purchase_payment", …,
+  paidFromAccount }`.
+
+**The fetch layer — `app/admin/stock/use-stock.ts`**
+- `StockRequestError` (status + `code` + `field`) and a `request<T>`
+  helper that unwraps `{ data }` / throws on `{ error }` / non-2xx —
+  copied from Session 5's `use-catalog.ts` shape. camelCase on the wire.
+- `stockApi` — plain (non-React) calls: `listMovements`, `balances`,
+  `outstanding`, `correct`, `setOpeningStock`, `recordPurchasePayment`,
+  `listProducts`, `listLocations`.
+- `useLedger(date, locationId?)` hook — loads the day's movements +
+  catalog + locations, then derives the **Opening** column as the prior
+  business day's closing via `stockApi.balances(…, previousBusinessDate(
+  date))`, batched per location. No stored opening/closing read anywhere.
+
+**How the 11 ledger columns are derived — pure `app/admin/stock/derive-ledger.ts`**
+- `deriveLedgerRows({ movements, priorClosing, products, locations,
+  locationId? })` → `{ rows, totals, cellMovements }`.
+- One row per (product, location) pair that has an opening balance or ≥1
+  movement on the day. `opening` = `priorClosing` for the pair
+  (`"${productId}@${locationId}"`). Each movement routes to a column by
+  `movementType` (`purchase_receipt` → Purchases, `issue` +
+  `non_sale_consumption` → Issues, `production` → Production, `transfer`
+  → Transfer In/Out by sign, `sale` → Sold; `opening` / `purchase_payment`
+  / `stock_count` / `closing` → no column). `closing` = `opening +
+  Σ(column sums)`.
+- **Corrections need no special handling (ADR-39):** a `correctMovement`
+  delta is an ordinary signed row of the same `movementType`, so summing
+  every row lands the figure **once**, in the right column; the cell is
+  additionally marked `corrected` (kit renders the ADR-36a underlined
+  semantic-color treatment).
+- `cellMovements` maps `rowId → { columnKey → movementId[] }` — the
+  correction target. The client opens the drawer only when a cell has
+  **exactly one** movement behind it.
+
+**ADR-36b resolution — collapse persists app-wide**
+- `app/admin/admin-shell-client.tsx` now holds `collapsed` in `useState`,
+  hydrates from `localStorage["prosper.admin.sidebarCollapsed"]` on
+  mount, and writes back on toggle (both wrapped in `try/catch` →
+  degrades to "expanded"). `components/shells/admin-shell.tsx` is
+  **unchanged** — it already had `collapsed` + `onToggleCollapsed` props;
+  only the wiring moved. No per-screen collapse state.
+
+**New endpoint — `GET /api/stock-movements/balances` (ADR-40)**
+- Batched derived-balance read the ledger's Opening column needs. Session
+  6 built the domain fn `getDerivedStockBalances` but exposed no route.
+  Query `?productIds=a,b,c&locationId=&asOf=YYYY-MM-DD` (`asOf` a business
+  date → summed to that day's **end**). Thin handler: validate → role /
+  location check (same scoping as `listMovements`; foreign `locationId` →
+  `[]`) → call the domain fn → standard envelope. `docs/API.md` updated.
+
+### Decisions
+- **ADR-40** added — the batched-balance route (see above).
+- **ADR-36b** closed — collapse persists app-wide via `localStorage`;
+  state in `app/admin/admin-shell-client.tsx`. `DECISIONS.md` §36b
+  rewritten.
+
+### Notes / flags
+- **`TODO(mock)` (1, deliberately re-scoped):**
+  `app/admin/financials/financials-client.tsx` — the **4-tile KPI stat
+  strip** (Total Business Liquidity / Cash at Hand / M-Pesa·Bank Till /
+  Today's Total Outflows) is kept as markup but **unwired**: all four
+  values render `—` with an "M3" caption. It has **no F2 data source** —
+  the `MoneyMovement` ledger that would populate it is F3. This matches
+  the M1 cut (milestone-1-plan §2 / ADR-36), which puts the strip in M3;
+  the Paper artboard exported it "Option A" against that cut. Owner
+  decision 2026-08-27: keep markup, render `—`, no client-side money
+  math, no `purchase_payment.note` parsing for figures. The
+  `lib/domain/stock/purchases.ts` F3 `MoneyMovement` marker is **not** in
+  this session's frontend scope and stays.
+- **DESIGN GAP flagged for a design sprint:** a ledger **aggregate cell
+  backed by more than one movement** has no approved correction
+  affordance. `POST /api/stock-movements/:id/correct` needs one
+  `movementId`; the approved correction drawer (`7LJ-0`) shows exactly
+  one editable field with one "Original: …". The common M1 case (one
+  opening + one issue + one purchase per product/day) is one row per
+  cell and is **fully wired**. When a cell resolves to >1 movement the
+  cell is inert and the client shows "N separate entries are behind this
+  cell — correcting one of several isn't designed yet." Options for a
+  design sprint: (a) the drawer lists the day's rows for that cell to
+  pick one; (b) the cell expands to per-movement sub-rows; (c) a
+  movement-history view per product/day. `correctMovement` already
+  supports all three backend-side — this is purely a UI gap.
+- **Financials `purchase_payment` note parsing** is best-effort and
+  display-only: `recordPurchasePayment` (Session 6) stores supplier /
+  cost / account as free text in `note`. The table shows what parses and
+  `—` otherwise. Real structured columns arrive with F3 `MoneyMovement`.
+- **`app/admin/stock/*` copies import no fixture module** —
+  `grep -rn "fixtures" app/admin/stock app/admin/financials` returns only
+  doc-comment prose ("visual-regression **fixtures** — see
+  docs/design/screens/*"). The `docs/design/screens/*` + `/design-preview/*`
+  copies are untouched and still import `fixtures.ts`.
+
+### Verification
+- `pnpm tsc --noEmit` — exit 0 (`.next` cleared first).
+- `pnpm build` — succeeds; all 5 new routes compiled (`/admin/stock`,
+  `/admin/stock/opening`, `/admin/financials`,
+  `/api/stock-movements/balances`).
+- `pnpm test` — **76 pass** (56 prior + 20 new across
+  `app/admin/stock/use-stock.test.ts`,
+  `app/admin/stock/derive-ledger.test.ts`,
+  `app/admin/stock/opening/opening-plan.test.ts`): `request<T>` unwrap /
+  typed-throw (mock `fetch`), the 11-column derivation (opening/closing,
+  transfer sign routing, correction-counted-once, cellMovements map,
+  opening-only rows, `purchase_payment` excluded), and the opening grid's
+  dirty-row → one-POST-per-row planning (home-location routing, skip
+  blank/unchanged/invalid, re-submit flag).
+- `grep -rn "fixtures" app/admin/stock app/admin/financials` — doc prose
+  only (no module import).
+- `grep -rn "TODO(mock)" app/admin/stock app/admin/financials` — one
+  marker, the KPI-strip deferral above, re-scoped with a reason here.
+- `pnpm dev` smoke as **Admin** (local Postgres + `pnpm prisma db seed`;
+  throwaway `smoke-session7.mjs`, deleted): logged in as Admin; created a
+  fresh product; `POST` opening 25.0 → derived balance `25.0000`;
+  `POST /:id/correct` 25.0→30.0 → server-computed delta row `5.0000`,
+  balance moves to exactly `30.0000`; re-submit opening 40.0 → **201**
+  (correction, not `409`), balance `40.0000`; `POST issue` as Admin →
+  **403** (role gate holds); `GET /outstanding` and `GET /balances`
+  (ADR-40) 200 with correct shapes. Also rendered `/admin/stock`,
+  `/admin/stock/opening`, `/admin/financials` as Admin → `200`, inside
+  `<AdminShell>`, no runtime error.
+- `git status` — new: `app/admin/stock/**`, `app/admin/financials/**`,
+  `app/api/stock-movements/balances/**`; modified: `app/admin/admin-shell-client.tsx`
+  (ADR-36b wiring — flagged), `docs/*`. No kit / shell component /
+  `docs/design/screens` / `/design-preview` file touched.
+  (`components/shells/admin-shell.tsx` untouched — only the shell *client*
+  wrapper changed.)
+
+### Not done / out of scope (as planned)
+- Store Manager / Canteen stock screens — Session 8.
+- The KPI stat strip figures — F3 (`MoneyMovement`).
+- Any Match-card *action* (the reconciliation section lists open items;
+  performing the match is a `purchase_receipt` write path owned by
+  Session 8's Store Manager delivery flow).
+- Value columns (Closing Value / Sold Value) render `—` — per-unit cost
+  for every movement type is not on the F2 wire (F3/F4).
+
+---
+
+## 2026-08-27 — Development Sprint Session 6: M1-F2 Stock backend (domain + APIs) implemented + tested — DONE
+
+**Role:** Developer (Development Sprint), Phase C. **Scope:**
+`docs/sprints/session-6-handoff.md` — the append-only `StockMovement`
+ledger and every operation that writes to it, plus the single
+derived-balance read, plus this session's tests. **Backend only — no
+screens moved (Sessions 7–8).** No new UI/UX decisions.
+
+### Shipped
+
+**Domain — `lib/domain/stock/`**
+- `errors.ts` — re-exports catalog's `DomainError` (same shape; not worth
+  a third copy — lift to `lib/domain/errors.ts` if a third module lands).
+- `types.ts` — `StockMovementView`, `DerivedBalance`, `OutstandingPurchases`,
+  `ActorContext` (`userId` + `role` + nullable `locationId`), one input
+  type per operation, `MovementType` / `NonSaleReason` re-exports.
+  Quantities cross as **decimal strings** (`"12.5000"`); `Decimal`
+  internally.
+- `internal.ts` — `toQuantity` / `toMagnitude` (unsigned; rejects 0 and
+  negatives) / `toMoney` parsers, `quantityString` (4dp), `toMovementView`
+  row→wire mapper.
+- `guards.ts` — `assertProductExists`, `assertProductIsDish`,
+  `assertLocationExists`, `assertLocationOfType` (used to pin `production`
+  to a `restaurant` location).
+- `derived-balance.ts` — **`getDerivedStockBalance({ productId,
+  locationId, asOf? })`**: a plain `prisma.aggregate` signed sum of every
+  `StockMovement.quantity` for the pair up to `asOf` (default now, on
+  `occurredAt`). No stored total, no movement-type filter. Correction
+  deltas are ordinary signed rows so the sum is already correct.
+  **`getDerivedStockBalances(productIds[], locationId, asOf?)`** — batched
+  `groupBy` variant so Sessions 7–8 don't N+1; missing products → `"0.0000"`.
+- `opening-stock.ts` — `setOpeningStock`: writes one `opening` row at
+  `businessDateStartUtc(businessDate)`. First call for a
+  product/location/date → `quantity = stated`. A later call for the same
+  triple → a **correction** row (`correctsMovementId` = the first opening,
+  `quantity` = `stated − sum(existing openings)`), never a `CONFLICT`,
+  never a mutation (ADR-15 / ADR-11 / ADR-39).
+- `purchases.ts` — `recordPurchasePayment` (Admin; `purchase_payment` row
+  with `quantity = 0` — **no stock effect**, ordered magnitude + cost +
+  account in `note`; the `MoneyMovement` debit is a `TODO(mock)` for F3 —
+  see below). `recordPurchaseReceipt` (Store Manager / Attendant; `+q`
+  `purchase_receipt` at `locationId`; validates `purchasePaymentId`
+  points at a real `purchase_payment` row → `NOT_FOUND` if not).
+- `issue-production.ts` — `recordKitchenIssue` (Store Manager; single
+  `−q` `issue` row at the Store — counterpart is "cooking", not a
+  location). `recordProduction` (Store Manager; `+q` `production` row;
+  product must be `kind = "dish"` → `VALIDATION_ERROR`; target must be a
+  `restaurant` location).
+- `consumption.ts` — `recordNonSaleConsumption` (any staff, location-scoped;
+  `−q` `non_sale_consumption`; `reasonNote` required iff
+  `reason = "other"` → `VALIDATION_ERROR` on `reasonNote`).
+- `transfer.ts` — **2-phase (ADR-39).** `recordTransfer` writes the `−q`
+  dispatch row at `from` immediately (counterpart location set,
+  `correctsMovementId` null = "in transit"). `acceptTransfer` writes the
+  `+q` counterpart at `to`, linked via the new row's `correctsMovementId`
+  = the dispatch id. `flagTransfer` records a discrepancy `note` on the
+  pending dispatch row, releases no stock. Same-location transfer →
+  `VALIDATION_ERROR`; double-accept → `CONFLICT`.
+- `correct-movement.ts` — `correctMovement({ movementId, correctedQuantity,
+  note?, recordedById }, actor)`. Loads the original (never mutated),
+  `delta = correctedQuantity − original.quantity`, writes a new
+  `StockMovement` of the same type/product/location, `quantity = delta`,
+  `correctsMovementId = original.id`, `occurredAt` = the original's (so
+  the correction lands in the same business day). **Day-close gate:** a
+  `DayClose` for `toBusinessDate(original.occurredAt)` → only `admin`
+  (`FORBIDDEN` otherwise); day still open → `admin` **or the original
+  recorder**. `delta === 0` → `VALIDATION_ERROR`.
+- `list-movements.ts` — `listMovements(filter, actor)`: `admin` sees all;
+  `store_manager` / `canteen_attendant` see only `actor.locationId`'s
+  rows (a foreign `locationId` filter short-circuits to `[]`); `cashier` →
+  `FORBIDDEN`. Filters: `productId`, `locationId`, `movementType`, `date`
+  (business date → `[businessDateStartUtc, businessDateEndUtc)` on
+  `occurredAt`). Newest first. `listOutstandingPurchases()`:
+  `awaitingReceipt` = `purchase_payment` rows no receipt links back to;
+  `unmatchedReceipts` = `purchase_receipt` rows with a null
+  `purchasePaymentId`.
+- `index.ts` — public barrel.
+
+**Validation — `lib/validation/stock.ts`**
+- One Zod schema per operation; `createStockMovementSchema` is a
+  `discriminatedUnion` on `movementType`. Magnitudes `/^\d+(\.\d{1,4})?$/`
+  (unsigned); `correctedQuantity` `/^-?\d+(\.\d{1,4})?$/` (signed — a
+  corrected final value legitimately may be negative); money
+  `/^\d+(\.\d{1,2})?$/`. Ids `z.string().min(1)`, **not** `.uuid()` (the
+  Session 5 lesson — the seed uses readable ids). `export type` on every
+  inferred type.
+
+**Route-layer helpers — `lib/api/`**
+- `require-role-in.ts` — `requireApiRoleIn(roles[])`, the multi-role
+  sibling of Session 5's `requireApiRole(role)` (left untouched,
+  backward-compatible). Same `Session | NextResponse` contract.
+- `actor-location.ts` — `resolveActorLocationId(userId)`: `User` has **no**
+  `locationId` column — it resolves through `User.staff.locationId`.
+  `null` for `admin` or an unlinked staff user.
+
+**`lib/time/index.ts`** — added `businessDateOnly(businessDate)` → midnight
+**UTC** of the date, the correct value to query a Postgres `@db.Date`
+column (`DayClose.date`) with. `businessDateStartUtc` is a UTC *instant*
+(21:00Z the prior day) and must not be used for `@db.Date` lookups.
+
+**API routes — `app/api/stock-movements/`**
+- `route.ts` — `GET` → `listMovements`; `POST` → per-`movementType` role
+  gate, then location-ownership guard (except `production`, which is
+  inherently Store→Restaurant cross-location and relies on its
+  `store_manager`-only gate), then dispatch to the one domain fn. No
+  business logic in the handler.
+- `[id]/correct/route.ts` — `POST` → `correctMovement` (any signed-in
+  user; the domain decides who may actually correct).
+- `[id]/accept/route.ts` — `POST` → `acceptTransfer`, or `flagTransfer`
+  when the body is `{ flag: true, note }`. Receiver-location-scoped for
+  the non-admin roles.
+- `outstanding/route.ts` — `GET` → `listOutstandingPurchases` (Admin only).
+
+### Decisions
+- **ADR-39** added — (a) signed-quantity convention (every row signed from
+  its own `locationId`); (b) the 2-phase transfer representation (two
+  `transfer` rows, the `+q` linked to the `−q` via `correctsMovementId`,
+  no `status` column / no migration); (c) `correctMovement` writes a delta
+  row even for open-day corrections by the original recorder (the handoff
+  overrides CONVENTIONS §4.6's "true edit" wording for stock — additive
+  only, ADR-15-consistent); (d) `MoneyMovement` for `purchase_payment`
+  deferred to F3.
+
+### Contract change (API.md updated this session)
+- Stock Movements section rewritten to the implemented contract:
+  **camelCase** JSON on the wire (matching Session 5's Catalog change),
+  exact request bodies per `movementType`, `opening` added as a `POST`
+  body (`{ movementType, productId, locationId, businessDate, quantity }`),
+  the new **`POST /api/stock-movements/:id/accept`** endpoint (2-phase
+  transfer phase 2 + flag), and the `correct` / `outstanding` response
+  shapes. API.md's old `snake_case` examples are superseded.
+
+### Notes / flags
+- **`TODO(mock)` deliberately retained (1):**
+  `lib/domain/stock/purchases.ts` — `recordPurchasePayment` does not write
+  the paired `MoneyMovement` (cash / M-Pesa-Bank debit). Owned by **F3
+  Financials** per the handoff; `paidFromAccount` is captured now so F3
+  needs no schema change. This is the only surviving marker in
+  `lib/domain/stock` / `app/api/stock-movements`.
+- **`flagTransfer` mutates** the pending dispatch row's `note` (not an
+  append) — it is open pending-state metadata, not a closed ledger fact
+  (analogous to same-day staff edits). Documented in ADR-39.
+- **`User` has no location.** Location scoping resolves through
+  `User.staff.locationId`. A `store_manager` / `canteen_attendant` with no
+  `staff` link gets `FORBIDDEN` from the location-scoped paths.
+- **`purchase_payment` rows carry `quantity = 0`** so the hot
+  derived-balance sum needs no movement-type filter. Ordered magnitude
+  lives in `note`.
+- Sessions 7–8 consume `lib/domain/stock` (fully exported) + the routes.
+  `ADR-36b` (ledger collapse persistence) is still open and is a
+  Session 7 frontend question — untouched here.
+
+### Verification
+- `pnpm tsc --noEmit` — exit 0 (`.next` cleared first).
+- `pnpm test` — **56 pass** (35 prior + 21 new across
+  `derived-balance.test.ts`, `correct-movement.test.ts`,
+  `transfer.test.ts`, `movement-guards.test.ts`). Per-file `SCOPE` prefix,
+  self-cleanup only. (A mid-session run showed timeouts on prior suites
+  too — caused by a `pnpm dev` server holding DB connections during the
+  test run; clean once the server was stopped.)
+- `grep -rn "TODO(mock)" lib/domain/stock app/api/stock-movements` — one
+  marker, the F3 `MoneyMovement` deferral above.
+- `pnpm dev` smoke (throwaway `smoke-stock.mjs`, `@playwright/test`
+  request context, deleted after): logged in as Admin / Store Manager /
+  Canteen Attendant; `POST` one of every `movementType`; `production` on
+  a non-dish → 400; 2-phase transfer dispatch + accept; consumption
+  `other` with no note → 400; open-day correct as original recorder →
+  201; `GET` list as Admin (all 15) vs Store Manager (12, store rows
+  only — location set verified); `GET .../outstanding` → 200 Admin / 403
+  Store Manager.
+- `git status` — only `lib/domain/stock/**`, `lib/validation/stock.ts`,
+  `lib/api/**`, `app/api/stock-movements/**`, `lib/time/index.ts`, and
+  docs. No screen / kit / shell / `design-preview` / `docs/design/screens`
+  file touched.
+
+### Not done / out of scope (as planned)
+- No screens moved (Sessions 7–8).
+- `MoneyMovement` write for `purchase_payment` (F3).
+- `sale` / `stock_count` / `closing` movement types — not F2 write
+  operations (Restaurant sales = F-later; canteen counts = F-later;
+  closing is ADR-11 computed-on-read).
+
+---
+
+## 2026-08-27 — Development Sprint Session 5: M1-F1 Catalog & Locations implemented + tested — DONE
+
+**Role:** Developer (Development Sprint), Phase C. **Scope:**
+`docs/sprints/session-5-handoff.md` — turn the F1 design skeletons into a
+working feature. **No new UI/UX decisions.**
+
+### Shipped
+
+**Route-layer helpers (new, reused by every future handler)**
+- `lib/api/response.ts` — `ok(data)` / `fail(code, message, field?, status?)`
+  in the CONVENTIONS.md §3 envelope; `ErrorCode` → HTTP status map.
+- `lib/api/require-role.ts` — `requireApiRole(role)` — API equivalent of
+  `lib/auth/session.ts`'s `requireRole`; returns a 401/403 `NextResponse`
+  instead of redirecting. Handlers early-return it when it isn't a `Session`.
+
+**Domain — `lib/domain/catalog/`**
+- `errors.ts` (`DomainError` carrying an API `code` + optional `field`),
+  `types.ts` (`ProductWithLocations`, `LocationPriceInput`,
+  `CreateProductInput`, `UpdateProductInput`; money crosses as a decimal
+  **string**), `internal.ts` (shared Prisma `include`, row→view mapper with
+  non-admin buying-price stripping, `normaliseProductCore` = the Dish
+  invariant + name/unit/price validation).
+- `list-products.ts` (kind / case-insensitive search / `includeArchived`
+  filters; `deletedAt` excluded by default; buying price stripped for
+  non-`admin`; sort kind→name), `get-product.ts` (`NOT_FOUND` on
+  missing/soft-deleted), `locations.ts` (`listLocations`, active-only by
+  default).
+- `create-product.ts` — Product + one `ProductLocation` per submitted
+  location in one `$transaction`; Dish ⇒ `buyingPrice = 0`;
+  ingredient/goods require `>= 0`; validates every `locationId` exists.
+- `update-product.ts` — true edit (a catalog entry is not a ledger).
+  Reconciles `ProductLocation` rows: present → upsert; **dropped →
+  deactivated (`active = false`), not deleted** (see ADR below). Switching
+  kind to `dish` zeroes the buying price. `NOT_FOUND` guarded.
+- `delete-product.ts` — `archiveProduct` (sets `deletedAt`, deactivates
+  the location rows; idempotent), `hardDeleteProduct` (case-sensitive
+  `confirmName` match → else `VALIDATION_ERROR`; referential guard counts
+  `StockMovement` + `OrderLine` + `StockCount` + `RecipeIngredient`, any
+  > 0 ⇒ `CONFLICT`; clean ⇒ delete location rows then product in a
+  transaction).
+- `index.ts` barrel.
+
+**Validation — `lib/validation/catalog.ts`**
+- `createProductSchema` / `updateProductSchema` (money as a
+  `/^\d+(\.\d{1,2})?$/` decimal string, never a float; `buyingPrice`
+  optional — domain enforces "required for non-dish"; `locations[]` with a
+  nullable `sellingPrice`), `hardDeleteProductSchema`,
+  `listProductsQuerySchema`. `type`-exported for the client forms.
+
+**API routes**
+- `app/api/locations/route.ts` — `GET` → `listLocations()`.
+- `app/api/products/route.ts` — `GET` (query-filtered list, role from
+  session) / `POST` (create, 201).
+- `app/api/products/[id]/route.ts` — `GET` / `PATCH` / `DELETE`
+  (`?mode=archive` → archive; else `{ confirmName }` body → hard delete).
+  All: `requireApiRole("admin")` → `safeParse` → `try { domain } catch
+  (DomainError) → fail(...)`.
+
+**Frontend — `app/admin/catalog/`**
+- `use-catalog.ts` — the single data path: `products`, `locations`,
+  `loading`, `error` + `refresh` / `create` / `update` / `archive` /
+  `hardDelete`. `CatalogRequestError` carries `code` / `field` / `status`.
+- `catalog-client.tsx` — the wired container (content region verbatim from
+  the `admin-catalog-product-catalog` skeleton; the desktop table and the
+  mobile cards from `admin-catalog-mobile` share this one hook via a
+  `md:` breakpoint — no second data path). Owns tab / search filter state,
+  `drawerOpen` / `selectedProduct` / `deleteTarget`, mounts the drawer +
+  dialog.
+- `page.tsx` — thin; renders `<CatalogClient />` inside the existing
+  `app/admin/layout.tsx` `<AdminShell>`.
+- `product-drawer.tsx` — controlled form on the `product-drawer` skeleton
+  markup: name / kind segmented (**picking Dish disables + zeroes the
+  buying-price field and shows the dish note**) / unit / per-location
+  toggle+price rows; Save → `create` | `update` → close + `refresh`;
+  surfaces `VALIDATION_ERROR.field` on the matching input.
+- `product-delete-dialog.tsx` — wraps the kit `<FrictionDeleteDialog>`
+  (untouched); confirm → `hardDelete`; on **409** switches copy to the
+  "Archive instead" path → `archive`.
+
+### Contract change (API.md updated this session)
+Location prices are submitted **with** the product — `POST` / `PATCH
+/api/products` carry a `locations: [{ locationId, sellingPrice, active }]`
+array. The standalone `POST /api/products/:id/locations` from API.md is
+**dropped** (the drawer has one Save button; nothing else would call a
+separate endpoint). `DELETE /api/products/:id` (`?mode=archive` /
+`{ confirmName }` body) replaces the `POST .../soft-delete` +
+`POST .../hard-delete` sub-routes. See ADR-38.
+
+### Decisions
+- **ADR-38** added — location prices submitted with the product; dropped
+  `ProductLocation` rows are deactivated, not deleted.
+
+### Bug found + fixed mid-session
+The seed uses readable ids (`seed-location-store`), and `Location.id` is
+`String @default(uuid())` — a default, not a `@db.Uuid` column. The first
+Zod schema had `locationId: z.string().uuid()` and 400'd every real
+request. Relaxed to `z.string().min(1)`.
+
+### Notes / flags
+- `/api/locations` is gated to `admin` for now (API.md says "Roles: all",
+  but in M1 only the Admin catalog consumes it — widen when a second
+  consumer appears).
+- The exported `admin-catalog-product-catalog` skeleton bundles its own
+  240px sidebar + toolbar (it was exported standalone for
+  `/design-preview`). `app/admin/layout.tsx` already wraps every admin
+  route in `<AdminShell>`, so the real page renders the **content region
+  only** (same as `app/admin/page.tsx`). Confirmed with the user
+  mid-session. The standalone skeletons keep their sidebars at
+  `/design-preview` as the regression fixtures.
+
+### Verification
+- `pnpm tsc --noEmit` — exit 0.
+- `pnpm test` — **35 pass** (24 prior + 11 new: `create-product.test.ts`,
+  `update-product.test.ts`, `delete-product.test.ts`).
+- `grep -rn "TODO(mock)" app/admin/catalog lib/domain/catalog` — empty.
+- `pnpm dev` smoke as Admin (local Postgres + seed): list; create
+  Ingredient (price sticks) + Dish (field disabled, saved `0.00`); PATCH
+  per-location prices, toggle a location off → reopen → persisted; wrong
+  `confirmName` → 400; archive → drops from list, returns with
+  `includeArchived=true`. The 409 referential guard is covered by
+  `delete-product.test.ts` (real `StockMovement`).
+- `docs/design/screens/admin-catalog-*` + `product-*` and their
+  `/design-preview/*` routes untouched. `components/kit/*` /
+  `components/shells/*` untouched.
+
+### Not done / out of scope (as planned)
+Recipes (ADR-33 informational-only) — schema models left untouched, no
+`/api/recipes`, no recipe domain logic.
+
+---
+
+## 2026-08-27 — Design Sprint Session 4c: the 7 Store Manager + Canteen screens re-exported from Paper; the 2 role-home swaps — Session 4 fully DONE
+
+**Role:** Developer (Design Sprint). **Scope:** the final slice of Session
+4 — the 7 remaining F2 screens (Store Manager ×4 + Canteen ×3) and the
+Store Manager / Canteen role-home swaps
+(`docs/sprints/session-4c-handoff.md`). **No new UI/UX decisions. No real
+data / API / auth.** With this slice, **all 21 M1 screens are exported +
+verified.**
+
+### Shipped — 7 screens exported + verified (`get_jsx` → frame-drop →
+`fixtures.ts` → static skeleton → `/design-preview` route →
+screenshot-verified vs the top-level Paper artboard)
+
+| Slug | Artboard | Notes |
+|---|---|---|
+| `store-manager-mobile-hub` | `8T3-0` | New. Hub *content* only (staff-shell header + bottom nav are the shell's). Status-bar + shell chrome dropped; content root kept `grow gap-(--sp-6)`. **NO kit swap** — all three sections diverge structurally from their kit components: (a) the two persistent banners draw a leading 16×16 warning/info icon in a `justify-start gap-(--sp-3)` row, and the kit `<Banner>` has no icon slot + a `justify-between` header; also the 2nd ("Purchase Delivery") banner box is **amber** (`bg-warning-bg border-warning`) on this artboard with only the heading/icon + Match button in `--color-info` — NOT the blue `bg-info-bg border-info` box the kit `<PurchaseDeliveryBanner>` renders; (b) "Quick Store Operations" is a `flex-wrap basis-[calc(50%-8px)]` 2-up card grid, `--surface-subtle` bg, `border-strong`, icon top-RIGHT, `text-h2/h2` title — not the kit `<ActionTileGrid>` (fixed `w-[300px]` grid of `w-[142px]` tiles, `border-subtle`, icon on top, `text-sm/sm`); (c) "Today's Movement Log" rows are `justify-between py-(--sp-4) px-(--sp-6) border-t` with a `font-mono font-(--weight-medium) text-body/sm` value — not the kit `<ActivityTimeline>` (`w-[340px]`, `py-(--sp-5)`, `border-b`, `font-(--weight-semibold) text-sm/micro`). All transcribed inline verbatim — the 4b `admin-stock-mobile` precedent. |
+| `store-manager-flows-issues-production` | `8XH-0` | New. The artboard draws **two separate full phone screens side by side** (Issue Ingredients + Record Batch Production) — transcribed as drawn, as sibling `w-[390px] h-[844px]` phone frames. Status-bar dropped. **NO kit swap:** the flow header LOOKS like the kit `<FlowHeader>` but the direction badge is semantic-coloured per flow (`text-danger` Issue / `text-success` Production) where the kit hardcodes `text-info` — FLAG; the quantity inputs are plain bordered value boxes with NO −/+ steppers (not `<QuantityStepper>`); the "Receiving Chef" / "Cooked Dish" rows are bespoke chevron rows (not `<Select>` markup). Kept verbatim. |
+| `store-manager-flows-transfers-consumption` | `92M-0` | New. Same two-phone-screen layout (Transfer Stock + Log Non-Sale). **NO kit swap:** flow header direction badge varies per flow (`text-info` / `text-warning`) — FLAG; the category tabs are `h-[32px] px-(--sp-6) rounded-lg`, active = `bg-accent`+`text-white`, inactive = `bg-(--surface-subtle)`+`text-secondary`, `text-body/sm` — NOT the kit `<PillFilter>` (`bg-(--surface-selected)`+`text-accent`, `text-sm/sm`, no inactive bg); the transfer-qty stepper is bespoke `w-[32px] h-[32px]` −/+ buttons (not `<QuantityStepper>`'s `h-[36px]` bordered group). All inline verbatim. |
+| `store-manager-stock-levels` | `986-0` | New. Screen *content* (renders in the staff shell). **NO kit swap** — the handoff guessed a `<PillFilter>` but there is none: a title block + bespoke search row + bespoke read-only list. The table header is `bg-info-bg` / `text-info` `text-[10px]` with a `border-b-gray-600` rule; rows are `h-[52px]` with a `--border-subtle` hairline (last row omits it). No kit component drawn for it — kept verbatim. Shares its shape with `canteen-stock-levels`. |
+| `canteen-mobile-operations-hub` | `9BA-0` | New. Hub *content*. **NO kit swap:** the banner has the same leading-icon divergence as the SM hub; "Canteen Workflows" is a bespoke ROW list (icon box + text + trailing chevron), NOT the kit `<ActionTileGrid>`; the canteen-log rows match the SM hub's `border-t` + `font-mono` time treatment (not `<ActivityTimeline>`). Inline verbatim. |
+| `canteen-transfer-dispatch` | `9FE-0` | New. Single full phone screen (its own header + sticky bar), mirrors the SM "Transfer Stock" flow, `Canteen → Store`. Status-bar dropped; `w-[390px] h-[844px]` kept. Same non-kit category tabs + bespoke stepper as `92M-0` — inline verbatim. |
+| `canteen-stock-levels` | `9GW-0` | New. Byte-identical structure to `store-manager-stock-levels` (Canteen data). Same bespoke `info-bg` table header + `h-[52px]` rows. **NO kit swap** — inline verbatim. |
+
+**`fixtures.ts` created (7):** one per slug, each `TODO(mock)`, literals
+lifted verbatim from the artboard. No shared modules this session (each
+screen self-contained).
+
+**Preview routes:** 7 new `app/design-preview/<slug>/page.tsx` (thin).
+Mobile hubs / stock-levels wrap in `mx-auto w-[390px] border-x
+border-border-subtle`; the two-phone flow screens render the sibling
+frames directly with a `p-(--sp-9)` gutter; `canteen-transfer-dispatch`
+wraps `mx-auto w-[390px] border-x`. `app/design-preview/layout.tsx`
+`SCREENS` list: 7 slugs added (4 Store Manager + 3 Canteen), ordered
+after the Admin-Stock cluster and before F3 — list now 22 entries.
+
+**Role-home swaps:** `app/store-manager/page.tsx` and
+`app/canteen/page.tsx` — the `<EmptyState>` placeholders replaced with
+`<StoreManagerMobileHubScreen />` / `<CanteenMobileOperationsHubScreen />`
+imported from `docs/design/screens/*`, rendered as the staff-shell
+**content** (a `flex w-full flex-col py-(--sp-6)` wrapper; the shell
+header + bottom nav come from `components/layout/staff-shell-client.tsx`,
+untouched). Each carries a file-level `TODO(mock)` pointing at its
+fixtures. `/admin` + `/cashier` keep their `<EmptyState>` (no M1 home) —
+already clean, not touched.
+
+**Verification:** `pnpm tsc --noEmit` exits **0** (after `rm -rf .next`).
+All 7 `/design-preview/*` routes return HTTP 200 with **0 pageerror / 0
+console.error** (Playwright). Each of the 7 screens screenshot-compared
+against its top-level Paper artboard at 2× DSF — **all match** (banner
+boxes + icons + button tones, the 2-up card grid vs the row workflow
+list, per-flow direction-badge colours, the accent-filled category tabs,
+the bespoke −/+ steppers, the danger/success/warning card borders on the
+flow screens, the `info-bg` stock-level table header + `h-[52px]` rows +
+last-row hairline omission, the `border-t` movement/canteen logs with
+`font-mono` values/times). The two role homes were reached with a seeded
+`pnpm prisma db seed` login (Store Manager / Canteen Attendant, PIN
+1234) — both render the exported hub content inside the real staff shell
+(header + Hub/Stock/History bottom nav, Hub active), 0 errors. Throwaway
+Playwright scripts lived in the repo root and were deleted.
+
+### Flags raised — and their resolution (fixed same session, owner-directed)
+
+1. **Flow-header direction-badge colour — FIXED (ADR-37c).** `8XH-0` /
+   `92M-0` / `9FE-0` colour the "Origin → Destination" badge per flow
+   (`text-danger` Issue / `text-success` Production / `text-info`
+   Transfer / `text-warning` Non-Sale); the kit `<FlowHeader>`
+   hardcoded `text-info`. Added `directionTone?: "info" | "success" |
+   "danger" | "warning"` (default `"info"` → byte-identical to `9KI-0`)
+   to `components/kit/flow-header.tsx`. The four flow skeletons now use
+   `<FlowHeader ... directionTone=… className="w-full" />` instead of an
+   inline header — this **removes** the inline transcriptions the export
+   flagged. Kit-gallery gained a `Flow header — directionTone` case.
+   Follow-up: add the toned states to the Paper `9KI-0` artboard.
+   Recorded as `DECISIONS.md` ADR-37c.
+2. **Type scale (`text-h2/h2`, `text-display/display`, …) rendered at
+   14px — FIXED in `app/globals.css`.** Root cause: the `@theme inline`
+   block had `--text-h1: var(--text-h1)` (self-referential → no
+   concrete value → Tailwind emitted **no** `.text-h1` rule) **and** no
+   `--leading-*` theme keys, so the slash form `text-h2/h2` (`font-size
+   / line-height`, the form `get_jsx` emits) had no `line-height` name
+   to resolve and the whole class was dropped. Fix: give every `--text-*`
+   a literal px value (in sync with `lib/tokens.css` / `design-principles.md`
+   §6) **and** register the matching `--leading-*` keys. Verified: the
+   `text-*` classes now compute correctly (`text-display/display` →
+   24px/32px, `text-h1/h1` → 20px/28px, `text-h2/h2` → 16px/24px). This
+   was a **pre-existing globals bug affecting every 4a/4b/4c screen and
+   the kit** — all headings/card-titles across the design-preview and the
+   kit gallery now render at their intended size. `pnpm tsc --noEmit`
+   exit 0; all 7 screens + both role homes re-screenshot-verified after
+   the fix — the "Stock Levels" display heading and the hub card titles
+   now match their Paper artboards.
+3. **Two-phone-screen flow artboards — not a bug, a Phase-C note.**
+   `8XH-0` and `92M-0` each draw two distinct full phone screens on one
+   artboard. Exported as one skeleton rendering both as sibling phone
+   frames (`IssueIngredientsPanel` / `RecordBatchProductionPanel` etc.
+   are already separate components). Session 8 (staff frontend) splits
+   each panel into its own real route; the `/design-preview` route keeps
+   both panels as the visual-regression fixture. No change needed.
+
+### Changed from plan
+
+- Nothing structural. The handoff's guess that `986-0` / `9GW-0` might
+  use `<PillFilter>` was wrong — neither does; both are bespoke lists.
+  The handoff's expectation that the hubs would swap `ActionTileGrid` /
+  `ActivityTimeline` / `TransferBanner` / `PurchaseDeliveryBanner` also
+  didn't hold — every one of those sections diverges structurally from
+  its kit component and was transcribed inline (the 4b precedent). Net
+  at export time: **0 kit swaps**.
+- **After the flag review (below), one kit swap was made:** the flow
+  header → kit `<FlowHeader>` on the 3 flow screens, once
+  `directionTone` was added (ADR-37c, owner-directed). The hub /
+  stock-level bespoke sections stay inline as exported.
+- **`app/globals.css` type-scale fix** (flag 2) is a globals change, not
+  a screen or kit change — it fixes a latent bug that predates 4c and
+  applies project-wide.
+
+### Next session
+
+**Session 5** — Developer (Development Sprint): M1-F1 Catalog & Locations
+(`lib/domain/catalog`, `app/api/products*`, move the F1 skeletons to
+`app/admin/catalog/*`, swap fixtures). See `milestone-1-plan.md` §5.
+
+---
+
 ## 2026-08-27 — Design Sprint Session 4b: the 5 Admin Stock screens re-exported from Paper (split from 4b's 12 → 4b + 4c)
 
 **Role:** Developer (Design Sprint). **Scope:** Session 4b was briefed as
