@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { LayoutGrid, Boxes, History, ShoppingCart } from "lucide-react";
 import { StaffShell } from "@/components/shells/staff-shell";
+import { ToastProvider } from "@/components/kit/toast";
 import type { BottomNavItem } from "@/components/kit/bottom-nav";
 
 // Per-role bottom nav item sets, keyed by the role's base route. The nav-item
@@ -80,16 +81,22 @@ export function StaffShellClient({
   const navItems = React.useMemo(() => toNavItems(defs), [defs]);
 
   return (
-    <StaffShell
-      roleLabel={roleLabel}
-      locationLabel={locationLabel}
-      accountInitials={accountInitials}
-      navItems={navItems}
-      activeNavKey={activeNavKeyFromPathname(basePath, pathname, defs)}
-      onNavigate={(key: string) => router.push(hrefForKey(basePath, defs, key))}
-      onAccountClick={() => signOut({ callbackUrl: "/login" })}
-    >
-      {children}
-    </StaffShell>
+    // Session 12 (ADR-43): the staff route tree gets bottom-center toasts —
+    // the mirror of the admin tree's top-right (app/admin/admin-shell-client.tsx).
+    // Every staff issue / production / transfer / non-sale / receipt / accept
+    // success fires one via useToast().
+    <ToastProvider placement="bottom-center">
+      <StaffShell
+        roleLabel={roleLabel}
+        locationLabel={locationLabel}
+        accountInitials={accountInitials}
+        navItems={navItems}
+        activeNavKey={activeNavKeyFromPathname(basePath, pathname, defs)}
+        onNavigate={(key: string) => router.push(hrefForKey(basePath, defs, key))}
+        onAccountClick={() => signOut({ callbackUrl: "/login" })}
+      >
+        {children}
+      </StaffShell>
+    </ToastProvider>
   );
 }

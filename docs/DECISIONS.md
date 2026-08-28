@@ -1230,3 +1230,92 @@ hand-rolling markup, so §9.5/§9.7/§9.10 have one implementation.
 enter/exit fade. `tokens.css` + `tokens.ts` gain two colours. No screen file
 changed. The four review items are settled in Session 10b (Storybook), which
 also finalises this ADR.
+
+---
+
+## ADR-44: The Session-4b staff screen artboards are superseded by the proven kit; the kit is the visual acceptance target for the 7 Store Manager + Canteen screens (Session 12)
+
+**Status:** DECIDED (owner, Session 12 kickoff — the developer flagged the
+conflict, the owner ruled "kit is the target; artboards superseded" for the
+two hubs, then extended the same ruling to all 7 staff screens).
+
+**Context.** Session 12's job was to *compose* the 7 approved Store Manager
++ Canteen mobile screens (`store-manager-mobile-hub`,
+`canteen-mobile-operations-hub`, `store-manager-flows-issues-production`,
+`store-manager-flows-transfers-consumption`, `canteen-transfer-dispatch`,
+`store-manager-stock-levels`, `canteen-stock-levels`) from the proven kit
+and wire them to the F2 stock API — the same move Session 11 made for the
+Admin screens.
+
+The premise broke on contact. Session 11 worked because the **Admin**
+artboards had been re-drawn against the kit in a Design Sprint first. The
+**staff** artboards never were — they are the Session 3–4 exports,
+transcribed inline by Session 4b *before the kit existed in its current
+(Session 9–10d) form*, each carrying an explicit "NO kit swap" flag note:
+
+- The hub banners draw a leading warning/info icon in a `justify-start`
+  row and paint the Purchase Delivery banner amber; the kit `<Banner>` /
+  `<PurchaseDeliveryBanner>` has no icon slot, a `justify-between` header,
+  and a blue delivery variant.
+- "Quick Operations" is `flex-wrap basis-[calc(50%-8px)]` cards with the
+  icon top-right and an `h2` title; `<ActionTileGrid>` is a fixed
+  `w-[300px]` grid of `w-[142px]` tiles, icon on top, `sm` title.
+- The Canteen hub's "Workflows" is a bespoke row list with trailing
+  chevrons, not a tile grid at all.
+- The flow screens use bespoke value boxes / ±32 px steppers / `bg-accent`
+  pill tabs — not `<QuantityStepper>` / `<Select>` / `<PillFilter>`.
+- The stock-levels screens are a bespoke `h-[52px]` list with a
+  `bg-info-bg` `text-[10px]` header — no `<DenseSummaryStrip>`, no
+  `<PillFilter>` (the handoff's "compose from" column even says so: *"the
+  artboard has no PillFilter, contrary to the handoff's guess"*).
+
+There is also no `docs/design/flows/*.md` for these screens (the directory
+is empty). So "compose from the kit" and "match the artboard" could not
+both be satisfied.
+
+**Decision.** For all 7 Store Manager + Canteen screens, **the current kit
+is the visual acceptance target and the Session-4b artboards are
+superseded**. Session 12 (a Development Sprint) composes each screen from
+kit primitives per the handoff's Scope table — `<ActionTileGrid>`,
+`<TransferBanner>` / `<PurchaseDeliveryBanner>`, `<ActivityTimeline>`,
+`<MatchCard>`, `<FlowHeader>`, `<Select>`, `<QuantityStepper>`,
+`<BulkEntryGrid>`, `<CalculatedImpactBanner>`, `<DenseSummaryStrip>`,
+`<PillFilter>`, `<EmptyState>` / `<ErrorState>`, `<Toast>`, `<PageShell>`,
+`<FormField>` — wires them to the F2 API, and runs the per-screen visual
+gate against the kit's **Storybook stories** (the primitives are already
+Paper-verified — Session 10d parity audit) instead of the stale artboards.
+No kit change, no Paper change.
+
+**Alternatives considered.**
+- *Pause Session 12; run a Design Sprint to re-draw the 7 staff artboards
+  against the kit (as Admin got before Session 11)* — rejected by the
+  owner as unnecessary ceremony: the kit primitives are proven and the
+  screen compositions are mechanical once the artboards are treated as
+  non-binding. Re-drawing 7 artboards to match components that already
+  exist adds a sprint and produces nothing the Storybook stories don't
+  already show.
+- *Compose the hubs from the kit but keep the flow / stock-levels
+  artboards as the target* — rejected: the same "transcribed before the
+  kit" problem applies to every screen, not just the hubs; a split ruling
+  would leave five screens in the same limbo next session.
+- *Extend the kit (`Banner` icon slot + delivery-tone variant,
+  `ActionTileGrid` row variant, `ActivityTimeline` sizing) so the
+  artboards compose verbatim* — rejected: that is a Design Sprint's call,
+  not a Development Sprint's, and the divergences are cosmetic, not
+  functional.
+
+**Consequences.**
+- Session 12 composes and wires all 7 screens into `app/store-manager/**`
+  + `app/canteen/**`; `components/kit/*` and `components/shells/*` are
+  untouched.
+- The `/design-preview/<slug>` skeletons + `docs/design/screens/<slug>/`
+  dirs stay as the frozen Session 3–4 visual-regression reference (they
+  are *not* the acceptance target — ADR-44 — but they still pin the
+  export-workflow's before-state).
+- A future Design Sprint may still re-draw the staff artboards against the
+  kit for design-system completeness; until then the Storybook stories +
+  `component-states.md` are the canonical visual reference for these
+  screens.
+- The per-screen visual gate for Session 12's screens is "diff the
+  composition's structure against the kit Storybook stories", recorded in
+  `PROGRESS.md` per screen.
