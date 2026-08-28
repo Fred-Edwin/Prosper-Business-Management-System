@@ -70,7 +70,7 @@ export function Drawer({
 
   useActiveOverlay(active);
   useScrollLock(mounted);
-  useBackgroundInert(rootRef, mounted);
+  useBackgroundInert(rootRef, active);
   useFocusTrap(panelRef, active);
   useEscToClose(active, onClose);
 

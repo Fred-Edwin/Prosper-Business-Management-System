@@ -105,6 +105,13 @@ export function useScrollLock(active: boolean) {
  * Marks every top-level sibling of the overlay container as `inert` (with an
  * `aria-hidden` + `pointer-events:none` fallback for older engines) while
  * `active`. The overlay container itself is identified by `containerRef`.
+ *
+ * Key this on `active` (mounted && not closing), NOT on `mounted`: the
+ * background must stop being inert the instant the close begins, so
+ * useFocusTrap's cleanup can move focus back to the opener. Keeping it inert
+ * through the slide-out makes `.focus()` on the opener a spec no-op (focus
+ * falls to <body>) — the WCAG 2.4.3 regression the harness caught. Nothing
+ * outside the panel is interactive during a ~200ms slide-out anyway.
  */
 export function useBackgroundInert(
   containerRef: React.RefObject<HTMLElement | null>,
@@ -232,14 +239,58 @@ export function useFocusTrap(
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
       const toRestore = restoreRef.current;
-      // Restore now AND again on the next frame: the panel may still be in the
-      // DOM during an exit transition, and its removal a tick later can blur
-      // focus to <body>. The second call re-asserts after that unmount.
-      const doRestore = () => {
-        if (toRestore && document.contains(toRestore)) toRestore.focus();
+      if (!toRestore) return;
+
+      // Why this is deferred and retried, not a single synchronous `.focus()`:
+      //
+      // On close the overlay stays *mounted* through its slide-out (see
+      // useOverlayTransition), and useBackgroundInert keeps the opener's
+      // container `inert` for that whole window. `.focus()` on an element
+      // inside an `[inert]` subtree is a spec no-op — it silently fails and
+      // `document.activeElement` falls back to <body>. That was the WCAG
+      // 2.4.3 regression the proof harness caught.
+      //
+      // So: restore only once the opener is actually focusable again —
+      // reattached to the document AND clear of any `[inert]` ancestor. We
+      // also proactively lift a stale inert/aria-hidden off its ancestor
+      // chain (useBackgroundInert may not have cleaned up yet), then poll a
+      // few frames for the mount/inert state to settle.
+      const isFocusable = (el: HTMLElement) => {
+        if (!document.contains(el)) return false;
+        for (let p: HTMLElement | null = el; p; p = p.parentElement) {
+          if (p.hasAttribute("inert")) return false;
+        }
+        return true;
       };
-      doRestore();
-      requestAnimationFrame(doRestore);
+      const liftInertAncestors = (el: HTMLElement) => {
+        for (let p: HTMLElement | null = el; p; p = p.parentElement) {
+          if (p === document.body) break;
+          if (p.hasAttribute("inert")) {
+            p.removeAttribute("inert");
+            p.removeAttribute("aria-hidden");
+            p.style.removeProperty("pointer-events");
+          }
+        }
+      };
+
+      let tries = 0;
+      const attempt = () => {
+        if (!document.contains(toRestore)) {
+          if (tries++ < 20) requestAnimationFrame(attempt);
+          return;
+        }
+        liftInertAncestors(toRestore);
+        if (isFocusable(toRestore)) {
+          toRestore.focus();
+          return;
+        }
+        if (tries++ < 20) requestAnimationFrame(attempt);
+      };
+      // First hop is a macrotask so it lands after React has flushed this
+      // commit's *other* effect cleanups (useBackgroundInert removing inert
+      // when keyed on `active`); rAF retries cover the still-mounted case.
+      setTimeout(attempt, 0);
+      requestAnimationFrame(attempt);
     };
   }, [panelRef, active]);
 }
