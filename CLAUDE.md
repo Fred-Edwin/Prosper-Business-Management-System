@@ -36,8 +36,10 @@ silently reinvent a convention that already exists, or contradict one.
 | Testing strategy | `docs/TEST_PLAN.md` |
 | Feature sequencing, milestones | `docs/ROADMAP.md` |
 | Current sprint scope/status | `docs/sprints/sprint-XX-*.md` |
-| Product-wide UI/UX rules | `docs/design/design-principles.md` |
-| Paper → code export method (get_jsx, component-swap, screenshot-verify) | `docs/design/export-workflow.md` |
+| Product-wide UI/UX rules | `docs/design/design-principles.md` (§9 is an ENFORCED contract) |
+| What each kit component now does (before → after, per-component) | `docs/design/kit-audit.md` |
+| Kit component state matrix + implementation status | `docs/design/component-states.md` §2 / §9 |
+| Paper → code method (compose screens from the proven kit; artboard = visual target) | `docs/design/export-workflow.md` |
 | Per-feature user flow | `docs/design/flows/*.md` |
 | What shipped last, what's blocked | `docs/PROGRESS.md` |
 | Process this project follows | `docs/sdlc.md` |
@@ -52,16 +54,22 @@ decisions; a Design Sprint session does not write real logic.
 
 - **Design Sprints** happen in Paper.design, against the approved
   component library (`docs/design/design-principles.md`), assembled
-  from existing components rather than inventing new ones. Once
-  approved, the screens are assembled directly into their real Next.js
-  routes/components, wired with mock data behind the same interface
-  real data will eventually use. Every mock source is marked
-  `TODO(mock)`.
-- **Development Sprints** find every `TODO(mock)` marker in scope and
-  replace it with real logic (API calls, database queries, domain
-  rules) — without touching the approved UI. No new UI/UX decisions get
-  made here; if one is needed, stop and flag it rather than deciding it
-  ad hoc — it goes back to a design sprint.
+  from existing components rather than inventing new ones. The kit
+  itself is built + **proven in Storybook** (one story per state,
+  visual-diff + axe + §9 `postVisit` assertions — ADR-42) before any
+  screen composes it. The Paper artboard is the **visual acceptance
+  target**; its markup is **never** copied into a screen file.
+- **Development Sprints** do two things: (a) **compose** the approved
+  screens from the proven kit (`<PageShell>`, `<Drawer>`, `<FormField>`,
+  `<SimpleTable>`, `<Toast>`, `<EmptyState>`/`<ErrorState>`, …) into
+  their real Next.js routes — a thin per-screen mapper where the kit's
+  prop shape doesn't fit the data, never a change to the kit; and (b)
+  replace every `TODO(mock)` marker with real logic (API calls, DB
+  queries, domain rules) behind a per-feature hook. No new UI/UX
+  decisions get made here; if one is needed, stop and flag it in
+  `PROGRESS.md` — it goes back to a Design Sprint. See
+  `docs/design/export-workflow.md` for the compose-don't-transcribe
+  method and the per-screen gate.
 - **QA Sprints** are adversarial: check the feature against its
   acceptance criteria, the approved design, and the flow doc; try to
   break it; report findings before fixing anything, unless told

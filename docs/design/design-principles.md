@@ -395,16 +395,27 @@ not pick an answer ad hoc.
 
 ---
 
-## 9. Global interaction states (binding — applied once as global CSS)
+## 9. Global interaction states (ENFORCED — a first-class contract)
+
+**Status: this is no longer just a spec — it is an enforced contract.** As
+of the Session 10b–10d proof harness, every rule below is asserted
+per-component in Storybook: the `postVisit` interaction pass drives real
+CDP hover / focus-visible / active / disabled / loading pseudo-states and
+checks the resolved background / border / outline against the token the
+rule names, `pnpm test:a11y` (axe) fails CI on any serious/critical
+violation, and `pnpm test:visual` locks the rest-and-drawn states against
+committed baselines. A component that violates §9 cannot pass its story
+run, so it cannot merge. Session 11 then composes the shipped Admin
+screens **from** those proven components, so the screens inherit the
+contract rather than re-implementing it.
 
 These are the interaction states that are **not** worth a per-component
-artboard. Session 3 (kit rebuild) encodes each of these **once** as
-global CSS / a shared utility, not by reading many near-identical
-artboards. The few states that *are* drawn as artboards (button
-disabled/loading, input focus/error, toggle disabled, ledger corrected
-cell, etc.) are enumerated in `docs/design/component-states.md` §2 and
-serve as the visual reference; everything below is the uniform rule for
-the rest.
+artboard. The kit encodes each of these **once** as global CSS / a shared
+utility, not by reading many near-identical artboards. The few states that
+*are* drawn as artboards (button disabled/loading, input focus/error,
+toggle disabled, ledger corrected cell, etc.) are enumerated in
+`docs/design/component-states.md` §2 and serve as the visual reference;
+everything below is the uniform rule for the rest.
 
 1. **Focus-visible ring.** Every interactive element
    (button, icon button, input, textarea, select, tab, pill, toggle,
@@ -472,7 +483,10 @@ the rest.
     variant color, dims its label to `opacity: 0.7`, shows a 14px
     inline spinner in the label color, and sets `pointer-events: none`.
 
-> **As of Session 10 the §9 contract is implemented per-component.** The rules
+> **As of Session 10 the §9 contract is implemented per-component; as of the
+> Session 10b–10d harness it is _enforced_ per-component (see the §9 header);
+> as of Session 11 the shipped Admin screens are composed from those
+> components, not hand-authored, so they inherit it.** The rules
 > above are authored **once** as shared CSS in `app/globals.css` (`.kit-focus-ring`,
 > `.kit-field`, `.kit-row`, `.kit-interactive`, `.kit-skeleton`, `.kit-scrim`,
 > `.kit-spinner`) plus the overlay slide utilities **added in Session 10**:

@@ -120,6 +120,40 @@ already consistency-audited against Paper in Session 2
 thing a Paper diff would add is that one-time "does today's baseline still
 match Paper" check — which the manual audit covers.
 
+## 2b. Composed screens — per-screen interaction gate (Session 11+)
+
+From Session 11, feature screens are **composed** from the proven kit
+(see `docs/design/export-workflow.md`), not transcribed. Each rebuilt or
+newly-composed screen cluster is gated by **all** of:
+
+1. **Visual-diff vs the Paper artboard** (rest state) — `get_screenshot`
+   the top-level artboard node, compare; `get_computed_styles` for any
+   value in doubt (never eyeball a screenshot for a value). If `paper` is
+   unreachable, diff against the committed `/design-preview/<slug>`
+   skeleton and note it.
+2. **Interaction spec** — a `*.screen.test.tsx` under `tests/screens/`
+   (jsdom + React Testing Library, per-file `// @vitest-environment
+   jsdom`, the per-feature hook / `stockApi` mocked, **no server / DB /
+   auth**). It runs in the ordinary `pnpm test` suite alongside the
+   domain unit tests. It asserts the kit behaviour the screen depends on:
+   drawer opens and Esc restores focus to the opener (WCAG 2.4.3); a
+   `<Toast>` fires on save / record / correction; `<EmptyState
+   variant="filtered">` renders on an empty filter and its "Clear filter"
+   action resets it; `<ErrorState>` renders on a mocked fetch failure;
+   tab / filter switches change the rendered rows.
+3. **Responsive** — where the screen swaps a mobile card layout for a
+   desktop table at `--bp-md`, both are present and match their
+   artboards. (jsdom applies no CSS, so both layouts render in the spec —
+   scope table assertions to `role="table"`.)
+4. **axe** — no serious/critical violations on the rendered screen.
+
+The Playwright end-to-end flows in §2 remain the coverage for
+cross-module correctness through a real request/DB cycle; the §2b spec is
+**component-level** and deliberately server-free, so it stays fast and
+runs in the same `vitest` invocation as the ledger math. `@testing-
+library/react` + `jsdom` are dev-only; the `environment: "node"` default
+is unchanged (domain tests are unaffected).
+
 ## 3. What's explicitly not a testing priority
 
 - **UI visual/layout correctness** — not covered by automated tests;

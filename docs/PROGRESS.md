@@ -5,6 +5,121 @@ shipped, what's blocked, what changed from plan.
 
 ---
 
+## 2026-08-28 — Development Sprint Session 11: Admin screens recomposed on the proven kit — DONE
+
+**Role:** Developer. Re-assembled the four shipped M1 Admin screen
+clusters as **compositions of the Session 9–10d component kit**, replacing
+only the transcribed JSX. Every hook, every `lib/domain` module, every
+`app/api` route, every `derive-*` / `opening-plan` function is byte-for-
+byte unchanged. **Not** a backend change, **not** a logic change, **not**
+a design sprint. `git diff --stat` is confined to `app/admin/**` JSX +
+`app/design-preview/**` (6 token migrations) + `app/design-system/tokens.*`
++ `docs/**` + `tests/screens/**` + vitest config.
+
+### Shipped
+
+- **`<ToastProvider placement="top-right">`** wraps `<AdminShell>` in
+  `app/admin/admin-shell-client.tsx` (ADR-43 — staff gets
+  `bottom-center` in Session 12). Every admin save / record / correction
+  success now fires a `<Toast>` via `useToast()`.
+- **`/admin/catalog`** — `catalog-client` / `product-drawer` /
+  `product-delete-dialog` composed from `<PageShell>` + `<Tabs>` +
+  `<SearchInput>` + `<SimpleTable>` (desktop) / a card list (`< --bp-md`)
+  + `<Drawer>` + `<FormField>` + `<SegmentedControl>` (Product Kind) +
+  `<ToggleSwitch>` (per-location rows) + `<FrictionDeleteDialog>`
+  (`Keep Product` / `Delete Product`, ADR-36c) + `<Toast>`. The
+  hand-rolled `fixed inset-0 bg-black/30` drawer wrappers are gone (the
+  kit overlays own their scrim / portal / focus-trap). `product-delete-
+  dialog` now wires the previously-unused `submitting` prop; delete
+  failures moved from a dropped sibling `<div>` to a danger toast.
+- **`/admin/financials`** — `financials-client` / `payment-drawer`
+  composed from `<PageShell>` + `<Tabs>` + `<SimpleTable>` +
+  `<StatusChip>` (delivery status) + `<MatchCard>` (reconciliation, in a
+  `role="list"`) + rail `<Drawer>` + `<FormField>` + `<Select>` +
+  `<SegmentedControl>` (Paid From) + `<Toast>`. **KPI stat strip kept and
+  still unwired** (`—` / "M3", ADR-36 D-FIN) — markup slot preserved, no
+  client money math.
+- **`/admin/stock`** — `stock-client` / `correction-drawer` composed from
+  `<PageShell wide>` + `<PillFilter>` + `<DatePicker>` (real-calendar
+  `selected` / `onSelect`, `maxDate=now`) + `<DenseLedger showLocation
+  horizontalScroll onCellClick loading>` + `<EmptyState
+  variant="filtered">` (Clear filter → All) + `<ErrorState>` (Retry →
+  refresh) + rail `<Drawer>` + `<FormField>` + `<Textarea>` (Reason) +
+  `<CalculatedImpactBanner>` + `<Toast>`. The `<input type=date>` hack is
+  gone. The shell "Maximize" collapse stays `AdminShell`'s `collapsed`
+  prop (ADR-36b), not this screen.
+- **`/admin/stock/opening`** — `opening-client` composed from `<PageShell
+  wide>` + `<Breadcrumb>` + `<InstructionalBanner>` + `<Tabs>` +
+  `<BulkEntryGrid>` + `<Button>` + `<Toast>` (success on a clean batch,
+  danger when some rows fail).
+- **`/admin` & `/cashier` role homes** — confirmed: already render
+  `<EmptyState>` from the kit and compile cleanly. No rebuild.
+- **`--surface-panel-tint` alias DELETED** from `tokens.css` + `tokens.ts`
+  + the drift-guard assertion (now asserts *undefined* in both files).
+  The 6 remaining consumers (all `/design-preview` stage wrappers) moved
+  to `--surface-raised`. `grep -rn surface-panel-tint app/ components/` →
+  comments only. Drift test green.
+- **Screen-test harness** — `@testing-library/react` + `jsdom` as dev
+  deps; `vitest.config.ts` now includes `*.test.tsx` with a per-file
+  `// @vitest-environment jsdom` opt-in; guarded `vitest.setup.ts`
+  (jest-dom matchers + cleanup + matchMedia shim, no-op under Node).
+  **18 new `tests/screens/*.screen.test.tsx` specs** (catalog 5,
+  financials 5, stock 4, opening 4) + a smoke test. The 80 domain unit
+  tests are untouched.
+- **Docs** — `export-workflow.md` **rewritten** (compose from the proven
+  kit; artboard = visual acceptance target; the `get_jsx` →
+  frame-drop → swap flow retired to a "historical" section).
+  `design-principles.md §9` **promoted** from spec to an ENFORCED
+  contract (the Storybook `postVisit` assertions enforce it).
+  `CLAUDE.md` — Design/Development-Sprint paragraphs + "Where to look"
+  table now point at `kit-audit.md` + `component-states.md §9` + the
+  rewritten `export-workflow.md`. `TEST_PLAN.md` — new §2b
+  (composed-screen per-screen gate). `milestone-1-plan.md §5` — Session
+  11 ticked.
+
+### Gates
+
+- `pnpm test` — **99 passed** (80 domain unit + 18 screen specs + 1
+  harness smoke). `pnpm tsc --noEmit` — exit 0. `pnpm build` — clean, all
+  43 routes. Kit `pnpm test:visual` / `pnpm test:a11y` — untouched
+  (`components/kit/*` not modified this session).
+- Per-screen visual-diff done against the Paper artboards (`6ZO-0` /
+  `7ZJ-0` / `798-0` / `7UD-0`) via `get_screenshot`. Each artboard has
+  1–2 controls with **no data path in the wired screen** (catalog "All
+  Locations" dropdown; financials 4-tab row + "Total Reconciled Outflows"
+  strip; stock "Category: All" / "Columns: 11/11"; opening consolidated-
+  valuation footer) — these are **pre-existing out-of-scope gaps**, the
+  same ones the prior transcription had, and are M3 / later-milestone
+  work, not regressions from this session.
+
+### Changed from plan
+
+- The per-screen "Playwright interaction pass under `tests/screens/` via
+  `pnpm test:e2e`" specced in the handoff was done as **jsdom + React
+  Testing Library `*.screen.test.tsx` in the existing `pnpm test` suite**
+  instead (owner decision). Rationale: there is no `playwright.config.ts`
+  / e2e harness yet, and the Admin screens are auth-gated clients needing
+  a running Next server + seeded Postgres + login — standing that up is a
+  session of its own. The RTL specs cover the same behaviours
+  (drawer/focus-trap/Esc-restore, toast-on-save, EmptyState/ErrorState,
+  tab/filter) component-level and server-free. A real Playwright e2e
+  harness is **carried** — natural home is alongside the Session-12
+  staff-screen work or its own session; noted in
+  `session-12-handoff.md`.
+- No ADR-44 — the rebuild forced no new decision. Every screen composed
+  cleanly from the kit; the one API-shape mismatch (`DatePicker` wants a
+  `Date`, `useLedger` wants a business-date string) was handled by a
+  mapper **in the screen** per the handoff's rule, not a kit change.
+
+### Carried
+
+- Playwright e2e harness for the composed screens (see above).
+- The systemic low-contrast-text FLAG (`kit-audit.md`) and the two
+  field-box `.kit-focus-ring` FLAG are still design-sprint items —
+  untouched here (Session 11 doesn't touch `components/kit/*`).
+
+---
+
 ## 2026-08-28 — Development Sprint Sessions 10b–10d: Kit Proof Harness (Deliverable 4) — DONE
 
 **Role:** Developer. Deliverable 4 of the Session 9 remediation sprint — a

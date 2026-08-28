@@ -409,10 +409,16 @@ decouples them. Each session ends with its own tests (`sdlc.md` /
 >   ARIA; add `Spinner` / `Toast` / `PageShell` / `FormField`; stand up
 >   Storybook + visual-regression + a11y gates.
 >   (`session-10-handoff.md`.)
-> - **Session 11** — rebuild the shipped screens (`/admin/catalog`,
->   `/admin/stock` + `/opening` + `/financials`) as compositions of the
->   proven kit; keep every hook / `lib/domain` / `app/api`; rewrite
->   `export-workflow.md`.
+> - **Session 11 — DONE.** Rebuilt the shipped Admin screens
+>   (`/admin/catalog`, `/admin/stock` + `/opening` + `/financials`) as
+>   compositions of the proven kit — `<PageShell>` / `<FormField>` /
+>   `<Toast>` / `<EmptyState>` / `<ErrorState>` adopted across scope;
+>   `<ToastProvider placement="top-right">` on the admin tree. Every
+>   hook / `derive-*` / `opening-plan` / `lib/domain` / `app/api`
+>   unchanged. `--surface-panel-tint` alias deleted. `export-workflow.md`
+>   rewritten (compose, don't transcribe); `design-principles.md §9`
+>   promoted to an enforced contract; per-screen gate is now a
+>   `tests/screens/*.screen.test.tsx` jsdom+RTL spec (18 new specs).
 > - **Session 12** — M1-F2 Store Manager + Canteen frontend, built the
 >   new way (compose from kit + wire data). The scope below still
 >   applies; the method changes.
