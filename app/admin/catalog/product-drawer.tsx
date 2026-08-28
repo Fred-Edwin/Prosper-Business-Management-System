@@ -1,11 +1,18 @@
-// Wired from docs/design/screens/product-drawer/page.tsx (Paper artboard 796-0).
-// Markup/classes are verbatim from the skeleton; this file only adds the
-// controlled form state, the Dish invariant on the kind control, per-location
-// row state, and the Save → create/update → close + refresh orchestration.
+// Session 11 rebuild — COMPOSED from the proven kit, no longer a transcription
+// of Paper artboard 796-0. The artboard is the visual acceptance target; the
+// screen is assembled from <Drawer> + <FormField> + <SegmentedControl> +
+// <ToggleSwitch> + <Button> + <Toast>. Every bit of form state, the Dish
+// invariant, the per-location row state, and the Save -> create/update -> close
+// orchestration is preserved verbatim from the previous version.
 "use client";
 
 import * as React from "react";
 import { Button } from "@/components/kit/button";
+import { Drawer } from "@/components/kit/drawer";
+import { FormField } from "@/components/kit/form-field";
+import { SegmentedControl } from "@/components/kit/segmented-control";
+import { ToggleSwitch } from "@/components/kit/toggle-switch";
+import { useToast } from "@/components/kit/toast";
 import type {
   CreateProductInput,
   Location,
@@ -13,11 +20,17 @@ import type {
 } from "@/lib/domain/catalog";
 import { CatalogRequestError } from "./use-catalog";
 
-const KIND_OPTIONS = [
-  { label: "Ingredient", value: "ingredient" as const },
-  { label: "Dish", value: "dish" as const },
-  { label: "Goods", value: "goods" as const },
-];
+const KIND_LABELS = ["Ingredient", "Dish", "Goods"] as const;
+const KIND_BY_LABEL: Record<string, "ingredient" | "dish" | "goods"> = {
+  Ingredient: "ingredient",
+  Dish: "dish",
+  Goods: "goods",
+};
+const LABEL_BY_KIND: Record<"ingredient" | "dish" | "goods", string> = {
+  ingredient: "Ingredient",
+  dish: "Dish",
+  goods: "Goods",
+};
 
 const DISH_NOTE =
   "Dishes carry zero buying price; true food cost is derived from ingredients.";
@@ -48,6 +61,7 @@ export function ProductDrawer({
   onUpdate,
 }: ProductDrawerProps) {
   const isEdit = product !== null;
+  const { toast } = useToast();
 
   const [name, setName] = React.useState("");
   const [kind, setKind] = React.useState<"ingredient" | "dish" | "goods">(
@@ -104,7 +118,8 @@ export function ProductDrawer({
 
   const isDish = kind === "dish";
 
-  function pickKind(next: "ingredient" | "dish" | "goods") {
+  function pickKind(nextLabel: string) {
+    const next = KIND_BY_LABEL[nextLabel];
     setKind(next);
     if (next === "dish") setBuyingPrice("0.00");
   }
@@ -143,6 +158,7 @@ export function ProductDrawer({
       } else {
         await onCreate(input);
       }
+      toast(isEdit ? "Product updated" : "Product created", { tone: "success" });
       onClose();
     } catch (e) {
       if (e instanceof CatalogRequestError && e.field) {
@@ -157,121 +173,121 @@ export function ProductDrawer({
     }
   }
 
-  if (!open) return null;
+  const fieldBox =
+    "flex items-center h-(--control-md) px-(--sp-5) rounded-sm shrink-0 bg-(--surface-page) border border-solid kit-field";
 
   return (
-    <div className="flex flex-col w-[480px] h-fit rounded-md bg-(--surface-panel-tint) border border-solid [border-color:var(--border-subtle)] [font-synthesis:none] antialiased">
-      {/* Header */}
-      <div className="flex items-center justify-between h-[52px] shrink-0 px-(--sp-8) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-        <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
-          {isEdit ? "Edit Product" : "New Product"}
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={isEdit ? "Edit Product" : "New Product"}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSave}
+            loading={saving}
+            disabled={saving}
+          >
+            Save Product
+          </Button>
+        </>
+      }
+    >
+      {/* General Information */}
+      <div className="flex flex-col gap-(--sp-6)">
+        <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:0.06em] [color:var(--text-tertiary)] text-caption/micro">
+          General Information
         </div>
-        <button type="button" onClick={onClose} aria-label="Close" className="kit-focus-ring">
-          <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-            <line x1="18" y1="6" x2="6" y2="18" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" />
-            <line x1="6" y1="6" x2="18" y2="18" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
 
-      {/* Body */}
-      <div className="flex flex-col grow p-(--sp-6) gap-(--sp-8) overflow-clip">
-        {/* General Information */}
-        <div className="flex flex-col gap-(--sp-6)">
-          <div className="font-ui font-(--weight-semibold) uppercase tracking-[0.06em] [color:var(--text-tertiary)] text-caption/micro">
-            General Information
-          </div>
-          <div className="flex flex-col gap-[6px]">
-            <div className="font-ui font-(--weight-medium) uppercase tracking-[0.04em] [color:var(--text-secondary)] text-caption/micro">
-              Product Name
-            </div>
+        <FormField
+          label="Product Name"
+          error={fieldErrors.name}
+          className="w-full"
+        >
+          {({ id, "aria-describedby": describedBy, "aria-invalid": invalid }) => (
             <div
-              className={`flex items-center h-[36px] px-(--sp-5) rounded-sm shrink-0 border border-solid ${
-                fieldErrors.name ? "border-danger" : "[border-color:var(--border-strong)]"
+              className={`${fieldBox} ${
+                invalid ? "border-danger" : "[border-color:var(--border-strong)]"
               }`}
+              data-invalid={invalid || undefined}
             >
               <input
+                id={id}
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Chicken Breast"
                 className="font-ui [color:var(--text-primary)] text-sm/micro w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
               />
             </div>
-            {fieldErrors.name && (
-              <div className="font-ui text-danger text-caption/micro">{fieldErrors.name}</div>
-            )}
-          </div>
-          <div className="flex flex-col gap-[6px]">
-            <div className="font-ui font-(--weight-medium) uppercase tracking-[0.04em] [color:var(--text-secondary)] text-caption/micro">
-              Product kind
-            </div>
-            <div className="flex items-center h-[36px] p-[2px] rounded-sm gap-[2px] shrink-0 [background-color:var(--surface-subtle)]">
-              {KIND_OPTIONS.map((opt) => {
-                const isActive = opt.value === kind;
-                return (
-                  <button
-                    type="button"
-                    key={opt.value}
-                    onClick={() => pickKind(opt.value)}
-                    className={`flex items-center justify-center h-[32px] px-(--sp-5) rounded-[2px] kit-focus-ring ${
-                      isActive ? "[box-shadow:#00000014_0px_1px_2px] bg-(--surface-page)" : ""
-                    }`}
-                  >
-                    <div
-                      className={`font-ui text-sm/sm ${
-                        isActive
-                          ? "font-(--weight-medium) text-[oklch(28.4%_0.126_296.2)]"
-                          : "font-(--weight-regular) [color:var(--text-secondary)]"
-                      }`}
-                    >
-                      {opt.label}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div className="flex flex-col gap-[6px]">
-            <div className="font-ui font-(--weight-medium) uppercase tracking-[0.04em] [color:var(--text-secondary)] text-caption/micro">
-              Unit Label
-            </div>
+          )}
+        </FormField>
+
+        <SegmentedControl
+          label="Product kind"
+          options={[...KIND_LABELS]}
+          value={LABEL_BY_KIND[kind]}
+          onChange={pickKind}
+        />
+
+        <FormField
+          label="Unit Label"
+          error={fieldErrors.unitLabel}
+          className="w-full"
+        >
+          {({ id, "aria-describedby": describedBy, "aria-invalid": invalid }) => (
             <div
-              className={`flex items-center h-[36px] px-(--sp-5) rounded-sm shrink-0 border border-solid ${
-                fieldErrors.unitLabel ? "border-danger" : "[border-color:var(--border-strong)]"
+              className={`${fieldBox} ${
+                invalid ? "border-danger" : "[border-color:var(--border-strong)]"
               }`}
+              data-invalid={invalid || undefined}
             >
               <input
+                id={id}
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
                 value={unitLabel}
                 onChange={(e) => setUnitLabel(e.target.value)}
                 placeholder="e.g. kg, pcs, crate, packet"
                 className="font-ui [color:var(--text-primary)] text-sm/micro w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
               />
             </div>
-            {fieldErrors.unitLabel && (
-              <div className="font-ui text-danger text-caption/micro">{fieldErrors.unitLabel}</div>
-            )}
-          </div>
-        </div>
+          )}
+        </FormField>
+      </div>
 
-        {/* Cost & Buying Price */}
-        <div className="flex flex-col pt-(--sp-6) gap-(--sp-6) border-t border-t-solid [border-top-color:var(--border-subtle)]">
-          <div className="font-ui font-(--weight-semibold) uppercase tracking-[0.06em] [color:var(--text-tertiary)] text-caption/micro">
-            Cost &amp; Buying Price
-          </div>
-          <div className="flex flex-col gap-[6px]">
-            <div className="font-ui font-(--weight-medium) uppercase tracking-[0.04em] [color:var(--text-secondary)] text-caption/micro">
-              Buying Price
-            </div>
+      {/* Cost & Buying Price */}
+      <div className="flex flex-col pt-(--sp-6) gap-(--sp-6) border-t border-t-solid [border-top-color:var(--border-subtle)]">
+        <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:0.06em] [color:var(--text-tertiary)] text-caption/micro">
+          Cost &amp; Buying Price
+        </div>
+        <FormField
+          label="Buying Price"
+          error={fieldErrors.buyingPrice}
+          className="w-full"
+        >
+          {({ id, "aria-describedby": describedBy, "aria-invalid": invalid }) => (
             <div
-              className={`flex items-center h-[36px] rounded-sm shrink-0 border border-solid ${
-                fieldErrors.buyingPrice ? "border-danger" : "[border-color:var(--border-strong)]"
+              className={`flex items-center h-(--control-md) rounded-sm shrink-0 border border-solid kit-field ${
+                invalid ? "border-danger" : "[border-color:var(--border-strong)]"
               } ${isDish ? "opacity-[0.5]" : ""}`}
+              data-invalid={invalid || undefined}
             >
-              <div className="flex items-center justify-center h-[36px] shrink-0 px-(--sp-5) [background-color:var(--surface-subtle)] border-r border-r-solid [border-right-color:var(--border-subtle)]">
-                <div className="font-mono w-max shrink-0 [color:var(--text-tertiary)] text-sm/micro">KES</div>
+              <div className="flex items-center justify-center h-(--control-md) shrink-0 px-(--sp-5) [background-color:var(--surface-subtle)] border-r border-r-solid [border-right-color:var(--border-subtle)]">
+                <div className="font-mono w-max shrink-0 [color:var(--text-tertiary)] text-sm/micro">
+                  KES
+                </div>
               </div>
               <div className="font-mono pl-(--sp-5) grow">
                 <input
+                  id={id}
+                  aria-describedby={describedBy}
+                  aria-invalid={invalid}
                   value={isDish ? "0.00" : buyingPrice}
                   onChange={(e) => setBuyingPrice(e.target.value)}
                   disabled={isDish}
@@ -280,95 +296,86 @@ export function ProductDrawer({
                 />
               </div>
             </div>
-            {fieldErrors.buyingPrice && (
-              <div className="font-ui text-danger text-caption/micro">{fieldErrors.buyingPrice}</div>
-            )}
-          </div>
-          {isDish && (
-            <div className="flex items-start p-(--sp-5) rounded-sm gap-(--sp-4) bg-info-bg">
-              <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0, marginTop: 2 }}>
-                <circle cx="12" cy="12" r="10" fill="none" stroke="var(--color-info)" strokeWidth="1.5" />
-                <line x1="12" y1="16" x2="12" y2="12" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" />
-                <line x1="12" y1="8" x2="12.01" y2="8" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <div className="font-ui text-info text-sm/sm">{DISH_NOTE}</div>
-            </div>
           )}
-        </div>
-
-        {/* Location Availability & Selling Prices */}
-        <div className="flex flex-col pt-(--sp-6) gap-(--sp-6) border-t border-t-solid [border-top-color:var(--border-subtle)]">
-          <div className="font-ui font-(--weight-semibold) uppercase tracking-[0.06em] [color:var(--text-tertiary)] text-caption/micro">
-            Location Availability &amp; Selling Prices
-          </div>
-          {fieldErrors.locations && (
-            <div className="font-ui text-danger text-caption/micro">{fieldErrors.locations}</div>
-          )}
-          {rows.map((row) => (
-            <div
-              key={row.locationId}
-              className="flex items-center p-(--sp-5) rounded-sm gap-(--sp-5) border border-solid [border-color:var(--border-subtle)]"
+        </FormField>
+        {isDish && (
+          <div className="flex items-start p-(--sp-5) rounded-sm gap-(--sp-4) bg-info-bg">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              aria-hidden
+              style={{ flexShrink: 0, marginTop: 2 }}
             >
-              <button
-                type="button"
-                role="switch"
-                aria-checked={row.enabled}
-                aria-label={`Sell at ${row.label}`}
-                onClick={() => setRowEnabled(row.locationId, !row.enabled)}
-                className={`flex items-center w-[40px] h-[22px] shrink-0 p-[2px] rounded-[11px] kit-focus-ring ${
-                  row.enabled ? "bg-accent" : "bg-gray-300"
-                }`}
-              >
-                <div
-                  className={`w-[18px] h-[18px] rounded-[50%] shrink-0 bg-white ${
-                    row.enabled ? "ml-auto" : ""
-                  }`}
-                />
-              </button>
-              <div className="font-ui font-(--weight-medium) shrink-0 w-[90px] [color:var(--text-primary)] text-sm/micro">
-                {row.label}
-              </div>
-              {row.enabled ? (
-                <>
-                  <div className="flex items-center h-[32px] w-[100px] shrink-0 rounded-sm border border-solid [border-color:var(--border-strong)]">
-                    <div className="flex items-center justify-center h-[32px] shrink-0 px-[6px] border-r border-r-solid [border-right-color:var(--border-subtle)]">
-                      <div className="font-mono w-max shrink-0 [color:var(--text-tertiary)] text-caption/micro">KES</div>
-                    </div>
-                    <div className="font-mono pl-[6px] grow">
-                      <input
-                        value={row.price}
-                        onChange={(e) => setRowPrice(row.locationId, e.target.value)}
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        className="font-mono [color:var(--text-primary)] text-sm/micro w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
-                      />
-                    </div>
-                  </div>
-                  <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">Selling price</div>
-                </>
-              ) : (
-                <div className="font-ui [color:var(--text-tertiary)] text-sm/micro">
-                  Storage only — no selling price
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {formError && (
-          <div className="font-ui text-danger text-caption/micro">{formError}</div>
+              <circle cx="12" cy="12" r="10" fill="none" stroke="var(--color-info)" strokeWidth="1.5" />
+              <line x1="12" y1="16" x2="12" y2="12" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="12" y1="8" x2="12.01" y2="8" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <div className="font-ui text-info text-sm/sm">{DISH_NOTE}</div>
+          </div>
         )}
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-end shrink-0 p-(--sp-8) gap-(--sp-4) border-t border-t-solid [border-top-color:var(--border-subtle)]">
-        <Button variant="secondary" onClick={onClose} disabled={saving}>
-          Cancel
-        </Button>
-        <Button variant="primary" onClick={handleSave} loading={saving} disabled={saving}>
-          Save Product
-        </Button>
+      {/* Location Availability & Selling Prices */}
+      <div className="flex flex-col pt-(--sp-6) gap-(--sp-6) border-t border-t-solid [border-top-color:var(--border-subtle)]">
+        <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:0.06em] [color:var(--text-tertiary)] text-caption/micro">
+          Location Availability &amp; Selling Prices
+        </div>
+        {fieldErrors.locations && (
+          <div className="font-ui text-danger text-caption/micro">
+            {fieldErrors.locations}
+          </div>
+        )}
+        {rows.map((row) => (
+          <div
+            key={row.locationId}
+            className="flex items-center p-(--sp-5) rounded-sm gap-(--sp-5) border border-solid [border-color:var(--border-subtle)]"
+          >
+            <ToggleSwitch
+              checked={row.enabled}
+              onChange={(next) => setRowEnabled(row.locationId, next)}
+              aria-label={`Sell at ${row.label}`}
+            />
+            <div className="font-ui font-(--weight-medium) shrink-0 w-[90px] [color:var(--text-primary)] text-sm/micro">
+              {row.label}
+            </div>
+            {row.enabled ? (
+              <>
+                <div className="flex items-center h-(--control-sm) w-[100px] shrink-0 rounded-sm border border-solid [border-color:var(--border-strong)] kit-field">
+                  <div className="flex items-center justify-center h-(--control-sm) shrink-0 px-[6px] border-r border-r-solid [border-right-color:var(--border-subtle)]">
+                    <div className="font-mono w-max shrink-0 [color:var(--text-tertiary)] text-caption/micro">
+                      KES
+                    </div>
+                  </div>
+                  <div className="font-mono pl-[6px] grow">
+                    <input
+                      value={row.price}
+                      onChange={(e) => setRowPrice(row.locationId, e.target.value)}
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      aria-label={`Selling price at ${row.label}`}
+                      className="font-mono [color:var(--text-primary)] text-sm/micro w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
+                    />
+                  </div>
+                </div>
+                <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
+                  Selling price
+                </div>
+              </>
+            ) : (
+              <div className="font-ui [color:var(--text-tertiary)] text-sm/micro">
+                Storage only — no selling price
+              </div>
+            )}
+          </div>
+        ))}
       </div>
-    </div>
+
+      {formError && (
+        <div role="alert" className="font-ui text-danger text-caption/micro">
+          {formError}
+        </div>
+      )}
+    </Drawer>
   );
 }

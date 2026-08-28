@@ -1,11 +1,13 @@
-// Wired from docs/design/screens/product-delete-dialog/page.tsx (Paper artboard 797-0).
-// A pure component swap onto the kit <FrictionDeleteDialog> (ADR-36c label props);
-// this file adds only the hardDelete call and the 409 CONFLICT → "Archive instead"
-// fallback. components/kit/* is not touched.
+// Session 11 rebuild — composed from the kit <FrictionDeleteDialog> (ADR-36c
+// label props). The previous version left `submitting` unwired and rendered the
+// error as a sibling <div>; now `busy` drives the dialog's loading state and
+// failures surface as a danger <Toast>. The hardDelete call, the 409 CONFLICT ->
+// "Archive instead" fallback, and the archive path are preserved verbatim.
 "use client";
 
 import * as React from "react";
 import { FrictionDeleteDialog } from "@/components/kit/friction-delete-dialog";
+import { useToast } from "@/components/kit/toast";
 import type { ProductWithLocations } from "@/lib/domain/catalog";
 import { CatalogRequestError } from "./use-catalog";
 
@@ -27,16 +29,15 @@ export function ProductDeleteDialog({
   onHardDelete,
   onArchive,
 }: ProductDeleteDialogProps) {
+  const { toast } = useToast();
   // Once a hard delete comes back 409, the product has history — from then
   // on the only offered path is Archive.
   const [blockedByHistory, setBlockedByHistory] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
       setBlockedByHistory(false);
-      setError(null);
       setBusy(false);
     }
   }, [open, product]);
@@ -46,20 +47,23 @@ export function ProductDeleteDialog({
   async function handleConfirm() {
     if (!product || busy) return;
     setBusy(true);
-    setError(null);
     try {
       // FrictionDeleteDialog only fires onConfirm when the typed string
       // already equals recordName, so product.name is the confirmed value.
       await onHardDelete(product.id, product.name);
+      toast("Product deleted", { tone: "success" });
       onClose();
     } catch (e) {
       if (e instanceof CatalogRequestError && e.status === 409) {
         setBlockedByHistory(true);
-        setError(e.message);
+        toast(e.message, { tone: "danger" });
       } else if (e instanceof CatalogRequestError && e.field === "confirmName") {
-        setError(e.message);
+        toast(e.message, { tone: "danger" });
       } else {
-        setError(e instanceof Error ? e.message : "Could not delete the product.");
+        toast(
+          e instanceof Error ? e.message : "Could not delete the product.",
+          { tone: "danger" },
+        );
       }
     } finally {
       setBusy(false);
@@ -69,39 +73,37 @@ export function ProductDeleteDialog({
   async function handleArchive() {
     if (!product || busy) return;
     setBusy(true);
-    setError(null);
     try {
       await onArchive(product.id);
+      toast("Product archived", { tone: "success" });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not archive the product.");
+      toast(
+        e instanceof Error ? e.message : "Could not archive the product.",
+        { tone: "danger" },
+      );
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="flex flex-col gap-(--sp-4)">
-      <FrictionDeleteDialog
-        open={open}
-        onClose={onClose}
-        onConfirm={handleConfirm}
-        onArchive={handleArchive}
-        recordName={product.name}
-        title="Delete Product"
-        bodyCopy={
-          blockedByHistory
-            ? "This product has historical transactions and cannot be permanently deleted. Archive it instead to hide it without data loss."
-            : BODY_COPY
-        }
-        confirmLabel="Permanently Delete"
-        showArchiveLink
-      />
-      {error && (
-        <div className="font-ui text-danger text-caption/micro px-(--sp-8)">
-          {error}
-        </div>
-      )}
-    </div>
+    <FrictionDeleteDialog
+      open={open}
+      onClose={onClose}
+      onConfirm={handleConfirm}
+      onArchive={handleArchive}
+      submitting={busy}
+      recordName={product.name}
+      title="Delete Product"
+      bodyCopy={
+        blockedByHistory
+          ? "This product has historical transactions and cannot be permanently deleted. Archive it instead to hide it without data loss."
+          : BODY_COPY
+      }
+      cancelLabel="Keep Product"
+      confirmLabel="Delete Product"
+      showArchiveLink
+    />
   );
 }
