@@ -1,14 +1,17 @@
 # Prosper — Kit Component Audit (Session 10, Deliverable 3a → 3b/3c)
 
-**Status:** DELIVERABLE 3 COMPLETE. Before-picture (start of Session 10) + the
-fixes applied (3b/3c) + the 4 new primitives (3d). Gate 3 passed — see the
-checklist at the bottom.
+**Status:** DELIVERABLE 3 + DELIVERABLE 4 COMPLETE. Before-picture (start of
+Session 10) + the fixes applied (3b/3c) + the 4 new primitives (3d) + the
+proof-harness build-out and Paper-parity audit (Deliverable 4, Sessions
+10b–10d). Gate 3 passed — see the checklist mid-file. Gate 4 passed — see
+"Session 10d — Paper-parity audit" and `session-10b-handoff.md`.
 
-Deliverable 4 (Storybook + visual-regression + a11y gates) is a **separate
-session** — `docs/sprints/session-10b-handoff.md`. The keyboard / ARIA / overlay
-behaviour added here is verified by `pnpm tsc --noEmit` + `pnpm build` + the 80
-unit tests + a kit-gallery smoke render this session; the *permanent* per-state
-Playwright + axe gates come in 10b.
+Deliverable 4 (Storybook + visual-regression + a11y gates) was built across
+Sessions 10b (toolchain + first 15 stories), 10c (overlay focus-restore fix
++ 19 stories + SimpleTable ARIA), and 10d (Paper-parity audit + docs). The
+harness-surfaced flags and the audit result are at the **bottom** of this
+file. `DECISIONS.md` ADR-42 (Storybook 9.1.x) and ADR-43 (7 review items)
+are both finalised.
 
 ---
 
@@ -608,6 +611,15 @@ no-badge variant (ARTBOARD ✓ via `!direction`), back pressed (GLOBAL).
 
 ## Remaining gaps — owner sign-off needed (all deferred to session 10b review)
 
+> **RESOLVED — Session 10b/10d.** Items 1–7 below were reviewed by the owner
+> in the running Storybook and **ratified as-is** (see `DECISIONS.md` ADR-43,
+> now RATIFIED). Items 8–10 are pre-existing carry-forwards not gated on this
+> review (8 → a future design sprint's token call; 9 → a documented
+> intentional exception; 10 → a follow-up only if a screen needs it). New
+> flags the proof harness surfaced are in "Harness-surfaced flags (Session
+> 10c)" and the audit result is in "Session 10d — Paper-parity audit", both
+> below.
+
 These are the "not fully done in this Development Sprint" items. None block
 Gate 3; each is a design/behaviour decision surfaced for the owner, not a bug.
 
@@ -683,5 +695,96 @@ Gate 3; each is a design/behaviour decision surfaced for the owner, not a bug.
 - [x] `docs/DECISIONS.md` — ADR-43 (the 4 new primitives + the two hover tokens
       + the QuantityStepper/DatePicker behaviour changes) drafted, pending the
       10b owner review to finalise.
-</content>
-</invoke>
+
+---
+
+## Harness-surfaced flags (Session 10c)
+
+The proof harness (Storybook + story-snapshot + axe) exposed things the
+Session 10 audit missed. Fixes-in-scope are marked FIXED; the rest are FLAGs
+routed to a design sprint (a new visual decision, not a deviation-from-approved).
+
+### §9.1 keyboard ring on the two field boxes — FLAG → design sprint
+
+`TextInput` / `Textarea` carry `.kit-field` (the §9.2 accent *border* that
+appears on any focus) but **not** `.kit-focus-ring` (the §9.1 keyboard-only
+outline). `Select` has both. Adding the ring to the two field boxes is a
+visual change, so it is not made here. The `text-input` story documents this
+and asserts the §9.2 border only.
+
+### Systemic low-contrast text — ONE flag, many sites — FLAG → design sprint
+
+`--text-tertiary` (`--color-gray-500`) ≈ 3.4:1 on `--surface-page`, and
+semantic-colour text — `--color-warning` ≈ 2.5:1, `--color-danger` /
+`--color-success` on tint or on `--color-gray-900` — are all below WCAG AA
+4.5:1. **Every affected site matches the drawn Paper visual** (dimmed text is
+intentionally low-contrast there). `color-contrast` is scoped off per-story
+with a FLAG note in each. Affected: Select placeholder; DatePicker
+out-of-month / disabled-future cells; StatusChip / ConditionChip warning
+label; Transfer / PurchaseDelivery / CalculatedImpact banner heading & body;
+DenseLedger movement values + dash + empty line + footer tone values;
+BulkEntryGrid category cell / non-editable cell / footer subtle labels;
+DenseSummaryStrip tone values; Breadcrumb parent links; ActivityTimeline
+subtitles; BottomNav inactive labels; AdminShell nav-group section labels.
+→ design-sprint decision: darken dimmed text to `--text-secondary`, add
+on-dark / on-tint semantic-colour text tokens, or accept as incidental /
+status-indicator text where colour is not the only cue.
+
+### SimpleTable ARIA — audit miss, FIXED this session (10c)
+
+`role="row"` and `role="columnheader"` were placed on `<button>` elements
+(invalid — `aria-allowed-role`). Corrected to role-on-wrapper with a nested
+`<button>` as the activation/focus target, and the skeleton / empty /
+EmptyState branches given proper `role="row"` / `role="cell"` wrappers.
+`components/kit/simple-table.tsx`.
+
+---
+
+## Session 10d — Paper-parity audit
+
+**Method.** Replaces the automated Paper-artboard visual diff specced for
+10b/10c (see the scope-change note in `session-10b-handoff.md` and
+`TEST_PLAN.md §2a`). One-time manual comparison of each
+`component-states.md §2` component's Storybook stories against its kit
+artboard (`design-principles.md §7` ids), for the REST state and every state
+Paper draws (`component-states.md §8`). The owner performed the visual
+comparison in the running Storybook and handed over the discrepancy list
+below; token values were confirmed against the component source.
+
+**What was checked.** All 32 kit components + the 4 primitives, across the
+kit artboards `6BR-0` (Buttons), `6CG-0` (Form Controls), `6WD-0` (Utility &
+Layout), `6IW-0` (Tabs/Filters), `6DJ-0` (Chips), `6ET-0` (Tables), `6OE-0`
+(Drawers/Dialogs), `6Z4-0` (Bottom Sheet), `6SB-0` (Banners/Cards), `6TT-0`
+(Bulk Grid), `9U3-0` (Empty/Error), and the Admin Shell nav rail (`649-0`).
+
+**What matched.** Every REST state and every Paper-drawn state matched the
+approved design in structure, tokens, and per-state treatment — consistent
+with Session 2's consistency audit (§8) and the Sessions 3–4b `get_jsx`
+rebuild. The already-recorded deliberate deviations (Button disabled →
+§9.7 opacity rule not Paper's flat grey; Button loading → holds variant
+colour + width per §9.10 not Paper's `#32125F`; DenseLedger corrected cell →
+underlined semantic-colour per ADR-36a; DatePicker / QuantityStepper
+behaviour per ADR-43; overlay panels → opaque `--surface-raised` per ADR-41)
+are all correct and in scope.
+
+**Discrepancies found and fixed (deviation-from-approved, in scope):**
+
+| # | Component | Discrepancy | Fix |
+|---|---|---|---|
+| 1 | **Drawer** | The panel had no `z-index`, so the `.kit-scrim` (`z-index: --z-overlay` 1200, with `backdrop-filter: blur`) painted **over** the panel — the drawer's own content rendered blurred and the backdrop did not sit behind it. Every other overlay (`bottom-sheet`, `friction-delete-dialog`, `mobile-nav-drawer`) already set `[z-index:var(--z-dialog/drawer)]` on its panel; `drawer.tsx` was the only omission. | Added `[z-index:var(--z-drawer)]` (1300) to the `.kit-drawer-panel` class in `components/kit/drawer.tsx`. Panel now sits above the scrim; content is crisp, backdrop dims/blurs only what is behind. Affected drawer stories re-baselined. |
+| 2 | **ToggleSwitch** | A perceptible flick on click. Root cause: the track carried `.kit-interactive`, whose `transform` transition + `:active` background repaint animated on the round knob. A switch is not a hover/press button surface. | Dropped `.kit-interactive` from the track in `components/kit/toggle-switch.tsx`; kept `.kit-focus-ring` (§9.1); added a scoped `background-color` transition for the on/off colour; made disabled's `pointer-events: none` explicit (previously inherited from `.kit-interactive:disabled`). Toggle stories re-baselined. |
+
+**Checked, not a defect:**
+
+- **Spinner "spins too fast" in Storybook** — expected. `.storybook/preview.ts`
+  deliberately forces `animation-duration: 1ms` on `*` so the test-runner
+  settles deterministically; that makes `.kit-spinner` look like it is
+  whipping around. The real app uses the true `640ms linear` rotation. No
+  code change.
+
+**Design questions flagged (not decided here):** none new — the systemic
+low-contrast flag above already covers every dimmed-text site the audit
+surfaced.
+
+**No feature-screen file touched.** The two fixes are confined to
+`components/kit/drawer.tsx` and `components/kit/toggle-switch.tsx`.

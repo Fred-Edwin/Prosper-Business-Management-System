@@ -95,6 +95,31 @@ which only a real request-through-database test can catch.
 
 ---
 
+## 2a. Component kit — Storybook proof harness (Session 10b–10d)
+
+The `components/kit/*` kit is gated separately from feature screens, by a
+CI-runnable **Storybook proof harness** (ADR-42): one story per state per
+component, checked on every run by **story-snapshot visual regression**
+(`#storybook-root` screenshot vs the committed baseline under
+`tests/visual/__screenshots__/`, `failureThreshold: 0.02`) **and axe
+accessibility** (WCAG 2a/2aa/21a/21aa, fails on any serious/critical). Both
+gates execute in the same `test-storybook` run; `pnpm test:visual` and
+`pnpm test:a11y` are two names for it, signalling intent. Interaction-state
+token assertions (hover/focus/active bg === the resolved token, focus-ring
+present) run in `postVisit` via real CDP pseudo-states — the permanent form
+of Session 9's Gate-2 probe.
+
+**Paper parity** — that the committed baselines still match the Paper kit
+artboards — is verified by a **one-time manual audit checkpoint** (Session
+10d), not a CI diff. The automated per-state screenshot diff against the
+Paper artboard nodes originally specced for Session 10b/10c
+(`session-10b-handoff.md` task 4c) was deliberately dropped: the kit was
+already consistency-audited against Paper in Session 2
+(`component-states.md §8`) and rebuilt verbatim from `get_jsx` in Sessions
+3–4b, the story-snapshot baselines already catch future drift, and the only
+thing a Paper diff would add is that one-time "does today's baseline still
+match Paper" check — which the manual audit covers.
+
 ## 3. What's explicitly not a testing priority
 
 - **UI visual/layout correctness** — not covered by automated tests;

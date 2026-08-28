@@ -1078,9 +1078,16 @@ diff + accessibility) going forward. The Session 9 handoff (Deliverable
 4, decision D3) asks whether to use Storybook or build a bespoke
 `/kit-workbench` route.
 
-**Decision — adopt Storybook v8** (`@storybook/nextjs` + Vite builder),
+**Decision — adopt Storybook** (`@storybook/nextjs-vite`, Vite builder),
 config in `.storybook/`, loading `app/design-system/tokens.css` +
 `app/globals.css` so components render exactly as in the app.
+
+**Version note (Session 10b, owner-approved).** This ADR originally said
+"Storybook v8". SB8's Next adapter
+(`@storybook/experimental-nextjs-vite@8.6.x`) declares `next: ^14 || ^15`
+only; `@storybook/nextjs-vite@9` is the first release declaring Next 16 +
+React 19 support. **Storybook 9.1.x was used instead of v8**, owner-approved
+in Session 10b. Everything else in this ADR stands.
 
 - One `*.stories.tsx` per kit component (all 32) and per new primitive
   (`Toast`, `PageShell`, `FormField`, `Spinner`), with a named story for
@@ -1112,10 +1119,36 @@ existing 76 Vitest unit tests are unaffected and stay green.
 
 ## ADR-43: Session 10 kit-remediation — 4 new primitives, 2 hover tokens, and 3 spec-driven behaviour additions (Session 10)
 
-**Status:** DRAFT — the `Toast` / `PageShell` layout choices and the
-`DatePicker` / `QuantityStepper` API shapes are pending the Session 10b
-owner review in Storybook. `Spinner` / `FormField` / the two hover tokens are
-mechanical and considered accepted.
+**Status:** RATIFIED (owner review, Session 10b/10d, in Storybook). All
+seven review items below were reviewed by the owner in the running
+Storybook and approved as-is:
+
+1. **`Button` `size` prop** — `sm` 32 / `md` 36 / `lg` 44; `md` is
+   byte-identical to the sole artboard. Approved.
+2. **`Toast` / `ToastProvider` / `useToast()`** — `top-right` (admin) /
+   `bottom-center` (staff) placement via a provider prop, 4-visible stack
+   cap, 4000 ms auto-dismiss, pause-on-hover/focus, tone + hairline left
+   border. Approved.
+3. **`PageShell` / `ContentRegion`** — `--content-max` 1200, `--sp-7` block
+   / `--sp-8` inline padding, sticky toolbar row, `wide` / `flush` escape
+   hatches. Approved; Session 11 adopts it in the screen rebuild.
+4. **`PillFilter` as `role="radiogroup"`** + arrow-key select (was N×
+   `aria-pressed` toggle buttons). Approved. Reverts to a toggle toolbar
+   only if pills ever become multi-select.
+5. **`DatePicker` real-calendar `selected` / `onSelect` API** + keyboard
+   nav; legacy `weeks` prop kept as an escape hatch. REST visual is
+   byte-identical to `9S1-0`. Approved — Session 11 screens use
+   `selected`/`onSelect`.
+6. **`QuantityStepper` typed `<input role="spinbutton">`** + `↑`/`↓` step,
+   `aria-valuenow`/`-min`/`-max`/`-valuetext`. REST visual unchanged.
+   Approved.
+7. **`--color-success-hover` / `--color-info-hover` tokens** —
+   `oklch(46% 0.121 155)` / `oklch(46.5% 0.146 252.3)`, one lightness step
+   below the base, mirroring `--color-accent-hover` / `--color-danger-hover`.
+   In both `tokens.css` and `tokens.ts`; drift-guard passes. Approved for
+   the Banner Accept / Match-button hover.
+
+`Spinner` / `FormField` were mechanical and accepted without review.
 
 **Context.** Session 10 (Deliverable 3 of the Session 9 remediation sprint)
 audited all 32 `components/kit/*` + the shell nav against

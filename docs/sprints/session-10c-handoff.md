@@ -1,9 +1,11 @@
 # Session 10c Handoff — Developer: **Finish the Kit Proof Harness (Deliverable 4, cont.)**
 
-**Status:** IN PROGRESS. Continues Session 10b. The Storybook toolchain is
-stood up and 19 of ~37 story files are written (15 green, 4 red on one shared
-bug). This session finishes the story set, fixes the open bug, wires the
-Paper-artboard visual diff, and completes the docs.
+**Status:** DONE. Continues Session 10b. All 37 story files written and green;
+the overlay focus-restore bug is fixed (WCAG 2.4.3); 2 SimpleTable ARIA fixes
+the harness exposed; systemic `color-contrast` FLAGs scoped per-story; 144
+baselines committed (`23111c1`). The Paper-artboard visual diff was **not**
+wired — deferred to a one-time manual audit (Session 10d); see the
+scope-change note in `session-10b-handoff.md`. Docs finished in Session 10d.
 
 **Role:** Developer, Prosper project. This is still Deliverable 4 of the
 Session 9 remediation sprint — a **permanent, CI-runnable proof harness for

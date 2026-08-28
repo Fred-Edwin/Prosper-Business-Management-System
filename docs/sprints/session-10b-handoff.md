@@ -1,6 +1,37 @@
 # Session 10b Handoff — Developer: **Kit Remediation, Part 3 — Storybook + Visual-Regression + a11y Gates** (Deliverable 4)
 
-**Status:** NOT STARTED.
+**Status:** DONE (Sessions 10b + 10c + 10d). Gate 4 passed.
+
+- **10b** (`b42ff1c`) — Storybook 9.1.x toolchain (`@storybook/nextjs-vite`,
+  addon-a11y, test-runner, jest-image-snapshot) + first 15 story files.
+  SB 9.1.x instead of the v8 this handoff specced (v8's Next adapter tops
+  out at Next 15) — owner-approved, recorded in `DECISIONS.md` ADR-42.
+- **10c** (`23111c1`) — overlay focus-restore bug fixed (WCAG 2.4.3;
+  `useBackgroundInert` was keyed on `mounted` not `active`), 19 more story
+  files, 2 SimpleTable ARIA fixes the harness exposed, systemic
+  `color-contrast` FLAGs scoped per-story. 144 baselines committed.
+- **10d** — **manual Paper-parity audit** (see the scope-change note
+  below), ADR-42/43 finalised, `kit-audit.md` flags recorded,
+  `TEST_PLAN.md` updated, `pnpm build` clean, Statuses flipped. Two
+  deviation-from-approved fixes the audit found: Drawer panel missing
+  `z-index` (scrim blurred the panel); ToggleSwitch `.kit-interactive`
+  flick on click. Both in `components/kit/**` only.
+
+**Scope change — automated Paper-artboard visual diff (task 4c) deferred.**
+The kit is gated by story-snapshot visual-regression + axe
+(`pnpm test:visual` / `pnpm test:a11y`, the same `test-storybook` run);
+Paper parity is verified by a one-time manual audit checkpoint (Session 10d,
+recorded in `kit-audit.md`), not a CI diff. Reasons: the kit was already
+consistency-audited against Paper in Session 2 (`component-states.md §8`) and
+rebuilt verbatim from `get_jsx` in Sessions 3–4b; the committed story
+snapshots already catch future drift; the only thing a Paper diff would add
+is the one-time "does today's baseline still match Paper" check, which the
+manual audit covers. (The `paper` MCP was also unreachable across 10b/10c
+and intermittently in 10d.)
+
+---
+
+## Original handoff (as written for 10b) follows.
 
 **Role:** Developer, for the Prosper project. This is **Deliverable 4 of the
 Session 9 remediation sprint**, split out of Session 10 at the owner's direction
@@ -155,7 +186,7 @@ asserts the value **matches the §9 rule / the token** — exactly like Session
 **Gate 4:** `pnpm storybook` runs; every component + primitive has a story per
 state; `pnpm test:visual` + `pnpm test:a11y` pass; baselines committed; the
 **80 `pnpm test` unit tests still green**; `pnpm tsc --noEmit` + `pnpm build`
-clean; **no feature screen file touched**.
+clean; **no feature screen file touched**. — **PASSED (Session 10d).**
 
 ---
 

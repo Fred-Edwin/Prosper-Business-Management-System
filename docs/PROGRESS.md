@@ -5,6 +5,90 @@ shipped, what's blocked, what changed from plan.
 
 ---
 
+## 2026-08-28 — Development Sprint Sessions 10b–10d: Kit Proof Harness (Deliverable 4) — DONE
+
+**Role:** Developer. Deliverable 4 of the Session 9 remediation sprint — a
+permanent, CI-runnable proof harness for `components/kit/*`: one Storybook
+story per state per component, story-snapshot visual regression, axe a11y
+gates. Built across three sessions (10b toolchain + 15 stories `b42ff1c`;
+10c bug-fix + 19 stories `23111c1`; 10d audit + docs). **No feature-screen
+file touched.**
+
+### Shipped
+
+- **Storybook 9.1.x** (`@storybook/nextjs-vite`, Vite builder) + addon-a11y
+  + test-runner + jest-image-snapshot, all `devDependencies`. `.storybook/`
+  config loads `tokens.css` + `globals.css` so stories render as the app;
+  `preview.ts` forces `animation-duration: 1ms` on `*` so the runner
+  settles. **SB 9.1.x, not the v8 the handoff specced** — v8's Next adapter
+  tops out at Next 15; owner-approved. Recorded in `DECISIONS.md` ADR-42.
+- **`.storybook/test-runner.ts`** — the CI gate: `postVisit` applies real
+  CDP pseudo-states then asserts computed bg === resolved token +
+  focus-ring present (`parameters.interaction`); axe over `#storybook-root`
+  (fails on serious/critical); `#storybook-root` screenshot vs
+  `tests/visual/__screenshots__/<id>.png` at `failureThreshold: 0.02`.
+  `pnpm test:visual` / `pnpm test:a11y` are the same run.
+- **37 story files** — one story per applicable `component-states.md §2`
+  state + §9 interaction assertions, for all 32 kit components + the 4
+  primitives + the admin-shell nav rail. 144 visual baselines committed.
+- **Overlay focus-restore bug fixed (WCAG 2.4.3)** — `useBackgroundInert`
+  was keyed on `mounted`, so the trigger's container stayed `inert`
+  through the slide-out and `useFocusTrap`'s `opener.focus()` was a no-op
+  inside an `[inert]` subtree. Fix in `components/kit/internal/overlay.ts`:
+  key inert on `active`, defer + retry the restore past the commit flush,
+  lift stale `[inert]` / `aria-hidden` ancestors. All 4 overlay stories
+  green.
+- **2 SimpleTable ARIA fixes** the harness exposed — `role="row"` /
+  `role="columnheader"` were on `<button>` elements (invalid); moved to
+  wrapper `<div>`s with a nested button; skeleton / empty / EmptyState
+  branches given real `role="row"` / `role="cell"`.
+- **Session 10d Paper-parity audit** (manual, replaces the automated
+  Paper-diff — see below). Owner did the visual comparison in Storybook.
+  Everything matched the approved design; **2 deviation-from-approved bugs
+  found and fixed:**
+  - **Drawer** — the `.kit-drawer-panel` had no `z-index`, so the
+    `.kit-scrim` (`--z-overlay` 1200, `backdrop-filter: blur`) painted
+    over it — the drawer's own content rendered blurred. Every other
+    overlay already set the panel `z-index`. Added
+    `[z-index:var(--z-drawer)]` (1300) in `components/kit/drawer.tsx`.
+  - **ToggleSwitch** — a perceptible flick on click: the track carried
+    `.kit-interactive`, whose `transform` transition + `:active` repaint
+    animated on the round knob. Dropped `.kit-interactive` from the track
+    (a switch is not a hover/press surface); kept `.kit-focus-ring`; added
+    a scoped `background-color` transition; made disabled
+    `pointer-events: none` explicit.
+- **`DECISIONS.md`** — ADR-42 SB-9.1.x note; ADR-43 **RATIFIED** (all 7
+  owner-review items — Button `size`, Toast, PageShell, PillFilter
+  radiogroup, DatePicker API, QuantityStepper input, the 2 hover tokens).
+- **`docs/design/kit-audit.md`** — 10 remaining gaps marked ratified;
+  harness-surfaced flags recorded (§9.1 ring on the two field boxes →
+  design sprint; systemic low-contrast dimmed/semantic text, one flag many
+  sites → design sprint; SimpleTable ARIA miss → fixed); Session 10d audit
+  result appended. **`docs/TEST_PLAN.md §2a`** — the kit-gating paragraph.
+
+### Changed from plan
+
+- **Automated Paper-artboard visual diff (handoff task 4c) deferred.** The
+  kit is gated by story-snapshot + axe; Paper parity is verified by a
+  one-time manual audit checkpoint (Session 10d), not a CI diff. Reasons:
+  Session 2 already consistency-audited the kit against Paper
+  (`component-states.md §8`), Sessions 3–4b rebuilt it verbatim from
+  `get_jsx`, and the committed story snapshots already catch future drift —
+  a Paper diff would only add a one-time "still matches Paper" check, which
+  the manual audit covers. (`paper` MCP was also unreachable across
+  10b/10c and intermittent in 10d.)
+- **SB 9.1.x, not v8** (above).
+
+### Blocked / carried
+
+Nothing. Gate 4 passed: `pnpm test` 80/80, `pnpm tsc --noEmit` clean,
+`pnpm test:visual` + `pnpm test:a11y` green, `pnpm build` clean, baselines
+committed, no feature-screen file touched. Deliverable 4 closes the Session
+9 remediation sprint. Next: Session 11 — rebuild the shipped screens as kit
+compositions.
+
+---
+
 ## 2026-08-27 — Development Sprint Session 10: Kit Remediation Part 2 — component audit & fix + 4 primitives (Deliverable 3) — DONE
 
 **Role:** Developer (Development Sprint). Second half of the Session 9

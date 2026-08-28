@@ -89,7 +89,7 @@ export function Drawer({
       />
       <div
         className={cn(
-          "kit-drawer-panel fixed flex flex-col bg-(--surface-raised) [box-shadow:var(--shadow-drawer)] outline-none",
+          "kit-drawer-panel fixed flex flex-col bg-(--surface-raised) [box-shadow:var(--shadow-drawer)] [z-index:var(--z-drawer)] outline-none",
           isRail
             ? "top-0 right-0 w-[420px] h-full border-l border-l-solid [border-left-color:var(--border-subtle)]"
             : "top-1/2 right-(--sp-7) w-[380px] h-[560px] rounded-md border border-solid [border-color:var(--border-subtle)]",
