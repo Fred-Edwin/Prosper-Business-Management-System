@@ -184,6 +184,18 @@ swap — the whole screen is the mobile layout. Match the mobile artboards.
 
 ## Per-screen gate
 
+> **This is the required method, not a fallback — the owner picked it over
+> Playwright in Session 11 and prefers it (faster, and the right fit:
+> component behaviour, not pixel regression).** Do **not** stand up
+> Playwright / `playwright.config.ts` / a DB-seeding global-setup for this
+> gate. The visual half is `paper` MCP `get_screenshot` +
+> `get_computed_styles` compared by eye against the composition's
+> structure (the kit primitives are already Paper-verified — Session 10d
+> parity audit). The interaction half is jsdom + React Testing Library
+> specs in the existing `pnpm test` run. A *separate* Playwright e2e
+> harness is still wanted for the `TEST_PLAN.md §2` cross-module flows —
+> that is its own task (see "Also carried" below), never the screen gate.
+
 For each composed screen, **all** of (identical to Session 11 — see
 `export-workflow.md` C3):
 
