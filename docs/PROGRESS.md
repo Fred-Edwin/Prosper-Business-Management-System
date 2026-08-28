@@ -5,6 +5,176 @@ shipped, what's blocked, what changed from plan.
 
 ---
 
+## 2026-08-28 — Development Sprint Session 13: M1-F3 Assets (backend + frontend, one session) — DONE
+
+**Role:** Developer. Built F3 Assets end-to-end: `lib/domain/assets` +
+`lib/validation/assets.ts` + `app/api/assets*`, then composed the Assets
+Register + Asset Drawer + Asset Delete Dialog from the proven kit into
+`app/admin/assets/*` over a `use-assets.ts` per-feature hook. **Not** a
+kit change (`components/kit/*` + `components/shells/*` untouched — `git
+diff --stat` is confined to `lib/domain/assets/**`,
+`lib/validation/assets.ts`, `app/api/assets/**`, `app/admin/assets/**`,
+`tests/screens/assets.screen.test.tsx`, `docs/**`), **not** a rework of
+F1/F2, **not** a design sprint.
+
+### The artboard call — ADR-45 (extends ADR-44 to F3)
+
+The 3 asset artboards (`8DL-0` Register, `8JO-0` Drawer, `8IV-0` Delete
+Dialog) are Session 3–4 exports. Checked early, per the handoff:
+
+- **`8DL-0`** is a full pre-kit transcription (bespoke 240px sidenav,
+  bespoke table, bespoke tabs, inline condition dots, `bg-gray-900`
+  summary strip) — **and** it invents a **"Category"** field + category
+  tab filter that the `Asset` schema has no column for.
+- **`8JO-0`** is pre-kit (`--surface-panel-tint` panel, bespoke segmented
+  condition control, "+ Add Category").
+- **`8IV-0`** is the exception — Session 2 already rebuilt it as a clean
+  `<FrictionDeleteDialog>` composition (ADR-36c props).
+
+**Ruling (ADR-45):** ADR-44 extends to `8DL-0` + `8JO-0` — the proven
+kit is the visual acceptance target; the per-screen visual gate diffs the
+composition's structure against the kit Storybook stories. `8IV-0` is
+diffed against the artboard directly. **No `category` field in M1** —
+adding one is a Design Sprint + a migration, not a Development Sprint's
+call.
+
+### Shipped
+
+**Backend — `lib/domain/assets` + `lib/validation/assets.ts` + `app/api/assets*`:**
+
+- `createAsset` / `updateAsset` — name / locationId / purchaseDate /
+  purchaseCost / condition. Money = `Prisma.Decimal` throughout (ADR-30);
+  `purchaseDate` normalised to a `YYYY-MM-DD` `@db.Date`, rejected if in
+  the future (mirror of the drawer's `<DatePicker maxDate={now}>`).
+  `updateAsset` is a **true in-place edit** — the register is mutable
+  (ADR-22), NOT a correction row (confirmed against `SCHEMA.md` §11 /
+  ADR-22; contrast the append-only stock ledger, ADR-15 / ADR-39).
+- `transitionCondition` — a plain `conditionStatus` update (no approval
+  workflow in M1), routed through the domain so a later audit-log hook
+  has one seam. Condition enum: `Good` / `Needs Repair` /
+  `Decommissioned` (matches `<ConditionChip>` + `component-states.md`
+  C14).
+- `listAssets` — search / locationId / condition filters; soft-deleted
+  hidden unless `includeDeleted`. `actor` threaded through for a future
+  location-bound asset view (M1 is Admin-only, ADR-22).
+- `softDeleteAsset` — `deletedAt` stamp, idempotent.
+- `hardDeleteAsset` — exact `confirmName` + the ADR-23 friction guard:
+  `409 CONFLICT` when any `AuditLog` row references the asset
+  (`entityType = "asset"`, `entityId = id`). That is the **only** linked
+  history an asset can accrue in M1 — there is no maintenance-log /
+  assignment table (ADR-22 keeps the surface small). When one lands, its
+  `count` joins the guard, mirroring `hardDeleteProduct`.
+- 4 route handlers: `app/api/assets/route.ts` (GET list, POST create),
+  `app/api/assets/[id]/route.ts` (PATCH — condition-only body =
+  transition, full body = edit), `app/api/assets/[id]/soft-delete` +
+  `hard-delete`. Each: parse → Zod → `requireApiRole("admin")` →
+  `lib/domain/assets` → `ok()` / `fail()`. No business logic in the
+  handlers. Follows `app/api/products/**`.
+- **No schema change / no migration** — the `Asset` table already carried
+  every field.
+
+**Frontend — `app/admin/assets/*` composed from the kit:**
+
+- `use-assets.ts` — `AssetRequestError` + `request<T>` + `assetApi`
+  (`listAssets`, `createAsset`, `updateAsset`, `transitionCondition`,
+  `softDelete`, `hardDelete`, `listLocations`) + `useAssets` hook.
+  Mirrors `use-stock.ts` / `use-catalog.ts`.
+- `assets-client.tsx` — `<PageShell>` + a condition `radiogroup` filter +
+  `<SearchInput>` + `<SimpleTable>` (desktop: Name / Location / Purchase
+  Date / Cost Basis (KES) / Condition via `<ConditionChip>` / Edit) with
+  a card list below `--bp-md`, `<EmptyState variant="filtered">` + Clear
+  filters / `<EmptyState>` / `<ErrorState>` + Retry. Row actions open the
+  rail drawer or the delete dialog. `ASSET_CONDITIONS` is imported from
+  `lib/domain/assets/types` (leaf module), **not** the domain barrel —
+  the barrel re-exports server-only prisma code and a `"use client"` file
+  pulling a *value* from it drags `lib/db` into the browser bundle (`pnpm
+  build` caught this; `import type` from the barrel is fine, it's erased).
+- `asset-drawer.tsx` — kit **rail** `<Drawer variant="rail">` +
+  `<FormField>`-wrapped name / cost inputs + `<Select>` (location,
+  condition) + `<DatePicker>` (purchase date, `selected`/`onSelect`,
+  `maxDate={new Date()}`) → domain call → `<Toast>` + close + refresh.
+  No hand-rolled `fixed inset-0` scrim — `<Drawer>` owns it.
+- `asset-delete-dialog.tsx` — `<FrictionDeleteDialog>` with the ADR-36c
+  labels (`confirmLabel="Delete Asset Record"` /
+  `cancelLabel="Keep Asset"`, `showArchiveLink={false}` on the normal
+  path). On a `409 CONFLICT` the dialog flips to its can't-delete body
+  copy and the archive-link slot becomes the **soft-delete** action — the
+  blocked state, not a raw error toast.
+- `page.tsx` mounts it in the existing `<AdminShell>` (the Assets nav
+  entry already existed in `components/shells/admin-shell.tsx`).
+
+### Design/UX note (composition, not a new decision)
+
+The drawer's **Save Asset** button stays enabled while the form is
+incomplete — the domain + Zod own validation and surface per-field errors
+on submit; there is no approved "disable until valid" artboard state.
+Carried verbatim from Session 12's same note.
+
+### Per-screen gate (ADR-45 method — kit Storybook, not the pre-kit artboards)
+
+| Screen | Visual gate | Interaction spec | Result |
+|---|---|---|---|
+| Assets Register (`8DL-0`) | structural diff vs kit `PageShell` / `SimpleTable` / `SearchInput` / `EmptyState` / `ErrorState` / `ConditionChip` stories | `assets.screen.test.tsx` — table render + `<ConditionChip>` + grouped thousands; filtered `<EmptyState>` + Clear filters; `<ErrorState>` + Retry on mocked fetch failure | PASS |
+| Asset Drawer (`8JO-0`) | structural diff vs kit `Drawer` (rail) / `FormField` / `Select` / `DatePicker` stories | drawer opens + focus-trap + Esc restores focus to the opener (WCAG 2.4.3); create → `<Toast>` "Asset registered" + drawer closes | PASS |
+| Asset Delete Dialog (`8IV-0`) | diff vs the `8IV-0` artboard directly (already kit-shaped) | retype → confirm → `hardDelete("a1", name)` + toast; the 409 path shows the can't-delete copy + a working soft-delete affordance, no toast | PASS |
+
+Responsive: the `<SimpleTable>` (`hidden md:block`) ↔ card list (`flex
+md:hidden`) swap at `--bp-md`, same pattern as `catalog-client.tsx`.
+axe: not separately wired for jsdom screen tests here (the kit a11y gate
+is Storybook `test:a11y`, unaffected — no kit file touched); the screen
+spec asserts the semantic roles (`radiogroup`/`radio`, `searchbox`,
+`alertdialog`, `alert` + Retry).
+
+### Global gates
+
+- `pnpm test` — **154 passed** (127 as of Session 12 → +20 DB-backed
+  `lib/domain/assets` domain tests → +7 `assets.screen.test.tsx` specs).
+- `pnpm tsc --noEmit` — exit 0.
+- `pnpm build` — clean (after the `lib/domain/assets/types` leaf-import
+  fix above).
+- Kit `pnpm test:visual` / `pnpm test:a11y` — **not run / not needed**:
+  no `components/kit/*` or `components/shells/*` file changed, so those
+  gates are unaffected by definition.
+
+### `TODO(mock)` status
+
+`grep -rn "TODO(mock)" lib/domain/assets app/api/assets app/admin/assets`
+→ **none**. Everything the feature needs shipped real. (The
+`docs/design/screens/{admin-assets-register,asset-drawer,asset-delete-dialog}/fixtures.ts`
+files keep their `TODO(mock)` markers — they are the frozen
+`/design-preview` visual-regression fixtures, ADR-45, and stay as-is.)
+
+### Carried / flagged
+
+- **`<FrictionDeleteDialog>` link label is a hardcoded non-prop string**
+  ("Archive instead — hides it without data loss"). The `8IV-0` skeleton
+  already flagged this ("the kit's field-prompt line reads 'type the
+  exact record name below'; the artboard names the asset inline"). Not
+  fixed here — no kit change this session. A future kit pass could make
+  the archive-link label a prop; low priority.
+- **`Asset.category`** — not in M1 (ADR-45). If the Admin wants asset
+  categories later: Design Sprint + a `category` migration + a category
+  filter on the register.
+- **Playwright e2e harness** — still carried (from Sessions 11 / 12). The
+  QA session's likely first task.
+
+### Docs updated
+
+`docs/API.md` (Assets section rewritten to the 5 shipped endpoints +
+`AssetView` shape), `docs/SCHEMA.md §11` (condition enum values, the
+mutable-register note, the linked-history definition, "no migration
+needed"), `docs/sprints/milestone-1-plan.md §5` (Session 13 ticked; "all
+9 development sessions complete"), `docs/DECISIONS.md` (**ADR-45**),
+`docs/sprints/final-qa-handoff.md` (**drafted** — the adversarial M1 QA
+pass).
+
+### Next
+
+`docs/sprints/final-qa-handoff.md` — QA Engineer, adversarial M1 pass.
+That is the last session before M1 is done.
+
+---
+
 ## 2026-08-28 — Development Sprint Session 12: Store Manager + Canteen frontend composed on the proven kit — DONE
 
 **Role:** Developer. Composed the 7 approved Store Manager + Canteen mobile

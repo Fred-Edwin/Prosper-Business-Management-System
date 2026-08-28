@@ -323,9 +323,60 @@ Roles: Admin. Body: `{ staff_id, note }` (note required).
 
 ## Assets
 
-### `POST /api/assets`, `PATCH /api/assets/:id`, `POST /api/assets/:id/soft-delete`, `POST /api/assets/:id/hard-delete`
-Roles: Admin. Same pattern as Products (hard-delete blocked if linked
-history exists).
+> **Implemented Session 13 (2026-08-28).** The contract below reflects
+> what shipped. The register is **mutable** (ADR-22) — `PATCH` is a true
+> in-place edit, not a correction row (contrast the stock ledger). Field
+> names are `camelCase` in the JSON. Money is a decimal **string**
+> (`"45000.00"`); dates are `YYYY-MM-DD` calendar strings.
+
+Success envelope is `{ "data": ... }`; errors use the standard shape.
+An `AssetView` is
+`{ id, name, locationId, locationName, locationType, purchaseDate,
+purchaseCost, condition, deletedAt, createdAt, updatedAt }`.
+`condition` is one of `"Good" | "Needs Repair" | "Decommissioned"`.
+
+### `GET /api/assets`
+Roles: Admin (M1 is Admin-only per ADR-22).
+Query: `?search=` (case-insensitive `name` contains), `?locationId=`,
+`?condition=Good|Needs Repair|Decommissioned`, `?includeDeleted=true`
+(default hides soft-deleted rows). Returns `{ data: AssetView[] }`,
+sorted by `name`.
+
+### `POST /api/assets`
+Roles: Admin. Body:
+```json
+{ "name": "...", "locationId": "...", "purchaseDate": "2025-01-15",
+  "purchaseCost": "45000.00", "condition": "Good" }
+```
+`purchaseCost` must be `>= 0`; `purchaseDate` must not be in the future;
+`locationId` must resolve to a real `Location`. Returns
+`{ data: AssetView }`, `201`.
+
+### `PATCH /api/assets/:id`
+Roles: Admin. Two shapes on the same route:
+- **Condition transition** — body `{ "condition": "Needs Repair" }` (that
+  key alone). A plain condition move (ADR-22 — no approval workflow in
+  M1).
+- **Full edit** — the same body as `POST`. True in-place edit.
+
+`404` if the asset is missing or soft-deleted. Returns
+`{ data: AssetView }`.
+
+### `POST /api/assets/:id/soft-delete`
+Roles: Admin. Stamps `deletedAt`; the asset drops out of the default
+`GET /api/assets` view (`?includeDeleted=true` still surfaces it).
+Idempotent. Returns `{ data: { softDeleted: true } }`.
+
+### `POST /api/assets/:id/hard-delete`
+Roles: Admin. Body `{ "confirmName": "..." }` must equal the asset name
+**exactly** (case-sensitive) → else `400 VALIDATION_ERROR`
+(`field: "confirmName"`). Returns `409 CONFLICT` if the asset has linked
+history — in M1 that is any `AuditLog` row with
+`entityType = "asset"` and `entityId = :id` (there is no maintenance-log
+/ assignment table yet — ADR-22 keeps the surface small; when one lands,
+its count joins the guard). The client renders the delete dialog's
+blocked state, not a toast. Clean ⇒ the row is deleted. Returns
+`{ data: { deleted: true } }`.
 
 ---
 

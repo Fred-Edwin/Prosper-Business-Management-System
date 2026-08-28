@@ -1,8 +1,30 @@
 # Session 13 Handoff — Developer: **M1-F3 Assets — `lib/domain/assets` + `app/api/assets*` + the Assets Register / Drawer / Delete Dialog composed from the proven kit**
 
-**Status:** NOT STARTED. **UNBLOCKED** — Session 12 closed the M1-F2 staff
-frontend (7 Store Manager + Canteen screens composed from the kit, wired to
-the F2 stock API; ADR-44). Latest commits on
+**Status:** DONE (2026-08-28). `lib/domain/assets` + `lib/validation/assets.ts`
++ `app/api/assets*` (4 handlers) shipped; the hard-delete friction guard
+(409 with linked `AuditLog` history) and every condition transition tested
+DB-backed (20 domain tests). Assets Register + Asset Drawer + Asset Delete
+Dialog composed from the proven kit into `app/admin/assets/*` over a
+`use-assets.ts` hook; 7 `assets.screen.test.tsx` specs. Suite 127 → 154;
+tsc + build clean; no `components/kit/*` / `components/shells/*` touched.
+**ADR-45** decided: the 3 asset artboards (`8DL-0` / `8JO-0` / `8IV-0`)
+are pre-kit Session 3–4 exports, so ADR-44 extends to `8DL-0` + `8JO-0`
+(kit is the visual target; `8IV-0` is already kit-shaped). No `Asset`
+schema change / no migration. `docs/API.md` + `docs/SCHEMA.md` Assets
+sections rewritten; `milestone-1-plan.md §5` ticked;
+`docs/sprints/final-qa-handoff.md` drafted. Commits on
+`session-10b-kit-proof-harness`: `6a5a341` (backend) → `a185883`
+(frontend) → the Session-13 doc commit. **Next:**
+`docs/sprints/final-qa-handoff.md` (QA Engineer, adversarial M1 pass —
+the last session before M1 is done).
+
+---
+
+_Original handoff below (as written before the session)._
+
+**Status (original):** NOT STARTED. **UNBLOCKED** — Session 12 closed the
+M1-F2 staff frontend (7 Store Manager + Canteen screens composed from the
+kit, wired to the F2 stock API; ADR-44). Latest commits on
 `session-10b-kit-proof-harness`: `3b9461c` (Session 12 cluster 1 — staff
 ToastProvider + `use-staff-stock` hook + both hubs) → `c7598ec` (cluster 2
 — flows + stock-levels) → the Session-12 doc commit.

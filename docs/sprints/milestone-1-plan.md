@@ -430,7 +430,16 @@ decouples them. Each session ends with its own tests (`sdlc.md` /
 >   the purchase-delivery banner + `<MatchCard>` (`GET .../outstanding`
 >   is Admin-only — no staff endpoint), the Canteen Stock Count route
 >   (F-sales, not F2), and the real Playwright e2e harness.
-> - **Session 13** — M1-F3 Assets, same method. Scope below unchanged.
+> - **Session 13 — DONE.** M1-F3 Assets, backend + frontend in one
+>   session. `lib/domain/assets` (CRUD + `transitionCondition` +
+>   friction-guarded `hardDeleteAsset` — 409 with linked `AuditLog`
+>   history), `lib/validation/assets.ts`, `app/api/assets*` (4 handlers).
+>   Register + Asset Drawer + Asset Delete Dialog composed from the
+>   proven kit into `app/admin/assets/*` over a `use-assets.ts` hook.
+>   **ADR-45** — the 3 asset artboards (`8DL-0` / `8JO-0` / `8IV-0`) are
+>   pre-kit Session 3–4 exports; ADR-44 extends to them (kit is the
+>   visual target; diff against Storybook). 20 DB-backed domain tests +
+>   7 screen specs; suite 127 → 154.
 > - **Then** the QA pass.
 
 - **Session 12 (was Session 8) — M1-F2 Store Manager + Canteen frontend.
@@ -443,15 +452,25 @@ decouples them. Each session ends with its own tests (`sdlc.md` /
   28 new `tests/screens/*.screen.test.tsx` specs; `components/kit/*` +
   `components/shells/*` untouched. See ADR-44 and `PROGRESS.md`.
 - **Session 13 (was Session 9) — M1-F3 Assets (backend + frontend, one
-  session).** Assets has no stock/money dependency and a small surface —
-  `lib/domain/assets` (CRUD, condition, friction-guarded delete),
-  `app/api/assets*`, and compose the register + asset-drawer +
-  asset-delete-dialog from the kit at `app/admin/assets/*`. Tests: delete
-  guard, condition transitions.
+  session). DONE (2026-08-28).** `lib/domain/assets` (CRUD;
+  `transitionCondition` — a plain condition move, no approval workflow,
+  routed through the domain for a later audit-log hook;
+  `hardDeleteAsset` — exact `confirmName` + ADR-23 friction guard, 409
+  `CONFLICT` when any `AuditLog` row references the asset, the only
+  linked history an asset can accrue in M1), `lib/validation/assets.ts`,
+  `app/api/assets*` (GET/POST list+create, PATCH edit/transition,
+  POST soft-delete, POST hard-delete). Register + Asset Drawer + Asset
+  Delete Dialog composed from the proven kit at `app/admin/assets/*`
+  over a `use-assets.ts` hook. The `Asset` schema was already
+  sufficient — no migration. Artboards `8DL-0` / `8JO-0` / `8IV-0` are
+  pre-kit; **ADR-45** extends ADR-44 to them. 20 DB-backed domain tests
+  (CRUD + Zod rejections, the hard-delete guard, every condition
+  transition, soft-delete visibility) + 7 screen specs; suite 127 → 154.
 
 **N = 9** development sessions (Sessions 5–13): 5–7 shipped F1/F2
 backend+frontend; 9–10 kit remediation; 11 screen rebuild; 12–13
-F2-staff + F3.
+F2-staff + F3. **All 9 development sessions complete — only the QA pass
+(`docs/sprints/final-qa-handoff.md`) remains.**
 
 ### Final session — QA Engineer: adversarial M1 pass
 

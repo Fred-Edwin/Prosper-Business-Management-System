@@ -1319,3 +1319,85 @@ No kit change, no Paper change.
 - The per-screen visual gate for Session 12's screens is "diff the
   composition's structure against the kit Storybook stories", recorded in
   `PROGRESS.md` per screen.
+
+---
+
+## ADR-45: The 3 asset screen artboards are pre-kit and superseded — ADR-44 extends to F3; the register carries no "category" field (Session 13)
+
+**Status:** DECIDED (Session 13 kickoff — the handoff explicitly asked the
+developer to check whether the 3 asset artboards have the ADR-44 problem
+and decide early).
+
+**Context.** Session 13's job was to build M1-F3 Assets end-to-end,
+including composing the Assets Register (`8DL-0`), Asset Drawer (`8JO-0`),
+and Asset Delete Dialog (`8IV-0`) from the proven kit. The handoff flagged
+that all three are Session 3–4 exports — drawn/transcribed before the kit
+existed in its current (Session 9–10d) form — and asked whether ADR-44's
+ruling ("kit is the target; diff against Storybook, not the stale
+artboard") applies.
+
+On inspection:
+
+- **`8DL-0` (Register)** is a full pre-kit transcription: a bespoke
+  240 px sidenav, a bespoke table (not `<SimpleTable>`), bespoke
+  underline tabs, inline condition dots (not `<ConditionChip>`), an
+  inline `bg-gray-900` summary strip. It also invents a **"Category"**
+  field and a category-tab filter — but the `Asset` schema
+  (`SCHEMA.md §11`) has **no category column**: an asset is
+  `name / location / purchaseDate / purchaseCost / conditionStatus /
+  deletedAt`. Adding one is a schema + design decision, out of a
+  Development Sprint's scope.
+- **`8JO-0` (Drawer)** is pre-kit: a `--surface-panel-tint` panel (the
+  retired veil — ADR-41), a bespoke segmented "condition" control, a
+  "+ Add Category" affordance for the non-existent field.
+- **`8IV-0` (Delete Dialog)** is the exception — Session 2 already
+  rebuilt it as a clean `<FrictionDeleteDialog>` composition with the
+  ADR-36c per-entity props. It composes cleanly.
+
+**Decision.**
+
+1. **ADR-44 extends to `8DL-0` and `8JO-0`.** The proven kit is the
+   visual acceptance target for the Assets Register and Asset Drawer; the
+   per-screen visual gate diffs the composition's structure against the
+   kit Storybook stories (`PageShell`, `SimpleTable`, `SearchInput`,
+   `EmptyState`/`ErrorState`, `Drawer`, `FormField`, `Select`,
+   `DatePicker`, `ConditionChip`), recorded in `PROGRESS.md`. No kit
+   change, no Paper change.
+2. **`8IV-0` is diffed against the artboard directly** — it is already
+   kit-shaped (ADR-36c).
+3. **No "category" field in M1.** The register has Name / Location /
+   Purchase Date / Cost Basis / Condition columns and a condition filter
+   — no category column, no category tab filter. If the Admin later wants
+   asset categories, that is a Design Sprint + a `Asset.category`
+   migration, not a Development Sprint's call.
+4. **The 409-blocked delete path** reuses the `<FrictionDeleteDialog>`
+   `showArchiveLink` / `onArchive` slot: on a `409 CONFLICT` the dialog
+   switches to its can't-delete body copy and the archive-link slot
+   becomes the **soft-delete** action (ADR-36c said
+   `showArchiveLink={false}` for the *normal* asset path — a used asset
+   has no archive-instead affordance; the blocked path is where the
+   soft-delete fallback belongs). The kit's link label text
+   ("Archive instead — hides it without data loss") is a hardcoded
+   non-prop string — a known FLAG carried from the `8IV-0` skeleton, not
+   fixed here (no kit change), noted in `PROGRESS.md`.
+
+**Alternatives considered.**
+- *Re-draw the 3 asset artboards against the kit first (a Design Sprint)*
+  — rejected for the same reason as ADR-44: re-drawing artboards to match
+  components that already exist adds a sprint and produces nothing the
+  Storybook stories don't already show. The Delete Dialog is already
+  done; the other two are mechanical compositions.
+- *Add `Asset.category` now so `8DL-0` composes verbatim* — rejected: a
+  schema + design decision inside a Development Sprint, for a field with
+  no stated requirement (PRD / ADR-22 describe the register as
+  name/location/date/cost/condition).
+
+**Consequences.**
+- Session 13 composes and wires all 3 screens into `app/admin/assets/**`;
+  `components/kit/*` + `components/shells/*` untouched, so the kit
+  `test:visual` / `test:a11y` gates are unaffected by definition.
+- `/design-preview/{admin-assets-register,asset-drawer,asset-delete-dialog}`
+  + their `docs/design/screens/<slug>/` dirs stay as the frozen Session
+  3–4 visual-regression reference (not the acceptance target).
+- `docs/API.md` + `docs/SCHEMA.md` Assets sections rewritten to what
+  shipped; no Prisma migration.
