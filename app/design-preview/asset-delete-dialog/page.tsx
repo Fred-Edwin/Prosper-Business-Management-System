@@ -2,7 +2,7 @@ import AssetDeleteDialogScreen from "@/docs/design/screens/asset-delete-dialog/p
 
 export default function Page() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--surface-panel-tint)] p-10">
+    <div className="flex min-h-screen items-center justify-center bg-[var(--surface-raised)] p-10">
       <AssetDeleteDialogScreen />
     </div>
   );

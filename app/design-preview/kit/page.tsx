@@ -486,7 +486,7 @@ export default function KitGalleryPage() {
           </Drawer>
         </Case>
         <Case label="Drawer — rail variant (ADR-37b; docked right-edge, Admin Stock correction / Financials payment)">
-          <div className="flex h-[560px] justify-end bg-[var(--surface-panel-tint)]">
+          <div className="flex h-[560px] justify-end bg-[var(--surface-raised)]">
             <Drawer
               open
               onClose={() => {}}
