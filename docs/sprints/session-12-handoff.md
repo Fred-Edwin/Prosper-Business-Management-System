@@ -1,7 +1,25 @@
 # Session 12 Handoff — Developer: **M1-F2 Store Manager + Canteen frontend — composed from the proven kit, wired to the F2 stock APIs**
 
-**Status:** NOT STARTED. **UNBLOCKED** — Session 11 closed the Admin
-screen rebuild (compose-don't-transcribe method + per-screen gate),
+**Status:** DONE (2026-08-28). All 7 Store Manager + Canteen screens
+composed from the proven kit and wired to the F2 stock API; commits
+`3b9461c` (cluster 1 — staff `<ToastProvider>` + `use-staff-stock` hook +
+both hubs) → `c7598ec` (cluster 2 — the flows + both stock-levels views) →
+the Session-12 doc commit. **ADR-44** decided: the Session-4b staff
+artboards were transcribed before the kit existed, so they are superseded
+— the proven kit is the visual acceptance target and the per-screen visual
+gate diffs against kit Storybook. See `docs/PROGRESS.md` (Session 12
+entry) for the full ship list, the design/UX note (submit stays enabled
+while incomplete), and the carried items (purchase-delivery `<MatchCard>`
+— no staff endpoint; `/canteen/stock-count` — F-sales not F2; the
+Playwright e2e harness). Next: `docs/sprints/session-13-handoff.md`
+(M1-F3 Assets).
+
+---
+
+_Original handoff below (as written before the session)._
+
+**Status (original):** NOT STARTED. **UNBLOCKED** — Session 11 closed the
+Admin screen rebuild (compose-don't-transcribe method + per-screen gate),
 retired the `--surface-panel-tint` alias, and rewrote
 `export-workflow.md`. Latest commit on `session-10b-kit-proof-harness`:
 `2e8e5bc` (Session 11 docs) — the Session-11 rebuild commits are

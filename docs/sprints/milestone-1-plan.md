@@ -419,19 +419,29 @@ decouples them. Each session ends with its own tests (`sdlc.md` /
 >   rewritten (compose, don't transcribe); `design-principles.md §9`
 >   promoted to an enforced contract; per-screen gate is now a
 >   `tests/screens/*.screen.test.tsx` jsdom+RTL spec (18 new specs).
-> - **Session 12** — M1-F2 Store Manager + Canteen frontend, built the
->   new way (compose from kit + wire data). The scope below still
->   applies; the method changes.
+> - **Session 12 — DONE.** M1-F2 Store Manager + Canteen frontend,
+>   composed from the proven kit and wired to the F2 stock API. All 7
+>   staff screens live under `app/store-manager/*` + `app/canteen/*`;
+>   `<ToastProvider placement="bottom-center">` on the staff tree;
+>   `use-staff-stock.ts` per-feature hook. **ADR-44** — the Session-4b
+>   staff artboards were transcribed before the kit existed, so they are
+>   superseded: the proven kit is the visual acceptance target and the
+>   per-screen visual gate diffs against kit Storybook. Carried:
+>   the purchase-delivery banner + `<MatchCard>` (`GET .../outstanding`
+>   is Admin-only — no staff endpoint), the Canteen Stock Count route
+>   (F-sales, not F2), and the real Playwright e2e harness.
 > - **Session 13** — M1-F3 Assets, same method. Scope below unchanged.
 > - **Then** the QA pass.
 
-- **Session 12 (was Session 8) — M1-F2 Store Manager + Canteen
-  frontend.** Move the two hubs, both Store Manager flow screens, Canteen
-  transfer dispatch, and both Stock Levels skeletons to
-  `app/store-manager/*` and `app/canteen/*`. Wire the persistent
-  transfer/delivery banners (pinned → accept/flag → timeline), the
-  full-screen multi-item flows, and the 2-phase transfer accept. Compose
-  from the proven kit (not "move the skeleton + swap fixtures").
+- **Session 12 (was Session 8) — M1-F2 Store Manager + Canteen frontend.
+  DONE (2026-08-28).** The two hubs, both Store Manager flow screens
+  (issue/production, transfer/non-sale + a receive flow), Canteen transfer
+  dispatch, and both Stock Levels views composed from the proven kit into
+  `app/store-manager/*` and `app/canteen/*`. Incoming-transfer banner
+  wired (pinned `<TransferBanner>` → `POST .../accept` / `{ flag, note }`
+  → collapses when accepted/flagged). 2-phase transfer accept wired.
+  28 new `tests/screens/*.screen.test.tsx` specs; `components/kit/*` +
+  `components/shells/*` untouched. See ADR-44 and `PROGRESS.md`.
 - **Session 13 (was Session 9) — M1-F3 Assets (backend + frontend, one
   session).** Assets has no stock/money dependency and a small surface —
   `lib/domain/assets` (CRUD, condition, friction-guarded delete),

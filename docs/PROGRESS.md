@@ -5,6 +5,181 @@ shipped, what's blocked, what changed from plan.
 
 ---
 
+## 2026-08-28 — Development Sprint Session 12: Store Manager + Canteen frontend composed on the proven kit — DONE
+
+**Role:** Developer. Composed the 7 approved Store Manager + Canteen mobile
+screens from the Session 9–10d component kit into their real
+`app/store-manager/*` + `app/canteen/*` routes, and wired them to the F2
+stock domain + API (Session 6, ADR-39 / ADR-40). **Not** a backend change,
+**not** a logic change, **not** a design sprint. `git diff --stat` is
+confined to `app/store-manager/**` + `app/canteen/**` +
+`components/layout/staff-shell-client.tsx` + `docs/**` +
+`tests/screens/**`. `components/kit/*` and `components/shells/*` untouched.
+
+### The premise change — ADR-44
+
+The 7 staff skeletons (`docs/design/screens/…`) are the **Session 3–4
+exports**, transcribed inline by Session 4b *before the kit existed in its
+current form*, each carrying an explicit "NO kit swap" flag note (the hub
+banners draw a leading icon the kit `<Banner>` has no slot for; "Quick
+Operations" is flex-wrap cards, not the fixed `<ActionTileGrid>`; the
+Canteen hub's "Workflows" is a bespoke chevron row list; the flows use
+bespoke steppers / pill tabs, not `<QuantityStepper>` / `<PillFilter>`;
+the stock-levels screens have no `<DenseSummaryStrip>` / `<PillFilter>` —
+the handoff's "compose from" column even says *"the artboard has no
+PillFilter, contrary to the handoff's guess"*). There is no
+`docs/design/flows/*.md` for these screens either.
+
+Session 11 worked because the **Admin** artboards were re-drawn against the
+kit first; the **staff** artboards never were. So "compose from the kit"
+and "match the artboard" could not both hold. The developer flagged it;
+the owner ruled (**ADR-44**): the current kit is the visual acceptance
+target for all 7 staff screens, the Session-4b artboards are superseded,
+and the per-screen visual gate diffs the composition's structure against
+the kit's Storybook stories (the primitives are already Paper-verified —
+Session 10d parity audit). No kit change, no Paper change. The
+`/design-preview/<slug>` skeletons + `docs/design/screens/<slug>/` dirs
+stay as the frozen Session 3–4 visual-regression reference.
+
+### Shipped
+
+- **`<ToastProvider placement="bottom-center">`** wraps `<StaffShell>` in
+  `components/layout/staff-shell-client.tsx` (ADR-43 — the mirror of the
+  admin tree's `top-right`). Every staff issue / production / transfer /
+  non-sale / receipt / accept success fires a `<Toast>` via `useToast()`.
+- **`app/store-manager/use-staff-stock.ts`** — the per-feature hook,
+  mirroring `app/admin/stock/use-stock.ts`'s shape: a `StockRequestError`
+  + `request<T>` unwrapping `{ data }` / throwing on `{ error }`, a
+  low-level `stockApi` (`listMovements`, `balances`, `recordIssue`,
+  `recordProduction`, `dispatchTransfer`, `recordNonSale`,
+  `recordPurchaseReceipt`, `acceptTransfer`, `flagTransfer`,
+  `listProducts`, `listLocations`), the `useStaffStock` + `useStockLevels`
+  hooks, and `deriveIncomingTransfers` (ADR-39 — a `transfer` row with
+  `quantity < 0`, `correctsMovementId = null`, no sibling `+q` row, and
+  `transferCounterpartLocationId` = this location). The client sends
+  **unsigned magnitudes** only; signs / deltas / balances are the domain's
+  job. Plus `staff-stock-format.ts` — presentation-only formatters
+  (`trimQty`, `signedQty`, `movementsToTimeline`).
+- **`/store-manager` hub** (`hub-client.tsx`) — composed from
+  `<ActionTileGrid>` (Receive / Issue / Production / Transfer / Non-Sale,
+  each `router.push`ing its flow) + pinned `<TransferBanner>` per incoming
+  transfer (Accept → `POST /api/stock-movements/:id/accept` + toast +
+  refresh; Flag → same endpoint `{ flag: true, note }`; a flagged one
+  shows the muted "awaiting admin review" line, no actions) +
+  `<ActivityTimeline>` (today's movement log, or its empty line) +
+  `<ErrorState>` (Retry → refresh).
+- **`/canteen` hub** (`hub-client.tsx`) — same shape, Canteen tiles
+  (Transfer Dispatch → `/canteen/transfer`, Stock Count → `TODO(mock)`
+  route, Stock Levels → `/canteen/stock`) + the pinned incoming-transfer
+  banner + timeline + `<ErrorState>`.
+- **`/store-manager/flows/issue` + `/production`**
+  (`issue-production-flow.tsx`, one client, `mode` prop) — a full-screen
+  flow: `<FlowHeader directionTone="danger">` (Issue) / `"success"`
+  (Production) + product `<Select>` + `<QuantityStepper>` (unsigned
+  magnitude, `min={0}`) + `<CalculatedImpactBanner>` (impact preview) +
+  sticky `<Button size="lg">` submit → `POST { movementType: "issue" |
+  "production" }` → `<Toast>` + reset. Production filters the `<Select>`
+  to `kind = "dish"`.
+- **`/store-manager/flows/transfer` + `/non-sale`**
+  (`transfer-nonsale-flow.tsx`, one client, `mode` prop) —
+  `<FlowHeader directionTone="info">` (Transfer) / `"warning"` (Non-Sale)
+  + product `<Select>` + `<QuantityStepper>` + destination `<Select>`
+  (Transfer) / reason `<Select>` + note `<Textarea>` (Non-Sale, note
+  **required iff reason = "other"**) + `<CalculatedImpactBanner>` +
+  sticky submit → `POST { movementType: "transfer" }` (phase 1 — the `-q`
+  dispatch row only) / `{ "non_sale_consumption" }` → `<Toast>` + reset.
+- **`/store-manager/flows/receive`** (`receive-flow.tsx`) — a
+  `purchase_receipt` flow (product `<Select>` + `<QuantityStepper>` +
+  `<CalculatedImpactBanner>` → `POST { movementType: "purchase_receipt" }`).
+  The 1-tap "match a payment the Admin already made" path
+  (`purchasePaymentId` link + `<MatchCard>`) is `TODO(mock)`: there is no
+  staff-facing source for it — `GET /api/stock-movements/outstanding` is
+  Admin-only. The manual receipt works fully.
+- **`/canteen/transfer`** (`transfer-dispatch-flow.tsx`) — the
+  Canteen-scoped mirror of the Store Manager transfer flow
+  (`<FlowHeader directionTone="info">`, Canteen → destination `<Select>`,
+  `POST { movementType: "transfer" }`).
+- **`/store-manager/stock` + `/canteen/stock`** (`stock-levels-view.tsx`,
+  one shared client, `locationType` prop) — the mobile stock-levels view:
+  `<DenseSummaryStrip>` (line count + total units, danger tone when
+  negative) + `<PillFilter>` (product kind, `role="radiogroup"`) + a
+  mobile card list (product / unit / mono signed qty; negative in the
+  danger tone) + `<EmptyState>` (no stock) / `<EmptyState
+  variant="filtered">` + Clear filter (pill matches nothing) /
+  `<ErrorState>` (Retry). Fed by `GET /api/stock-movements/balances`
+  (ADR-40) — no `<DenseLedger>` (that's the Admin desktop view).
+
+### Design/UX note (composition, not a new decision)
+
+The full-screen flow submit buttons stay **enabled while the form is
+incomplete** — clicking marks the fields touched and surfaces the §9.8
+per-field errors, rather than a dead button with no explanation. Only a
+loading / in-flight state disables it. This matches the kit's
+`<FormField>` error pattern; no new visual design.
+
+### Per-screen gate (ADR-44 method — kit Storybook, not the 4b artboards)
+
+All 7 screens: (1) visual structure diffed against the kit Storybook
+stories for each composed primitive (the primitives carry the Session-10d
+Paper-parity audit); (2) a `*.screen.test.tsx` interaction spec under
+`tests/screens/` (jsdom + RTL, `useStaffStock` / `useStockLevels` /
+`stockApi` mocked, no server / DB); (3) 390 px mobile layout (no desktop
+swap for staff); (4) axe via the RTL render (kit primitives are already
+axe-gated in Storybook).
+
+- `tests/screens/store-manager-hub.screen.test.tsx` (6) — tile nav,
+  empty timeline, `<ErrorState>` + Retry, pinned `<TransferBanner>`
+  Accept → `POST .../accept` + toast + refresh, Flag → `{ flag, note }`,
+  flagged-banner collapse (muted line, no actions).
+- `tests/screens/canteen-hub.screen.test.tsx` (5) — same shape,
+  Canteen-scoped.
+- `tests/screens/store-manager-flows.screen.test.tsx` (7) — issue submit
+  → unsigned-magnitude POST + toast + reset; production `<Select>`
+  dish-only; `<CalculatedImpactBanner>` appears on product+qty;
+  `<QuantityStepper>` Decrease disabled `atMin`; `<ErrorState>`; transfer
+  dispatch POST `{ from, to, unsigned qty }`; non-sale "Other" note
+  requirement blocks submit until filled.
+- `tests/screens/canteen-transfer-dispatch.screen.test.tsx` (4) —
+  dispatch POST from the Canteen location; incomplete-submit surfaces the
+  §9.8 errors; `<QuantityStepper>` `atMin`; `<ErrorState>`.
+- `tests/screens/stock-levels.screen.test.tsx` (6) —
+  `<DenseSummaryStrip>` + card per product; `<PillFilter>` narrows by
+  kind; filtered `<EmptyState>` + Clear filter; plain `<EmptyState>` on
+  no stock; `<ErrorState>` + Retry; negative balance in the danger tone.
+
+**28 new specs.** `pnpm test` 127 passing (99 baseline + 28), `pnpm tsc
+--noEmit` exit 0, `pnpm build` clean, all 7 routes present. Kit
+`test:visual` / `test:a11y` not re-run (kit untouched —
+`git diff --name-only` has no `components/kit` / `components/shells`).
+
+### Carried to a later session
+
+- **The purchase-delivery banner + `<MatchCard>` on the Store Manager
+  hub** — needs a staff-scoped "deliveries awaiting receipt" read
+  (`GET /api/stock-movements/outstanding` is Admin-only). `TODO(mock)`
+  fixture behind the real `stockApi.recordPurchaseReceipt` interface in
+  `hub-client.tsx` + `receive-flow.tsx`.
+- **`/canteen/stock-count`** — the hub tile links to it; the Canteen
+  stock count is a sales-derivation flow (`lib/domain/sales`), not F2
+  stock movements. `TODO(mock)` nav target.
+- **The real Playwright e2e harness** for the `TEST_PLAN.md §2`
+  cross-module flows (order → stock deduction, handover → variance,
+  day-close → lock, 2-phase transfer end-to-end). Not a blocker for the
+  per-screen gate (the RTL specs cover that — ADR-44 / the handoff's
+  own ruling). Its own session: `playwright.config.ts` + a
+  DB-seeding `global-setup` + `tests/e2e/`.
+
+### Grep status
+
+`grep -rn "TODO(mock)" app/store-manager app/canteen` → the two carried
+items above (purchase-delivery match, canteen stock-count) and the
+`use-staff-stock` mock-delivery fixture. Nothing else.
+
+**Next:** Session 13 — M1-F3 Assets (backend + frontend, one session),
+composed the same way. See `docs/sprints/session-13-handoff.md`.
+
+---
+
 ## 2026-08-28 — Development Sprint Session 11: Admin screens recomposed on the proven kit — DONE
 
 **Role:** Developer. Re-assembled the four shipped M1 Admin screen
