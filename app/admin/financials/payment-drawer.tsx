@@ -1,17 +1,18 @@
-// Wired from docs/design/screens/admin-financials-payment-drawer-open/page.tsx
-// (Paper artboard 85W-0, the docked 420px right rail). Panel markup — kit
-// <Drawer variant="rail">, the field rows, the "Paid From" segmented choice,
-// the info note, the two footer <Button>s — follows the skeleton. This file
-// adds the real form state and the POST /api/stock-movements
-// { movementType: "purchase_payment", … } call.
-//
-// F2 scope: recordPurchasePayment writes a purchase_payment row (quantity 0,
-// no stock effect — ADR-39); the MoneyMovement debit is F3.
+// Session 11 rebuild — composed from the kit rail <Drawer> + <FormField> +
+// <Select> + <SegmentedControl> + <Button> + <Toast>. The previous version
+// hand-rolled every field box and a bespoke "Paid From" button pair. The form
+// state and the POST /api/stock-movements { movementType: "purchase_payment" }
+// call (recordPurchasePayment — quantity 0, MoneyMovement debit is F3) are
+// preserved verbatim.
 "use client";
 
 import * as React from "react";
 import { Button } from "@/components/kit/button";
 import { Drawer } from "@/components/kit/drawer";
+import { FormField } from "@/components/kit/form-field";
+import { SegmentedControl } from "@/components/kit/segmented-control";
+import { Select } from "@/components/kit/select";
+import { useToast } from "@/components/kit/toast";
 import type { Location, ProductWithLocations } from "@/lib/domain/catalog";
 import { stockApi, StockRequestError } from "../stock/use-stock";
 
@@ -20,6 +21,16 @@ const CODE_MESSAGE: Record<string, string> = {
   FORBIDDEN: "Only an administrator can record a purchase payment.",
   NOT_FOUND: "That product or location no longer exists.",
   INTERNAL_ERROR: "Something went wrong. Try again.",
+};
+
+const PAID_FROM_LABELS = ["Cash at Hand", "M-Pesa / Bank Till"] as const;
+const PAID_FROM_KEY: Record<string, "cash" | "mpesa_bank"> = {
+  "Cash at Hand": "cash",
+  "M-Pesa / Bank Till": "mpesa_bank",
+};
+const PAID_FROM_LABEL: Record<"cash" | "mpesa_bank", string> = {
+  cash: "Cash at Hand",
+  mpesa_bank: "M-Pesa / Bank Till",
 };
 
 export function PaymentDrawer({
@@ -33,6 +44,7 @@ export function PaymentDrawer({
   onClose: () => void;
   onRecorded: () => void | Promise<void>;
 }) {
+  const { toast } = useToast();
   const [supplier, setSupplier] = React.useState("");
   const [productId, setProductId] = React.useState("");
   const [locationId, setLocationId] = React.useState("");
@@ -67,6 +79,7 @@ export function PaymentDrawer({
         paidFromAccount: paidFrom,
       });
       await onRecorded();
+      toast("Payment recorded", { tone: "success" });
       onClose();
     } catch (e) {
       setError(
@@ -80,9 +93,7 @@ export function PaymentDrawer({
   }
 
   const fieldBox =
-    "flex items-center h-[36px] px-(--sp-5) rounded-sm shrink-0 bg-(--surface-page) border border-solid [border-color:var(--border-strong)]";
-  const labelCls =
-    "font-ui font-(--weight-medium) inline-block [color:var(--text-primary)] text-body/sm";
+    "flex items-center h-(--control-md) px-(--sp-5) rounded-sm shrink-0 bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-field";
 
   return (
     <Drawer
@@ -109,123 +120,94 @@ export function PaymentDrawer({
       }
     >
       {error && (
-        <div className="font-ui text-danger text-body/sm">{error}</div>
+        <div role="alert" className="font-ui text-danger text-body/sm">
+          {error}
+        </div>
       )}
 
-      <div className="flex flex-col gap-(--sp-3)">
-        <span className={labelCls}>Supplier / Vendor *</span>
-        <div className={fieldBox}>
-          <input
-            value={supplier}
-            onChange={(e) => setSupplier(e.target.value)}
-            placeholder="e.g. Farmer's Choice Butchery"
-            className="font-ui [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
-          />
-        </div>
-      </div>
+      <FormField label="Supplier / Vendor" required className="w-full">
+        {({ id, "aria-describedby": describedBy }) => (
+          <div className={fieldBox}>
+            <input
+              id={id}
+              aria-describedby={describedBy}
+              value={supplier}
+              onChange={(e) => setSupplier(e.target.value)}
+              placeholder="e.g. Farmer's Choice Butchery"
+              className="font-ui [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
+            />
+          </div>
+        )}
+      </FormField>
 
-      <div className="flex flex-col gap-(--sp-3)">
-        <span className={labelCls}>Product *</span>
-        <div className={fieldBox}>
-          <select
-            value={productId}
-            onChange={(e) => setProductId(e.target.value)}
-            className="font-ui [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none"
-          >
-            <option value="">Select a product…</option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.unitLabel})
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <Select
+        label="Product"
+        required
+        className="w-full"
+        placeholder="Select a product…"
+        value={productId}
+        onChange={setProductId}
+        options={products.map((p) => ({
+          value: p.id,
+          label: `${p.name} (${p.unitLabel})`,
+        }))}
+      />
 
-      <div className="flex flex-col gap-(--sp-3)">
-        <span className={labelCls}>Destination *</span>
-        <div className={fieldBox}>
-          <select
-            value={locationId}
-            onChange={(e) => setLocationId(e.target.value)}
-            className="font-ui [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none"
-          >
-            <option value="">Select a location…</option>
-            {locations.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <Select
+        label="Destination"
+        required
+        className="w-full"
+        placeholder="Select a location…"
+        value={locationId}
+        onChange={setLocationId}
+        options={locations.map((l) => ({ value: l.id, label: l.name }))}
+      />
 
       <div className="flex gap-(--sp-4)">
-        <div className="flex flex-col grow gap-(--sp-3)">
-          <span className={labelCls}>Quantity *</span>
-          <div className={fieldBox}>
-            <input
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              inputMode="decimal"
-              placeholder="0.0"
-              className="font-mono [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
-            />
-            <span className="font-ui shrink-0 inline-block w-max [color:var(--text-tertiary)] text-sm/micro">
-              {product?.unitLabel ?? "unit"}
-            </span>
-          </div>
-        </div>
-        <div className="flex flex-col grow gap-(--sp-3)">
-          <span className={labelCls}>Total Cost *</span>
-          <div className={fieldBox}>
-            <span className="font-ui shrink-0 inline-block w-max [color:var(--text-tertiary)] text-sm/micro">
-              KES
-            </span>
-            <input
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-              inputMode="decimal"
-              placeholder="0.00"
-              className="font-mono [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none text-right placeholder:[color:var(--text-tertiary)]"
-            />
-          </div>
-        </div>
+        <FormField label="Quantity" required className="grow">
+          {({ id, "aria-describedby": describedBy }) => (
+            <div className={fieldBox}>
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                inputMode="decimal"
+                placeholder="0.0"
+                className="font-mono [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
+              />
+              <span className="font-ui shrink-0 inline-block w-max [color:var(--text-tertiary)] text-sm/micro">
+                {product?.unitLabel ?? "unit"}
+              </span>
+            </div>
+          )}
+        </FormField>
+        <FormField label="Total Cost" required className="grow">
+          {({ id, "aria-describedby": describedBy }) => (
+            <div className={fieldBox}>
+              <span className="font-ui shrink-0 inline-block w-max [color:var(--text-tertiary)] text-sm/micro">
+                KES
+              </span>
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+                inputMode="decimal"
+                placeholder="0.00"
+                className="font-mono [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none text-right placeholder:[color:var(--text-tertiary)]"
+              />
+            </div>
+          )}
+        </FormField>
       </div>
 
-      <div className="flex flex-col gap-(--sp-3)">
-        <span className={labelCls}>Paid From *</span>
-        <div className="flex items-center gap-(--sp-3)">
-          {(
-            [
-              ["cash", "Cash at Hand"],
-              ["mpesa_bank", "M-Pesa / Bank Till"],
-            ] as const
-          ).map(([key, label]) => {
-            const active = paidFrom === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setPaidFrom(key)}
-                className={`flex items-center justify-center h-[36px] grow px-(--sp-5) rounded-sm border border-solid kit-focus-ring ${
-                  active
-                    ? "border-accent bg-(--surface-selected)"
-                    : "[border-color:var(--border-strong)] bg-(--surface-page)"
-                }`}
-              >
-                <span
-                  className={`font-ui font-(--weight-medium) inline-block w-max shrink-0 text-body/sm ${
-                    active ? "text-accent" : "[color:var(--text-primary)]"
-                  }`}
-                >
-                  {label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <SegmentedControl
+        label="Paid From"
+        options={[...PAID_FROM_LABELS]}
+        value={PAID_FROM_LABEL[paidFrom]}
+        onChange={(label) => setPaidFrom(PAID_FROM_KEY[label])}
+      />
 
       <div className="font-ui [color:var(--text-secondary)] text-caption/micro">
         The Store Manager receives this delivery on mobile with 1-tap
