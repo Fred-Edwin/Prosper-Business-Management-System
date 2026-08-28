@@ -173,15 +173,23 @@ export function useFocusTrap(
 ) {
   const restoreRef = React.useRef<HTMLElement | null>(null);
 
+  // Capture the opener in a LAYOUT effect so it runs before any passive effect
+  // (e.g. useBackgroundInert) can `inert` the opener's container and blur it —
+  // otherwise `document.activeElement` here is already <body>.
+  React.useLayoutEffect(() => {
+    if (!active) return;
+    if (
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement !== document.body
+    ) {
+      restoreRef.current = document.activeElement;
+    }
+  }, [active]);
+
   React.useEffect(() => {
     if (!active) return;
     const panel = panelRef.current;
     if (!panel) return;
-
-    restoreRef.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
 
     // Move focus in.
     const initial = focusablesIn(panel);
@@ -224,9 +232,14 @@ export function useFocusTrap(
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
       const toRestore = restoreRef.current;
-      if (toRestore && document.contains(toRestore)) {
-        toRestore.focus();
-      }
+      // Restore now AND again on the next frame: the panel may still be in the
+      // DOM during an exit transition, and its removal a tick later can blur
+      // focus to <body>. The second call re-asserts after that unmount.
+      const doRestore = () => {
+        if (toRestore && document.contains(toRestore)) toRestore.focus();
+      };
+      doRestore();
+      requestAnimationFrame(doRestore);
     };
   }, [panelRef, active]);
 }
@@ -267,6 +280,15 @@ export function useOverlayTransition(open: boolean): {
     }
     if (mounted) {
       setPhase("closing");
+      // Safety net: the panel unmounts on `transitionend`, but that event can
+      // fail to fire (reduced-motion, a display-change mid-transition, a
+      // headless runner). Force the unmount slightly past the slide duration
+      // so the overlay can never get stuck mounted.
+      const fallback = setTimeout(() => {
+        setMounted(false);
+        setPhase("opening");
+      }, 400);
+      return () => clearTimeout(fallback);
     }
   }, [open, mounted]);
 

@@ -39,7 +39,7 @@ export function PillFilter({
   className,
   ...props
 }: PillFilterProps) {
-  const { onKeyDown, tabIndexFor } = useRovingGroup({
+  const { onKeyDown, tabIndexFor, itemRef } = useRovingGroup({
     items: options,
     activeKey,
     onChange,
@@ -61,6 +61,7 @@ export function PillFilter({
         return (
           <button
             key={opt.key}
+            ref={itemRef(opt.key)}
             type="button"
             role="radio"
             aria-checked={isActive}
@@ -69,7 +70,11 @@ export function PillFilter({
             onClick={() => onChange?.(opt.key)}
             className={cn(
               "flex items-center justify-center h-(--control-sm) px-(--sp-6) rounded-lg kit-interactive kit-focus-ring",
-              isActive && "bg-(--surface-selected)",
+              // §9.4: selected wins over hover and never stacks with it — pin
+              // --kit-hover-bg to the selected tint so hovering the active pill
+              // keeps it (otherwise .kit-interactive:hover repaints it grey).
+              isActive &&
+                "bg-(--surface-selected) [--kit-hover-bg:var(--surface-selected)] [--kit-active-bg:var(--surface-selected)]",
             )}
           >
             <span

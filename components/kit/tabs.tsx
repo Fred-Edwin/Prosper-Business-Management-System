@@ -38,7 +38,7 @@ export interface TabsProps {
 export function Tabs({ tabs, activeKey, onChange, idBase, className }: TabsProps) {
   const reactId = React.useId();
   const base = idBase ?? `tabs-${reactId}`;
-  const { onKeyDown, tabIndexFor } = useRovingGroup({
+  const { onKeyDown, tabIndexFor, itemRef } = useRovingGroup({
     items: tabs,
     activeKey,
     onChange,
@@ -59,6 +59,7 @@ export function Tabs({ tabs, activeKey, onChange, idBase, className }: TabsProps
         return (
           <button
             key={tab.key}
+            ref={itemRef(tab.key)}
             type="button"
             role="tab"
             id={`${base}-tab-${tab.key}`}

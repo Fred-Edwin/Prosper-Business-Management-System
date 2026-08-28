@@ -4,9 +4,15 @@
 //
 // Roving tabindex: exactly one item in the group is in the Tab sequence (the
 // selected one); ArrowLeft/Right (and Up/Down) move selection to the previous /
-// next enabled item and focus it; Home/End jump to the first / last enabled item.
-// Selection follows focus (APG "selection follows focus" — correct for tabs and
-// radiogroups where activating is cheap).
+// next enabled item AND move DOM focus to it; Home/End jump to the first / last
+// enabled item. Selection follows focus (APG "selection follows focus" —
+// correct for tabs and radiogroups where activating is cheap).
+//
+// Session 10b fix: `move()` changed selection via onChange but never focused the
+// newly-selected node, so keyboard users lost the focus ring and screen-reader
+// focus after an arrow press (APG violation; handoff §4d requires "ArrowRight
+// moves aria-selected AND DOM focus"). The hook now takes an `itemRef(key)`
+// callback ref and focuses the target after the selection re-render.
 "use client";
 
 import * as React from "react";
@@ -29,6 +35,27 @@ export function useRovingGroup({
 }) {
   const enabled = items.filter((i) => !i.disabled);
 
+  // key → the item's DOM node, populated via the `itemRef` callback ref.
+  const nodes = React.useRef(new Map<string, HTMLElement | null>());
+  // Set by a keyboard move; focused in the effect below once the re-render with
+  // the new roving tabIndex has committed (a tabIndex=-1 node can't hold focus).
+  const pendingFocus = React.useRef<string | null>(null);
+
+  const itemRef = React.useCallback(
+    (key: string) => (el: HTMLElement | null) => {
+      if (el) nodes.current.set(key, el);
+      else nodes.current.delete(key);
+    },
+    [],
+  );
+
+  React.useEffect(() => {
+    const key = pendingFocus.current;
+    if (key == null) return;
+    pendingFocus.current = null;
+    nodes.current.get(key)?.focus();
+  });
+
   const move = React.useCallback(
     (dir: 1 | -1 | "home" | "end") => {
       if (enabled.length === 0) return;
@@ -44,7 +71,16 @@ export function useRovingGroup({
         );
         nextIdx = (curIdx + dir + enabled.length) % enabled.length;
       }
-      onChange?.(enabled[nextIdx].key);
+      const nextKey = enabled[nextIdx].key;
+      pendingFocus.current = nextKey;
+      if (nextKey === activeKey) {
+        // selection unchanged (single enabled item, or wrap to self) — no
+        // re-render will fire the effect, so focus now.
+        pendingFocus.current = null;
+        nodes.current.get(nextKey)?.focus();
+      } else {
+        onChange?.(nextKey);
+      }
     },
     [enabled, activeKey, onChange],
   );
@@ -99,5 +135,5 @@ export function useRovingGroup({
     [enabled, activeKey],
   );
 
-  return { onKeyDown, tabIndexFor };
+  return { onKeyDown, tabIndexFor, itemRef };
 }

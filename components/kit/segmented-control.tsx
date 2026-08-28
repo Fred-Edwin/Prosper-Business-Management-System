@@ -53,7 +53,7 @@ export function SegmentedControl({
     [disabled, isControlled, onChange],
   );
 
-  const { onKeyDown, tabIndexFor } = useRovingGroup({
+  const { onKeyDown, tabIndexFor, itemRef } = useRovingGroup({
     items: options.map((o) => ({ key: o, disabled })),
     activeKey: current ?? options[0],
     onChange: pick,
@@ -85,6 +85,7 @@ export function SegmentedControl({
           return (
             <button
               key={opt}
+              ref={itemRef(opt)}
               type="button"
               role="radio"
               aria-checked={isActive}
@@ -93,7 +94,10 @@ export function SegmentedControl({
               onClick={() => pick(opt)}
               className={cn(
                 "flex items-center justify-center h-(--control-sm) px-(--sp-5) rounded-[2px] kit-interactive kit-focus-ring",
-                isActive && "[box-shadow:var(--shadow-sm)] bg-(--surface-page)",
+                // §9.4: the active segment's raised --surface-page fill must
+                // survive hover (else .kit-interactive:hover repaints it grey).
+                isActive &&
+                  "[box-shadow:var(--shadow-sm)] bg-(--surface-page) [--kit-hover-bg:var(--surface-page)] [--kit-active-bg:var(--surface-page)]",
               )}
             >
               <span

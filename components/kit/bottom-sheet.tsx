@@ -96,8 +96,11 @@ export function BottomSheet({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={title ? titleId : undefined}
-        aria-label={!title ? "Details" : undefined}
+        // The title node only renders in the "open" branch — in "peek" there is
+        // no #titleId element, so aria-labelledby there would dangle (axe:
+        // aria-dialog-name). Use aria-labelledby only when the title is shown.
+        aria-labelledby={title && !isPeek ? titleId : undefined}
+        aria-label={title && !isPeek ? undefined : title || "Details"}
         tabIndex={-1}
         data-state={phase}
         onPointerDown={onPointerDown}
