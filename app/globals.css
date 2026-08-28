@@ -2,6 +2,12 @@
 @import "./design-system/tokens.css";
 @import "tw-animate-css";
 
+/* Tailwind v4 auto-detects content across the repo. Exclude the docs tree:
+ * prose there quotes class strings in code spans (e.g. an arbitrary-value
+ * `[z-index:var(--z-dialog/drawer)]` in kit-audit.md) that are not real
+ * classes and generate invalid CSS under Turbopack. Docs render no UI. */
+@source not "../docs";
+
 @theme inline {
   --color-gray-50: var(--color-gray-50);
   --color-gray-100: var(--color-gray-100);
