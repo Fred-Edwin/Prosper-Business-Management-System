@@ -23,13 +23,13 @@ const CODE_MESSAGE: Record<string, string> = {
   INTERNAL_ERROR: "Something went wrong. Try again.",
 };
 
-const PAID_FROM_LABELS = ["Cash at Hand", "M-Pesa / Bank Till"] as const;
+const PAID_FROM_LABELS = ["Cash", "M-Pesa / Bank Till"] as const;
 const PAID_FROM_KEY: Record<string, "cash" | "mpesa_bank"> = {
-  "Cash at Hand": "cash",
+  Cash: "cash",
   "M-Pesa / Bank Till": "mpesa_bank",
 };
 const PAID_FROM_LABEL: Record<"cash" | "mpesa_bank", string> = {
-  cash: "Cash at Hand",
+  cash: "Cash",
   mpesa_bank: "M-Pesa / Bank Till",
 };
 

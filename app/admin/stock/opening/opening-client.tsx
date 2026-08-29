@@ -27,14 +27,14 @@ import { homeLocationType, planOpeningPosts } from "./opening-plan";
 const CATEGORY_LABEL: Record<ProductKind, string> = {
   ingredient: "Ingredient",
   dish: "Dish (Finished)",
-  goods: "Shop Goods",
+  goods: "Goods",
 };
 
 const TABS = [
   { key: "all", label: "All Items" },
   { key: "ingredient", label: "Kitchen Ingredients" },
   { key: "dish", label: "Dishes" },
-  { key: "goods", label: "Shop Goods" },
+  { key: "goods", label: "Goods" },
 ];
 
 type RowState = {

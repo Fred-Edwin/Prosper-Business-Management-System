@@ -31,13 +31,13 @@ import { PaymentDrawer } from "./payment-drawer";
 
 const KPI_TILES = [
   "Total Business Liquidity",
-  "Cash at Hand",
+  "Cash",
   "M-Pesa / Bank Till",
   "Today's Total Outflows",
 ];
 
 const PAID_FROM_LABEL: Record<string, string> = {
-  cash: "Cash at Hand",
+  cash: "Cash",
   mpesa_bank: "M-Pesa / Bank Till",
 };
 
