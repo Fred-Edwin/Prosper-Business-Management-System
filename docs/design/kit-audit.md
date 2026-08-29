@@ -293,16 +293,49 @@ error (ADD — danger border + helper), disabled (GLOBAL).
 Required (`§2 C5`): default (ARTBOARD ✓), open (ARTBOARD ✓ — real popover
 listbox), error (ARTBOARD ✓), filled/disabled/focus (GLOBAL).
 
-**Searchable mode — designed, not yet built.** Phase A of
-`docs/sprints/kit-searchable-select-handoff.md` (kit Design Sprint,
-2026-08-29) added 3 `6CG-0` state rows — `Select — Searchable (closed)` /
-`(open, query typed, list filtered)` / `(open, no matches)` — and
-promoted `§2 C5` from FLAGGED to ARTBOARD. **Phase B (Developer) is
-pending:** an opt-in `searchable` prop that turns the trigger into an
-APG editable-combobox filter input over the existing option list
-(`label`-contains, `max-height ≈ 8 × --control-sm` then scroll, a
-`noMatchesLabel` row), `searchable` off = byte-unchanged, +3 Storybook
-stories.
+**Searchable mode — designed (Phase A) + built + proven (Phase B),
+2026-08-29.** `docs/sprints/kit-searchable-select-handoff.md`.
+
+- **Phase A** (kit Design Sprint) — 3 `6CG-0` state rows
+  (`Select — Searchable (closed)` / `(open, query typed, list filtered)`
+  / `(open, no matches)`); `§2 C5` FLAGGED → ARTBOARD.
+- **Phase B** (kit Developer Sprint) — `select.tsx` gains two additive
+  props: `searchable?: boolean` (default `false`) and
+  `noMatchesLabel?: string` (default `"No matches"`).
+  - `searchable` **off**: every new code path is inert; behaviour is
+    byte-identical to Session 10 (proved — the 9 pre-existing `Select`
+    stories' snapshots + play assertions pass untouched).
+  - `searchable` **on**: while **closed** the trigger is the existing
+    `<button role="combobox">` unchanged; on **open** it swaps to the
+    APG **"Editable Combobox With List Autocomplete (none)"** shape — a
+    `<div class="kit-field">` wrapper holding a 14px search glyph, an
+    `<input role="combobox">` (`aria-expanded` / `aria-controls` /
+    `aria-activedescendant` / `aria-autocomplete="list"` /
+    `aria-invalid` / `aria-describedby`, `.kit-focus-ring`), and a
+    decorative chevron. Typing sets `query`; the `<ul>` renders
+    `options.filter(o => o.label.toLowerCase().includes(query…))` with
+    stable per-`shown`-index option ids; `max-h-[calc(var(--control-md)*8)]`
+    + `overflow-y-auto`; the active option is `scrollIntoView({block:"nearest"})`
+    on Arrow nav. Empty result ⇒ one `<li>` **without** `role="option"`,
+    not focusable, `--text-tertiary` / `--text-sm`, text = `noMatchesLabel`;
+    `activeIdx` is `-1` and Enter is a no-op.
+  - Keyboard on the input: ArrowUp/Down/Home/End move `activeIdx` over
+    the filtered list; Enter commits `shown[activeIdx]` + closes + clears
+    the query; **first Esc clears a non-empty query, a second Esc
+    closes** (APG editable-combobox note); Tab commits the active option;
+    printable keys go to the browser (real filtering — no `typeaheadJump`
+    on the searchable path; `typeaheadJump` is untouched for the plain
+    path). On open the input is focused + its text selected; on close the
+    query is cleared and `current` is left unchanged if nothing committed.
+  - Tokens only — `--shadow-md`, `--z-dropdown`, `--radius-md`,
+    `--control-md` (popover cap), `--control-sm` (rows), `--sp-4`/`--sp-5`;
+    the search glyph stroke is `var(--text-tertiary)`.
+  - Stories added: `SearchableClosed`, `SearchableFocusRing`,
+    `SearchableOpenFiltered` (visual = the open filtered trigger, list
+    proven by play), `SearchableKeyboardCommit`, `SearchableNoMatch`.
+    Gates: `select.stories` slice 14/14 green (visual snapshots +
+    `test:a11y` axe + §9 `postVisit`); `tsc` 0; `pnpm test` no new
+    failures. `pnpm build` handed to the parallel Session 16.
 
 | aspect | BEFORE | AFTER |
 |---|---|---|

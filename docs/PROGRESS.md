@@ -5,6 +5,88 @@ shipped, what's blocked, what changed from plan.
 
 ---
 
+## 2026-08-29 — Kit Developer Sprint: `<Select>` searchable mode — Phase B (build) DONE
+
+**Role:** Developer (kit Developer Sprint, backend-independent). Handoff:
+`docs/sprints/kit-searchable-select-handoff.md` Phase B. Follows the
+Phase-A design sprint (same day, entry below).
+
+### Shipped
+
+- **`components/kit/select.tsx`** — two additive props:
+  `searchable?: boolean` (default `false`), `noMatchesLabel?: string`
+  (default `"No matches"`).
+  - `searchable` **off** ⇒ every new code path inert; behaviour
+    byte-identical to Session 10 (the 9 pre-existing `Select` stories
+    pass untouched — snapshots + play assertions).
+  - `searchable` **on** ⇒ closed trigger unchanged (`<button
+    role="combobox">`); open trigger swaps to the APG editable-combobox
+    shape — `<div class="kit-field">` + 14px search glyph + `<input
+    role="combobox">` (`aria-expanded`/`-controls`/`-activedescendant`/
+    `aria-autocomplete="list"`/`-invalid`/`-describedby`,
+    `.kit-focus-ring`) + decorative chevron. Typing filters the list
+    (`label`-contains, case-insensitive); option ids index into the
+    filtered list; `max-h-[calc(var(--control-md)*8)]` (288px, matches
+    the `6CG-0` artboard) + `overflow-y-auto`; active option
+    `scrollIntoView({block:"nearest"})` on Arrow nav; empty result ⇒ one
+    non-`role="option"`, non-focusable `noMatchesLabel` row, Enter no-op.
+  - Keyboard on the input: Arrow/Home/End over the filtered list; Enter
+    commits + closes + clears query; **first Esc clears a non-empty
+    query, second Esc closes**; Tab commits the active option; printable
+    keys → browser (real filtering, no `typeaheadJump` on this path;
+    `typeaheadJump` untouched for the plain path). Open ⇒ focus + select
+    the input's text; close ⇒ clear query, `current` unchanged if
+    nothing committed.
+  - Tokens only.
+
+- **`components/kit/select.stories.tsx`** — `SEARCH_OPTS` (6 items so
+  `"ric"` filters to 2) + 5 stories: `SearchableClosed`,
+  `SearchableFocusRing`, `SearchableOpenFiltered` (visual = the open
+  filtered trigger; list contents proven by play — the popover overflows
+  `#storybook-root` like the plain `Open` baseline),
+  `SearchableKeyboardCommit`, `SearchableNoMatch`.
+
+- **5 new baselines** in `tests/visual/__screenshots__/kit-select--searchable-*.png`.
+
+### Gates
+
+- `select.stories` slice through `test-storybook`: **14/14 green** —
+  visual snapshots (9 pre-existing byte-identical, 5 new written),
+  `test:a11y` axe (no serious/critical; typed-input placeholder scoped
+  off with the same systemic-FLAG comment as `Placeholder`), §9
+  `postVisit` (real focus-visible ring on the input, `.kit-field` accent
+  border).
+- `pnpm tsc --noEmit` exit 0.
+- `pnpm test` — 200/201, the 1 failure is the pre-existing
+  `opening.screen.test.tsx` (Session 17 B2, unchanged from baseline). 0
+  new failures.
+- `pnpm build` — **handed to the parallel Session 16** (per the user;
+  Session 16 owns the build step this cycle).
+- Full-kit `test:visual` / `test:a11y` not run (only `select.tsx`
+  changed; the Select slice covers it).
+
+### Provisional calls → ADR-48 (ADR-43-style review items, pending owner
+ratification in Storybook)
+
+1. Chevron decorative + whole open field toggles (no "Toggle options"
+   button).
+2. First-Esc-clears-query, second-Esc-closes (APG note).
+3. Popover cap = `calc(var(--control-md) * 8)` — the token that yields
+   the artboard's drawn 288px (the handoff's "8 × --control-sm" text is
+   self-inconsistent; its own arithmetic uses 36px).
+
+(Phase A's "no substring highlight" + generic `"No matches"` copy also
+recorded there.)
+
+### Follow-up (NOT this session)
+
+- A Development Sprint swaps `app/admin/financials/payment-drawer.tsx`
+  from its Session 16 interim (`ingredient`+`goods` filter + plain
+  `Select`) to `<Select searchable>`. Session 16 has confirmed they are
+  leaving the `<Select>` control alone and treat this as a later edit.
+
+---
+
 ## 2026-08-29 — Kit Design Sprint: `<Select>` searchable mode — Phase A (design) DONE; Phase B (build) NOT STARTED
 
 **Role:** Product Designer (kit Design Sprint). Paper artboards + spec

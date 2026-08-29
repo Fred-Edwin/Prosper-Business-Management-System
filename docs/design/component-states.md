@@ -875,7 +875,7 @@ per-component before → after record).
 | C2 IconButton | default, hover/active/focus, disabled | **implemented** |
 | C3 TextInput | default/focus/filled/error/disabled | **implemented** — `.kit-field` + `<FormField>` (helper row + `aria-describedby`) |
 | C4 Textarea | default/focus/error/disabled | **implemented** — as C3 |
-| C5 Select | closed/focus/**open**/filled/error/disabled | **implemented** — real APG listbox (arrow/Home-End/type-ahead/`aria-activedescendant`) |
+| C5 Select | closed/focus/**open**/filled/error/disabled | **implemented** — real APG listbox (arrow/Home-End/type-ahead/`aria-activedescendant`). **`searchable` mode implemented + proven** (2026-08-29, `kit-searchable-select-handoff.md` Phase B) — opt-in `searchable` + `noMatchesLabel` props; open ⇒ APG editable-combobox filter input, `label`-contains filter, `max-h` = 8 × `--control-md` + scroll, non-interactive `noMatchesLabel` row; `searchable` off = byte-unchanged. 5 `Searchable*` stories green under `test:visual` + `test:a11y` + §9 `postVisit`. |
 | C6 SegmentedControl | active/resting/hover/disabled | **implemented** — roving tabindex + arrows; `--shadow-sm` lift |
 | C7 ToggleSwitch | on/off/disabled/focus | **implemented** |
 | C8 SearchInput | default/focus/**filled+clear** | **implemented** — + `aria-label`, `role="search"`, Esc-to-clear |

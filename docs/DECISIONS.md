@@ -1932,3 +1932,53 @@ shapes:
   M1 enforces it" that ADR-23 left open.
 - `component-states.md §2` gains: `SimpleTable` — "Archived tab" row
   treatment; `Drawer` — archived-guard caption.
+
+---
+
+## ADR-48: `Select` `searchable` mode — three provisional implementation calls (kit Developer Sprint, `kit-searchable-select-handoff.md` Phase B, 2026-08-29)
+
+**Status:** REVIEW ITEMS — pending owner ratification in the running
+Storybook (ADR-43 pattern). Built + gated (`select.stories` slice 14/14:
+`test:visual` + `test:a11y` + §9 `postVisit`; `tsc` 0; `pnpm test` no new
+failures). `searchable` off = byte-unchanged, so nothing regresses if a
+call is later reversed.
+
+**Context.** ADR-46 §6 authorised an opt-in `searchable` mode on the kit
+`Select` (a filter input over the option list) for the Financials
+payment-drawer product picker. The handoff (Phase B) left three points
+"decide + document":
+
+1. **Chevron is decorative; the whole open field toggles.** In the open
+   searchable state the trigger is the APG "Editable Combobox With List
+   Autocomplete (none)" shape — `<input role="combobox">` inside a
+   `<div class="kit-field">`. The chevron is a plain `aria-hidden` SVG
+   (no `<button>`), and clicking anywhere on the wrapper focuses the
+   input. Rationale: a second focusable "Toggle options" button adds a
+   tab stop and an extra ARIA element for no user gain when the field is
+   already open and the list is already visible; ArrowUp/Down and Esc
+   cover keyboard toggling. *Reversible* — add
+   `<button tabindex="-1" aria-label="Toggle options">` around the
+   chevron if review wants an explicit affordance.
+
+2. **First Esc clears a non-empty query; a second Esc (or Esc on an
+   empty query) closes.** Matches the APG editable-combobox note. On the
+   non-searchable path Esc still closes immediately (unchanged).
+
+3. **Popover height cap = `calc(var(--control-md) * 8)` = 288px.** The
+   `6CG-0` "Select — Searchable (open…)" artboard was drawn at
+   `max-height: 288px`; the handoff text says "≈ 8 × --control-sm (≈ 8 ×
+   36px = 288px)" but `--control-sm` is 32px, so its own arithmetic uses
+   36px = `--control-md`. `--control-md` is the token that yields the
+   drawn value, so the code uses `max-h-[calc(var(--control-md)*8)]`.
+   Option rows themselves stay `h-(--control-sm)` (32px), unchanged.
+
+**Also settled in Phase A (not a Phase-B call, recorded here for
+completeness):** the matched substring in a filtered option label is
+**not** highlighted; the empty-result copy is the generic `"No matches"`,
+overridable per call via `noMatchesLabel`.
+
+**Not in scope** (unchanged from the handoff): no autocomplete-inline, no
+multi-select, no async/remote options; no change to the non-searchable
+`Select` beyond making the new paths inert; no screen file — the
+payment-drawer swap to `<Select searchable>` is a later Development-Sprint
+edit.

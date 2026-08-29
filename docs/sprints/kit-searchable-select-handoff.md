@@ -1,6 +1,8 @@
 # Handoff — Kit: add a `searchable` mode to `<Select>` (design + build)
 
-**Status:** PHASE A DONE (2026-08-29). PHASE B NOT STARTED.
+**Status:** DONE (2026-08-29). Phase A + Phase B complete. `pnpm build`
+verification handed to the parallel Session 16 per the user; the screen
+swap to `<Select searchable>` remains a later Development-Sprint edit.
 **Origin:** flagged in **ADR-46 §6** (Design Sprint Session 15) and
 `docs/design/component-states.md §2 C5`. The Financials payment-drawer
 product picker will hold many products in production; a plain dropdown is
@@ -369,6 +371,25 @@ query filters to 2).
   payment-drawer swap is a normal Development-Sprint task
   (`session-16-handoff.md` §3 uses the interim until this ships; a
   follow-up flips it).
+
+**Phase B completion note (2026-08-29):** all exit criteria met except
+the `pnpm build` line, which was **handed to the parallel Session 16**
+at the user's direction (Session 16 owns the build step this cycle) —
+`tsc` 0 and `pnpm test` (0 new failures) were verified here. Delivered:
+`searchable` + `noMatchesLabel` props (`searchable` off = byte-unchanged,
+proven by 9 untouched `Select` snapshots + play assertions); 5
+`Searchable*` stories (`SearchableClosed` / `SearchableFocusRing` /
+`SearchableOpenFiltered` / `SearchableKeyboardCommit` / `SearchableNoMatch`)
+— the `select.stories` slice is 14/14 green under `test:visual` +
+`test:a11y` + §9 `postVisit`; 5 new baselines committed. Provisional
+calls (chevron decorative + field toggles; first-Esc-clears-query;
+popover cap = `calc(var(--control-md)*8)` = the artboard's 288px) →
+**ADR-48** (ADR-43-style review items). `SearchableOpenFiltered` is 4
+stories not 3 because the handoff's single "type + assert filtered +
+Enter commits" story was split so the visual snapshot lands on the open
+filtered trigger (matching the artboard) rather than the committed
+closed end-state — `SearchableKeyboardCommit` carries the Enter-commit
+assertion.
 
 ---
 
