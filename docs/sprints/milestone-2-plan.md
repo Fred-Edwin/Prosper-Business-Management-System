@@ -217,16 +217,24 @@ contract, Storybook story per state, visual-regression baseline, `axe`
 a11y, §9 `postVisit`) **before any screen composes it** (guardrail 1,
 ADR-42). This is the ADR-48 model.
 
-| Candidate | One-line spec |
-|---|---|
-| Order-line editor | repeatable row: product + qty stepper + unit price + subtotal, add / remove; empty state |
-| Payment-method selector | segmented (Cash / M-Pesa / Credit) with the Credit → customer-attach branch surfaced |
-| Running-total bar | sticky footer showing order total, updates as lines change |
-| Customer picker + quick-create | searchable select over customers with an inline "add new" affordance |
-| Derived-sales preview card | "since last count on {date}: sold {n}, revenue KES {y}" shown before the attendant confirms |
+| Candidate | One-line spec | Session 1 (M2-01) verdict |
+|---|---|---|
+| Order-line editor | repeatable row: product + qty stepper + unit price + subtotal, add / remove; empty state | **compose** — per-screen row from `QuantityStepper` + flex + `IconButton`; states on the "M2 Sales Patterns" artboard |
+| Payment-method selector | segmented (Cash / M-Pesa / Credit) with the Credit → customer-attach branch surfaced | **compose** — `SegmentedControl` + a screen-level branch |
+| Running-total bar | sticky footer showing order total, updates as lines change | **compose** — `DenseSummaryStrip` + the shell's sticky action-bar slot |
+| Customer picker + quick-create | searchable select over customers with an inline "add new" affordance | **compose** — `Select searchable` in a `BottomSheet` + an extra non-`role=option` "Add new" row + a 2-field inline form |
+| Derived-sales preview card | "since last count on {date}: sold {n}, revenue KES {y}" shown before the attendant confirms | **compose** — `CalculatedImpactBanner` is an exact fit (`component-states.md` C23) |
+| **`QuantityStepper` — tap-to-type value** | the stepper's value becomes a real numeric input: − / + unchanged, tap the number to type a large quantity (`inputmode="decimal"`) | **KIT CHANGE — Session 2 builds it.** Already flagged in `kit-audit.md` C10. States drawn in M2-01 on `6CG-0` (rest · value focused · at-bound · error). Full ADR-42 gate. |
 
-If Session 1 concludes **no new component is required**, Session 2 is
-skipped and M2 is **6 sessions**.
+**Session 1 (M2-01) verdict: one kit change is required** — the
+`QuantityStepper` tap-to-type value. **Session 2 runs.** M2 stays a
+**7-session** milestone. (See §7 for the 1a/1b split of Session 1.)
+
+**New field flagged in M2-01 (not a component):** products gain a
+**`category`** attribute (Admin-set, powers the C2 / K1 product-grid
+category tab row — the existing kit `Tabs`). Needs a `prisma/schema.prisma`
+column, Catalog UI to set it, and a `PRD.md` §4.1 line. Folded into the
+Session 3 backend + a Catalog follow-up; see §10.
 
 ---
 
@@ -240,15 +248,17 @@ backend exists before the frontend session, so there is nothing to mock.
 
 | # | Session | Role | Scope | Done when |
 |---|---|---|---|---|
-| 1 | Design Sprint | Product Designer | All M2 screens (C1–C6, A1–A4, K1–K2) in Paper from the approved kit; 3 flow docs; the confirmed new-component list with a one-line spec each. (§3.8 resolved 2026-08-29: BLOCK.) Split 1a/1b only if context runs out. | Screens approved in Paper; flow docs written; new-component list final; no real logic written. |
-| 2 | Kit Sprint | Developer (kit) | Design each new component's states in Paper, then build in `components/kit/*`: §9 contract, Storybook story per state, visual-regression baselines, `axe` + `postVisit` gates. **No screens.** *(Skipped if Session 1 finds none.)* | New components merged; `test:visual` + `test:a11y` green; kit gallery updated. |
+| 1a | Design Sprint | Product Designer | **DONE 2026-08-29 (M2-01).** All **Cashier** screens (C1–C6) in Paper from the approved kit — 22 artboards incl. every structural state; 3 flow docs written (`restaurant-sales-flow.md`, `customers-credit-flow.md`, `canteen-derived-sales-flow.md`); §3.8 resolved (**BLOCK**); new-component verdict (**one kit change** — `QuantityStepper` tap-to-type); C2 redesigned to a tap-to-add product grid + category tabs; C3/C5 drawn as bottom-sheet overlays; "M2 Sales Patterns" component artboard + `6CG-0` stepper states. | Cashier screens approved in Paper; flow docs written; new-component list final; no real logic written. |
+| 1b | Design Sprint | Product Designer | **Admin + Canteen** screens (A1–A4, K1–K2) in Paper against the flow docs from 1a — desktop **and** mobile per screen, every structural state (drawer/sheet open, empty, filtered-empty, error, loading). K1's product picker reuses the C2 category tab row. No real logic. | A1–A4, K1–K2 approved in Paper; every state artboarded; flow docs' Artboards lists updated. |
+| 2 | Kit Sprint | Developer (kit) | Build the **`QuantityStepper` tap-to-type value** in `components/kit/quantity-stepper.tsx`: `<span>` → `<input inputmode="decimal">`, − / + unchanged, §9 contract, Storybook story per state (rest · value-focused · at-bound · error, from the `6CG-0` artboard), visual-regression baselines, `axe` + `postVisit`. **No screens.** | Component merged; `test:visual` + `test:a11y` green; kit gallery updated. |
 | 3 | Development Sprint | Developer | Money ledger (`recordMoneyMovement`, `getAccountBalances`) + `lib/domain/customers` + customer/repayment routes + tests. **DONE 2026-08-29** — `MoneySourceType` migration applied (`db push`); `recordDebt(tx)` helper added for S4; overpayment allowed (flagged); `pnpm test` 268/268. | Balances derive from rows; repayment writes a money movement; tests green; `tsc` + `build` clean. |
 | 4 | Development Sprint | Developer | `lib/domain/sales` orders — create / edit-own / correct / list; order routes; tests (see §4). | All order paths + correction reversal + role isolation tested green. |
 | 5 | Development Sprint | Developer | `lib/domain/sales` canteen slice — `recordStockCount` + derivation + revenue movement; routes; tests. | Derivation matches a hand-worked ledger across a period boundary; tests green. |
 | 6 | Development Sprint | Developer | Assemble **all** M2 screens into their real routes from the Paper screenshots; wire to `lib/domain`; `use-orders.ts` / `use-customers.ts` hooks; per-screen jsdom+RTL specs. **No UI decisions** — flag and stop if one surfaces. Then the **owner walkthrough** of each feature (guardrail 3). Split Cashier / (Admin+Canteen) only if running hot. | Every screen live on real data; screen specs green; owner has walked each feature as every relevant role on `pnpm dev`. |
 | 7 | QA Sprint | QA Engineer | Adversarial pass against every M2 acceptance criterion, the 3 flow docs, the approved screens. Report before fixing. | Findings report delivered; fixes applied with regression tests; full suite + `tsc` + `build` + kit gates green; PROGRESS + ROADMAP updated. |
 
-**Count: 7 sessions** (6 if Session 2 is not needed).
+**Count: 8 session-slots** (Session 1 split into 1a done / 1b pending;
+Session 2 confirmed needed). Sessions 3–7 unchanged.
 
 ### Allowed concurrency
 
@@ -261,8 +271,11 @@ surface — and §3.8 is resolved. So sessions may overlap:
   + tests + the `SCHEMA.md`/`API.md` sections it owns). No decision
   dependency.
 - **Session 4 ‖ Session 5** — both start once S3 has landed.
-- **Session 2** (only if S1 finds a new component) runs after S1 and may
-  overlap S4/S5.
+- **Session 1b** ‖ Session 4 ‖ Session 5 — 1b is `docs/design/**` +
+  Paper only, disjoint from the domain sessions.
+- **Session 2** (confirmed: the `QuantityStepper` tap-to-type change)
+  runs after 1a and may overlap 1b / S4 / S5. It must land before S6
+  assembles the Cashier screens.
 
 **Hard ordering that still holds:** S3 → {S4, S5} — S4's `createOrder`
 writes a `MoneyMovement` or a `Debt`, and a credit order needs a
@@ -341,3 +354,19 @@ current reality; this is the history of how it got there.)*
 - 2026-08-29 — Corrected §2: a migration **is** needed after all — the
   `MoneySourceType` enum lacks `order` / `repayment` / `canteen_sale`;
   Session 3 owns that `ALTER TYPE … ADD VALUE` migration.
+- 2026-08-29 — **Session 1 split into 1a (done) / 1b (pending).** M2-01
+  delivered the Cashier screens (C1–C6, 22 artboards), the 3 flow docs,
+  and the §6 verdict; the Admin + Canteen screens (A1–A4, K1–K2) move to
+  Session 1b. §7 table re-baselined.
+- 2026-08-29 — **Session 2 confirmed needed.** M2-01's new-component
+  verdict is **one kit change**: `QuantityStepper` gains a tap-to-type
+  numeric value (already flagged in `kit-audit.md` C10) for large order
+  quantities. States drawn on `6CG-0`. Everything else on the §6
+  candidate list composes from the proven kit.
+- 2026-08-29 — **New product field `category` flagged** (M2-01). C2's
+  order screen was redesigned to a tap-to-add 2-column product grid with
+  a category tab row (POS-standard; owner direction) — the tabs need a
+  new Admin-set `category` attribute on products. Adds: a
+  `prisma/schema.prisma` column + Catalog UI + a `PRD.md` §4.1 line —
+  folded into Session 3's backend scope and a Catalog follow-up. C3 and
+  C5 were also redrawn as bottom-sheet overlays (mobile-POS convention).

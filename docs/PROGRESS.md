@@ -17,8 +17,71 @@ Running status log, updated at the end of every sprint session.
 
 ## Milestone 2 — Staff can sell, every day
 
-**Plan:** `docs/sprints/milestone-2-plan.md` (living — 7 sessions, 6 if no
-new component). **Status:** planned; Session 1 not started.
+**Plan:** `docs/sprints/milestone-2-plan.md` (living — 8 session-slots:
+Session 1 split 1a done / 1b pending, Session 2 confirmed needed).
+**Status:** Session 3 done (backend); Session 1a done (Cashier design);
+1b, 2, 4, 5 pending.
+
+### 2026-08-29 — M2 Session 1a: Cashier screens design (Product Designer) — DONE
+
+Design Sprint, Phase A. Ran after Session 3 landed. Scoped **mid-session
+by the owner** to the Cashier screens only (C1–C6); the Admin (A1–A4) and
+Canteen (K1–K2) screens moved to a new **Session 1b**. The 3 flow docs
+were written in full (all of M2), so the backend sessions are unblocked.
+
+**Shipped — Paper ("Prosper Hotel", page "Shell+Component kit"):**
+22 Cashier artboards + 1 component artboard, all named `… [M2-01]`.
+- **C1 Cashier Today** (4): populated · empty · day-closed banner · loading.
+- **C2 New Order — build** (3): populated · empty · line-blocked (§3.8).
+  **Redesigned** from a search-only add flow to a **tap-to-add 2-column
+  product grid** (POS-standard): search → category tab row → tappable
+  tiles (name · price · unit · stock-available · qty badge) → a pinned
+  order-line panel above the sticky total bar.
+- **C3 Checkout** (5): Cash · M-Pesa · Credit-no-customer · Credit-attached
+  · Delivery — all drawn as a **tall bottom-sheet over the dimmed C2**
+  (mobile-POS convention; Square / Toast / Loyverse open tender as a
+  modal sheet, not a route).
+- **C4 Order detail** (3): day-open editable · day-closed read-only ·
+  corrected.
+- **C5 Customer attach** (3): search results · no-match quick-create ·
+  phone error — bottom-sheet over the dimmed C3.
+- **C6 Customers (mobile)** (4): populated · empty · repayment sheet open
+  · repayment success.
+- **`Component Kit — M2 Sales Patterns [M2-01]`** — canonical states for
+  the order-line row, product tile, and sticky total bar. **`6CG-0`
+  Form Controls** — `QuantityStepper` tap-to-type states added.
+
+**Flow docs (all written, full M2 scope):**
+`restaurant-sales-flow.md`, `customers-credit-flow.md`,
+`canteen-derived-sales-flow.md` — match the
+`financials-reconciliation-flow.md` format. The customers + canteen docs
+carry a note that their Admin/Canteen artboards are owed by Session 1b.
+
+**Decisions:**
+- **§3.8 — BLOCK.** A Restaurant order line whose qty exceeds the
+  product's derived stock-available count cannot be confirmed (line →
+  §9.8 error pattern, sticky action disabled + danger caption; server
+  enforces `400 insufficient_stock`). Recorded in `restaurant-sales-flow.md`.
+- **New-component verdict: ONE kit change → Session 2 runs.**
+  `QuantityStepper` gains a **tap-to-type numeric value** (`<span>` →
+  `<input inputmode="decimal">`; − / + unchanged) for large order
+  quantities — already flagged in `kit-audit.md` C10. Everything else on
+  the plan §6 list composes from the proven kit.
+
+**Changed from plan:**
+- **Session 1 → 1a (done) / 1b (pending).** §7 re-baselined, §10 changelog
+  appended. M2 is now 8 session-slots.
+- **Session 2 confirmed needed** (was "skipped if none").
+- **New product `category` field flagged** — the C2 / K1 category tab row
+  needs an Admin-set `category` attribute on products (schema column +
+  Catalog UI + `PRD.md` §4.1 line). Folded into Session 3's backend +
+  a Catalog follow-up; `milestone-2-plan.md` §6/§10.
+
+**Gate state:** design-only session — no code, no tests. Discipline held:
+only `docs/**` and the Paper file were touched.
+
+**Owed by Session 1b:** A1–A4, K1–K2 — desktop **and** mobile, every
+structural state.
 
 ### 2026-08-29 — M2 planning + doc/codebase cleanup (Tech Lead) — DONE
 

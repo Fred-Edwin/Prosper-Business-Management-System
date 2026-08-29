@@ -6,11 +6,11 @@
 
 **Milestone:** 2 — *Staff can sell, every day*
 **Type:** Design Sprint (Phase 3 Feature Loop — Phase A only)
-**Session #:** 1 of 7 (see `milestone-2-plan.md` §7)
+**Session #:** 1 of 7 — **ran as Session 1a** (Cashier screens); A1–A4 + K1–K2 moved to **Session 1b** (see `milestone-2-plan.md` §7 / §10, and §8 below)
 **Role:** Product Designer (feature-scoped) — **one role, this session**
 **Paper.design file:** "Prosper Hotel" — fileId `01M0EZ7TAHZM26KBMWNYT0928X` (the one canonical visual source of truth; do not start a new file)
 **Target routes (for later sessions, not this one):** `app/cashier/**`, `app/admin/customers/**`, `app/admin/orders/**`, `app/admin/canteen/**`, `app/canteen/**`
-**Status:** ready-to-start
+**Status:** completed (as Session 1a) — Session 1b tracked in `milestone-2-plan.md` §7
 
 ---
 
@@ -245,38 +245,47 @@ do not design an allow-negative path.
 ## 7. Acceptance criteria (Design Sprint — Phase A only)
 
 ### Paper deliverables
-- [ ] C1–C6 artboards created in the canonical Paper file (mobile; desktop
-      only where materially different).
-- [ ] A1–A4 artboards created (desktop **and** mobile).
-- [ ] K1 artboard created; K2 shown as a new entry type in the existing
-      Canteen hub timeline artboard.
-- [ ] Every structurally-distinct screen-state listed in §3 exists as its
-      own artboard (drawer/sheet open, empty, filtered-empty, error,
-      loading).
-- [ ] Every component used is pulled into **one** canonical component
-      artboard with all its states; **no component has two divergent
-      versions** anywhere in the file.
-- [ ] Token audit: no raw hex, 14px base, hairline borders, Lucide icons,
-      `tabular-nums` on numeric columns.
+- [x] **C1–C6 artboards created** in the canonical Paper file (mobile;
+      C3/C5 as bottom-sheet overlays). 22 artboards. *(Session 1a.)*
+- [ ] **A1–A4 artboards** (desktop **and** mobile) — **Session 1b.**
+- [ ] **K1 artboard; K2** as a new entry type in the existing Canteen hub
+      timeline artboard — **Session 1b.**
+- [x] Every structurally-distinct **Cashier** screen-state exists as its
+      own artboard (sheet open, empty, day-closed, error/loading).
+      *(A/K states → Session 1b.)*
+- [x] Every M2 Cashier pattern pulled into **one** canonical artboard
+      ("Component Kit — M2 Sales Patterns [M2-01]") with its states;
+      `QuantityStepper` tap-to-type states on `6CG-0`. No component has
+      two divergent versions.
+- [x] Token audit (Cashier set): house tokens only, no raw hex except the
+      one `#3D1E70`→corrected (C5 scrim rebuilt), 14px base, hairline
+      borders, Lucide icons, `--font-mono` + tabular numerics on money /
+      qty. *(One raw `rgb(17 24 39 / …)` scrim value used as a schematic
+      "dimmed screen behind" — acceptable for an overlay artboard; the
+      real screen uses `.kit-scrim`.)*
 
 ### Flow docs
-- [ ] `docs/design/flows/restaurant-sales-flow.md` written (order build →
+- [x] `docs/design/flows/restaurant-sales-flow.md` written (order build →
       checkout → payment branches → edit-own vs correct; the §6 BLOCK
-      behaviour for insufficient stock).
-- [ ] `docs/design/flows/customers-credit-flow.md` written (credit order →
-      debt; repayment → money movement; balance derivation as seen by
-      Cashier vs Admin).
-- [ ] `docs/design/flows/canteen-derived-sales-flow.md` written (count →
+      behaviour for insufficient stock; C2 grid + category tabs; C3/C5
+      overlays).
+- [x] `docs/design/flows/customers-credit-flow.md` written (credit order →
+      debt; repayment → money movement; balance derivation Cashier vs
+      Admin). *(A1–A3 artboards → 1b; narrative complete.)*
+- [x] `docs/design/flows/canteen-derived-sales-flow.md` written (count →
       preview → confirm → derived sale + closing + revenue movement; the
-      period-boundary case).
-- [ ] Each flow doc matches the format of
+      period-boundary case). *(K1/K2/A4 artboards → 1b; narrative
+      complete.)*
+- [x] Each flow doc matches the format of
       `docs/design/flows/financials-reconciliation-flow.md`.
 
 ### New-component list
-- [ ] Final list produced: per candidate, verdict (new component / new
-      variant / compose from existing), one-line spec, consuming screens.
-- [ ] If **empty**, stated explicitly here and in Session Notes → Session 2
-      is skipped, M2 is 6 sessions.
+- [x] Final list produced (§8): **one kit change** —
+      `QuantityStepper` tap-to-type value (Session 2 builds it).
+      Everything else composes from the proven kit, with a per-pattern
+      "compose from" note and consuming screens.
+- [x] Not empty → **Session 2 runs.** M2 stays 7 sessions (Session 1
+      split 1a/1b).
 
 ### Discipline
 - [ ] **No** files changed under `lib/`, `app/api/`, `components/kit/`,
@@ -287,37 +296,101 @@ do not design an allow-negative path.
       `app/api/customers*` + the money/customers parts of `SCHEMA.md` /
       `API.md`. Stay out of those. If both sessions need to write
       `docs/PROGRESS.md` or `milestone-2-plan.md`, rebase and append.
-- [ ] `docs/PROGRESS.md` updated with the Session 1 entry (what was
-      designed, the new-component verdict, anything flagged).
-- [ ] `milestone-2-plan.md` §7 status for Session 1 updated; §10 changelog
-      line added if sequencing changed (e.g. Session 2 dropped).
-- [ ] This file's `Status:` set to `completed`.
+- [x] `docs/PROGRESS.md` updated with the Session 1a entry.
+- [x] `milestone-2-plan.md` §7 re-baselined (1a done / 1b pending,
+      Session 2 confirmed); §10 changelog lines added.
+- [x] This file's `Status:` set to `completed (as Session 1a)`.
 
 ---
 
 ## 8. Session Notes
 
-*(Live notes added during the session.)*
+**M2-01 ran as Session 1a — Cashier screens only.** The Admin (A1–A4)
+and Canteen (K1–K2) screens moved to **Session 1b**. This was a
+deliberate scope call by the owner mid-session, not a context-limit
+split. The 3 flow docs cover all of M2 and were written in full, so
+Sessions 3–5 (backend) are unblocked; 1b produces the remaining
+artboards against those docs. `milestone-2-plan.md` §7 re-baselined,
+§10 changelog appended.
 
-- **§3.8 (insufficient Restaurant stock):** DECIDED before this session —
-  BLOCK (see §6). Nothing to decide; just design C2 to it.
-- **New-component verdict:** _TBD — list, or "none; Session 2 skipped"._
-- **Paper artboard links:** _add per-screen frame URLs as created._
-- **Flags / escalations:** _none yet._
+- **§3.8 (insufficient Restaurant stock):** DECIDED — **BLOCK.** A
+  Restaurant order line whose qty exceeds the product's derived
+  stock-available count cannot be confirmed: the line renders in the
+  §9.8 error pattern, the sticky bar's Review/Checkout action is
+  disabled with a `--color-danger` caption, and `createOrder` /
+  `editOwnOrder` enforce it server-side (`400 insufficient_stock`).
+  Reasoning in `restaurant-sales-flow.md` §"The §3.8 decision".
+
+- **New-component verdict:** **ONE kit change → Session 2 runs.**
+  - **`QuantityStepper` — tap-to-type value** (KIT CHANGE, Session 2).
+    The value `<span>` becomes an `<input inputmode="decimal">`; − / +
+    unchanged; tapping the number opens inline numeric entry for large
+    order quantities. Already flagged in `kit-audit.md` C10. States
+    drawn this session on `6CG-0` (rest · value-focused · at-bound ·
+    error). Consumed by C2 and C4.
+  - Everything else on the plan §6 candidate list **composes** from the
+    proven kit — order-line row, product-tile grid, category tab row
+    (existing `Tabs`), payment/order-type selector (`SegmentedControl`),
+    customer picker + quick-create (`Select searchable` + `BottomSheet`),
+    sticky total bar (`DenseSummaryStrip`), derived-sales preview
+    (`CalculatedImpactBanner`), C3/C5 sheets (`BottomSheet`). States for
+    the composed patterns are on the new **"Component Kit — M2 Sales
+    Patterns [M2-01]"** artboard.
+
+- **Design changes made mid-session (owner direction):**
+  1. **C2 redesigned** from a search-only add flow to a **tap-to-add
+     2-column product grid** (POS-standard — Square / Toast / Loyverse
+     phone layout): search bar → category tab row → tappable tiles
+     (name · price · unit · stock-available · qty badge) → pinned
+     order-line panel above the sticky total bar. Fewer taps, fewer
+     errors, stock visible before selling.
+  2. **New product `category` field flagged.** The C2 (and K1) category
+     tab row needs a new Admin-set `category` attribute on products.
+     NOT built this session — needs a `prisma/schema.prisma` column,
+     Catalog UI, and a `PRD.md` §4.1 line. Folded into Session 3's
+     backend + a Catalog follow-up. `milestone-2-plan.md` §6/§10.
+  3. **C3 and C5 drawn as bottom-sheet overlays** (dimmed parent screen
+     + scrim + panel), not standalone screens — the mobile-POS
+     convention for tender/lookup steps. C3 = a tall "Checkout" sheet
+     over the dimmed C2; C5 = a sheet over the dimmed C3.
+
+- **Paper artboards (page "Shell+Component kit"):** 22 Cashier screens +
+  1 component artboard. Named `C1 … [M2-01]` … `C6 … [M2-01]` and
+  `Component Kit — M2 Sales Patterns [M2-01]`; `QuantityStepper`
+  tap-to-type states appended to `Component Kit — Form Controls`
+  (`6CG-0`). Full list in each flow doc's "Artboards" section.
+
+- **Flags / escalations:**
+  - New `category` product field (see above) — Session 3 / Catalog.
+  - `QuantityStepper` tap-to-type is a real behaviour change to a proven
+    kit component — Session 2 must re-gate it (ADR-42).
+  - **Session 1b owed:** A1–A4, K1–K2, desktop + mobile, all states.
 
 ---
 
 ## 9. Handoff to the next session
 
-- **Session 3 (Development Sprint — money ledger + Customers & Credit)**
-  can start immediately and run in parallel with this session; it does
-  not wait on the artboards. Its handoff:
-  `docs/sprints/milestone-2-session-3-handoff.md`.
-- **If this session identifies new components →** Session 2 (Kit Sprint):
-  design each new component's states in Paper, build in `components/kit/*`
-  with the full ADR-42 gate, no screens. It may overlap Sessions 4/5.
-- **If none →** Session 2 is skipped; set the plan §7 count to 6 and add
-  a §10 changelog line.
+- **Session 1b (Design Sprint — Product Designer)** — the Admin (A1–A4)
+  and Canteen (K1–K2) screens, in Paper, against the 3 flow docs written
+  in 1a. Desktop **and** mobile per screen; every structural state
+  (drawer/sheet open, empty, filtered-empty, error, loading). Reuse:
+  the Admin desktop shell (`649-0`), the staff mobile shell (`4Y-0`),
+  `SimpleTable` / `DenseLedger`, `Drawer` (rail), the C2 category tab
+  row for K1's product picker, `CalculatedImpactBanner` for K1's
+  derived-sales preview, `ActivityTimeline` for K2. The
+  "M2 Sales Patterns" artboard already holds the order-line / tile /
+  total-bar states — extend it if A/K introduce a new pattern. No real
+  logic. Then update each flow doc's "Artboards" list.
+- **Session 2 (Kit Sprint — Developer)** — build the `QuantityStepper`
+  tap-to-type value (`<span>` → `<input inputmode="decimal">`), states
+  from `6CG-0`, full ADR-42 gate (Storybook story per state,
+  `test:visual` + `test:a11y` + `postVisit`). No screens. May overlap
+  1b / S4 / S5; must land before S6 assembles the Cashier screens.
+- **Session 3 (money ledger + Customers & Credit)** — **DONE
+  2026-08-29**, ran in parallel. Session 3 (or a Catalog follow-up) also
+  owns the new **`category`** product field: `prisma/schema.prisma`
+  column + `PRD.md` §4.1 line + Catalog UI to set it.
+- **Sessions 4 / 5** — orders and the canteen slice; build on S3.
 - The assembled screens are built in **Session 6** from these artboards
   (screenshot → assemble kit → wire to `lib/domain`), per
-  `export-workflow.md` Phase C2 — after S3–S5 land.
+  `export-workflow.md` Phase C2 — after 1b, S2, and S3–S5 land.
