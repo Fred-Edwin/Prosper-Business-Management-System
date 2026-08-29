@@ -25,13 +25,18 @@ stop — you have left the sprint.
 **As of Milestone 2 the Design Sprint also does not export a code skeleton.**
 There is no `get_jsx` transcription, no `fixtures.ts`, no `/design-preview/<slug>`
 route, no `TODO(mock)` layer. The M2 flow is: this session produces **approved
-Paper artboards + flow docs + a confirmed new-component list + the §3.8
-decision**; Session 2 builds any new kit component; Sessions 3–5 build the
-backend; Session 6 screenshots these artboards and assembles the real screens
-from the proven kit. See `export-workflow.md` "As of Milestone 2 the flow
-simplified further."
+Paper artboards + flow docs + a confirmed new-component list**; Session 2
+builds any new kit component; Sessions 3–5 build the backend; Session 6
+screenshots these artboards and assembles the real screens from the proven
+kit. See `export-workflow.md` "As of Milestone 2 the flow simplified further."
 
-**Deliverables of THIS session (all four required):**
+**§3.8 is already decided (owner, 2026-08-29): BLOCK.** An order cannot be
+saved while any line's quantity exceeds the current derived Restaurant
+balance; the balance never goes negative. Design C2 *to* this — an inline,
+per-line "only N available" treatment that prevents adding/confirming the
+line — do not re-open the question.
+
+**Deliverables of THIS session (all three required):**
 
 1. Every M2 screen (C1–C6, A1–A4, K1–K2) as an approved artboard in the
    canonical Paper file, including every structurally-distinct screen-state
@@ -45,11 +50,9 @@ simplified further."
    component with a new variant/prop. This list is the input to Session 2
    (Kit Sprint). **If the list is empty, say so explicitly in the Session
    Notes** — Session 2 is then skipped and M2 becomes a 6-session milestone.
-4. A written decision on **open question §3.8** (insufficient Restaurant
-   stock on an order line — block the sale, or allow the balance negative
-   and flag it). Record it in `restaurant-sales-flow.md` and in this file's
-   Session Notes. If you cannot decide it as a design call, escalate it in
-   `PROGRESS.md` rather than leaving it open.
+   Capture the §3.8 BLOCK behaviour in `restaurant-sales-flow.md` (the
+   C2 inline "only N available" per-line treatment; save disabled while
+   any line is over) — it is a decided contract, not an open question.
 
 ---
 
@@ -217,20 +220,25 @@ Existing kit that likely covers most of these: `segmented-control`,
 
 ---
 
-## 6. Open question to resolve this session (plan §3.8)
+## 6. §3.8 — decided: BLOCK insufficient-stock order lines
 
-**An order line at the Restaurant for a Dish/Goods whose stock is
-insufficient — block the sale, or allow the balance to go negative and flag
-it?** PRD is silent.
+**Decided by the owner, 2026-08-29 (plan §3.8 / changelog).** An order
+**cannot be saved** while any line's quantity exceeds the current derived
+Restaurant balance for that product; the balance is never allowed to go
+negative. `createOrder` / `editOwnOrder` reject naming the short line(s)
+and write nothing.
 
-- This is a **design + flow** decision about the Cashier's C2 experience and
-  what the domain will enforce in Session 4. Decide it here so Session 4
-  isn't blocked.
-- Record the decision, with reasoning, in `restaurant-sales-flow.md` **and**
-  in §8 Session Notes below.
-- If it genuinely cannot be settled as a design call (e.g. it needs an owner
-  policy decision), escalate in `docs/PROGRESS.md` and mark it BLOCKED here
-  — do not design both paths "just in case."
+Design C2 to this:
+
+- Per line, once a product is chosen, show its available quantity ("only
+  {N} available") near the stepper.
+- If the entered quantity exceeds available, the line reads as an error
+  state (inline, per line — not a modal) and the order's confirm/save
+  action is disabled until every line is within stock.
+- No "allow anyway" / override affordance.
+
+Capture this in `restaurant-sales-flow.md`. It is not an open question —
+do not design an allow-negative path.
 
 ---
 
@@ -253,7 +261,8 @@ it?** PRD is silent.
 
 ### Flow docs
 - [ ] `docs/design/flows/restaurant-sales-flow.md` written (order build →
-      checkout → payment branches → edit-own vs correct; the §6 decision).
+      checkout → payment branches → edit-own vs correct; the §6 BLOCK
+      behaviour for insufficient stock).
 - [ ] `docs/design/flows/customers-credit-flow.md` written (credit order →
       debt; repayment → money movement; balance derivation as seen by
       Cashier vs Admin).
@@ -273,9 +282,13 @@ it?** PRD is silent.
 - [ ] **No** files changed under `lib/`, `app/api/`, `components/kit/`,
       `app/**/*.tsx` route files, or any test. This session touches only
       `docs/` and the Paper file.
+- [ ] **Session 3 may be running in parallel** (plan §7 "Allowed
+      concurrency") — it owns `lib/domain/{financials,customers}` +
+      `app/api/customers*` + the money/customers parts of `SCHEMA.md` /
+      `API.md`. Stay out of those. If both sessions need to write
+      `docs/PROGRESS.md` or `milestone-2-plan.md`, rebase and append.
 - [ ] `docs/PROGRESS.md` updated with the Session 1 entry (what was
-      designed, the §6 decision, the new-component verdict, anything
-      flagged).
+      designed, the new-component verdict, anything flagged).
 - [ ] `milestone-2-plan.md` §7 status for Session 1 updated; §10 changelog
       line added if sequencing changed (e.g. Session 2 dropped).
 - [ ] This file's `Status:` set to `completed`.
@@ -286,7 +299,8 @@ it?** PRD is silent.
 
 *(Live notes added during the session.)*
 
-- **§6 decision (insufficient Restaurant stock):** _TBD — record here._
+- **§3.8 (insufficient Restaurant stock):** DECIDED before this session —
+  BLOCK (see §6). Nothing to decide; just design C2 to it.
 - **New-component verdict:** _TBD — list, or "none; Session 2 skipped"._
 - **Paper artboard links:** _add per-screen frame URLs as created._
 - **Flags / escalations:** _none yet._
@@ -295,13 +309,15 @@ it?** PRD is silent.
 
 ## 9. Handoff to the next session
 
-- **If new components were identified →** Session 2 (Kit Sprint, Developer):
+- **Session 3 (Development Sprint — money ledger + Customers & Credit)**
+  can start immediately and run in parallel with this session; it does
+  not wait on the artboards. Its handoff:
+  `docs/sprints/milestone-2-session-3-handoff.md`.
+- **If this session identifies new components →** Session 2 (Kit Sprint):
   design each new component's states in Paper, build in `components/kit/*`
-  with the full ADR-42 gate. No screens. Then Session 3.
-- **If none →** skip to Session 3 (Development Sprint, Developer): money
-  ledger (`recordMoneyMovement`, `getAccountBalances`) + `lib/domain/customers`
-  + customer/repayment routes + tests. Update §7 count to 6 and add a §10
-  changelog line.
+  with the full ADR-42 gate, no screens. It may overlap Sessions 4/5.
+- **If none →** Session 2 is skipped; set the plan §7 count to 6 and add
+  a §10 changelog line.
 - The assembled screens are built in **Session 6** from these artboards
   (screenshot → assemble kit → wire to `lib/domain`), per
-  `export-workflow.md` Phase C2 — not before the backend exists.
+  `export-workflow.md` Phase C2 — after S3–S5 land.

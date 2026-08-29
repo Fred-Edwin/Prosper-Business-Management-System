@@ -38,11 +38,15 @@ money ledger goes live.
 
 **Already in place:**
 
-- **Schema** — every M2 model already exists in `prisma/schema.prisma`:
+- **Schema** — every M2 *model* already exists in `prisma/schema.prisma`:
   `Order`, `OrderLine`, `StockCount`, `MoneyMovement`, `Customer`,
-  `Debt`, `Repayment`, plus enums (`OrderType`, `PaymentMethod`,
-  `MoneyAccount`, `MoneySourceType`). **Confirm in Session 1 whether any
-  migration is needed** — expectation is none.
+  `Debt`, `Repayment`, plus `OrderType` / `PaymentMethod` / `MoneyAccount`
+  enums. `MovementType` already has `sale` and `stock_count`.
+  **One migration IS needed:** the `MoneySourceType` enum currently has
+  only M1/M3 sources (`handover_receipt`, `expense`, `purchase_payment`,
+  `owner_draw`, `owner_return`, `account_transfer`) — Session 3 adds
+  **`order`, `repayment`, `canteen_sale`** (a single `ALTER TYPE … ADD
+  VALUE` migration; a plain additive DDL). No table changes.
 - **Domain folders** — `lib/domain/{sales,customers,financials}` exist,
   empty (`.gitkeep` only).
 - **Cashier role** — shell wired; `app/cashier/page.tsx` is a placeholder.
@@ -93,10 +97,15 @@ These are decided now so no Development Sprint has to invent them:
    `buyingPrice`, unit cost, or margin (mirror the M1 `listProducts`
    non-admin strip). Admin sees everything.
 7. **Audit.** Every domain mutation writes an `AuditLog` row (ADR-25).
-8. **Open question for Session 1 (design) or a flag:** an order line for
-   a Dish/Goods with insufficient stock at the Restaurant — **block the
-   sale, or allow the balance to go negative and flag it?** PRD is
-   silent. Decide in the design sprint or escalate.
+8. **Insufficient Restaurant stock on an order line — RESOLVED (Session 1,
+   2026-08-29): BLOCK.** An order cannot be saved while any line's
+   quantity exceeds the current derived Restaurant balance for that
+   product. `createOrder` (and `editOwnOrder`) reject with a validation
+   error naming the short line(s) and the available quantity; no `Order`,
+   `OrderLine`, `StockMovement`, or `MoneyMovement` row is written. The
+   balance is never allowed to go negative. The C2 build screen surfaces
+   the rejection inline per line. (PRD is silent; the owner chose block
+   over allow-negative-and-flag for ledger integrity.)
 
 ---
 
@@ -127,11 +136,13 @@ Order of build (Sessions 3–5) follows dependency: money ledger first
 ### M2-F1 — `lib/domain/sales` (orders)
 
 - **`createOrder`** — validate lines (product exists, sold at this
-  location, price snapshot from `ProductLocation`), order type + delivery
-  fee rule (fee allowed only when `Delivery`), payment method. Compute
-  `total`. Write `Order` + `OrderLine[]` + a `Sale` `StockMovement` per
-  line (Restaurant stock down) + either a `MoneyMovement` **or** (credit)
-  a `Debt` with required `customerId`.
+  location, price snapshot from `ProductLocation`, **quantity ≤ current
+  derived Restaurant balance — §3.8 BLOCK; reject naming the short
+  line(s), write nothing**), order type + delivery fee rule (fee allowed
+  only when `Delivery`), payment method. Compute `total`. Write `Order` +
+  `OrderLine[]` + a `Sale` `StockMovement` per line (Restaurant stock
+  down, never below zero) + either a `MoneyMovement` **or** (credit) a
+  `Debt` with required `customerId`.
 - **`editOwnOrder`** — same-day, own-order only; re-validates and rewrites
   lines/movements. After the day rolls, returns a "closed" error.
 - **`correctOrder`** — a new `Order` row (`correctsOrderId` set) plus
@@ -142,9 +153,10 @@ Order of build (Sessions 3–5) follows dependency: money ledger first
   `PATCH /api/orders/:id` (own, same-day), `POST /api/orders/:id/correct`.
 - **Tests:** cash order, M-Pesa order, credit order → debt + no money
   movement, credit-without-customer → 400, delivery-fee-without-delivery
-  → 400, correction reverses stock **and** money exactly, cross-cashier
-  list isolation, no margin leak to a Cashier, edit-after-day-close
-  rejected.
+  → 400, **insufficient-stock line → 400 and no rows written (§3.8);
+  balance never negative**, correction reverses stock **and** money
+  exactly, cross-cashier list isolation, no margin leak to a Cashier,
+  edit-after-day-close rejected.
 
 ### M2-F3 — `lib/domain/sales` (canteen derived slice)
 
@@ -228,7 +240,7 @@ backend exists before the frontend session, so there is nothing to mock.
 
 | # | Session | Role | Scope | Done when |
 |---|---|---|---|---|
-| 1 | Design Sprint | Product Designer | All M2 screens (C1–C6, A1–A4, K1–K2) in Paper from the approved kit; 3 flow docs; the confirmed new-component list with a one-line spec each; resolve §3.8. Split 1a/1b only if context runs out. | Screens approved in Paper; flow docs written; new-component list final; no real logic written. |
+| 1 | Design Sprint | Product Designer | All M2 screens (C1–C6, A1–A4, K1–K2) in Paper from the approved kit; 3 flow docs; the confirmed new-component list with a one-line spec each. (§3.8 resolved 2026-08-29: BLOCK.) Split 1a/1b only if context runs out. | Screens approved in Paper; flow docs written; new-component list final; no real logic written. |
 | 2 | Kit Sprint | Developer (kit) | Design each new component's states in Paper, then build in `components/kit/*`: §9 contract, Storybook story per state, visual-regression baselines, `axe` + `postVisit` gates. **No screens.** *(Skipped if Session 1 finds none.)* | New components merged; `test:visual` + `test:a11y` green; kit gallery updated. |
 | 3 | Development Sprint | Developer | Money ledger (`recordMoneyMovement`, `getAccountBalances`) + `lib/domain/customers` + customer/repayment routes + tests. | Balances derive from rows; repayment writes a money movement; tests green; `tsc` + `build` clean. |
 | 4 | Development Sprint | Developer | `lib/domain/sales` orders — create / edit-own / correct / list; order routes; tests (see §4). | All order paths + correction reversal + role isolation tested green. |
@@ -237,6 +249,30 @@ backend exists before the frontend session, so there is nothing to mock.
 | 7 | QA Sprint | QA Engineer | Adversarial pass against every M2 acceptance criterion, the 3 flow docs, the approved screens. Report before fixing. | Findings report delivered; fixes applied with regression tests; full suite + `tsc` + `build` + kit gates green; PROGRESS + ROADMAP updated. |
 
 **Count: 7 sessions** (6 if Session 2 is not needed).
+
+### Allowed concurrency
+
+The M2 domain contracts are fully settled by the PRD, the M1 ADRs, and
+the existing Prisma schema (§2) — Session 1 shapes screens, not the API
+surface — and §3.8 is resolved. So sessions may overlap:
+
+- **Session 1 ‖ Session 3** — disjoint files (S1: `docs/design/**` +
+  Paper; S3: `lib/domain/{financials,customers}` + `app/api/customers*`
+  + tests + the `SCHEMA.md`/`API.md` sections it owns). No decision
+  dependency.
+- **Session 4 ‖ Session 5** — both start once S3 has landed.
+- **Session 2** (only if S1 finds a new component) runs after S1 and may
+  overlap S4/S5.
+
+**Hard ordering that still holds:** S3 → {S4, S5} — S4's `createOrder`
+writes a `MoneyMovement` or a `Debt`, and a credit order needs a
+`Customer`, both from S3. And **S6 is the join point** — it needs S1's
+artboards, S2's proven component (if any), and S3–S5's domain. S7 last.
+
+**Concurrency hygiene:** each parallel session is its own branch. The
+only shared files are `docs/PROGRESS.md` and this plan — whichever
+session merges second rebases and appends its entry rather than both
+editing in parallel.
 
 **Highest-stakes QA targets:** money-ledger integrity (Cash + M-Pesa
 balances reconcile against Σ `MoneyMovement`), order corrections neither
@@ -296,3 +332,12 @@ current reality; this is the history of how it got there.)*
 - 2026-08-29 — Plan created and approved. 7-session sequence (6 if no
   new component is needed). Frontend model set to screenshot-and-assemble
   (no skeleton export / `/design-preview` / `fixtures.ts`).
+- 2026-08-29 — §3.8 resolved by the owner during Session 1 planning:
+  **BLOCK** an order with an insufficient-Restaurant-stock line (no
+  negative balance). §3, §4, and the Session 1 row updated.
+- 2026-08-29 — Added §7 "Allowed concurrency": Session 1 ‖ Session 3 and
+  Session 4 ‖ Session 5 may run in parallel; S3 → {S4, S5} and S6-as-join
+  still hard. No change to the 7-session count.
+- 2026-08-29 — Corrected §2: a migration **is** needed after all — the
+  `MoneySourceType` enum lacks `order` / `repayment` / `canteen_sale`;
+  Session 3 owns that `ALTER TYPE … ADD VALUE` migration.
