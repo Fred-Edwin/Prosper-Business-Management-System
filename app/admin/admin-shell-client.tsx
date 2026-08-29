@@ -4,6 +4,7 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { AdminShell } from "@/components/shells/admin-shell";
+import { ToastProvider } from "@/components/kit/toast";
 
 // Mirrors the route segment used under /admin/<segment> for each nav key
 // in components/shells/admin-shell.tsx's NAV_GROUPS. "dashboard" is the
@@ -62,18 +63,23 @@ export function AdminShellClient({
   }, []);
 
   return (
-    <AdminShell
-      activeNavKey={activeNavKeyFromPathname(pathname)}
-      onNavigate={(href: string) => router.push(href)}
-      toolbarTitle="Prosper"
-      accountName="Admin"
-      accountRole="Admin"
-      accountInitials={accountInitials}
-      onAccountClick={() => signOut({ callbackUrl: "/login" })}
-      collapsed={collapsed}
-      onToggleCollapsed={toggleCollapsed}
-    >
-      {children}
-    </AdminShell>
+    // Session 11: the admin route tree gets top-right toasts (ADR-43). Every
+    // admin save / record / correction success fires one via useToast(). The
+    // staff tree gets placement="bottom-center" in Session 12, not here.
+    <ToastProvider placement="top-right">
+      <AdminShell
+        activeNavKey={activeNavKeyFromPathname(pathname)}
+        onNavigate={(href: string) => router.push(href)}
+        toolbarTitle="Prosper"
+        accountName="Admin"
+        accountRole="Admin"
+        accountInitials={accountInitials}
+        onAccountClick={() => signOut({ callbackUrl: "/login" })}
+        collapsed={collapsed}
+        onToggleCollapsed={toggleCollapsed}
+      >
+        {children}
+      </AdminShell>
+    </ToastProvider>
   );
 }

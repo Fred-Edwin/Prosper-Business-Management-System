@@ -105,6 +105,13 @@ export function useScrollLock(active: boolean) {
  * Marks every top-level sibling of the overlay container as `inert` (with an
  * `aria-hidden` + `pointer-events:none` fallback for older engines) while
  * `active`. The overlay container itself is identified by `containerRef`.
+ *
+ * Key this on `active` (mounted && not closing), NOT on `mounted`: the
+ * background must stop being inert the instant the close begins, so
+ * useFocusTrap's cleanup can move focus back to the opener. Keeping it inert
+ * through the slide-out makes `.focus()` on the opener a spec no-op (focus
+ * falls to <body>) — the WCAG 2.4.3 regression the harness caught. Nothing
+ * outside the panel is interactive during a ~200ms slide-out anyway.
  */
 export function useBackgroundInert(
   containerRef: React.RefObject<HTMLElement | null>,
@@ -173,15 +180,23 @@ export function useFocusTrap(
 ) {
   const restoreRef = React.useRef<HTMLElement | null>(null);
 
+  // Capture the opener in a LAYOUT effect so it runs before any passive effect
+  // (e.g. useBackgroundInert) can `inert` the opener's container and blur it —
+  // otherwise `document.activeElement` here is already <body>.
+  React.useLayoutEffect(() => {
+    if (!active) return;
+    if (
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement !== document.body
+    ) {
+      restoreRef.current = document.activeElement;
+    }
+  }, [active]);
+
   React.useEffect(() => {
     if (!active) return;
     const panel = panelRef.current;
     if (!panel) return;
-
-    restoreRef.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
 
     // Move focus in.
     const initial = focusablesIn(panel);
@@ -224,9 +239,58 @@ export function useFocusTrap(
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
       const toRestore = restoreRef.current;
-      if (toRestore && document.contains(toRestore)) {
-        toRestore.focus();
-      }
+      if (!toRestore) return;
+
+      // Why this is deferred and retried, not a single synchronous `.focus()`:
+      //
+      // On close the overlay stays *mounted* through its slide-out (see
+      // useOverlayTransition), and useBackgroundInert keeps the opener's
+      // container `inert` for that whole window. `.focus()` on an element
+      // inside an `[inert]` subtree is a spec no-op — it silently fails and
+      // `document.activeElement` falls back to <body>. That was the WCAG
+      // 2.4.3 regression the proof harness caught.
+      //
+      // So: restore only once the opener is actually focusable again —
+      // reattached to the document AND clear of any `[inert]` ancestor. We
+      // also proactively lift a stale inert/aria-hidden off its ancestor
+      // chain (useBackgroundInert may not have cleaned up yet), then poll a
+      // few frames for the mount/inert state to settle.
+      const isFocusable = (el: HTMLElement) => {
+        if (!document.contains(el)) return false;
+        for (let p: HTMLElement | null = el; p; p = p.parentElement) {
+          if (p.hasAttribute("inert")) return false;
+        }
+        return true;
+      };
+      const liftInertAncestors = (el: HTMLElement) => {
+        for (let p: HTMLElement | null = el; p; p = p.parentElement) {
+          if (p === document.body) break;
+          if (p.hasAttribute("inert")) {
+            p.removeAttribute("inert");
+            p.removeAttribute("aria-hidden");
+            p.style.removeProperty("pointer-events");
+          }
+        }
+      };
+
+      let tries = 0;
+      const attempt = () => {
+        if (!document.contains(toRestore)) {
+          if (tries++ < 20) requestAnimationFrame(attempt);
+          return;
+        }
+        liftInertAncestors(toRestore);
+        if (isFocusable(toRestore)) {
+          toRestore.focus();
+          return;
+        }
+        if (tries++ < 20) requestAnimationFrame(attempt);
+      };
+      // First hop is a macrotask so it lands after React has flushed this
+      // commit's *other* effect cleanups (useBackgroundInert removing inert
+      // when keyed on `active`); rAF retries cover the still-mounted case.
+      setTimeout(attempt, 0);
+      requestAnimationFrame(attempt);
     };
   }, [panelRef, active]);
 }
@@ -267,6 +331,15 @@ export function useOverlayTransition(open: boolean): {
     }
     if (mounted) {
       setPhase("closing");
+      // Safety net: the panel unmounts on `transitionend`, but that event can
+      // fail to fire (reduced-motion, a display-change mid-transition, a
+      // headless runner). Force the unmount slightly past the slide duration
+      // so the overlay can never get stuck mounted.
+      const fallback = setTimeout(() => {
+        setMounted(false);
+        setPhase("opening");
+      }, 400);
+      return () => clearTimeout(fallback);
     }
   }, [open, mounted]);
 

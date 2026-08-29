@@ -82,14 +82,9 @@
    * see-through. This fixes the reported "transparent modal" bug at the token
    * level. Tunable in Storybook. */
   --surface-raised: oklch(93.3% 0.011 308.3);
-
-  /* DEPRECATED — do NOT use in new code (D2 / ADR-41). This 38%-alpha fill,
-   * applied directly as a panel background, IS the "transparent modal" bug.
-   * Kept ONLY as a backward-compat alias so the off-limits feature screens
-   * and /design-preview washes don't break mid-remediation. Kit components
-   * are migrated to --surface-raised in Session 9 Deliverable 3; Session 10
-   * removes this line when it rebuilds the screens. New panels: --surface-raised. */
-  --surface-panel-tint: #a690b838;
+  /* --surface-panel-tint (the 38%-alpha "transparent modal" fill) was retired
+   * here in Session 11 — every consumer now uses --surface-raised (D2 / ADR-41).
+   * Do NOT re-add it. */
 
   /* --- Color: semantic text --------------------------------------------- */
   --text-primary: var(--color-gray-900);

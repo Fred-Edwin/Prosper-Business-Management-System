@@ -40,12 +40,14 @@ value and computes the delta internally (ADR-15).
 Success envelope is `{ "data": ... }`; errors use the standard shape.
 
 ### `GET /api/locations`
-Roles: Admin (M1 — widen to "all" when a second consumer appears).
+Roles: Admin, Store Manager, Canteen Attendant (widened in Session 14 —
+the staff stock hooks consume this for the transfer destination picker).
 Returns active locations, `{ data: Location[] }`, sorted by name.
 
 ### `GET /api/products`
-Roles: Admin (buying price stripped to `null` for non-Admin roles once
-they consume this).
+Roles: Admin, Store Manager, Canteen Attendant. `buyingPrice` is stripped
+to `null` for the non-Admin roles (they consume this for the stock-flow
+product pickers and the mobile stock-levels views). `POST` stays Admin.
 Query: `?kind=ingredient|dish|goods`, `?search=` (case-insensitive `name`
 contains), `?includeArchived=true` (default excludes soft-deleted).
 Returns `{ data: ProductWithLocations[] }`, sorted kind→name. Each item:
@@ -87,6 +89,15 @@ Roles: Admin.
   exists — the client turns this into the "Archive instead" path. Clean ⇒
   deletes the `ProductLocation` rows then the product. Returns
   `{ data: { deleted: true } }`.
+
+### `POST /api/products/:id?mode=unarchive`
+Roles: Admin. Restore an archived product (ADR-47 §4) — the mirror of
+`DELETE …?mode=archive`. Clears `deletedAt`. Does **not** reactivate the
+product's `ProductLocation` rows (they were deactivated on archive per
+ADR-38; the Admin re-enables the ones they want via the Edit drawer,
+which restores each row's last-known selling price). Idempotent
+(unarchiving an active product is a no-op success). A missing / wrong
+`mode` → `400 VALIDATION_ERROR`. Returns `{ data: { archived: false } }`.
 
 ### `GET /api/products/:id`
 Roles: Admin. Returns `{ data: ProductWithLocations }` for the edit
@@ -150,8 +161,17 @@ Query: `?productId=&locationId=&movementType=&date=` (`date` is a
 Each row: `{ id, productId, locationId, movementType, quantity (signed
 decimal string, from this row's location's perspective), recordedById,
 occurredAt (ISO), reason, reasonNote, orderId, stockCountId,
-transferCounterpartLocationId, purchasePaymentId, correctsMovementId,
-note, createdAt, updatedAt }`.
+transferCounterpartLocationId, purchasePaymentId, purchaseSupplier,
+purchaseOrderedQty, purchaseTotalCost, purchasePaidFrom,
+correctsMovementId, note, createdAt, updatedAt }`.
+
+`purchaseSupplier` / `purchaseOrderedQty` (4dp decimal string) /
+`purchaseTotalCost` (2dp decimal string) / `purchasePaidFrom` (`"cash"` |
+`"mpesa_bank"`) are **non-null only on `purchase_payment` rows** (ADR-46
+§3); `null` on every other movement type, and `null` on any legacy
+payment row whose `note` didn't parse during the one-time backfill. The
+`note` string is still written (a human sentence) but is no longer the
+source of truth for these values.
 
 ### `POST /api/stock-movements`
 Body is discriminated on `movementType`. Role allowed **varies by type**;
@@ -161,7 +181,7 @@ with the created row. Inputs take an **unsigned magnitude**; the domain
 applies the sign.
 
 - `opening` — Admin. `{ movementType: "opening", productId, locationId, businessDate (YYYY-MM-DD), quantity }`. Writes an `opening` row at that business day's start. A second call for the same product/location/date is a **correction** of the first (ADR-15), not a duplicate.
-- `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`; ordered magnitude + cost in `note`). The `MoneyMovement` debit is **not** written yet — F3 owns it (ADR-39).
+- `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`). `supplier` / `quantity` / `cost` / `paidFromAccount` are persisted to the real `purchaseSupplier` / `purchaseOrderedQty` / `purchaseTotalCost` / `purchasePaidFrom` columns (ADR-46 §3); a human `note` sentence is also composed for display. The `MoneyMovement` debit is **not** written yet — F3 owns it (ADR-39). The **payment-drawer product picker shows `ingredient` + `goods` only** (a `dish` is never purchased — ADR-33); the API does not reject a `dish` productId, the UI just never offers one.
 - `purchase_receipt` — Store Manager / Canteen Attendant. `{ movementType: "purchase_receipt", productId, locationId, quantity, purchasePaymentId? }`. `+quantity` at `locationId`. `purchasePaymentId`, if given, must reference a real `purchase_payment` row → `404` otherwise.
 - `issue` — Store Manager. `{ movementType: "issue", productId, locationId, quantity }`. `−quantity` at the Store (Store → cooking; single row).
 - `production` — Store Manager. `{ movementType: "production", productId, locationId, quantity }`. `+quantity` at `locationId`, which **must be a `restaurant` location**; `productId` **must be `kind = "dish"`** → `400` otherwise.
@@ -323,9 +343,66 @@ Roles: Admin. Body: `{ staff_id, note }` (note required).
 
 ## Assets
 
-### `POST /api/assets`, `PATCH /api/assets/:id`, `POST /api/assets/:id/soft-delete`, `POST /api/assets/:id/hard-delete`
-Roles: Admin. Same pattern as Products (hard-delete blocked if linked
-history exists).
+> **Implemented Session 13 (2026-08-28).** The contract below reflects
+> what shipped. The register is **mutable** (ADR-22) — `PATCH` is a true
+> in-place edit, not a correction row (contrast the stock ledger). Field
+> names are `camelCase` in the JSON. Money is a decimal **string**
+> (`"45000.00"`); dates are `YYYY-MM-DD` calendar strings.
+
+Success envelope is `{ "data": ... }`; errors use the standard shape.
+An `AssetView` is
+`{ id, name, locationId, locationName, locationType, purchaseDate,
+purchaseCost, condition, deletedAt, createdAt, updatedAt }`.
+`condition` is one of `"Good" | "Needs Repair" | "Decommissioned"`.
+
+### `GET /api/assets`
+Roles: Admin (M1 is Admin-only per ADR-22).
+Query: `?search=` (case-insensitive `name` contains), `?locationId=`,
+`?condition=Good|Needs Repair|Decommissioned`, `?includeDeleted=true`
+(default hides soft-deleted rows). Returns `{ data: AssetView[] }`,
+sorted by `name`.
+
+### `POST /api/assets`
+Roles: Admin. Body:
+```json
+{ "name": "...", "locationId": "...", "purchaseDate": "2025-01-15",
+  "purchaseCost": "45000.00", "condition": "Good" }
+```
+`purchaseCost` must be `>= 0`; `purchaseDate` must not be in the future;
+`locationId` must resolve to a real `Location`. Returns
+`{ data: AssetView }`, `201`.
+
+### `PATCH /api/assets/:id`
+Roles: Admin. Two shapes on the same route:
+- **Condition transition** — body `{ "condition": "Needs Repair" }` (that
+  key alone). A plain condition move (ADR-22 — no approval workflow in
+  M1).
+- **Full edit** — the same body as `POST`. True in-place edit.
+
+`404` if the asset is missing or soft-deleted. Returns
+`{ data: AssetView }`.
+
+### `POST /api/assets/:id/soft-delete`
+Roles: Admin. Stamps `deletedAt`; the asset drops out of the default
+`GET /api/assets` view (`?includeDeleted=true` still surfaces it).
+Idempotent. Returns `{ data: { softDeleted: true } }`.
+
+### `POST /api/assets/:id/restore`
+Roles: Admin. Restore a soft-deleted asset (ADR-47 §4) — the mirror of
+`.../soft-delete`. Clears `deletedAt`; the asset returns to the default
+register view. Idempotent (restoring an active asset is a no-op success).
+Returns `{ data: { softDeleted: false } }`.
+
+### `POST /api/assets/:id/hard-delete`
+Roles: Admin. Body `{ "confirmName": "..." }` must equal the asset name
+**exactly** (case-sensitive) → else `400 VALIDATION_ERROR`
+(`field: "confirmName"`). Returns `409 CONFLICT` if the asset has linked
+history — in M1 that is any `AuditLog` row with
+`entityType = "asset"` and `entityId = :id` (there is no maintenance-log
+/ assignment table yet — ADR-22 keeps the surface small; when one lands,
+its count joins the guard). The client renders the delete dialog's
+blocked state, not a toast. Clean ⇒ the row is deleted. Returns
+`{ data: { deleted: true } }`.
 
 ---
 

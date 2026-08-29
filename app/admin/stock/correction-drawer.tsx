@@ -1,20 +1,20 @@
-// Wired from docs/design/screens/admin-stock-ledger-drawer-open/page.tsx
-// (Paper artboard 7LJ-0 / panel 7S9-0). The panel markup — kit <Drawer
-// variant="rail">, the read-only context rows, the error-bordered movement
-// field, <CalculatedImpactBanner>, the Reason box, the two footer <Button>s
-// — is verbatim from the skeleton. This file adds: the real target movement,
-// the corrected-quantity input, the live (cosmetic) delta, the note field,
-// and the POST /api/stock-movements/:id/correct call.
+// Session 11 rebuild — composed from the kit rail <Drawer> + <FormField> +
+// <Textarea> + <CalculatedImpactBanner> + <Button> + <Toast>. The previous
+// version hand-rolled the field box and the reason <textarea>.
 //
-// ADR-15 / handoff: the drawer submits the CORRECTED FINAL QUANTITY; the
-// server computes the delta authoritatively. The delta shown here is
-// display-only. Never send a delta.
+// ADR-15 / handoff: the drawer submits the CORRECTED FINAL QUANTITY; the server
+// computes the delta authoritatively. The delta shown here is display-only.
+// Never send a delta. The POST /api/stock-movements/:id/correct call, the
+// validity gate, and the (cosmetic) impact preview are preserved verbatim.
 "use client";
 
 import * as React from "react";
 import { Button } from "@/components/kit/button";
 import { CalculatedImpactBanner } from "@/components/kit/calculated-impact-banner";
 import { Drawer } from "@/components/kit/drawer";
+import { FormField } from "@/components/kit/form-field";
+import { Textarea } from "@/components/kit/textarea";
+import { useToast } from "@/components/kit/toast";
 import type { StockMovementView } from "@/lib/domain/stock";
 import { stockApi, StockRequestError } from "./use-stock";
 
@@ -52,6 +52,7 @@ export function CorrectionDrawer({
   /** Called after a successful correction so the caller can refetch. */
   onCorrected: () => void | Promise<void>;
 }) {
+  const { toast } = useToast();
   const original = Number(target.movement.quantity);
   const [correctedRaw, setCorrectedRaw] = React.useState(
     target.movement.quantity,
@@ -64,6 +65,7 @@ export function CorrectionDrawer({
   const validNumber = /^-?\d+(\.\d{1,4})?$/.test(correctedRaw.trim());
   const delta = validNumber ? corrected - original : NaN;
   const unchanged = validNumber && delta === 0;
+  const fieldInvalid = !validNumber || unchanged;
 
   async function submit() {
     if (!validNumber || unchanged || submitting) return;
@@ -76,6 +78,7 @@ export function CorrectionDrawer({
         note: note.trim() || undefined,
       });
       await onCorrected();
+      toast("Correction saved", { tone: "success" });
       onClose();
     } catch (e) {
       if (e instanceof StockRequestError) {
@@ -123,68 +126,68 @@ export function CorrectionDrawer({
       }
     >
       {error && (
-        <div className="font-ui text-danger text-body/sm">{error}</div>
+        <div role="alert" className="font-ui text-danger text-body/sm">
+          {error}
+        </div>
       )}
 
       {/* Read-only context row: the current opening for this pair. */}
       <div className="flex items-center justify-between py-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-        <div className="font-ui inline-block [color:var(--text-secondary)] text-body/sm">
+        <div className="font-ui [color:var(--text-secondary)] text-body/sm">
           Original entry
         </div>
-        <div className="font-mono inline-block text-body/sm [color:var(--text-primary)]">
+        <div className="font-mono text-body/sm [color:var(--text-primary)]">
           {fmt1(original)} {target.unit}
         </div>
       </div>
 
-      {/* Editable movement field (error-bordered when the input is unusable). */}
-      <div
-        className={`flex flex-col p-(--sp-5) rounded-md gap-(--sp-3) border border-solid ${
-          !validNumber || unchanged
-            ? "border-danger"
-            : "[border-color:var(--border-subtle)]"
-        }`}
+      {/* Editable movement field — composed with <FormField> so the §9.8
+          helper/error row + aria wiring come from one place. */}
+      <FormField
+        label={`${target.fieldLabel}`}
+        required
+        error={
+          fieldInvalid
+            ? unchanged
+              ? "The corrected quantity matches the current one."
+              : "Enter a valid number (up to 4 decimal places)."
+            : undefined
+        }
+        hint={`Original: ${fmt1(original)} ${target.unit}`}
+        className="w-full"
       >
-        <div className="flex items-center justify-between">
+        {({ id, "aria-describedby": describedBy, "aria-invalid": invalid }) => (
           <div
-            className={`font-ui font-(--weight-medium) inline-block text-body/sm ${
-              !validNumber || unchanged
-                ? "text-danger"
-                : "[color:var(--text-primary)]"
+            className={`flex items-center justify-between h-(--control-md) px-(--sp-5) rounded-sm shrink-0 bg-(--surface-page) border border-solid kit-field ${
+              invalid ? "border-danger" : "[border-color:var(--border-strong)]"
             }`}
+            data-invalid={invalid || undefined}
           >
-            {target.fieldLabel} *
+            <input
+              id={id}
+              aria-describedby={describedBy}
+              aria-invalid={invalid}
+              value={correctedRaw}
+              onChange={(e) => setCorrectedRaw(e.target.value)}
+              inputMode="decimal"
+              className="font-mono [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none"
+            />
+            <div className="font-ui shrink-0 [color:var(--text-tertiary)] text-sm/micro">
+              {target.unit}
+            </div>
           </div>
-          <div className="font-ui font-(--weight-semibold) tracking-[0.02em] uppercase shrink-0 inline-block w-max [color:var(--text-tertiary)] text-micro/micro">
-            Original: {fmt1(original)}
-          </div>
-        </div>
-        <div className="flex items-center justify-between h-[36px] px-(--sp-5) rounded-sm shrink-0 bg-(--surface-page) border border-solid [border-color:var(--border-strong)]">
-          <input
-            value={correctedRaw}
-            onChange={(e) => setCorrectedRaw(e.target.value)}
-            inputMode="decimal"
-            aria-label={`Corrected ${target.fieldLabel}`}
-            className="font-mono [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none"
-          />
-          <div className="font-ui shrink-0 inline-block w-max [color:var(--text-tertiary)] text-sm/micro">
-            {target.unit}
-          </div>
-        </div>
-      </div>
+        )}
+      </FormField>
 
       <CalculatedImpactBanner>{impact}</CalculatedImpactBanner>
 
-      <div className="flex flex-col gap-(--sp-3)">
-        <div className="font-ui font-(--weight-medium) inline-block [color:var(--text-primary)] text-body/sm">
-          Reason for Adjustment
-        </div>
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="What changed and why?"
-          className="flex min-h-[64px] p-(--sp-5) rounded-sm bg-(--surface-page) border border-solid [border-color:var(--border-strong)] font-ui [color:var(--text-primary)] text-body/body outline-none resize-y placeholder:[color:var(--text-tertiary)]"
-        />
-      </div>
+      <Textarea
+        label="Reason for Adjustment"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="What changed and why?"
+        className="w-full"
+      />
     </Drawer>
   );
 }

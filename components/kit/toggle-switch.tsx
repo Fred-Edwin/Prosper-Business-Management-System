@@ -8,6 +8,13 @@
 // kept because the ARTBOARD dims the whole row — mirrored onto the control so a
 // standalone toggle still dims). role="switch" + aria-checked ✓; Space/Enter
 // toggle (native <button>). A switch does not take arrow keys (APG).
+//
+// Session 10d: dropped `.kit-interactive` from the track. A switch is not a
+// button-ish hover/press surface — the shared class's `transform` transition +
+// `:active` background made the knob flick perceptibly on toggle. The track only
+// needs its own `background-color` transition for the on/off colour change;
+// `.kit-focus-ring` (§9.1) is kept. §9.7 disabled is the inline `opacity-[0.5]`
+// + the `disabled` attr (which already removes pointer events).
 "use client";
 
 import * as React from "react";
@@ -50,9 +57,10 @@ export function ToggleSwitch({
       disabled={disabled}
       onClick={toggle}
       className={cn(
-        "flex items-center w-[40px] h-[22px] shrink-0 p-[2px] rounded-full kit-interactive kit-focus-ring",
+        "flex items-center w-[40px] h-[22px] shrink-0 p-[2px] rounded-full kit-focus-ring",
+        "[transition:background-color_var(--dur-fast)_var(--ease-standard)]",
         isOn ? "bg-accent" : "[background-color:var(--border-strong)]",
-        disabled && "opacity-[0.5]",
+        disabled && "opacity-[0.5] pointer-events-none",
         className,
       )}
       {...props}

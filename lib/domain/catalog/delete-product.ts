@@ -31,6 +31,30 @@ export async function archiveProduct(id: string): Promise<void> {
 }
 
 /**
+ * Unarchive a product (ADR-47 §4) — mirror of `archiveProduct`. Clears
+ * `Product.deletedAt`. Idempotent: unarchiving an active product is a
+ * no-op success. `NOT_FOUND` only if the product never existed.
+ *
+ * Does **not** reactivate `ProductLocation` rows — they were deactivated
+ * on archive (ADR-38); the Admin re-enables the ones they want via the
+ * Edit drawer, which restores each row's last-known selling price.
+ */
+export async function unarchiveProduct(id: string): Promise<void> {
+  const existing = await prisma.product.findUnique({ where: { id } });
+  if (!existing) {
+    throw new DomainError("NOT_FOUND", "Product not found.");
+  }
+  if (existing.deletedAt == null) {
+    return;
+  }
+
+  await prisma.product.update({
+    where: { id },
+    data: { deletedAt: null },
+  });
+}
+
+/**
  * Permanently delete a product.
  *
  * - `confirmName` must equal `product.name` **exactly** (case-sensitive) —

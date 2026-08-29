@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { createProduct } from "./create-product";
-import { archiveProduct, hardDeleteProduct } from "./delete-product";
+import {
+  archiveProduct,
+  unarchiveProduct,
+  hardDeleteProduct,
+} from "./delete-product";
 import { listProducts } from "./list-products";
 import {
   cleanupCatalogTestData,
@@ -120,5 +124,49 @@ describe("delete-product", () => {
       { role: "admin" },
     );
     expect(withArchived.find((p) => p.id === product.id)).toBeDefined();
+  });
+
+  it("unarchiveProduct clears deletedAt and the product returns to the default listing; ProductLocation rows stay inactive (ADR-38 / ADR-47)", async () => {
+    const product = await createProduct({
+      name: `${TEST_PREFIX} Round Trip`,
+      kind: "goods",
+      unitLabel: "pcs",
+      buyingPrice: "50",
+      locations: [
+        { locationId: ctx.locationIds.store, sellingPrice: "80.00", active: true },
+      ],
+    });
+
+    await archiveProduct(product.id);
+    await unarchiveProduct(product.id);
+
+    const row = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+    expect(row.deletedAt).toBeNull();
+
+    // The product is visible again without includeArchived.
+    const listed = await listProducts(
+      { search: `${TEST_PREFIX} Round Trip` },
+      { role: "admin" },
+    );
+    expect(listed.find((p) => p.id === product.id)).toBeDefined();
+
+    // ProductLocation rows are NOT auto-reactivated (the Admin re-enables
+    // them via Edit — ADR-38).
+    const plRows = await prisma.productLocation.findMany({
+      where: { productId: product.id },
+    });
+    expect(plRows.every((r) => !r.active)).toBe(true);
+  });
+
+  it("unarchiveProduct is idempotent on an active product and NOT_FOUND on a missing one", async () => {
+    const product = await createProduct({
+      name: `${TEST_PREFIX} Never Archived`,
+      kind: "ingredient",
+      unitLabel: "kg",
+      buyingPrice: "10",
+      locations: [],
+    });
+    await expect(unarchiveProduct(product.id)).resolves.toBeUndefined();
+    await expect(unarchiveProduct("does-not-exist")).rejects.toThrow(/not found/i);
   });
 });

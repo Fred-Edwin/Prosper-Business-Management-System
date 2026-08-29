@@ -1,8 +1,16 @@
 # Milestone 1 — Pinned Scope & Session Plan
 
-**Status:** Active. This is the authoritative plan for finishing
-Milestone 1 after the Sprint 06 export was scrapped. It supersedes the
-session/slice tables in
+**Status: DONE (2026-08-29).** All plan sessions (2–17, incl. the 4
+inserted M1 design-change sessions) are complete. Session 17's adversarial
+QA pass closed with `pnpm test` 226/226, `tsc` 0, `build` clean; the one
+High finding (F-1, correction-stacking) was fixed in-session. Two deferred
+items are recorded as follow-ups, neither M1-blocking: F-2 (2-phase
+transfer receiver visibility — a Design call, M2 territory) and the
+misleading ledger "Edit" column (B5 — Design Sprint). See
+`docs/sprints/session-17-findings.md` and the PROGRESS Session 17 entry.
+
+This was the authoritative plan for finishing Milestone 1 after the Sprint
+06 export was scrapped. It supersedes the session/slice tables in
 `docs/milestones/milestone-01-the-business-exists.md` §5/§6 (kept there
 as historical intent) and folds in the still-live decisions and the
 master screen list from the now-deleted Sprint 05/06 handover docs.
@@ -409,33 +417,83 @@ decouples them. Each session ends with its own tests (`sdlc.md` /
 >   ARIA; add `Spinner` / `Toast` / `PageShell` / `FormField`; stand up
 >   Storybook + visual-regression + a11y gates.
 >   (`session-10-handoff.md`.)
-> - **Session 11** — rebuild the shipped screens (`/admin/catalog`,
->   `/admin/stock` + `/opening` + `/financials`) as compositions of the
->   proven kit; keep every hook / `lib/domain` / `app/api`; rewrite
->   `export-workflow.md`.
-> - **Session 12** — M1-F2 Store Manager + Canteen frontend, built the
->   new way (compose from kit + wire data). The scope below still
->   applies; the method changes.
-> - **Session 13** — M1-F3 Assets, same method. Scope below unchanged.
+> - **Session 11 — DONE.** Rebuilt the shipped Admin screens
+>   (`/admin/catalog`, `/admin/stock` + `/opening` + `/financials`) as
+>   compositions of the proven kit — `<PageShell>` / `<FormField>` /
+>   `<Toast>` / `<EmptyState>` / `<ErrorState>` adopted across scope;
+>   `<ToastProvider placement="top-right">` on the admin tree. Every
+>   hook / `derive-*` / `opening-plan` / `lib/domain` / `app/api`
+>   unchanged. `--surface-panel-tint` alias deleted. `export-workflow.md`
+>   rewritten (compose, don't transcribe); `design-principles.md §9`
+>   promoted to an enforced contract; per-screen gate is now a
+>   `tests/screens/*.screen.test.tsx` jsdom+RTL spec (18 new specs).
+> - **Session 12 — DONE.** M1-F2 Store Manager + Canteen frontend,
+>   composed from the proven kit and wired to the F2 stock API. All 7
+>   staff screens live under `app/store-manager/*` + `app/canteen/*`;
+>   `<ToastProvider placement="bottom-center">` on the staff tree;
+>   `use-staff-stock.ts` per-feature hook. **ADR-44** — the Session-4b
+>   staff artboards were transcribed before the kit existed, so they are
+>   superseded: the proven kit is the visual acceptance target and the
+>   per-screen visual gate diffs against kit Storybook. Carried:
+>   the purchase-delivery banner + `<MatchCard>` (`GET .../outstanding`
+>   is Admin-only — no staff endpoint), the Canteen Stock Count route
+>   (F-sales, not F2), and the real Playwright e2e harness.
+> - **Session 13 — DONE.** M1-F3 Assets, backend + frontend in one
+>   session. `lib/domain/assets` (CRUD + `transitionCondition` +
+>   friction-guarded `hardDeleteAsset` — 409 with linked `AuditLog`
+>   history), `lib/validation/assets.ts`, `app/api/assets*` (4 handlers).
+>   Register + Asset Drawer + Asset Delete Dialog composed from the
+>   proven kit into `app/admin/assets/*` over a `use-assets.ts` hook.
+>   **ADR-45** — the 3 asset artboards (`8DL-0` / `8JO-0` / `8IV-0`) are
+>   pre-kit Session 3–4 exports; ADR-44 extends to them (kit is the
+>   visual target; diff against Storybook). 20 DB-backed domain tests +
+>   7 screen specs; suite 127 → 154.
 > - **Then** the QA pass.
 
-- **Session 12 (was Session 8) — M1-F2 Store Manager + Canteen
-  frontend.** Move the two hubs, both Store Manager flow screens, Canteen
-  transfer dispatch, and both Stock Levels skeletons to
-  `app/store-manager/*` and `app/canteen/*`. Wire the persistent
-  transfer/delivery banners (pinned → accept/flag → timeline), the
-  full-screen multi-item flows, and the 2-phase transfer accept. Compose
-  from the proven kit (not "move the skeleton + swap fixtures").
+- **Session 12 (was Session 8) — M1-F2 Store Manager + Canteen frontend.
+  DONE (2026-08-28).** The two hubs, both Store Manager flow screens
+  (issue/production, transfer/non-sale + a receive flow), Canteen transfer
+  dispatch, and both Stock Levels views composed from the proven kit into
+  `app/store-manager/*` and `app/canteen/*`. Incoming-transfer banner
+  wired (pinned `<TransferBanner>` → `POST .../accept` / `{ flag, note }`
+  → collapses when accepted/flagged). 2-phase transfer accept wired.
+  28 new `tests/screens/*.screen.test.tsx` specs; `components/kit/*` +
+  `components/shells/*` untouched. See ADR-44 and `PROGRESS.md`.
 - **Session 13 (was Session 9) — M1-F3 Assets (backend + frontend, one
-  session).** Assets has no stock/money dependency and a small surface —
-  `lib/domain/assets` (CRUD, condition, friction-guarded delete),
-  `app/api/assets*`, and compose the register + asset-drawer +
-  asset-delete-dialog from the kit at `app/admin/assets/*`. Tests: delete
-  guard, condition transitions.
+  session). DONE (2026-08-28).** `lib/domain/assets` (CRUD;
+  `transitionCondition` — a plain condition move, no approval workflow,
+  routed through the domain for a later audit-log hook;
+  `hardDeleteAsset` — exact `confirmName` + ADR-23 friction guard, 409
+  `CONFLICT` when any `AuditLog` row references the asset, the only
+  linked history an asset can accrue in M1), `lib/validation/assets.ts`,
+  `app/api/assets*` (GET/POST list+create, PATCH edit/transition,
+  POST soft-delete, POST hard-delete). Register + Asset Drawer + Asset
+  Delete Dialog composed from the proven kit at `app/admin/assets/*`
+  over a `use-assets.ts` hook. The `Asset` schema was already
+  sufficient — no migration. Artboards `8DL-0` / `8JO-0` / `8IV-0` are
+  pre-kit; **ADR-45** extends ADR-44 to them. 20 DB-backed domain tests
+  (CRUD + Zod rejections, the hard-delete guard, every condition
+  transition, soft-delete visibility) + 7 screen specs; suite 127 → 154.
 
 **N = 9** development sessions (Sessions 5–13): 5–7 shipped F1/F2
 backend+frontend; 9–10 kit remediation; 11 screen rebuild; 12–13
-F2-staff + F3.
+F2-staff + F3. **All 9 development sessions complete.**
+
+### M1 design-change pass (added 2026-08-29, after the owner's manual walkthrough)
+
+The owner's pre-QA manual walkthrough
+(`docs/sprints/m1-manual-verification-observations.md`) surfaced items
+that go beyond bug-fixing — a confusing Financials reconciliation UI, no
+kind explainer, an unclear Archive model, delete-in-drawer, ledger
+typography. Triage split them into **4 sessions inserted before the QA
+pass**:
+
+| Session | Role | Scope | Status |
+|---|---|---|---|
+| **14** | Developer (Development Sprint) | D1 blocker + B1/B4/C2 copy + A3 (Catalog drawer → rail) | **DONE (2026-08-29)** |
+| **15** | Product Designer (Design Sprint) | A1/A2, A4, C1, B3 designed; **Financials reconciliation redesign**; A5 Archive designed + **ADR-46 / ADR-47**. Paper + ADRs only. | **DONE (2026-08-29)** |
+| **16** | Developer (Development Sprint) | Build everything Session 15 designed **+ the full A5 Archive feature** (Unarchive endpoints, Archived UI, the stock-flow picker exclusion, the `StockMovement` migration for real purchase-payment fields, tests) | **DONE (2026-08-29)** |
+| **17** | QA Engineer | Adversarial M1 pass; B2, B5; M1-flow integration tests (Playwright dropped for Vitest integration — WSL2). F-1 ledger-integrity finding fixed. | **DONE (2026-08-29)** |
 
 ### Final session — QA Engineer: adversarial M1 pass
 
@@ -460,6 +518,17 @@ lose stock. Report findings before fixing.
 
 **Total remaining after this session: 8 sessions** (2 design-phase
 re-export sessions + 5 development sessions + 1 QA).
+
+> **Updated 2026-08-29:** the 9 development sessions and the 2
+> design-phase sessions are done. The **M1 design-change pass** (above)
+> adds **4 sessions before the QA pass**: Session 14 (Developer,
+> **done**), Session 15 (Product Designer, **done**), Session 16
+> (Developer — built Session 15's designs + the full A5 Archive feature,
+> **done**; plus a parallel kit Developer Sprint that added the opt-in
+> searchable `<Select>` mode, **done**), Session 17 (QA Engineer — the
+> adversarial pass, also owning B2 / B5 and the Playwright e2e harness —
+> `docs/sprints/session-17-handoff.md`). Net: **1 session remaining**
+> (Session 17 QA).
 
 **Reasoning for N = 5:** F1 (Catalog) is one contained
 domain + one screen cluster → 1 session. F2 (Stock) is the milestone's

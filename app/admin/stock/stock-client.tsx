@@ -1,28 +1,25 @@
-// Wired from:
-//   docs/design/screens/admin-stock-ledger-full-width/page.tsx      (798-0) — desktop ledger
-//   docs/design/screens/admin-stock-ledger-drawer-open/page.tsx     (7LJ-0) — correction drawer state
-//   docs/design/screens/admin-stock-mobile/page.tsx                 (8Q4-0) — mobile summary cards
+// Session 11 rebuild — COMPOSED from the kit, no longer a transcription of Paper
+// artboards 798-0 (desktop ledger) / 7LJ-0 (correction drawer) / 8Q4-0 (mobile).
+// Assembled from <PageShell wide> + <PillFilter> + <DatePicker> (real-calendar
+// selected/onSelect) + <DenseLedger showLocation horizontalScroll onCellClick
+// loading> + <EmptyState variant="filtered"> / <ErrorState> + the rail <Drawer>
+// correction flow + <Toast>.
 //
-// The -sidebar-collapsed skeleton (7G9-0) is a state of AdminShell, not this
-// screen — its "Maximize" toggle drives the shell `collapsed` prop, wired in
-// app/admin/admin-shell-client.tsx (ADR-36b: persisted app-wide).
-//
-// The exported skeletons bundle their own sidebar for standalone /design-preview
-// use; app/admin/layout.tsx already wraps every admin route in <AdminShell>, so
-// this file renders the CONTENT REGION only (toolbar row + filter row + ledger /
-// mobile cards) — same call Session 5 made for catalog. The /design-preview
-// copies stay as the frozen visual-regression reference.
-//
-// Markup + classes are verbatim from the skeletons. This file adds: date +
-// location-tab state, the fetch (useLedger), the derived 11 columns
-// (deriveLedgerRows), and the correction-drawer orchestration.
+// The data path is unchanged: date + location-tab state, useLedger, the derived
+// 11 columns via deriveLedgerRows, the >1-movement-per-cell FLAG, and the
+// correction-drawer orchestration are verbatim. The shell "Maximize" collapse is
+// AdminShell's `collapsed` prop (admin-shell-client.tsx, ADR-36b), not this file.
 "use client";
 
 import * as React from "react";
-import { DenseLedger } from "@/components/kit/dense-ledger";
+import { PageShell } from "@/components/kit/page-shell";
 import { PillFilter } from "@/components/kit/pill-filter";
+import { DatePicker } from "@/components/kit/date-picker";
+import { DenseLedger } from "@/components/kit/dense-ledger";
+import { EmptyState } from "@/components/kit/empty-state";
+import { ErrorState } from "@/components/kit/error-state";
+import { Button } from "@/components/kit/button";
 import { toBusinessDate } from "@/lib/time";
-import type { StockMovementView, MovementType } from "@/lib/domain/stock";
 import { useLedger } from "./use-stock";
 import { deriveLedgerRows } from "./derive-ledger";
 import { CorrectionDrawer, type CorrectionTarget } from "./correction-drawer";
@@ -47,6 +44,16 @@ function shortDate(businessDate: string): string {
   return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function longDate(businessDate: string): string {
+  const d = new Date(`${businessDate}T00:00:00Z`);
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
     timeZone: "UTC",
   });
 }
@@ -126,126 +133,126 @@ export function StockClient() {
     });
   }
 
+  const filtered = activeTab !== "all";
+  const noRows = !loading && !error && rows.length === 0;
+
   return (
-    <>
-      {/* ───────── Desktop ledger (798-0 content region) ───────── */}
-      <div className="hidden md:flex flex-col grow min-w-[0px] self-stretch max-w-[1200px] w-[1200px] overflow-clip">
-        {/* Toolbar */}
-        <div className="flex items-center h-[44px] shrink-0 gap-(--sp-4) pr-[24px] pl-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-          <div className="font-ui font-(--weight-semibold) inline-block [color:var(--text-primary)] text-h1/h1">
+    <PageShell
+      wide
+      toolbar={
+        <>
+          <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
             Stock &amp; Reconciliation
           </div>
           <div className="grow" />
           <div className="flex items-center shrink-0 gap-(--sp-4)">
-            <label className="flex items-center justify-between h-[36px] px-(--sp-5) rounded-sm gap-(--sp-5) shrink-0 bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-interactive kit-focus-ring">
-              <span className="font-ui inline-block shrink-0 w-max [color:var(--text-primary)] text-body/body">
-                Date: {shortDate(date)}
-              </span>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => e.target.value && setDate(e.target.value)}
-                aria-label="Business date"
-                className="w-[16px] bg-transparent outline-none [color:transparent] [color-scheme:dark]"
-              />
-              <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-                <rect x="3" y="4" width="18" height="18" rx="2" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5" />
-                <line x1="16" y1="2" x2="16" y2="6" stroke="var(--text-secondary)" strokeWidth="1.5" />
-                <line x1="8" y1="2" x2="8" y2="6" stroke="var(--text-secondary)" strokeWidth="1.5" />
-                <line x1="3" y1="10" x2="21" y2="10" stroke="var(--text-secondary)" strokeWidth="1.5" />
-              </svg>
-            </label>
+            <DatePicker
+              value={longDate(date)}
+              selected={new Date(`${date}T00:00:00`)}
+              onSelect={(d) => setDate(toBusinessDate(d))}
+              maxDate={new Date()}
+            />
             <a
               href="/admin/stock/opening"
-              className="flex items-center h-[36px] px-(--sp-6) rounded-sm bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-interactive kit-focus-ring"
+              className="flex items-center h-(--control-md) px-(--sp-6) rounded-sm bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-interactive kit-focus-ring"
             >
-              <span className="font-ui font-(--weight-medium) inline-block w-max shrink-0 [color:var(--text-primary)] text-body/body">
+              <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-primary)] text-body/body">
                 Opening Stock
               </span>
             </a>
           </div>
+        </>
+      }
+    >
+      {/* ───────── Desktop ledger ───────── */}
+      <div className="hidden md:flex flex-col grow gap-(--sp-8) min-w-0">
+        <div className="flex items-center justify-between [width:100%] shrink-0">
+          <PillFilter
+            options={locationTabs}
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            aria-label="Filter by location"
+          />
         </div>
 
-        {/* Content */}
-        <div className="flex flex-col grow p-(--sp-6) gap-(--sp-8) min-w-[0px] max-w-[1200px] w-[1200px] overflow-clip">
-          {/* Filter row */}
-          <div className="flex items-center justify-between [width:100%] shrink-0 max-w-full">
-            <PillFilter
-              options={locationTabs}
-              activeKey={activeTab}
-              onChange={setActiveTab}
-              className="gap-(--sp-3)"
-            />
+        {cellNote && (
+          <div role="status" className="font-ui text-warning text-body/sm">
+            {cellNote}
           </div>
+        )}
 
-          {error && (
-            <div className="font-ui text-danger text-body/sm">{error}</div>
-          )}
-          {cellNote && (
-            <div className="font-ui text-warning text-body/sm">{cellNote}</div>
-          )}
-
-          {/* Ledger table (kit DenseLedger, Location column + horizontal scroll) */}
+        {error ? (
+          <ErrorState
+            title="Couldn't load the stock ledger"
+            description={error}
+            onRetry={() => void refresh()}
+          />
+        ) : noRows && filtered ? (
+          <EmptyState
+            variant="filtered"
+            title="No stock movements for this filter"
+            description="No movements at this location for the selected day. Try another location or clear the filter."
+            actionLabel="Clear filter"
+            onAction={() => setActiveTab("all")}
+          />
+        ) : (
           <div className="[width:100%] max-w-full overflow-x-auto">
             <DenseLedger
               rows={rows}
               totals={rows.length > 0 ? totals : undefined}
               showLocation
               horizontalScroll
-              emptyMessage={
-                loading ? "Loading…" : "No stock movements for this day."
-              }
+              loading={loading && rows.length === 0}
+              emptyMessage="No stock movements for this day."
               onCellClick={onCellClick}
             />
           </div>
-        </div>
+        )}
       </div>
 
-      {/* ───────── Mobile (8Q4-0 content region) ───────── */}
-      <div className="flex md:hidden flex-col grow overflow-clip gap-(--sp-5) bg-(--surface-page)">
-        {/* Location pills */}
-        <div className="flex items-center [width:100%] px-(--sp-6) pt-(--sp-5) overflow-x-auto gap-(--sp-3)">
-          {locationTabs.map((tab) => {
-            const isActive = tab.key === activeTab;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center justify-center h-[32px] shrink-0 px-(--sp-6) rounded-lg kit-focus-ring ${
-                  isActive ? "bg-(--surface-selected)" : ""
-                }`}
-              >
-                <span
-                  className={`font-ui font-(--weight-medium) inline-block w-max shrink-0 text-body/sm ${
-                    isActive ? "text-accent" : "[color:var(--text-secondary)]"
-                  }`}
-                >
-                  {tab.label}
-                </span>
-              </button>
-            );
-          })}
+      {/* ───────── Mobile ───────── */}
+      <div className="flex md:hidden flex-col grow gap-(--sp-5)">
+        <div className="flex items-center [width:100%] overflow-x-auto">
+          <PillFilter
+            options={locationTabs}
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            aria-label="Filter by location"
+          />
         </div>
 
-        {error && (
-          <div className="px-(--sp-6) font-ui text-danger text-body/sm">{error}</div>
-        )}
         {cellNote && (
-          <div className="px-(--sp-6) font-ui text-warning text-body/sm">{cellNote}</div>
+          <div role="status" className="font-ui text-warning text-body/sm">
+            {cellNote}
+          </div>
         )}
 
-        {loading && rows.length === 0 ? (
-          <div className="px-(--sp-6) font-ui [color:var(--text-tertiary)] text-body/sm">
+        {error ? (
+          <ErrorState
+            title="Couldn't load the stock ledger"
+            description={error}
+            onRetry={() => void refresh()}
+          />
+        ) : loading && rows.length === 0 ? (
+          <div className="font-ui [color:var(--text-tertiary)] text-body/sm">
             Loading…
           </div>
-        ) : rows.length === 0 ? (
-          <div className="px-(--sp-6) font-ui [color:var(--text-tertiary)] text-body/sm">
-            No stock movements for this day.
-          </div>
+        ) : noRows ? (
+          filtered ? (
+            <EmptyState
+              variant="filtered"
+              title="No stock movements for this filter"
+              description="No movements at this location for the selected day."
+              actionLabel="Clear filter"
+              onAction={() => setActiveTab("all")}
+            />
+          ) : (
+            <div className="font-ui [color:var(--text-tertiary)] text-body/sm">
+              No stock movements for this day.
+            </div>
+          )
         ) : (
           rows.map((row) => {
-            const perCell = cellMovements.get(row.id) ?? {};
             const movementChips = (
               ["purchases", "issues", "production", "transferIn", "transferOut", "sold"] as const
             )
@@ -260,23 +267,21 @@ export function StockClient() {
             return (
               <div
                 key={row.id}
-                className="flex flex-col [width:100%] py-(--sp-4) px-(--sp-6) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
+                className="flex flex-col [width:100%] py-(--sp-4) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
               >
                 <div className="flex items-start justify-between [width:100%]">
                   <div className="flex items-center gap-(--sp-3)">
-                    <div className="font-ui font-(--weight-semibold) inline-block w-max shrink-0 [color:var(--text-primary)] text-h2/h2">
+                    <div className="font-ui font-(--weight-semibold) w-max shrink-0 [color:var(--text-primary)] text-h2/h2">
                       {row.product}
                     </div>
                     <div className="font-ui inline-block px-(--sp-3) rounded-sm [background-color:var(--surface-subtle)]">
-                      <div className="inline-block font-ui w-max [color:var(--text-secondary)] text-caption/micro">
+                      <div className="font-ui w-max [color:var(--text-secondary)] text-caption/micro">
                         {row.location}
                       </div>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-[2px]">
-                    <div className="font-mono font-(--weight-semibold) inline-block w-max [color:var(--text-primary)] text-h2/body">
-                      {row.closing.value}
-                    </div>
+                  <div className="font-mono font-(--weight-semibold) w-max [color:var(--text-primary)] text-h2/body">
+                    {row.closing.value}
                   </div>
                 </div>
                 <div className="flex items-center flex-wrap gap-(--sp-4)">
@@ -285,11 +290,11 @@ export function StockClient() {
                       key={m.key}
                       type="button"
                       onClick={() => onCellClick(row.id, m.columnKey)}
-                      className={`font-mono inline-block w-max shrink-0 text-sm/micro kit-focus-ring ${
+                      className={`font-mono w-max shrink-0 text-sm/micro kit-focus-ring rounded-sm ${
                         m.tone === "success" ? "text-success" : "text-danger"
                       } ${
                         m.corrected
-                          ? "[text-underline-position:from-font] [text-decoration:underline_1px]"
+                          ? "underline [text-decoration-thickness:1px] underline-offset-2"
                           : ""
                       }`}
                     >
@@ -298,14 +303,14 @@ export function StockClient() {
                   ))}
                 </div>
                 <div className="flex items-center justify-between [width:100%]">
-                  <div className="font-ui inline-block w-max shrink-0 [color:var(--text-tertiary)] text-caption/micro">
+                  <div className="font-ui w-max shrink-0 [color:var(--text-tertiary)] text-caption/micro">
                     Open: {row.opening.value}
                   </div>
                   <a
                     href="/admin/stock/opening"
-                    className="flex items-center justify-center h-[32px] px-(--sp-5) rounded-sm [background-color:var(--surface-subtle)] kit-focus-ring"
+                    className="flex items-center justify-center h-(--control-sm) px-(--sp-5) rounded-sm [background-color:var(--surface-subtle)] kit-focus-ring"
                   >
-                    <span className="font-ui font-(--weight-medium) inline-block w-max shrink-0 [color:var(--text-primary)] text-sm/micro">
+                    <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-primary)] text-sm/micro">
                       Opening Stock
                     </span>
                   </a>
@@ -323,6 +328,6 @@ export function StockClient() {
           onCorrected={refresh}
         />
       )}
-    </>
+    </PageShell>
   );
 }

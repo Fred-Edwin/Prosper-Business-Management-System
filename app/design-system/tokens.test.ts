@@ -58,9 +58,12 @@ describe("design-system tokens.ts ↔ tokens.css", () => {
     expect(cssTokens["--surface-raised"]).not.toContain("/");
   });
 
-  it("--surface-panel-tint remains only as a deprecated backward-compat alias", () => {
-    // Session 10 deletes this. Until then it stays so off-limits feature
-    // screens don't render a broken (undefined-var) background.
-    expect(cssTokens["--surface-panel-tint"]).toBe("#a690b838");
+  it("--surface-panel-tint is fully retired (Session 11 — D2 / ADR-41)", () => {
+    // The 38%-alpha "transparent modal" fill is gone from both token files;
+    // every consumer uses --surface-raised.
+    expect(cssTokens["--surface-panel-tint"]).toBeUndefined();
+    expect(
+      (tokens as Record<string, string>)["--surface-panel-tint"],
+    ).toBeUndefined();
   });
 });

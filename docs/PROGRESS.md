@@ -5,6 +5,1417 @@ shipped, what's blocked, what changed from plan.
 
 ---
 
+## 2026-08-29 — QA Sprint Session 17: adversarial M1 pass + B2/B5 + M1-flow integration tests — DONE. **Milestone 1 complete.**
+
+**Role:** QA Engineer (adversarial). Handoff:
+`docs/sprints/session-17-handoff.md`. Full findings report:
+`docs/sprints/session-17-findings.md`. Branch:
+`session-16-financials-archive` → PR to `main`.
+
+**Baseline at start:** `pnpm test` 200/201 (1 red = B2), `tsc` 0, `build`
+clean. **End state:** `pnpm test` **226/226**, `tsc` 0, `build` clean. No
+existing test deleted or loosened.
+
+### Findings
+
+- **F-1 (High, LEDGER INTEGRITY) — FIXED this session (owner-approved).**
+  `correctMovement` measured `delta = corrected − original.quantity`
+  against the bare original and had no guard against correcting a
+  correction. So a **retry / double-submit of the same correction stacked
+  a second delta row and moved the balance again** (`201` both times — the
+  zero-delta guard compared the wrong baseline), and a delta row could
+  itself be corrected (unbounded chains). The ledger UI was protected (a
+  corrected cell becomes a non-re-openable aggregate cell); the API /
+  transport-retry path was exposed.
+  **Fix** (`lib/domain/stock/correct-movement.ts`): reject a target whose
+  `correctsMovementId` is set (`VALIDATION_ERROR`, field `movementId`);
+  compute `delta = corrected − (original.quantity + Σ existing deltas)` so
+  a repeat is `delta 0` and the existing guard rejects it. Input contract
+  ("the corrected final quantity") unchanged. Regression cover:
+  `correct-movement.test.ts` (+2) + `finding-correction-stacking.test.ts`
+  (2). `flow-5`'s zero-delta test updated to target the current derived
+  value.
+- **F-2 (Design call) — 2-phase transfer receiver visibility.** Confirmed
+  the Session-14 gap: a `transfer` dispatch row is stored with
+  `locationId = source`; `listMovements` for a location-bound role
+  hard-filters `where.locationId = actor.locationId` and never matches
+  `transferCounterpartLocationId`, so the receiver never sees the pending
+  inbound dispatch and the hub's Accept banner never appears.
+  `POST …/accept` works with a valid id. **Not M1 scope** (2-phase
+  transfer is M2 territory) — routed to a Design Sprint. Deferred, not a
+  blocker for M1 done.
+- **F-3 (Low) — correction not location-scoped for a *reassigned* staff
+  member.** Still `recordedById`-gated so impact is minimal. Left as-is
+  (owner's call); noted for defence-in-depth.
+
+**Everything else passed** — A5 archive picker-exclusion (all deep-linked
+`productId` smuggle attempts → `NOT_FOUND`), the unarchive/restore
+endpoints (403 non-admin, 400 bad `?mode`, idempotent, ADR-38
+ProductLocation rule), ledger derived-balance reconciliation, day-close
+gating, Session-16 purchase-payment real columns + backfill (5/5 dev rows
+sane, malformed note → 4 nulls + row kept, no `MoneyMovement`), the
+four-term reconciliation vocabulary, staff role-scoping, hard-delete
+guards (Product + Asset 409/400/200), B3 typography (every numeric
+`SimpleTable` column is `cell:"mono"` — nothing needs `tabular-nums`).
+
+### B2 — Bulk Opening Stock "does the entry disappear?" — EXPLAINED + FIXED
+
+Post-save behaviour is **correct by design**: the row switches to a
+"saved" (or "corrected", on a re-submit — server-side additive `opening`
+delta) state; nothing vanishes. What reads as "gone" is the cell ceasing
+to be an open text input.
+**The failing test was wrong, not the screen:**
+`opening.screen.test.tsx > "…toasts on a successful batch"` hard-coded the
+date literal `2026-08-28` in the expected toast but never faked the clock,
+so once the real date rolled to `2026-08-29` the `findByText(/2026-08-28/)`
+never matched. **Fix:** `vi.useFakeTimers()` + `vi.setSystemTime(NOW)` in
+`beforeEach` / `afterEach`. Assertion unchanged. Spec now green.
+
+### B5 — "Stock correction Edit button not clickable" — REPRODUCED, no code bug
+
+The correction mechanism round-trips correctly (verified live: cell click
+→ `<CorrectionDrawer>` → `POST …/correct` → additive delta, original
+untouched, ledger shows the derived value). The owner's report is the
+**inert "Edit" text in the last ledger column**
+(`components/kit/dense-ledger.tsx:280`) — a plain `<div>`, no handler; the
+real correction targets are the numeric cells. Also: a fresh DB has no
+single-movement correctable cells (everything is "—" or a derived
+Opening/Closing column), and an aggregate cell shows the "not designed
+yet" note. **Recommend a Design Sprint** to drop or re-purpose that "Edit"
+column; no blind change. Single-movement round-trip now covered at the API
+level in `flow-5`.
+
+### Playwright → Vitest integration tests (owner's call)
+
+The Playwright browser e2e harness was **stood up then removed** — under
+WSL2 it was too slow/flaky (dev server kept dying; first run hung with
+zero output). Per the owner, the M1 flows are server-contract flows that
+don't need a browser, so flows 4–8 (`TEST_PLAN.md §2`) were rewritten as
+**Vitest integration tests** hitting the real route handlers against the
+real dev Postgres (same `vi.mock("next-auth")` seam every `route.test.ts`
+uses). Run in ~2s as part of `pnpm test`.
+- `tests/integration/m1-flows/helpers.ts` — `actAs(...)` session mock +
+  typed `api.*` route drivers + `seedUsers()` (pins to the seed users by
+  stable `name`, never `findFirst({ role })` — a parallel domain suite may
+  own a same-role user).
+- `flow-4` purchase reconciliation · `flow-5` day-close correction ·
+  `flow-6` role access (incl. the two restore endpoints) · `flow-7`
+  hard-delete guard · `flow-8` archive picker-exclusion ·
+  `finding-correction-stacking` — F-1 regression cover.
+- `package.json` `test:e2e` now runs `vitest run tests/integration/m1-flows`.
+- Flows 1–3 (Order→stock, Canteen count→sale, Handover→variance) stay
+  documented in `TEST_PLAN.md §2` — M2/M3, routes don't exist.
+- The two UI-only assertions (delete retype **widget**, reconciliation
+  **table render**) stay covered by `tests/screens/*.screen.test.tsx`;
+  `catalog.screen.test.tsx` gained the wrong-case + drawer-closes cases.
+
+### Not tested (with reasoning)
+
+- **`prisma migrate deploy` on a clean migration-tracked DB.** The dev DB
+  has no `_prisma_migrations` history (all `db push`) and no scratch
+  tracked DB was available. The Session-16 migration is a single
+  `ALTER TABLE … ADD COLUMN` ×4 (nullable, no default/constraint/index);
+  no prior migration adds those columns. Safe by inspection; recommend a
+  one-off `migrate deploy` against a scratch DB before/at the `main`
+  merge as belt-and-braces.
+
+### Gate state
+
+- `pnpm test` — **226 / 226**. `pnpm tsc --noEmit` — 0. `pnpm build` —
+  clean. Kit `test:visual` / `test:a11y` — not re-run; `components/kit/*`
+  zero-diff this session.
+- Tests added: `tests/integration/m1-flows/**` (7 files),
+  `correct-movement.test.ts` (+2), `catalog.screen.test.tsx` (+2),
+  `opening.screen.test.tsx` (B2 fix). Deleted / loosened: none.
+- Restored `docs/sdlc.md` + `docs/design/screenshots/*` — deleted from the
+  working tree during the session (not by this session's work; a stray
+  WSL/Turbopack filesystem event during a dev-server crash).
+
+### Follow-ups recorded (not done)
+
+F-2 → Design Sprint (transfer receiver visibility). F-3 → optional
+location-scope check. B5 → Design Sprint (the misleading ledger "Edit"
+column). `payment-drawer.tsx` → `<Select searchable>` swap (ADR-48).
+A kit `destructive-text` Button variant. Whether `ReconTable` should be
+kit-`<SimpleTable>`-backed. `migrate deploy` scratch-DB dry-run.
+
+### Milestone 1
+
+**DONE.** `docs/sprints/milestone-1-plan.md §5` + `docs/ROADMAP.md` M1
+table marked complete this session.
+
+---
+
+## 2026-08-29 — Development Sprint Session 16: build Session 15's design changes + the full A5 Archive feature — DONE
+
+**Role:** Developer (Development Sprint, `export-workflow.md` Phase C).
+Composes the S15 design changes from the proven kit and wires real logic;
+**no** design decisions (ADR-46 / ADR-47 are complete). Handoff:
+`docs/sprints/session-16-handoff.md`.
+
+Ran alongside the kit `<Select>` searchable-mode Phase B session
+(`prosper-business-management-system-16` → commit `79f7f74`). Disjoint
+files (that session: `components/kit/select.*`; this one: `app/**` +
+`lib/domain/**` + `app/api/**` + tests + docs). Session 16 owns the
+`pnpm build` gate this cycle — run clean with `79f7f74` included.
+
+### §1 — Purchase-payment detail promoted to real `StockMovement` columns (ADR-46 §3)
+
+- **Migration** `prisma/migrations/20260829120000_add_purchase_payment_detail_fields/`
+  — pure DDL, 4 nullable columns (`purchase_supplier` TEXT,
+  `purchase_ordered_qty` DECIMAL(14,4), `purchase_total_cost`
+  DECIMAL(14,2), `purchase_paid_from` TEXT). Applied to the dev DB via
+  `prisma db push` — the dev DB has **no `_prisma_migrations` history**
+  (built by `db push` in every prior session), so `migrate dev` wanted a
+  reset; the migration file is committed for a real deploy.
+- **Backfill** `scripts/backfill-purchase-payment-detail.ts` — separate
+  one-time script (`pnpm tsx …`), idempotent, keeps `note`. **Ran once —
+  all 5 existing `purchase_payment` rows backfilled, 0 left NULL.**
+  - **Deviation from the handoff (not a design decision):** the handoff
+    quoted `/supplier[:=]\s*.../` for the supplier regex, but no note the
+    code ever wrote uses a `supplier:` prefix — the real format is
+    `Ordered <qty> from <supplier>; cost <cost> from <account>`. The
+    parser matches the notes that actually exist; `cost` / paid-from
+    match the handoff regexes as-is.
+- **`recordPurchasePayment`** writes the 4 columns + composes a richer
+  human `note` (`Ordered 20 kg from Nairobi Grains Millers; KES
+  18,000.00 from M-Pesa / Bank Till`, using the product's `unitLabel` +
+  an account display label). `MoneyMovement` `TODO(mock)` untouched
+  (ADR-39 §4, still M3).
+- `StockMovementView` / `toMovementView` carry the 4 fields (decimal
+  strings; `purchasePaidFrom` narrowed to the union).
+- `SCHEMA.md §3` (4 rows + the "purchase_payment only" / backfill note),
+  `API.md` "Stock Movements" (row shape + the picker-scope note).
+- `lib/domain/stock/purchases.test.ts` (6 specs) + `parseLegacyPaymentNote`
+  unit tests + a seeded legacy-note backfill test.
+
+### §2 — Financials `/admin/financials`: the Reconciliation section only (ADR-46 §1–2, scope-corrected)
+
+- `parsePaymentNote` **deleted**. The transactions-table mapper and the
+  new reconciliation-table mapper read the real `purchase_*` fields;
+  `null` → **"Supplier not recorded"** / **"Cost not recorded"** (muted),
+  never a bare `—`.
+- Reconciliation section rebuilt from a `<MatchCard>` list into a **table**
+  (Date · Supplier/Item · Product · Destination · Amount · Status ·
+  Action), four-term vocabulary:
+  - **Awaiting delivery** (`warning`) — `outstanding.awaitingReceipt`,
+    action `—`.
+  - **Delivered** (`success`) — a payment a receipt links back to, on
+    **today's Africa/Nairobi business day** (the "recently" window — a
+    Development-Sprint detail, ADR-46 §1). Action `—`.
+  - **Received, no payment** (`info`, row tinted `--surface-subtle`) —
+    `outstanding.unmatchedReceipts`. Amount `—`. Action: a **"Record
+    payment"** accent affordance opening the drawer pre-selected.
+  - **Flagged** (`danger`) — only when a payment/receipt `note` contains
+    "variance"; M1 has no purchase-variance mechanism so this renders
+    never.
+  - Status = a dot + colored text at table density (§4.4), **not** a
+    filled `StatusChip` pill. All-clear line + loading (header + 3
+    skeleton rows). No new endpoint.
+- **KPI strip, `<Tabs>`, transactions table — unchanged** (scope
+  correction). No `MatchCard` on this screen any more.
+- **Deviation flagged:** the reconciliation table is **bespoke** screen
+  markup, not the kit `<SimpleTable>` — the per-row `--surface-subtle`
+  tint and `min-h` rows the artboard (`BHJ-0` / `BHO-0`) requires aren't
+  `<SimpleTable>` capabilities. Values transcribed from the artboard JSX.
+- `financials.screen.test.tsx` rewritten (10 specs).
+
+### §3 — Payment drawer scoped (ADR-46 §6, partial)
+
+- Product picker filtered to `kind !== "dish"` (a Dish is never purchased
+  — ADR-33). "Ingredients & Goods only — a Dish is never purchased"
+  caption under the Product field (per `AYB-0`). `preselectedProductId`
+  prop for the recon "Record payment" action.
+- **The searchable `<Select>` control** is a **parallel kit Developer
+  Sprint** (`kit-searchable-select-handoff.md` → `79f7f74`, ADR-48). This
+  drawer keeps the plain `<Select>` (byte-unchanged) + the kind-filter
+  interim; **swapping it to `<Select searchable>` is a follow-up
+  Development Sprint**, not this session.
+
+### §4 — Delete-in-drawer + Edit-only rows (ADR-46 §5) — Catalog + Assets
+
+- `catalog-client` / `assets-client` rows: a single **"Edit"** affordance,
+  **no Delete column** (desktop table + mobile card). Row click not wired
+  to Edit.
+- `product-drawer` / `asset-drawer`: a bottom **"Delete this
+  &lt;record&gt;"** section (edit mode only, **not** on an archived row)
+  — divider + uppercase label + copy + a `text-danger` trash button that
+  opens the **unchanged** `ProductDeleteDialog` / `AssetDeleteDialog`.
+  The dialog `open` state moved into the drawer via an `onRequestDelete`
+  prop; a successful delete/archive also closes the drawer.
+- **Deviation flagged:** the kit has **no text-only-danger `Button`
+  variant** (`tertiary`'s label is `text-accent`). ADR-46 §5 wants a
+  "text-only destructive" affordance; the artboard `B9E-0` draws a plain
+  `text-danger` text+icon element (not a kit `Button` box). Built as a
+  plain `kit-interactive` button matching `B9E-0`. A future kit pass
+  could add a `destructive-text` Button variant.
+
+### §5 — A4 kind explainer (ADR-46 §8)
+
+- `product-drawer`: a selection-driven hint line under the
+  `<SegmentedControl>` (`KIND_HINT` map, 3 texts). The `dish`-only
+  `DISH_NOTE` info banner is **removed**.
+
+### §6 — A5 Archive (ADR-47)
+
+- **Endpoints:** `POST /api/products/:id?mode=unarchive` +
+  `unarchiveProduct` (clears `deletedAt`, does **not** reactivate
+  `ProductLocation` rows — ADR-38; idempotent; Admin only). `POST
+  /api/assets/:id/restore` + `restoreAsset` (mirror of `soft-delete`).
+  Both documented in `API.md`.
+- **Catalog Archived tab:** desktop "Archived" `<StatusChip>` in the name
+  cell + "Unarchive" row action → `use-catalog.unarchive` → toast
+  ("Product restored") → refresh. **Fixed a pre-existing bug:**
+  `listProducts({ includeArchived: true })` returns active **+** archived
+  rows, so the Archived tab was showing everything — now filtered to
+  `deletedAt != null` (archived-only, per ADR-47 §1) and the count chip
+  reads "N archived".
+  - **Artboard divergence noted:** `BBS-0` draws the archived marker as
+    inline `· Archived` text in the name cell; the handoff §6.4 and
+    `component-states.md §2 C15` both specify a neutral **`StatusChip`**.
+    Followed the two written specs (they agree); `BBS-0` is the outlier.
+- **Assets:** a **new** All / Archived `<Tabs>` control (the register had
+  none — ADR-45 dropped the category tabs) + the same treatment;
+  `use-assets.restore`, "Asset restored" toast.
+- **Archived-record guard (ADR-47 §3.2):** the Edit drawer opened on an
+  archived row renders its fields disabled (`<fieldset disabled>`) + an
+  info line ("This record is archived. Unarchive it to make changes.") +
+  a **Close**-only footer. The delete section is hidden there too.
+- **Integrity work (ADR-47 §3 — the line that matters):** audited **every**
+  stock-flow product/asset picker call site — `issue` / `production` /
+  `transfer` (both ends) / `non_sale_consumption` (via
+  `app/store-manager/use-staff-stock.ts` `stockApi.listProducts()`), the
+  **Record Payment** drawer (`financials-client.tsx`), the bulk
+  opening-stock grid (`opening-client.tsx`), the mobile stock-levels
+  views (`stock-levels-view.tsx`), the asset condition-transition surface
+  (`use-assets.ts`). **All** call `listProducts` / `listAssets` with **no**
+  `includeArchived` / `includeDeleted` — `deletedAt != null` excluded by
+  default. Only the two Archived tabs pass the param.
+  `tests/integration/archived-picker-exclusion.test.ts` — one assertion
+  per flow (8) + the asset surface + the two opt-in callers.
+
+### §7 — B3 typography (ADR-46 §9 / design-principles §4.6)
+
+**Confirm-only, no code change.** `components/kit/dense-ledger.tsx`
+already matches §4.6: `--font-mono` cells; movement values
+`--weight-regular`; Closing / Closing Value (`CLOSING_KEYS`) + the sticky
+footer `--weight-semibold`. Every `SimpleTable` numeric column across
+Catalog / Assets / Financials uses `cell: "mono"` (`font-mono`, inherently
+tabular) — **no proportional-font numeric column exists**, so nothing
+needs `font-variant-numeric: tabular-nums` added. The new bespoke
+`ReconTable` amount cell is `font-mono`.
+
+### Tests added / reworked
+
+- `lib/domain/stock/purchases.test.ts` (new, 6).
+- `lib/domain/catalog/delete-product.test.ts` — `unarchiveProduct` (+2).
+- `lib/domain/assets/delete-asset.test.ts` — `restoreAsset` (+2).
+- `app/api/products/[id]/route.test.ts` (new, 4) — the unarchive path.
+- `app/api/assets/[id]/restore/route.test.ts` (new, 3).
+- `tests/integration/archived-picker-exclusion.test.ts` (new, 10).
+- `tests/screens/financials.screen.test.tsx` — rewritten (10).
+- `tests/screens/catalog.screen.test.tsx` — Edit-only row, delete-in-drawer
+  friction gate, kind hint, Archived tab (+4 → 9).
+- `tests/screens/assets.screen.test.tsx` — same shape (+3 → 9).
+- Screen-test fixtures across `stock` / `store-manager-hub` / `canteen-hub`
+  / `derive-ledger` got the 4 new `null` `purchase_*` fields.
+
+### Gates
+
+- `pnpm tsc --noEmit` — exit 0.
+- `pnpm build` — ✓ Compiled successfully (with `79f7f74` included).
+- `pnpm test` — **200 / 201**. The one failure,
+  `tests/screens/opening.screen.test.tsx > "enables Save once a count is
+  entered, and toasts on a successful batch"`, is **pre-existing on the
+  branch tip** (verified by stashing this session's changes and
+  re-running — fails identically). It sits under **B2** (bulk
+  opening-stock post-save behaviour), assigned to **Session 17 QA**.
+- Kit `test:visual` / `test:a11y` — not run by this session;
+  `components/kit/*` has a **zero diff** here (the searchable-`Select`
+  change is the parallel kit session's, gated there).
+
+### `TODO(mock)` status
+
+`grep -rn "TODO(mock)"` across the touched areas → **two**, both the
+sanctioned M3 deferrals: `lib/domain/stock/purchases.ts` (the
+`MoneyMovement` debit — ADR-39 §4) and `app/admin/financials/financials-client.tsx`
+(the KPI strip unwired — ADR-36 D-FIN). Neither is in this session's
+scope.
+
+### Carried / flagged for Session 17
+
+- **Swap `payment-drawer.tsx` to `<Select searchable>`** — the kit variant
+  shipped in `79f7f74` / ADR-48; a scoped follow-up Development Sprint.
+- **The bespoke `ReconTable`** (not the kit `<SimpleTable>`) — if a future
+  design pass wants it kit-backed, `<SimpleTable>` would need a per-row
+  className / background hook + `min-h` rows.
+- **The `text-danger` delete affordance** in the drawers — a plain button,
+  not a kit `Button`; a `destructive-text` Button variant is a future kit
+  item.
+- **`opening.screen.test.tsx`** (B2) — still red on the branch tip.
+- **The searchable-`Select` swap + B2 + B5 + the Playwright e2e harness**
+  → `docs/sprints/session-17-handoff.md` (drafted this session).
+
+---
+
+## 2026-08-29 — Kit Developer Sprint: `<Select>` searchable mode — Phase B (build) DONE
+
+**Role:** Developer (kit Developer Sprint, backend-independent). Handoff:
+`docs/sprints/kit-searchable-select-handoff.md` Phase B. Follows the
+Phase-A design sprint (same day, entry below).
+
+### Shipped
+
+- **`components/kit/select.tsx`** — two additive props:
+  `searchable?: boolean` (default `false`), `noMatchesLabel?: string`
+  (default `"No matches"`).
+  - `searchable` **off** ⇒ every new code path inert; behaviour
+    byte-identical to Session 10 (the 9 pre-existing `Select` stories
+    pass untouched — snapshots + play assertions).
+  - `searchable` **on** ⇒ closed trigger unchanged (`<button
+    role="combobox">`); open trigger swaps to the APG editable-combobox
+    shape — `<div class="kit-field">` + 14px search glyph + `<input
+    role="combobox">` (`aria-expanded`/`-controls`/`-activedescendant`/
+    `aria-autocomplete="list"`/`-invalid`/`-describedby`,
+    `.kit-focus-ring`) + decorative chevron. Typing filters the list
+    (`label`-contains, case-insensitive); option ids index into the
+    filtered list; `max-h-[calc(var(--control-md)*8)]` (288px, matches
+    the `6CG-0` artboard) + `overflow-y-auto`; active option
+    `scrollIntoView({block:"nearest"})` on Arrow nav; empty result ⇒ one
+    non-`role="option"`, non-focusable `noMatchesLabel` row, Enter no-op.
+  - Keyboard on the input: Arrow/Home/End over the filtered list; Enter
+    commits + closes + clears query; **first Esc clears a non-empty
+    query, second Esc closes**; Tab commits the active option; printable
+    keys → browser (real filtering, no `typeaheadJump` on this path;
+    `typeaheadJump` untouched for the plain path). Open ⇒ focus + select
+    the input's text; close ⇒ clear query, `current` unchanged if
+    nothing committed.
+  - Tokens only.
+
+- **`components/kit/select.stories.tsx`** — `SEARCH_OPTS` (6 items so
+  `"ric"` filters to 2) + 5 stories: `SearchableClosed`,
+  `SearchableFocusRing`, `SearchableOpenFiltered` (visual = the open
+  filtered trigger; list contents proven by play — the popover overflows
+  `#storybook-root` like the plain `Open` baseline),
+  `SearchableKeyboardCommit`, `SearchableNoMatch`.
+
+- **5 new baselines** in `tests/visual/__screenshots__/kit-select--searchable-*.png`.
+
+### Gates
+
+- `select.stories` slice through `test-storybook`: **14/14 green** —
+  visual snapshots (9 pre-existing byte-identical, 5 new written),
+  `test:a11y` axe (no serious/critical; typed-input placeholder scoped
+  off with the same systemic-FLAG comment as `Placeholder`), §9
+  `postVisit` (real focus-visible ring on the input, `.kit-field` accent
+  border).
+- `pnpm tsc --noEmit` exit 0.
+- `pnpm test` — 200/201, the 1 failure is the pre-existing
+  `opening.screen.test.tsx` (Session 17 B2, unchanged from baseline). 0
+  new failures.
+- `pnpm build` — **handed to the parallel Session 16** (per the user;
+  Session 16 owns the build step this cycle).
+- Full-kit `test:visual` / `test:a11y` not run (only `select.tsx`
+  changed; the Select slice covers it).
+
+### Provisional calls → ADR-48 (ADR-43-style review items, pending owner
+ratification in Storybook)
+
+1. Chevron decorative + whole open field toggles (no "Toggle options"
+   button).
+2. First-Esc-clears-query, second-Esc-closes (APG note).
+3. Popover cap = `calc(var(--control-md) * 8)` — the token that yields
+   the artboard's drawn 288px (the handoff's "8 × --control-sm" text is
+   self-inconsistent; its own arithmetic uses 36px).
+
+(Phase A's "no substring highlight" + generic `"No matches"` copy also
+recorded there.)
+
+### Follow-up (NOT this session)
+
+- A Development Sprint swaps `app/admin/financials/payment-drawer.tsx`
+  from its Session 16 interim (`ingredient`+`goods` filter + plain
+  `Select`) to `<Select searchable>`. Session 16 has confirmed they are
+  leaving the `<Select>` control alone and treat this as a later edit.
+
+---
+
+## 2026-08-29 — Kit Design Sprint: `<Select>` searchable mode — Phase A (design) DONE; Phase B (build) NOT STARTED
+
+**Role:** Product Designer (kit Design Sprint). Paper artboards + spec
+docs only — **no code**. Origin: ADR-46 §6 / `component-states.md §2 C5`
+FLAGGED row. Handoff: `docs/sprints/kit-searchable-select-handoff.md`.
+
+### Shipped
+
+- **3 new state rows on `6CG-0` (Component Kit — Form Controls)**, built
+  from tokens only over the canonical `Select — Open` nodes (no divergent
+  copy of the base Select):
+  - `Select — Searchable (closed)` — identical to Default closed; caption
+    notes searchability is an open-state behaviour.
+  - `Select — Searchable (open, query typed, list filtered)` — trigger
+    becomes a text input: 14px search glyph (`--text-tertiary`) left,
+    query `ric` + caret in `--text-body`/`--text-primary`, chevron up,
+    border `--color-accent`. Popover unchanged from `Select — Open`
+    (`--shadow-md`, `border-strong`, `--radius-md`, 4px pad, 2px gap, 32px
+    rows) but height-capped at `max-height ≈ 8 × --control-sm` (288px)
+    then scroll; only label-contains matches shown; active row =
+    `--surface-hover`, selected row = `--color-accent` label
+    (`--weight-medium`).
+  - `Select — Searchable (open, no matches)` — query `zzz`, one centred
+    non-interactive `--text-tertiary` / `--text-sm` "No matches" row; no
+    option rows.
+- `component-states.md §2 C5` — FLAGGED → ARTBOARD, 3 artboards listed +
+  a searchable-mode state matrix.
+- `design-principles.md §9` — new rule 11 (searchable `Select` keeps the
+  full §9 contract).
+- `kit-audit.md` — Select section notes the mode is designed, Phase B
+  pending.
+
+### Design decisions (Designer's remit, recorded for Phase B)
+
+- **No matched-substring highlight** in the filtered list — pick the
+  lighter option; Phase B must not add substring bolding.
+- No-matches copy = generic **"No matches"**, screen-overridable via a
+  `noMatchesLabel` prop.
+
+### Not done / handed off
+
+- **Phase B (kit Developer Sprint)** — add the opt-in `searchable` mode
+  to `components/kit/select.tsx` (APG editable-combobox filter input, 288px
+  cap + scroll, `noMatchesLabel` row), +3 Storybook stories, `test:visual`
+  + `test:a11y` + §9 `postVisit`. Hand it
+  `docs/sprints/kit-searchable-select-handoff.md`.
+- No screen file touched — `payment-drawer.tsx` keeps its Session 16
+  interim until Phase B ships.
+
+---
+
+## 2026-08-29 — Design Sprint Session 15: M1 design-change pass (A1/A2, A4, C1, B3) + Financials reconciliation redesign + A5 Archive design + ADR-46 / ADR-47 — DONE
+
+**Role:** Product Designer (Design Sprint). Works in Paper + writes ADRs
+and short specs — **no real logic** (Session 16 builds everything). Origin:
+the owner's M1 manual walkthrough
+(`docs/sprints/m1-manual-verification-observations.md`) + the follow-up
+that the Financials reconciliation UI "doesn't really make sense".
+
+**Note on Session 14:** still in progress at the time of this session.
+A2/A1 were designed **against the intended `rail` Catalog drawer** (A3 /
+Session 14's job) and the dependency is flagged for Session 16.
+
+### Decisions made (all owner-authorised in-session)
+
+**ADR-46 — Financials `/admin/financials` (M1): only the Reconciliation section changes**
+
+> **Scope correction (same day, after owner review).** The first draft
+> proposed a full "reconciliation-first" restructure (drop the tabs, drop
+> the KPI strip, `MatchCard` attention region at the top). **The owner
+> rejected that.** The tabs stay (they're the transaction-type filter);
+> the KPI strip + transactions table + footer stay as-is. **Only the
+> Reconciliation section changes** — from a thin vendor/amount/status
+> list into a fuller table.
+
+1. **Structure:** the screen keeps its current layout — KPI strip → 4
+   transaction tabs → transactions table → reconciled-outflows footer →
+   **Reconciliation section**. Only the last one is redrawn.
+2. **Reconciliation section → a table:**
+   **Date · Supplier / Item · Product · Destination · Amount · Status ·
+   Action.** One row per open-or-recently-resolved purchase:
+   - **Awaiting delivery** (`warning` dot) — payment made, no receipt.
+     Action `—`.
+   - **Delivered** (`success` dot) — payment matched to a receipt.
+     Action `—`. *(New — the old list never showed delivered items, so
+     the Admin couldn't confirm a payment arrived.)*
+   - **Received, no payment** (`info` dot; row tinted `--surface-subtle`)
+     — a receipt with no payment. Action: **"Record payment"** → opens
+     the payment drawer, product pre-selected.
+   - **Flagged** (`danger` dot) — a variance was raised. Only shown when
+     such a row exists.
+   Nothing to reconcile → one all-clear line. Loading → header + 3
+   skeleton rows. **No `MatchCard`** on this screen.
+3. **One status vocabulary** for that table: **Awaiting delivery /
+   Delivered / Received, no payment / Flagged** (`warning` / `success` /
+   `info` / `danger`). Session 16 *may* align the transactions table's
+   "Delivery Status" column to the same terms for consistency — low
+   priority, owner's call.
+4. **KPI stat strip: KEPT** exactly as it is (renders `—` / "M3" per the
+   M1 cut, not wired, not removed). `component-states.md` C20 stays
+   "deferred to M3".
+5. **Data-shape — option (b), promote to real fields (owner chose (b)).**
+   Add nullable `purchaseSupplier` / `purchaseOrderedQty` /
+   `purchaseTotalCost` / `purchasePaidFrom` columns to `StockMovement`
+   (set only for `purchase_payment`). `recordPurchasePayment` writes them
+   + still composes a human `note` for display. One-time backfill
+   re-parses existing notes. **`parsePaymentNote` is deleted.** `null` →
+   "Supplier not recorded" (muted), never `—`. `SCHEMA.md §3` + `API.md`
+   "Stock Movements" updated by Session 16. **No `MoneyMovement`** — that
+   boundary (ADR-39 §4) is unchanged. This matters *more* now — a proper
+   reconciliation table needs real Supplier / Amount columns.
+
+**ADR-46 also folds in:**
+
+- **A1 + A2 — row-action pattern.** One **"Edit"** affordance per row on
+  every M1 `SimpleTable` (Catalog + Assets); **no Delete column**
+  (the approved `6ZO-0` / `8DL-0` artboards already draw a single Edit
+  column — the shipped `catalog-client.tsx` diverged). Delete moves to a
+  **bottom section of the rail Edit drawer**: divider → "Delete this
+  product" label → one line of copy → a **destructive-tertiary**
+  "Delete this product…" button that opens the **unchanged**
+  `FrictionDeleteDialog` (ADR-36c mechanic untouched; only the entry
+  point moves). Not rendered in create mode. Same for Assets. Row click
+  is **not** wired to open Edit in M1 (explicit target; leaves row-click
+  free for future multi-select).
+- **A4 — kind explainer.** A **selection-driven hint line** under the
+  `SegmentedControl` (the `FormField` `hint` pattern — no new kit
+  component; `SegmentedControl` gets no description slot). Copy:
+  - **Ingredient** — "A raw item you buy and cook with. Has a buying
+    price; used up by production."
+  - **Dish** — "A finished item you sell from the menu. It has no buying
+    price — its cost comes from the ingredients it uses."
+  - **Goods** — "An item you buy and resell as-is. Has a buying price and
+    a selling price."
+  Replaces the current static `dish`-only info-banner (`DISH_NOTE`).
+- **C1 — payment-drawer product picker.**
+  - **Kind scope: `ingredient` + `goods` only** (a Dish is never
+    purchased). The drawer filters `kind !== "dish"`. `API.md` note added;
+    a server-side `400` for a `dish` on `purchase_payment` is optional.
+  - **Control: the kit `Select` gains a searchable / combobox variant —
+    FLAGGED for a kit Design Sprint.** New `6CG-0` rows to draw there:
+    Searchable (closed) / Searchable (open, query typed, filtered) /
+    Searchable (open, no matches). Behaviour = text input in the trigger
+    filters `label` contains, `max-height` ~8 rows then scroll, existing
+    APG listbox keyboard + the query field. **Session 16 interim** (if
+    the kit variant isn't ready): plain `Select` popover with
+    `max-height: ~280px` + scroll + the kind filter cutting the list.
+- **B3 — ledger digit typography (confirm + document).** Written into
+  `design-principles.md §4` as item 6: numeric ledger cells use
+  `--font-mono` (JetBrains Mono — inherently tabular, the finance-table
+  convention); movement cells `--weight-regular`, derived-total columns
+  (Closing / Closing Value) + sticky-footer totals `--weight-semibold`;
+  `SimpleTable` proportional-font numeric columns carry
+  `font-variant-numeric: tabular-nums`. No artboard change.
+
+**ADR-47 — Archive model**
+
+1. **Archived list = a table tab.** Catalog already has the "Archived"
+   tab (`catalog-client.tsx`); **add one to the Assets Register**. Same
+   columns as the active list; the last-column action is **"Unarchive"**
+   (not "Edit"); a neutral **"Archived" `StatusChip`** in the name cell.
+   Rejected: a separate route; a modal panel.
+2. **Unarchive = friction-free.** Single click → toast → row leaves the
+   tab. No dialog, no retype (unarchive is safe and reversible — contrast
+   hard-delete, ADR-23).
+3. **M1 enforcement scope — the integrity subset only:**
+   - **Enforced:** archived products excluded from **every product/asset
+     picker in every stock flow** (issue, production, transfer, non-sale,
+     purchase-payment, bulk opening grid, mobile stock-levels) and the
+     asset condition-transition surface. Mechanism: `listProducts` /
+     `listAssets` already exclude `deletedAt != null` by default —
+     Session 16 does a **call-site audit** + one picker-exclusion test
+     per flow.
+   - **Enforced (cheap):** Edit is unavailable while archived (the tab
+     offers only Unarchive) → price/kind/location changes are all
+     impossible with no per-field lockout UI. Deep-link fallback: drawer
+     opens with fields disabled + an info line + Close only.
+   - **Deferred:** a dedicated read-only "view archived" drawer;
+     historical read surfaces stay unchanged (soft-delete keeps history —
+     ADR-23); recipe-editing referencing archived ingredients (ADR-33,
+     out of M1).
+4. **API delta for Session 16:** `POST /api/products/:id?mode=unarchive`
+   (mirror of `?mode=archive`; clears `deletedAt`; does **not**
+   auto-reactivate `ProductLocation` rows — ADR-38); `POST
+   /api/assets/:id/restore` (mirror of `soft-delete`). No schema change.
+
+### Deliverables
+
+**`docs/DECISIONS.md`** — ADR-46, ADR-47 appended.
+
+**`docs/design/flows/financials-reconciliation-flow.md`** — new flow doc
+(Phase A requirement).
+
+**`docs/design/design-principles.md`** — §4 item 6 (B3 typography).
+
+**Paper artboards** ("Prosper Hotel" `01M0EZ7TAHZM26KBMWNYT0928X`, page
+"Shell+Component kit"):
+
+| Artboard | Covers |
+|---|---|
+| `Admin Financials — Full Table (Recon = table) [S15]` | The whole screen — KPI strip / tabs / transactions table / footer **unchanged**; **only the Reconciliation section redrawn** as the fuller table (Date · Supplier/Item · Product · Destination · Amount · Status · Action) with the Awaiting delivery / Delivered / Received-no-payment rows + a "Record payment" action. Session 16 folds this onto `7ZJ-0`. |
+| `Financials Reconciliation — section states [S15]` | Just the reconciliation section: **all reconciled** (one all-clear line) + **loading** (3 skeleton rows). |
+| `Admin Financials — Payment Drawer (searchable picker) [S15]` | C1 — searchable + `ingredient`/`goods`-scoped Select, Destination as its own field. `Body` frames renamed for clarity. |
+| `Product Drawer — rail + kind hint + delete section [S15]` | A3-intended rail shape + A4 hint + A2 delete section; Dish info-banner removed |
+| `Admin Catalog — Archived tab [S15]` | A5 — active Archived tab, "Unarchive" row action, "N archived" count |
+
+*(The first-draft "reconciliation-first" artboards — a whole-screen
+restructure + 4 whole-screen state variants — were drawn then **deleted**
+after the owner's scope correction. What's listed above is the corrected
+set.)*
+
+**Not drawn — documented instead** (direct repeats of the patterns above;
+exact specs in ADR-46 §7 / ADR-47 §5 for Session 16 to compose):
+Assets Register Archived tab, Asset Drawer delete section, `6CG-0`
+searchable-`Select` state rows (a **kit** Design Sprint draws these), the
+`6OE-0` "Edit Drawer — archived record" caption row.
+
+### Flagged for the kit pipeline (not built by Session 16 into a screen)
+
+- **`Select` — searchable / combobox mode.** Full handoff written:
+  **`docs/sprints/kit-searchable-select-handoff.md`** — Phase A (kit
+  Design Sprint: 3 `6CG-0` state rows) then Phase B (kit Developer
+  Sprint: an opt-in `searchable` mode on `components/kit/select.tsx` — an
+  **edit** of the existing APG-listbox `Select`, not a rebuild; +3
+  Storybook stories + `test:visual` / `test:a11y` / §9 `postVisit`).
+  Session 16 uses the documented interim on the plain `Select` until
+  Phase B ships.
+
+### Consistency (export-workflow Phase A exit)
+
+No kit component has two divergent versions after this session.
+`SimpleTable`, `Drawer` (rail), `SegmentedControl`, `Select`,
+`StatusChip`, `EmptyState`/`ErrorState` are all used as-is. `MatchCard` is
+**not** used on the Financials screen any more (the reconciliation section
+is a `SimpleTable` now) — it stays a kit component for the staff mobile
+hubs, unchanged. The only kit *change* is the flagged searchable-`Select`
+variant, which is additive (a new state, not a divergent one) and
+explicitly deferred to a kit session.
+
+### Precise build list handed to Session 16 (Development Sprint)
+
+See `docs/sprints/session-16-handoff.md`. In brief:
+1. **Prisma migration** — 4 nullable `StockMovement` columns + a
+   data-only backfill re-parsing existing `purchase_payment` notes.
+2. **`recordPurchasePayment`** writes the new columns; keep the human
+   `note`. `SCHEMA.md §3` + `API.md` "Stock Movements" updated.
+3. **`financials-client.tsx`** — **change only the Reconciliation
+   section** per ADR-46 §1 (scope-corrected): delete `parsePaymentNote`;
+   rebuild the reconciliation block as a `SimpleTable` (Date · Supplier/
+   Item · Product · Destination · Amount · Status · Action) with the
+   Awaiting delivery / Delivered / Received-no-payment rows + the "Record
+   payment" action + the all-clear and loading states. **Keep the KPI
+   strip, the tabs, the transactions table, and the footer unchanged.**
+   No `MatchCard`.
+4. **`payment-drawer.tsx`** — product `Select` filtered to
+   `ingredient` + `goods`; searchable variant if the kit ships it, else
+   the `max-height` + scroll interim. `API.md` note.
+5. **`product-drawer.tsx` / `asset-drawer.tsx`** — bottom "Delete this
+   record" section opening the unchanged `FrictionDeleteDialog`; the
+   delete `<Button>` moves out of the table row. `catalog-client.tsx` /
+   the Assets client drop the row Delete button (Edit-only row).
+6. **A4** — selection-driven kind hint under the `SegmentedControl`;
+   remove the `dish`-only `DISH_NOTE` banner.
+7. **A5 Archive** — `POST /api/products/:id?mode=unarchive` +
+   `POST /api/assets/:id/restore`; the Assets "Archived" tab; the
+   desktop "Archived" chip on both tables; the Unarchive button + toast;
+   the drawer archived-guard fallback; the **call-site audit** that no
+   stock-flow picker passes `includeArchived` / `includeDeleted`, + one
+   picker-exclusion test per flow.
+8. **B3** — no code change expected; confirm the built ledger matches
+   `design-principles.md §4.6` and add `tabular-nums` to any `SimpleTable`
+   numeric column that lacks it.
+9. Tests: screen specs for the new Financials states; the A5 exclusion
+   tests; keep `pnpm test` / `tsc` / `build` green.
+
+---
+
+## 2026-08-29 — Development Sprint Session 14: D1 staff-FORBIDDEN blocker + M1 copy sweep + Catalog drawer rail — DONE
+
+**Role:** Developer. Bugfix + copy session off the owner's M1 manual
+walkthrough (`docs/sprints/m1-manual-verification-observations.md`).
+Handled **D1, B1, B4, C2, A3** only. **Not** a kit change
+(`components/kit/*` untouched; `components/shells/*` touched for two
+label strings only — the sanctioned B1 exception). **Not** a design
+sprint — A2/A4/A5/C1/B3 and the B5 re-repro are Sessions 15–17.
+
+`git diff --stat 9bd1ab4..HEAD`: `app/api/{products,locations}/route.ts`
++ their new `route.test.ts`, `app/admin/catalog/product-drawer.tsx`,
+`app/admin/financials/{payment-drawer,financials-client}.tsx`,
+`app/admin/stock/opening/opening-client.tsx`,
+`components/shells/{admin-shell,mobile-nav-drawer}.tsx`, `docs/API.md`,
+`docs/PROGRESS.md`, `docs/sprints/m1-manual-verification-observations.md`.
+
+### D1 — staff FORBIDDEN across every Phase-3 stock flow — FIXED
+
+**Root cause: cause 2** (role missing from an endpoint allow-list), not
+cause 1. Reproduced on localhost as `Store Manager` / `Canteen Attendant`
+(PIN 1234) via the NextAuth credentials flow + curl against `:3000`:
+
+- The staff `User` rows in the dev DB **do** have valid `staffId` →
+  `Staff.locationId` links (`resolveActorLocationId` returns non-null) —
+  so the seed's `update: {}` latent bug (cause 1) was **not** the active
+  cause here. Left the seed as-is; noted below as a follow-up.
+- `POST /api/stock-movements` itself is fine — `STOCK_ROLES` and the
+  per-`movementType` allow-list both include the staff roles, and the
+  own-location guard works.
+- **The actual break:** `GET /api/products` and `GET /api/locations`
+  were guarded `requireApiRole("admin")`. The staff stock hooks
+  (`app/store-manager/use-staff-stock.ts` — `useStaffStock`,
+  `useStockLevels`) fetch **both** inside a `Promise.all` for the flow
+  product pickers and the mobile stock-levels views. As a staff role
+  those calls 403, the batch rejects, and every staff hub + flow renders
+  the FORBIDDEN error state on load.
+
+**Fix:** widened the GET guard on both routes to
+`["admin","store_manager","canteen_attendant"]` (`requireApiRoleIn`).
+`POST /api/products` stays admin-only. `listProducts` already strips
+`buyingPrice` to `null` for non-admin (`lib/domain/catalog/list-products.ts`),
+so the widened read does **not** expose buying price. `docs/API.md`
+updated — it already anticipated this ("widen when a second consumer
+appears"). Role scoping is **not** weakened: products carry no location,
+the location list is non-sensitive, and the location-bound write path
+(ADR-26) is untouched.
+
+**Regression tests** (`app/api/products/route.test.ts`,
+`app/api/locations/route.test.ts` — new; `next-auth` `getServerSession`
+mocked, real dev Postgres for the product row): a `store_manager` /
+`canteen_attendant` session gets **200 not 403** from both GETs;
+`buyingPrice` comes back `null` for `store_manager` (guards the
+price-hiding rule at the same time); `cashier` is still **403**; an
+inactive session is **401**.
+
+**Manual re-walk (localhost, all 7 staff flows):** receive
+(`purchase_receipt`), issue, production, `non_sale_consumption`, transfer
+dispatch → all **201**; both stock-levels `balances` reads → **200**;
+all staff pages (`/store-manager/*`, `/canteen/*`) render **200** for
+their role. FORBIDDEN wall is gone.
+
+**Two expected/known secondary items observed during the re-walk (NOT
+regressions, NOT fixed here):**
+
+1. `GET /api/stock-movements/outstanding` is **Admin-only by design**
+   (Session 12 carry) — both staff hubs read it behind a `TODO(mock)`
+   fixture (`store-manager/hub-client.tsx`,
+   `store-manager/flows/receive/receive-flow.tsx`) and degrade
+   gracefully; the 403 does **not** block the screen. Left as-is.
+2. **Accept-transfer visibility gap (for Session 17):** a `transfer`
+   dispatch row is stored with `locationId = source`. `listMovements`
+   scopes a location-bound role strictly to
+   `where.locationId = actor.locationId`, so the **receiver never sees
+   the pending inbound dispatch** through the list, and
+   `deriveIncomingTransfers` on their hub has nothing to show — the
+   Accept banner never appears for a real cross-location transfer. The
+   `POST …/accept` endpoint works when given a valid id; the gap is
+   purely which rows the receiver's list returns. This is a pre-existing
+   2-phase-transfer design/data-scope question, out of scope for a
+   bugfix session (touches the domain read contract) — **flagged for
+   Session 17 QA** (`docs/sprints/final-qa-handoff.md`), likely needing a
+   Design decision on how the receiver queries inbound transfers.
+
+### B4 + C2 — copy sweep (display only, no route/enum/value change)
+
+- **B4:** `opening-client.tsx` `CATEGORY_LABEL.goods` and the goods TAB
+  label `"Shop Goods"` → `"Goods"`. Other kind labels left as-is per the
+  note's scope. `grep` confirms no residual "Shop Goods" in
+  `app/ components/ lib/`.
+- **C2:** `payment-drawer.tsx` `PAID_FROM_LABELS` / `PAID_FROM_KEY` /
+  `PAID_FROM_LABEL` — the `"Cash at Hand"` string → `"Cash"`; stored
+  value stays `"cash"`. `financials-client.tsx` — the Paid From reverse
+  map **and** the `"Cash at Hand"` KPI-tile label → `"Cash"` (kept
+  consistent across the handoff's listed line range). `"M-Pesa / Bank
+  Till"` and `"mpesa_bank"` untouched. `grep` confirms no residual "Cash
+  at Hand".
+  - **OPEN (Session 15):** the KPI tile "Cash" is semantically a
+    *balance* readout, not the Paid From payment-source picker — renamed
+    here for term-consistency, but Session 15's Financials
+    Purchases↔Deliveries redesign should confirm the tile wording.
+
+### B1 — Admin primary nav "Stock" → "Ledger"
+
+- `components/shells/admin-shell.tsx` + `mobile-nav-drawer.tsx`: `label`
+  only → `"Ledger"`. `key` (`"stock"`) and `href` (`/admin/stock`)
+  unchanged — no route rename, no redirect.
+- **Scope decided with the owner in-session: Admin primary nav only.**
+  Left as-is (open, not owned by a specific later session yet): the
+  `/admin/stock/opening` breadcrumb ("Stock & Reconciliation"), the
+  Financials "Stock Purchases" tab, and the **staff-shell** "Stock"
+  bottom-nav entry (`components/layout/staff-shell-client.tsx`). If the
+  rename should go app-wide, that's a follow-up naming pass.
+
+### A3 — Catalog product drawer: floating `panel` → full-height `rail`
+
+- `app/admin/catalog/product-drawer.tsx`: added `variant="rail"` to the
+  `<Drawer>` + primary `<Button className="grow">` in the footer to match
+  the other three M1 drawers (correction / payment / asset). Kit change:
+  **none** — `<Drawer>` ships both variants by design (ADR-37b).
+- `tests/screens/catalog.screen.test.tsx` stays green (5/5) — `rail` and
+  `panel` share the kit internals (`role="dialog"`, focus-trap,
+  Esc-restore).
+- `FrictionDeleteDialog` (`product-delete-dialog`) unchanged — moving
+  delete into the drawer (A2) is a Session 15 design decision.
+
+### Gate state
+
+- `pnpm tsc --noEmit` — exit 0.
+- `pnpm build` — clean.
+- `pnpm test` — **162 / 163**. The single failure,
+  `tests/screens/opening.screen.test.tsx > "enables Save once a count is
+  entered, and toasts on a successful batch"` (a `findByText(/Saved 1
+  opening count…/)` timeout), is **pre-existing on the branch tip** —
+  verified by restoring `opening-client.tsx` to `9bd1ab4` and re-running
+  (fails identically 3/3). It is unrelated to the two tab-label constants
+  B4 changed. It sits under **B2** (bulk opening-stock post-save
+  behaviour), which the handoff assigns to **Session 17 QA** — flagged
+  there, not fixed here. (Session 13's "154 green" predates the Assets
+  suite; the suite is now 163 total.)
+- kit `test:visual` / `test:a11y` — not re-run; `components/kit/*` has a
+  **zero diff** this session, so nothing invalidates them.
+
+### Follow-ups noted
+
+- **`prisma/seed.ts`** still `upsert`s the staff `User` with
+  `update: {}`, so a staff row created before `staffId` existed would
+  never be backfilled — a latent re-seed hazard even though the current
+  dev DB is clean. A one-line fix (backfill `staffId`/`role`/`active` in
+  the `update` block) would harden it; deferred as out of D1's diagnosed
+  cause and not needed to unblock M1.
+- **`docs/sprints/session-15-handoff.md`** appeared in the working tree
+  during this session (owner-authored, 21 KB, a fuller Session 15 plan
+  than the table in the Session 14 handoff). Left **untracked** — not
+  Session 14's to commit.
+
+## 2026-08-28 — Development Sprint Session 13: M1-F3 Assets (backend + frontend, one session) — DONE
+
+**Role:** Developer. Built F3 Assets end-to-end: `lib/domain/assets` +
+`lib/validation/assets.ts` + `app/api/assets*`, then composed the Assets
+Register + Asset Drawer + Asset Delete Dialog from the proven kit into
+`app/admin/assets/*` over a `use-assets.ts` per-feature hook. **Not** a
+kit change (`components/kit/*` + `components/shells/*` untouched — `git
+diff --stat` is confined to `lib/domain/assets/**`,
+`lib/validation/assets.ts`, `app/api/assets/**`, `app/admin/assets/**`,
+`tests/screens/assets.screen.test.tsx`, `docs/**`), **not** a rework of
+F1/F2, **not** a design sprint.
+
+### The artboard call — ADR-45 (extends ADR-44 to F3)
+
+The 3 asset artboards (`8DL-0` Register, `8JO-0` Drawer, `8IV-0` Delete
+Dialog) are Session 3–4 exports. Checked early, per the handoff:
+
+- **`8DL-0`** is a full pre-kit transcription (bespoke 240px sidenav,
+  bespoke table, bespoke tabs, inline condition dots, `bg-gray-900`
+  summary strip) — **and** it invents a **"Category"** field + category
+  tab filter that the `Asset` schema has no column for.
+- **`8JO-0`** is pre-kit (`--surface-panel-tint` panel, bespoke segmented
+  condition control, "+ Add Category").
+- **`8IV-0`** is the exception — Session 2 already rebuilt it as a clean
+  `<FrictionDeleteDialog>` composition (ADR-36c props).
+
+**Ruling (ADR-45):** ADR-44 extends to `8DL-0` + `8JO-0` — the proven
+kit is the visual acceptance target; the per-screen visual gate diffs the
+composition's structure against the kit Storybook stories. `8IV-0` is
+diffed against the artboard directly. **No `category` field in M1** —
+adding one is a Design Sprint + a migration, not a Development Sprint's
+call.
+
+### Shipped
+
+**Backend — `lib/domain/assets` + `lib/validation/assets.ts` + `app/api/assets*`:**
+
+- `createAsset` / `updateAsset` — name / locationId / purchaseDate /
+  purchaseCost / condition. Money = `Prisma.Decimal` throughout (ADR-30);
+  `purchaseDate` normalised to a `YYYY-MM-DD` `@db.Date`, rejected if in
+  the future (mirror of the drawer's `<DatePicker maxDate={now}>`).
+  `updateAsset` is a **true in-place edit** — the register is mutable
+  (ADR-22), NOT a correction row (confirmed against `SCHEMA.md` §11 /
+  ADR-22; contrast the append-only stock ledger, ADR-15 / ADR-39).
+- `transitionCondition` — a plain `conditionStatus` update (no approval
+  workflow in M1), routed through the domain so a later audit-log hook
+  has one seam. Condition enum: `Good` / `Needs Repair` /
+  `Decommissioned` (matches `<ConditionChip>` + `component-states.md`
+  C14).
+- `listAssets` — search / locationId / condition filters; soft-deleted
+  hidden unless `includeDeleted`. `actor` threaded through for a future
+  location-bound asset view (M1 is Admin-only, ADR-22).
+- `softDeleteAsset` — `deletedAt` stamp, idempotent.
+- `hardDeleteAsset` — exact `confirmName` + the ADR-23 friction guard:
+  `409 CONFLICT` when any `AuditLog` row references the asset
+  (`entityType = "asset"`, `entityId = id`). That is the **only** linked
+  history an asset can accrue in M1 — there is no maintenance-log /
+  assignment table (ADR-22 keeps the surface small). When one lands, its
+  `count` joins the guard, mirroring `hardDeleteProduct`.
+- 4 route handlers: `app/api/assets/route.ts` (GET list, POST create),
+  `app/api/assets/[id]/route.ts` (PATCH — condition-only body =
+  transition, full body = edit), `app/api/assets/[id]/soft-delete` +
+  `hard-delete`. Each: parse → Zod → `requireApiRole("admin")` →
+  `lib/domain/assets` → `ok()` / `fail()`. No business logic in the
+  handlers. Follows `app/api/products/**`.
+- **No schema change / no migration** — the `Asset` table already carried
+  every field.
+
+**Frontend — `app/admin/assets/*` composed from the kit:**
+
+- `use-assets.ts` — `AssetRequestError` + `request<T>` + `assetApi`
+  (`listAssets`, `createAsset`, `updateAsset`, `transitionCondition`,
+  `softDelete`, `hardDelete`, `listLocations`) + `useAssets` hook.
+  Mirrors `use-stock.ts` / `use-catalog.ts`.
+- `assets-client.tsx` — `<PageShell>` + a condition `radiogroup` filter +
+  `<SearchInput>` + `<SimpleTable>` (desktop: Name / Location / Purchase
+  Date / Cost Basis (KES) / Condition via `<ConditionChip>` / Edit) with
+  a card list below `--bp-md`, `<EmptyState variant="filtered">` + Clear
+  filters / `<EmptyState>` / `<ErrorState>` + Retry. Row actions open the
+  rail drawer or the delete dialog. `ASSET_CONDITIONS` is imported from
+  `lib/domain/assets/types` (leaf module), **not** the domain barrel —
+  the barrel re-exports server-only prisma code and a `"use client"` file
+  pulling a *value* from it drags `lib/db` into the browser bundle (`pnpm
+  build` caught this; `import type` from the barrel is fine, it's erased).
+- `asset-drawer.tsx` — kit **rail** `<Drawer variant="rail">` +
+  `<FormField>`-wrapped name / cost inputs + `<Select>` (location,
+  condition) + `<DatePicker>` (purchase date, `selected`/`onSelect`,
+  `maxDate={new Date()}`) → domain call → `<Toast>` + close + refresh.
+  No hand-rolled `fixed inset-0` scrim — `<Drawer>` owns it.
+- `asset-delete-dialog.tsx` — `<FrictionDeleteDialog>` with the ADR-36c
+  labels (`confirmLabel="Delete Asset Record"` /
+  `cancelLabel="Keep Asset"`, `showArchiveLink={false}` on the normal
+  path). On a `409 CONFLICT` the dialog flips to its can't-delete body
+  copy and the archive-link slot becomes the **soft-delete** action — the
+  blocked state, not a raw error toast.
+- `page.tsx` mounts it in the existing `<AdminShell>` (the Assets nav
+  entry already existed in `components/shells/admin-shell.tsx`).
+
+### Design/UX note (composition, not a new decision)
+
+The drawer's **Save Asset** button stays enabled while the form is
+incomplete — the domain + Zod own validation and surface per-field errors
+on submit; there is no approved "disable until valid" artboard state.
+Carried verbatim from Session 12's same note.
+
+### Per-screen gate (ADR-45 method — kit Storybook, not the pre-kit artboards)
+
+| Screen | Visual gate | Interaction spec | Result |
+|---|---|---|---|
+| Assets Register (`8DL-0`) | structural diff vs kit `PageShell` / `SimpleTable` / `SearchInput` / `EmptyState` / `ErrorState` / `ConditionChip` stories | `assets.screen.test.tsx` — table render + `<ConditionChip>` + grouped thousands; filtered `<EmptyState>` + Clear filters; `<ErrorState>` + Retry on mocked fetch failure | PASS |
+| Asset Drawer (`8JO-0`) | structural diff vs kit `Drawer` (rail) / `FormField` / `Select` / `DatePicker` stories | drawer opens + focus-trap + Esc restores focus to the opener (WCAG 2.4.3); create → `<Toast>` "Asset registered" + drawer closes | PASS |
+| Asset Delete Dialog (`8IV-0`) | diff vs the `8IV-0` artboard directly (already kit-shaped) | retype → confirm → `hardDelete("a1", name)` + toast; the 409 path shows the can't-delete copy + a working soft-delete affordance, no toast | PASS |
+
+Responsive: the `<SimpleTable>` (`hidden md:block`) ↔ card list (`flex
+md:hidden`) swap at `--bp-md`, same pattern as `catalog-client.tsx`.
+axe: not separately wired for jsdom screen tests here (the kit a11y gate
+is Storybook `test:a11y`, unaffected — no kit file touched); the screen
+spec asserts the semantic roles (`radiogroup`/`radio`, `searchbox`,
+`alertdialog`, `alert` + Retry).
+
+### Global gates
+
+- `pnpm test` — **154 passed** (127 as of Session 12 → +20 DB-backed
+  `lib/domain/assets` domain tests → +7 `assets.screen.test.tsx` specs).
+- `pnpm tsc --noEmit` — exit 0.
+- `pnpm build` — clean (after the `lib/domain/assets/types` leaf-import
+  fix above).
+- Kit `pnpm test:visual` / `pnpm test:a11y` — **not run / not needed**:
+  no `components/kit/*` or `components/shells/*` file changed, so those
+  gates are unaffected by definition.
+
+### `TODO(mock)` status
+
+`grep -rn "TODO(mock)" lib/domain/assets app/api/assets app/admin/assets`
+→ **none**. Everything the feature needs shipped real. (The
+`docs/design/screens/{admin-assets-register,asset-drawer,asset-delete-dialog}/fixtures.ts`
+files keep their `TODO(mock)` markers — they are the frozen
+`/design-preview` visual-regression fixtures, ADR-45, and stay as-is.)
+
+### Carried / flagged
+
+- **`<FrictionDeleteDialog>` link label is a hardcoded non-prop string**
+  ("Archive instead — hides it without data loss"). The `8IV-0` skeleton
+  already flagged this ("the kit's field-prompt line reads 'type the
+  exact record name below'; the artboard names the asset inline"). Not
+  fixed here — no kit change this session. A future kit pass could make
+  the archive-link label a prop; low priority.
+- **`Asset.category`** — not in M1 (ADR-45). If the Admin wants asset
+  categories later: Design Sprint + a `category` migration + a category
+  filter on the register.
+- **Playwright e2e harness** — still carried (from Sessions 11 / 12). The
+  QA session's likely first task.
+
+### Docs updated
+
+`docs/API.md` (Assets section rewritten to the 5 shipped endpoints +
+`AssetView` shape), `docs/SCHEMA.md §11` (condition enum values, the
+mutable-register note, the linked-history definition, "no migration
+needed"), `docs/sprints/milestone-1-plan.md §5` (Session 13 ticked; "all
+9 development sessions complete"), `docs/DECISIONS.md` (**ADR-45**),
+`docs/sprints/final-qa-handoff.md` (**drafted** — the adversarial M1 QA
+pass).
+
+### Next
+
+`docs/sprints/final-qa-handoff.md` — QA Engineer, adversarial M1 pass.
+That is the last session before M1 is done.
+
+---
+
+## 2026-08-28 — Development Sprint Session 12: Store Manager + Canteen frontend composed on the proven kit — DONE
+
+**Role:** Developer. Composed the 7 approved Store Manager + Canteen mobile
+screens from the Session 9–10d component kit into their real
+`app/store-manager/*` + `app/canteen/*` routes, and wired them to the F2
+stock domain + API (Session 6, ADR-39 / ADR-40). **Not** a backend change,
+**not** a logic change, **not** a design sprint. `git diff --stat` is
+confined to `app/store-manager/**` + `app/canteen/**` +
+`components/layout/staff-shell-client.tsx` + `docs/**` +
+`tests/screens/**`. `components/kit/*` and `components/shells/*` untouched.
+
+### The premise change — ADR-44
+
+The 7 staff skeletons (`docs/design/screens/…`) are the **Session 3–4
+exports**, transcribed inline by Session 4b *before the kit existed in its
+current form*, each carrying an explicit "NO kit swap" flag note (the hub
+banners draw a leading icon the kit `<Banner>` has no slot for; "Quick
+Operations" is flex-wrap cards, not the fixed `<ActionTileGrid>`; the
+Canteen hub's "Workflows" is a bespoke chevron row list; the flows use
+bespoke steppers / pill tabs, not `<QuantityStepper>` / `<PillFilter>`;
+the stock-levels screens have no `<DenseSummaryStrip>` / `<PillFilter>` —
+the handoff's "compose from" column even says *"the artboard has no
+PillFilter, contrary to the handoff's guess"*). There is no
+`docs/design/flows/*.md` for these screens either.
+
+Session 11 worked because the **Admin** artboards were re-drawn against the
+kit first; the **staff** artboards never were. So "compose from the kit"
+and "match the artboard" could not both hold. The developer flagged it;
+the owner ruled (**ADR-44**): the current kit is the visual acceptance
+target for all 7 staff screens, the Session-4b artboards are superseded,
+and the per-screen visual gate diffs the composition's structure against
+the kit's Storybook stories (the primitives are already Paper-verified —
+Session 10d parity audit). No kit change, no Paper change. The
+`/design-preview/<slug>` skeletons + `docs/design/screens/<slug>/` dirs
+stay as the frozen Session 3–4 visual-regression reference.
+
+### Shipped
+
+- **`<ToastProvider placement="bottom-center">`** wraps `<StaffShell>` in
+  `components/layout/staff-shell-client.tsx` (ADR-43 — the mirror of the
+  admin tree's `top-right`). Every staff issue / production / transfer /
+  non-sale / receipt / accept success fires a `<Toast>` via `useToast()`.
+- **`app/store-manager/use-staff-stock.ts`** — the per-feature hook,
+  mirroring `app/admin/stock/use-stock.ts`'s shape: a `StockRequestError`
+  + `request<T>` unwrapping `{ data }` / throwing on `{ error }`, a
+  low-level `stockApi` (`listMovements`, `balances`, `recordIssue`,
+  `recordProduction`, `dispatchTransfer`, `recordNonSale`,
+  `recordPurchaseReceipt`, `acceptTransfer`, `flagTransfer`,
+  `listProducts`, `listLocations`), the `useStaffStock` + `useStockLevels`
+  hooks, and `deriveIncomingTransfers` (ADR-39 — a `transfer` row with
+  `quantity < 0`, `correctsMovementId = null`, no sibling `+q` row, and
+  `transferCounterpartLocationId` = this location). The client sends
+  **unsigned magnitudes** only; signs / deltas / balances are the domain's
+  job. Plus `staff-stock-format.ts` — presentation-only formatters
+  (`trimQty`, `signedQty`, `movementsToTimeline`).
+- **`/store-manager` hub** (`hub-client.tsx`) — composed from
+  `<ActionTileGrid>` (Receive / Issue / Production / Transfer / Non-Sale,
+  each `router.push`ing its flow) + pinned `<TransferBanner>` per incoming
+  transfer (Accept → `POST /api/stock-movements/:id/accept` + toast +
+  refresh; Flag → same endpoint `{ flag: true, note }`; a flagged one
+  shows the muted "awaiting admin review" line, no actions) +
+  `<ActivityTimeline>` (today's movement log, or its empty line) +
+  `<ErrorState>` (Retry → refresh).
+- **`/canteen` hub** (`hub-client.tsx`) — same shape, Canteen tiles
+  (Transfer Dispatch → `/canteen/transfer`, Stock Count → `TODO(mock)`
+  route, Stock Levels → `/canteen/stock`) + the pinned incoming-transfer
+  banner + timeline + `<ErrorState>`.
+- **`/store-manager/flows/issue` + `/production`**
+  (`issue-production-flow.tsx`, one client, `mode` prop) — a full-screen
+  flow: `<FlowHeader directionTone="danger">` (Issue) / `"success"`
+  (Production) + product `<Select>` + `<QuantityStepper>` (unsigned
+  magnitude, `min={0}`) + `<CalculatedImpactBanner>` (impact preview) +
+  sticky `<Button size="lg">` submit → `POST { movementType: "issue" |
+  "production" }` → `<Toast>` + reset. Production filters the `<Select>`
+  to `kind = "dish"`.
+- **`/store-manager/flows/transfer` + `/non-sale`**
+  (`transfer-nonsale-flow.tsx`, one client, `mode` prop) —
+  `<FlowHeader directionTone="info">` (Transfer) / `"warning"` (Non-Sale)
+  + product `<Select>` + `<QuantityStepper>` + destination `<Select>`
+  (Transfer) / reason `<Select>` + note `<Textarea>` (Non-Sale, note
+  **required iff reason = "other"**) + `<CalculatedImpactBanner>` +
+  sticky submit → `POST { movementType: "transfer" }` (phase 1 — the `-q`
+  dispatch row only) / `{ "non_sale_consumption" }` → `<Toast>` + reset.
+- **`/store-manager/flows/receive`** (`receive-flow.tsx`) — a
+  `purchase_receipt` flow (product `<Select>` + `<QuantityStepper>` +
+  `<CalculatedImpactBanner>` → `POST { movementType: "purchase_receipt" }`).
+  The 1-tap "match a payment the Admin already made" path
+  (`purchasePaymentId` link + `<MatchCard>`) is `TODO(mock)`: there is no
+  staff-facing source for it — `GET /api/stock-movements/outstanding` is
+  Admin-only. The manual receipt works fully.
+- **`/canteen/transfer`** (`transfer-dispatch-flow.tsx`) — the
+  Canteen-scoped mirror of the Store Manager transfer flow
+  (`<FlowHeader directionTone="info">`, Canteen → destination `<Select>`,
+  `POST { movementType: "transfer" }`).
+- **`/store-manager/stock` + `/canteen/stock`** (`stock-levels-view.tsx`,
+  one shared client, `locationType` prop) — the mobile stock-levels view:
+  `<DenseSummaryStrip>` (line count + total units, danger tone when
+  negative) + `<PillFilter>` (product kind, `role="radiogroup"`) + a
+  mobile card list (product / unit / mono signed qty; negative in the
+  danger tone) + `<EmptyState>` (no stock) / `<EmptyState
+  variant="filtered">` + Clear filter (pill matches nothing) /
+  `<ErrorState>` (Retry). Fed by `GET /api/stock-movements/balances`
+  (ADR-40) — no `<DenseLedger>` (that's the Admin desktop view).
+
+### Design/UX note (composition, not a new decision)
+
+The full-screen flow submit buttons stay **enabled while the form is
+incomplete** — clicking marks the fields touched and surfaces the §9.8
+per-field errors, rather than a dead button with no explanation. Only a
+loading / in-flight state disables it. This matches the kit's
+`<FormField>` error pattern; no new visual design.
+
+### Per-screen gate (ADR-44 method — kit Storybook, not the 4b artboards)
+
+All 7 screens: (1) visual structure diffed against the kit Storybook
+stories for each composed primitive (the primitives carry the Session-10d
+Paper-parity audit); (2) a `*.screen.test.tsx` interaction spec under
+`tests/screens/` (jsdom + RTL, `useStaffStock` / `useStockLevels` /
+`stockApi` mocked, no server / DB); (3) 390 px mobile layout (no desktop
+swap for staff); (4) axe via the RTL render (kit primitives are already
+axe-gated in Storybook).
+
+- `tests/screens/store-manager-hub.screen.test.tsx` (6) — tile nav,
+  empty timeline, `<ErrorState>` + Retry, pinned `<TransferBanner>`
+  Accept → `POST .../accept` + toast + refresh, Flag → `{ flag, note }`,
+  flagged-banner collapse (muted line, no actions).
+- `tests/screens/canteen-hub.screen.test.tsx` (5) — same shape,
+  Canteen-scoped.
+- `tests/screens/store-manager-flows.screen.test.tsx` (7) — issue submit
+  → unsigned-magnitude POST + toast + reset; production `<Select>`
+  dish-only; `<CalculatedImpactBanner>` appears on product+qty;
+  `<QuantityStepper>` Decrease disabled `atMin`; `<ErrorState>`; transfer
+  dispatch POST `{ from, to, unsigned qty }`; non-sale "Other" note
+  requirement blocks submit until filled.
+- `tests/screens/canteen-transfer-dispatch.screen.test.tsx` (4) —
+  dispatch POST from the Canteen location; incomplete-submit surfaces the
+  §9.8 errors; `<QuantityStepper>` `atMin`; `<ErrorState>`.
+- `tests/screens/stock-levels.screen.test.tsx` (6) —
+  `<DenseSummaryStrip>` + card per product; `<PillFilter>` narrows by
+  kind; filtered `<EmptyState>` + Clear filter; plain `<EmptyState>` on
+  no stock; `<ErrorState>` + Retry; negative balance in the danger tone.
+
+**28 new specs.** `pnpm test` 127 passing (99 baseline + 28), `pnpm tsc
+--noEmit` exit 0, `pnpm build` clean, all 7 routes present. Kit
+`test:visual` / `test:a11y` not re-run (kit untouched —
+`git diff --name-only` has no `components/kit` / `components/shells`).
+
+### Carried to a later session
+
+- **The purchase-delivery banner + `<MatchCard>` on the Store Manager
+  hub** — needs a staff-scoped "deliveries awaiting receipt" read
+  (`GET /api/stock-movements/outstanding` is Admin-only). `TODO(mock)`
+  fixture behind the real `stockApi.recordPurchaseReceipt` interface in
+  `hub-client.tsx` + `receive-flow.tsx`.
+- **`/canteen/stock-count`** — the hub tile links to it; the Canteen
+  stock count is a sales-derivation flow (`lib/domain/sales`), not F2
+  stock movements. `TODO(mock)` nav target.
+- **The real Playwright e2e harness** for the `TEST_PLAN.md §2`
+  cross-module flows (order → stock deduction, handover → variance,
+  day-close → lock, 2-phase transfer end-to-end). Not a blocker for the
+  per-screen gate (the RTL specs cover that — ADR-44 / the handoff's
+  own ruling). Its own session: `playwright.config.ts` + a
+  DB-seeding `global-setup` + `tests/e2e/`.
+
+### Grep status
+
+`grep -rn "TODO(mock)" app/store-manager app/canteen` → the two carried
+items above (purchase-delivery match, canteen stock-count) and the
+`use-staff-stock` mock-delivery fixture. Nothing else.
+
+**Next:** Session 13 — M1-F3 Assets (backend + frontend, one session),
+composed the same way. See `docs/sprints/session-13-handoff.md`.
+
+---
+
+## 2026-08-28 — Development Sprint Session 11: Admin screens recomposed on the proven kit — DONE
+
+**Role:** Developer. Re-assembled the four shipped M1 Admin screen
+clusters as **compositions of the Session 9–10d component kit**, replacing
+only the transcribed JSX. Every hook, every `lib/domain` module, every
+`app/api` route, every `derive-*` / `opening-plan` function is byte-for-
+byte unchanged. **Not** a backend change, **not** a logic change, **not**
+a design sprint. `git diff --stat` is confined to `app/admin/**` JSX +
+`app/design-preview/**` (6 token migrations) + `app/design-system/tokens.*`
++ `docs/**` + `tests/screens/**` + vitest config.
+
+### Shipped
+
+- **`<ToastProvider placement="top-right">`** wraps `<AdminShell>` in
+  `app/admin/admin-shell-client.tsx` (ADR-43 — staff gets
+  `bottom-center` in Session 12). Every admin save / record / correction
+  success now fires a `<Toast>` via `useToast()`.
+- **`/admin/catalog`** — `catalog-client` / `product-drawer` /
+  `product-delete-dialog` composed from `<PageShell>` + `<Tabs>` +
+  `<SearchInput>` + `<SimpleTable>` (desktop) / a card list (`< --bp-md`)
+  + `<Drawer>` + `<FormField>` + `<SegmentedControl>` (Product Kind) +
+  `<ToggleSwitch>` (per-location rows) + `<FrictionDeleteDialog>`
+  (`Keep Product` / `Delete Product`, ADR-36c) + `<Toast>`. The
+  hand-rolled `fixed inset-0 bg-black/30` drawer wrappers are gone (the
+  kit overlays own their scrim / portal / focus-trap). `product-delete-
+  dialog` now wires the previously-unused `submitting` prop; delete
+  failures moved from a dropped sibling `<div>` to a danger toast.
+- **`/admin/financials`** — `financials-client` / `payment-drawer`
+  composed from `<PageShell>` + `<Tabs>` + `<SimpleTable>` +
+  `<StatusChip>` (delivery status) + `<MatchCard>` (reconciliation, in a
+  `role="list"`) + rail `<Drawer>` + `<FormField>` + `<Select>` +
+  `<SegmentedControl>` (Paid From) + `<Toast>`. **KPI stat strip kept and
+  still unwired** (`—` / "M3", ADR-36 D-FIN) — markup slot preserved, no
+  client money math.
+- **`/admin/stock`** — `stock-client` / `correction-drawer` composed from
+  `<PageShell wide>` + `<PillFilter>` + `<DatePicker>` (real-calendar
+  `selected` / `onSelect`, `maxDate=now`) + `<DenseLedger showLocation
+  horizontalScroll onCellClick loading>` + `<EmptyState
+  variant="filtered">` (Clear filter → All) + `<ErrorState>` (Retry →
+  refresh) + rail `<Drawer>` + `<FormField>` + `<Textarea>` (Reason) +
+  `<CalculatedImpactBanner>` + `<Toast>`. The `<input type=date>` hack is
+  gone. The shell "Maximize" collapse stays `AdminShell`'s `collapsed`
+  prop (ADR-36b), not this screen.
+- **`/admin/stock/opening`** — `opening-client` composed from `<PageShell
+  wide>` + `<Breadcrumb>` + `<InstructionalBanner>` + `<Tabs>` +
+  `<BulkEntryGrid>` + `<Button>` + `<Toast>` (success on a clean batch,
+  danger when some rows fail).
+- **`/admin` & `/cashier` role homes** — confirmed: already render
+  `<EmptyState>` from the kit and compile cleanly. No rebuild.
+- **`--surface-panel-tint` alias DELETED** from `tokens.css` + `tokens.ts`
+  + the drift-guard assertion (now asserts *undefined* in both files).
+  The 6 remaining consumers (all `/design-preview` stage wrappers) moved
+  to `--surface-raised`. `grep -rn surface-panel-tint app/ components/` →
+  comments only. Drift test green.
+- **Screen-test harness** — `@testing-library/react` + `jsdom` as dev
+  deps; `vitest.config.ts` now includes `*.test.tsx` with a per-file
+  `// @vitest-environment jsdom` opt-in; guarded `vitest.setup.ts`
+  (jest-dom matchers + cleanup + matchMedia shim, no-op under Node).
+  **18 new `tests/screens/*.screen.test.tsx` specs** (catalog 5,
+  financials 5, stock 4, opening 4) + a smoke test. The 80 domain unit
+  tests are untouched.
+- **Docs** — `export-workflow.md` **rewritten** (compose from the proven
+  kit; artboard = visual acceptance target; the `get_jsx` →
+  frame-drop → swap flow retired to a "historical" section).
+  `design-principles.md §9` **promoted** from spec to an ENFORCED
+  contract (the Storybook `postVisit` assertions enforce it).
+  `CLAUDE.md` — Design/Development-Sprint paragraphs + "Where to look"
+  table now point at `kit-audit.md` + `component-states.md §9` + the
+  rewritten `export-workflow.md`. `TEST_PLAN.md` — new §2b
+  (composed-screen per-screen gate). `milestone-1-plan.md §5` — Session
+  11 ticked.
+
+### Gates
+
+- `pnpm test` — **99 passed** (80 domain unit + 18 screen specs + 1
+  harness smoke). `pnpm tsc --noEmit` — exit 0. `pnpm build` — clean, all
+  43 routes. Kit `pnpm test:visual` / `pnpm test:a11y` — untouched
+  (`components/kit/*` not modified this session).
+- Per-screen visual-diff done against the Paper artboards (`6ZO-0` /
+  `7ZJ-0` / `798-0` / `7UD-0`) via `get_screenshot`. Each artboard has
+  1–2 controls with **no data path in the wired screen** (catalog "All
+  Locations" dropdown; financials 4-tab row + "Total Reconciled Outflows"
+  strip; stock "Category: All" / "Columns: 11/11"; opening consolidated-
+  valuation footer) — these are **pre-existing out-of-scope gaps**, the
+  same ones the prior transcription had, and are M3 / later-milestone
+  work, not regressions from this session.
+
+### Changed from plan
+
+- The per-screen "Playwright interaction pass under `tests/screens/` via
+  `pnpm test:e2e`" specced in the handoff was done as **jsdom + React
+  Testing Library `*.screen.test.tsx` in the existing `pnpm test` suite**
+  instead (owner decision). Rationale: there is no `playwright.config.ts`
+  / e2e harness yet, and the Admin screens are auth-gated clients needing
+  a running Next server + seeded Postgres + login — standing that up is a
+  session of its own. The RTL specs cover the same behaviours
+  (drawer/focus-trap/Esc-restore, toast-on-save, EmptyState/ErrorState,
+  tab/filter) component-level and server-free. A real Playwright e2e
+  harness is **carried** — natural home is alongside the Session-12
+  staff-screen work or its own session; noted in
+  `session-12-handoff.md`.
+- No ADR-44 — the rebuild forced no new decision. Every screen composed
+  cleanly from the kit; the one API-shape mismatch (`DatePicker` wants a
+  `Date`, `useLedger` wants a business-date string) was handled by a
+  mapper **in the screen** per the handoff's rule, not a kit change.
+
+### Carried
+
+- Playwright e2e harness for the composed screens (see above).
+- The systemic low-contrast-text FLAG (`kit-audit.md`) and the two
+  field-box `.kit-focus-ring` FLAG are still design-sprint items —
+  untouched here (Session 11 doesn't touch `components/kit/*`).
+
+---
+
+## 2026-08-28 — Development Sprint Sessions 10b–10d: Kit Proof Harness (Deliverable 4) — DONE
+
+**Role:** Developer. Deliverable 4 of the Session 9 remediation sprint — a
+permanent, CI-runnable proof harness for `components/kit/*`: one Storybook
+story per state per component, story-snapshot visual regression, axe a11y
+gates. Built across three sessions (10b toolchain + 15 stories `b42ff1c`;
+10c bug-fix + 19 stories `23111c1`; 10d audit + docs). **No feature-screen
+file touched.**
+
+### Shipped
+
+- **Storybook 9.1.x** (`@storybook/nextjs-vite`, Vite builder) + addon-a11y
+  + test-runner + jest-image-snapshot, all `devDependencies`. `.storybook/`
+  config loads `tokens.css` + `globals.css` so stories render as the app;
+  `preview.ts` forces `animation-duration: 1ms` on `*` so the runner
+  settles. **SB 9.1.x, not the v8 the handoff specced** — v8's Next adapter
+  tops out at Next 15; owner-approved. Recorded in `DECISIONS.md` ADR-42.
+- **`.storybook/test-runner.ts`** — the CI gate: `postVisit` applies real
+  CDP pseudo-states then asserts computed bg === resolved token +
+  focus-ring present (`parameters.interaction`); axe over `#storybook-root`
+  (fails on serious/critical); `#storybook-root` screenshot vs
+  `tests/visual/__screenshots__/<id>.png` at `failureThreshold: 0.02`.
+  `pnpm test:visual` / `pnpm test:a11y` are the same run.
+- **37 story files** — one story per applicable `component-states.md §2`
+  state + §9 interaction assertions, for all 32 kit components + the 4
+  primitives + the admin-shell nav rail. 144 visual baselines committed.
+- **Overlay focus-restore bug fixed (WCAG 2.4.3)** — `useBackgroundInert`
+  was keyed on `mounted`, so the trigger's container stayed `inert`
+  through the slide-out and `useFocusTrap`'s `opener.focus()` was a no-op
+  inside an `[inert]` subtree. Fix in `components/kit/internal/overlay.ts`:
+  key inert on `active`, defer + retry the restore past the commit flush,
+  lift stale `[inert]` / `aria-hidden` ancestors. All 4 overlay stories
+  green.
+- **2 SimpleTable ARIA fixes** the harness exposed — `role="row"` /
+  `role="columnheader"` were on `<button>` elements (invalid); moved to
+  wrapper `<div>`s with a nested button; skeleton / empty / EmptyState
+  branches given real `role="row"` / `role="cell"`.
+- **Session 10d Paper-parity audit** (manual, replaces the automated
+  Paper-diff — see below). Owner did the visual comparison in Storybook.
+  Everything matched the approved design; **2 deviation-from-approved bugs
+  found and fixed:**
+  - **Drawer** — the `.kit-drawer-panel` had no `z-index`, so the
+    `.kit-scrim` (`--z-overlay` 1200, `backdrop-filter: blur`) painted
+    over it — the drawer's own content rendered blurred. Every other
+    overlay already set the panel `z-index`. Added
+    `[z-index:var(--z-drawer)]` (1300) in `components/kit/drawer.tsx`.
+  - **ToggleSwitch** — a perceptible flick on click: the track carried
+    `.kit-interactive`, whose `transform` transition + `:active` repaint
+    animated on the round knob. Dropped `.kit-interactive` from the track
+    (a switch is not a hover/press surface); kept `.kit-focus-ring`; added
+    a scoped `background-color` transition; made disabled
+    `pointer-events: none` explicit.
+- **`DECISIONS.md`** — ADR-42 SB-9.1.x note; ADR-43 **RATIFIED** (all 7
+  owner-review items — Button `size`, Toast, PageShell, PillFilter
+  radiogroup, DatePicker API, QuantityStepper input, the 2 hover tokens).
+- **`docs/design/kit-audit.md`** — 10 remaining gaps marked ratified;
+  harness-surfaced flags recorded (§9.1 ring on the two field boxes →
+  design sprint; systemic low-contrast dimmed/semantic text, one flag many
+  sites → design sprint; SimpleTable ARIA miss → fixed); Session 10d audit
+  result appended. **`docs/TEST_PLAN.md §2a`** — the kit-gating paragraph.
+
+### Changed from plan
+
+- **Automated Paper-artboard visual diff (handoff task 4c) deferred.** The
+  kit is gated by story-snapshot + axe; Paper parity is verified by a
+  one-time manual audit checkpoint (Session 10d), not a CI diff. Reasons:
+  Session 2 already consistency-audited the kit against Paper
+  (`component-states.md §8`), Sessions 3–4b rebuilt it verbatim from
+  `get_jsx`, and the committed story snapshots already catch future drift —
+  a Paper diff would only add a one-time "still matches Paper" check, which
+  the manual audit covers. (`paper` MCP was also unreachable across
+  10b/10c and intermittent in 10d.)
+- **SB 9.1.x, not v8** (above).
+
+### Blocked / carried
+
+Nothing. Gate 4 passed: `pnpm test` 80/80, `pnpm tsc --noEmit` clean,
+`pnpm test:visual` + `pnpm test:a11y` green, `pnpm build` clean, baselines
+committed, no feature-screen file touched. Deliverable 4 closes the Session
+9 remediation sprint. Next: Session 11 — rebuild the shipped screens as kit
+compositions.
+
+---
+
 ## 2026-08-27 — Development Sprint Session 10: Kit Remediation Part 2 — component audit & fix + 4 primitives (Deliverable 3) — DONE
 
 **Role:** Developer (Development Sprint). Second half of the Session 9

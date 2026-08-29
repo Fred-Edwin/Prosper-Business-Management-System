@@ -57,6 +57,18 @@ export type StockMovementView = {
   stockCountId: string | null;
   transferCounterpartLocationId: string | null;
   purchasePaymentId: string | null;
+  /**
+   * Real purchase-payment detail (ADR-46 §3). Non-null only on
+   * `movementType === "purchase_payment"` rows; `null` on every other
+   * type, and `null` on legacy payment rows whose `note` didn't parse
+   * during backfill.
+   */
+  purchaseSupplier: string | null;
+  /** Ordered magnitude, 4dp decimal string. */
+  purchaseOrderedQty: string | null;
+  /** Total cost, 2dp decimal string (money). */
+  purchaseTotalCost: string | null;
+  purchasePaidFrom: "cash" | "mpesa_bank" | null;
   correctsMovementId: string | null;
   note: string | null;
   createdAt: string;

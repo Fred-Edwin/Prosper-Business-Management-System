@@ -2,13 +2,16 @@
 
 **Status:** Stage 1 (this milestone list) approved.
 
-**Milestone 1 — in progress.** Foundation (Sprint 01) and the full
-design phase are done and approved in Paper. The design *export* (Sprint
-06) was done wrongly and scrapped — 20 of 21 screens deleted, being
-re-exported per `docs/design/export-workflow.md`. No M1 domain logic or
-API routes exist yet. The authoritative plan for finishing M1 — pinned
-features, the 21-screen master table, and the remaining ~8-session
-sequence — is **`docs/sprints/milestone-1-plan.md`**.
+**Milestone 1 — DONE (2026-08-29).** All three features (Catalog &
+Locations, Store & Stock Movements incl. the `/admin/financials`
+stock+reconciliation slice + A5 Archive, Assets) are built, wired, and
+through an adversarial QA pass (Session 17: `pnpm test` 226/226, `tsc` 0,
+`build` clean; the one High finding — F-1 correction-stacking — fixed
+in-session). Two non-blocking follow-ups are recorded: F-2 (2-phase
+transfer receiver visibility — a Design call, M2 territory) and the
+misleading ledger "Edit" column (Design Sprint). Plan + session history:
+**`docs/sprints/milestone-1-plan.md`**; findings:
+`docs/sprints/session-17-findings.md`.
 `docs/milestones/milestone-01-the-business-exists.md` is retained for
 original intent/reasoning only.
 
@@ -58,9 +61,9 @@ Original intent/reasoning: [`docs/milestones/milestone-01-the-business-exists.md
 
 | Feature | PRD | Status |
 |---|---|---|
-| Catalog & Locations | §4.1 | Designed (Paper, approved). Screen re-export + backend + wiring pending. |
-| Store & Stock Movements | §4.2 | Designed (Paper, approved). Screen re-export + backend + wiring pending. |
-| Assets | §4.10 | Designed (Paper, approved). Screen re-export + backend + wiring pending. |
+| Catalog & Locations | §4.1 | **DONE** — domain + API + screens, adversarial QA passed (Session 17). |
+| Store & Stock Movements | §4.2 | **DONE** — full `StockMovement` ledger + `/admin/financials` slice + A5 Archive; adversarial QA passed. F-1 (correction-stacking) fixed. F-2 (2-phase transfer receiver visibility) deferred to a Design call. |
+| Assets | §4.10 | **DONE** — register + condition + friction-delete + Archive; adversarial QA passed. |
 
 `/admin/financials` (stock-purchase + reconciliation slice only) is also
 in M1 scope, under Store & Stock Movements — the full Financials feature

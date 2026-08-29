@@ -140,6 +140,20 @@ primary-loading, destructive-loading. Everything else is global.
 | filled | GLOBAL (value text in place of placeholder) |
 | error | ARTBOARD (ADD — danger border; "Location required" on Asset Drawer) |
 | disabled | GLOBAL (`--surface-subtle`, `--text-disabled`, no chevron interaction) |
+| **searchable / combobox variant** | **ARTBOARD** (Phase A done — kit Design Sprint, 2026-08-29; ADR-46 §6). 3 state rows on `6CG-0`: **`Select — Searchable (closed)`** (identical to Default closed), **`Select — Searchable (open, query typed, list filtered)`** (search glyph + text input + caret, accent border, capped/scrolling filtered popover), **`Select — Searchable (open, no matches)`** (single non-interactive "No matches" row). Full handoff: **`docs/sprints/kit-searchable-select-handoff.md`**. **Phase B (Developer) still pending:** add a `searchable` **opt-in mode** to `components/kit/select.tsx` — a text input in the trigger filters the option list `label`-contains, `max-height` ≈ 8 rows then scroll, a "No matches" row, keyboard = the existing APG combobox extended to the input; +3 Storybook stories; `test:visual` + `test:a11y` + §9 `postVisit`. It is an **edit** of the existing APG-listbox `Select`, not a rebuild — `searchable` off = byte-unchanged. Not built by a Development Sprint into a screen. **Session 16 interim** until Phase B ships: plain `Select` popover `max-height ~280px` + scroll + the drawer's `ingredient`/`goods` kind filter. |
+
+**Searchable-mode state matrix** (per Phase A):
+
+| State | artboard? |
+|---|---|
+| searchable — closed | ARTBOARD ✅ (identical to Default closed; caption says so) |
+| searchable — open, filtered | ARTBOARD ✅ (input + 14px search glyph + `max-height ≈ 8 × --control-sm` capped/scrolling filtered list) |
+| searchable — open, no matches | ARTBOARD ✅ (one centred non-interactive `--text-tertiary` "No matches" row) |
+| searchable — focus (keyboard) | GLOBAL (§9.1 — accent ring on the input) |
+| searchable — input focus border | GLOBAL (§9.2 — accent border on focus; already true when open) |
+| searchable — disabled | GLOBAL (§9.7) |
+
+Phase-A provisional calls (documented for Phase B): the matched substring is **not** highlighted in the filtered list; the empty-popover copy is the generic **"No matches"**, screen-overridable via a `noMatchesLabel` prop.
 
 ### C6 — Segmented control
 
@@ -256,6 +270,8 @@ D3 on the dot+pill vs dot+text rendering.)
 | body row selected | ARTBOARD (ADD, **conditional**) — only if any M1 simple-table is multi-select. Assets/Financials M1 tables are **not** selectable (row click = open edit drawer, not select). → **Skip unless owner says otherwise.** |
 | empty state (no rows) | **ARTBOARD (ADD)** — see §7 open decision on EmptyState. If EmptyState becomes a component, this row references it; if not, draw the inline "No records" treatment here. |
 | loading (skeleton rows) | GLOBAL — 3 shimmer rows using `--surface-subtle` / `--surface-hover`; one rule for both tables. |
+| **Archived-tab row treatment** (Session 15, ADR-47 §1) | **SCREEN COMPOSITION, not a kit change.** On the "Archived" tab (Catalog + Assets), each row shows a neutral **"Archived"** `StatusChip` in the name cell and the last-column action is **"Unarchive"** (accent text) instead of "Edit". Same columns otherwise. Artboard: `Admin Catalog — Archived tab [S15]`. |
+| **row action = single "Edit"** (Session 15, ADR-46 §5) | Confirmed: every M1 `SimpleTable` (Catalog + Assets) has **one "Edit" affordance** in the last column, **no Delete column**. Row click is not wired to open Edit in M1. This matches the approved `6ZO-0` / `8DL-0` artboards; the shipped `catalog-client.tsx` diverged with a second Delete button (fixed in Session 16). |
 
 ### C16 — Dense Ledger
 
@@ -319,6 +335,8 @@ decides: per-entity label props, or unify. Recorded as §6 D2.
 | footer: primary disabled (form invalid / no changes) | ARTBOARD (ADD — one artboard; the "Save changes" disabled) |
 | footer: submitting | GLOBAL (primary-loading from C1) |
 | scrolled (header hairline appears) | GLOBAL (add `--border-subtle` bottom border to header on scroll > 0) |
+| **bottom "Delete this record" section** (Session 15, ADR-46 §5) | **SCREEN COMPOSITION, not a kit change.** A2/A1: the Edit drawer for Catalog + Assets gets a bottom section — divider → uppercase "Delete this &lt;record&gt;" label → one line of copy → a **destructive-`tertiary`** `<Button>` that opens the unchanged `FrictionDeleteDialog`. Rendered only in edit mode. It is arbitrary drawer children + an existing button variant + an existing dialog — the `Drawer` component is untouched. Artboard: `Product Drawer — rail + kind hint + delete section [S15]`. |
+| **archived-record guard** (Session 15, ADR-47 §3.2) | **CAPTION on `6OE-0` — a small fallback, not a new component.** If the Edit drawer is opened on an archived row (deep link / stale state), it renders its fields **disabled** + a single info line ("This record is archived. Unarchive it to make changes.") + a **Close**-only footer. The normal path is that the Archived tab offers only "Unarchive", so the drawer never opens for an archived row. |
 
 ### C19 — Bottom Sheet
 
@@ -857,7 +875,7 @@ per-component before → after record).
 | C2 IconButton | default, hover/active/focus, disabled | **implemented** |
 | C3 TextInput | default/focus/filled/error/disabled | **implemented** — `.kit-field` + `<FormField>` (helper row + `aria-describedby`) |
 | C4 Textarea | default/focus/error/disabled | **implemented** — as C3 |
-| C5 Select | closed/focus/**open**/filled/error/disabled | **implemented** — real APG listbox (arrow/Home-End/type-ahead/`aria-activedescendant`) |
+| C5 Select | closed/focus/**open**/filled/error/disabled | **implemented** — real APG listbox (arrow/Home-End/type-ahead/`aria-activedescendant`). **`searchable` mode implemented + proven** (2026-08-29, `kit-searchable-select-handoff.md` Phase B) — opt-in `searchable` + `noMatchesLabel` props; open ⇒ APG editable-combobox filter input, `label`-contains filter, `max-h` = 8 × `--control-md` + scroll, non-interactive `noMatchesLabel` row; `searchable` off = byte-unchanged. 5 `Searchable*` stories green under `test:visual` + `test:a11y` + §9 `postVisit`. |
 | C6 SegmentedControl | active/resting/hover/disabled | **implemented** — roving tabindex + arrows; `--shadow-sm` lift |
 | C7 ToggleSwitch | on/off/disabled/focus | **implemented** |
 | C8 SearchInput | default/focus/**filled+clear** | **implemented** — + `aria-label`, `role="search"`, Esc-to-clear |

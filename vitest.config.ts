@@ -4,9 +4,13 @@ import path from "node:path";
 
 export default defineConfig({
   test: {
+    // Default: Node, for the ledger/domain math (fast, no DOM). Screen-level
+    // component specs opt into jsdom per-file with `// @vitest-environment jsdom`
+    // (they are named `*.screen.test.tsx`).
     environment: "node",
-    include: ["**/*.test.ts"],
-    exclude: ["node_modules/**", "tests/e2e/**"],
+    include: ["**/*.test.ts", "**/*.test.tsx"],
+    exclude: ["node_modules/**"],
+    setupFiles: ["./vitest.setup.ts"],
   },
   resolve: {
     alias: {

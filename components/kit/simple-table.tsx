@@ -83,10 +83,12 @@ export function SimpleTable<Row>({
             col.width,
             col.align === "right" && "text-right flex justify-end flex-wrap",
           );
+          // Sortable header: `role="columnheader"` stays on the wrapper (a
+          // native <button> may not carry that role — aria-allowed-role);
+          // the inner <button> is the activation + focus target.
           return col.sortable && onSort ? (
-            <button
+            <div
               key={col.key}
-              type="button"
               role="columnheader"
               aria-sort={
                 isSorted
@@ -95,14 +97,19 @@ export function SimpleTable<Row>({
                     : "descending"
                   : "none"
               }
-              onClick={() => onSort(col.key)}
-              className={cn(headerCls, "kit-interactive kit-focus-ring inline-flex items-center gap-[4px]")}
+              className={cn(headerCls, "p-0")}
             >
-              {col.header}
-              <span aria-hidden className="[color:var(--text-tertiary)]">
-                {isSorted ? (sort!.direction === "asc" ? "▲" : "▼") : "↕"}
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={() => onSort(col.key)}
+                className="kit-interactive kit-focus-ring inline-flex items-center gap-[4px] font-ui font-(--weight-semibold) text-[10px] [letter-spacing:var(--tracking-caps)] uppercase leading-[12px] text-info"
+              >
+                {col.header}
+                <span aria-hidden className="[color:var(--text-tertiary)]">
+                  {isSorted ? (sort!.direction === "asc" ? "▲" : "▼") : "↕"}
+                </span>
+              </button>
+            </div>
           ) : (
             <div key={col.key} role="columnheader" className={headerCls}>
               {col.header}
@@ -123,20 +130,27 @@ export function SimpleTable<Row>({
                 "border-b border-b-solid [border-bottom-color:var(--border-subtle)]",
             )}
           >
-            <div className="kit-skeleton h-[14px] w-full" />
+            <div role="cell" className="kit-skeleton h-[14px] w-full" />
           </div>
         ))
       ) : rows.length === 0 ? (
         emptyState ? (
-          <div className="p-(--sp-8)">
-            <EmptyState {...emptyState} />
+          <div role="row">
+            <div role="cell" className="p-(--sp-8)">
+              <EmptyState {...emptyState} />
+            </div>
           </div>
         ) : (
           <div
             role="row"
-            className="flex items-center justify-center h-[44px] px-(--sp-6) shrink-0 font-ui [color:var(--text-tertiary)] text-sm/sm"
+            className="flex items-center justify-center h-[44px] px-(--sp-6) shrink-0"
           >
-            No records
+            <div
+              role="cell"
+              className="font-ui [color:var(--text-tertiary)] text-sm/sm"
+            >
+              No records
+            </div>
           </div>
         )
       ) : (
@@ -160,17 +174,28 @@ export function SimpleTable<Row>({
             i < rows.length - 1 &&
               "border-b border-b-solid [border-bottom-color:var(--border-subtle)]",
           );
+          // A clickable row is a focusable `role="row"` with Enter/Space
+          // activation (ARIA-valid: `<button role="row">` is not — role `row`
+          // is disallowed on a native button, and a button flattens its cell
+          // subtree). The row keeps `role="row"` > `role="cell"`; `tabIndex`
+          // + the keydown handler make it operable.
           return onRowClick ? (
-            <button
+            <div
               key={rowKey(row)}
-              type="button"
               role="row"
               aria-label={rowLabel?.(row)}
+              tabIndex={0}
               onClick={() => onRowClick(row)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onRowClick(row);
+                }
+              }}
               className={cn(rowCls, "kit-row kit-focus-ring cursor-pointer")}
             >
               {inner}
-            </button>
+            </div>
           ) : (
             <div key={rowKey(row)} role="row" className={rowCls}>
               {inner}

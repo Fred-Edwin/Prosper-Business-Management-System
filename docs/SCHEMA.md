@@ -136,8 +136,19 @@ product/location = signed sum of its rows.
 | stock_count_id | FK → `StockCount`, nullable — set when derived from a canteen count |
 | transfer_counterpart_location_id | FK → `Location`, nullable — set when `movement_type = transfer` |
 | purchase_payment_id | FK → purchase payment record, nullable — links a receipt back to its payment, if any |
+| purchase_supplier | text, nullable — **`purchase_payment` only** (ADR-46 §3). The supplier the payment was made to. |
+| purchase_ordered_qty | NUMERIC(14,4), nullable — **`purchase_payment` only**. Ordered magnitude (the row's `quantity` stays `0` — no stock effect). |
+| purchase_total_cost | NUMERIC(14,2), nullable — **`purchase_payment` only**. Total amount paid (money). |
+| purchase_paid_from | text, nullable — **`purchase_payment` only**. `"cash"` or `"mpesa_bank"` — which balance the money left. |
 | corrects_movement_id | FK → `StockMovement`, nullable, self-referencing — set when this row is a correction of an earlier row (ADR-15) |
-| note | text, nullable |
+| note | text, nullable — for `purchase_payment` rows this is a human display sentence composed from the four `purchase_*` columns, not the source of truth |
+
+**`purchase_*` columns (ADR-46 §3):** promoted from a free-text `note` that
+was regex-scraped client-side (`parsePaymentNote`, now deleted). Set only
+for `movement_type = purchase_payment`; `null` on every other type, and
+`null` on any pre-ADR-46 payment row whose `note` didn't parse during the
+one-time backfill (`scripts/backfill-purchase-payment-detail.ts`). No
+`MoneyMovement` is written — that boundary (ADR-39 §4) is unchanged.
 
 **`purchase_payment_id` / purchase receipt matching:** payment and receipt
 are both rows in this ledger (`purchase_payment` has no stock effect;
@@ -351,14 +362,27 @@ Does not auto-deduct pay or block day-close (PRD §4.8).
 ### `Asset`
 | Column | Notes |
 |---|---|
-| name | |
+| name | required, trimmed non-empty |
 | location_id | FK → `Location` |
-| purchase_date | |
-| purchase_cost | NUMERIC |
-| condition_status | text/enum |
-| deleted_at | nullable — soft-delete |
+| purchase_date | `@db.Date` (calendar date, no time) — not in the future |
+| purchase_cost | `NUMERIC(12,2)` — `Decimal` in code, never a float (ADR-30) |
+| condition_status | text; the app enforces `Good` \| `Needs Repair` \| `Decommissioned` (matches the `<ConditionChip>` kit component + `component-states.md` C14). Stored as the display string. |
+| deleted_at | nullable — soft-delete (ADR-23); hidden from the default `listAssets` read |
+| created_at / updated_at | standard |
 
-Hard-delete permitted only if no linked history exists (ADR-23).
+**Implemented Session 13.** The register is **mutable** (ADR-22) —
+`updateAsset` is a true in-place edit, not a correction row; contrast the
+append-only stock ledger (ADR-15 / ADR-39). `transitionCondition` is a
+plain `condition_status` update (no approval workflow in M1) routed
+through the domain so a later audit-log hook has one seam.
+
+Hard-delete permitted only if no linked history exists (ADR-23). In M1
+the only history an asset can accrue is `AuditLog` rows
+(`entity_type = "asset"`) — there is no maintenance-log or assignment
+table yet. The guard (`hardDeleteAsset`) counts those; when such a table
+is added, its count joins the guard, mirroring `hardDeleteProduct`. No
+schema change was needed for F3 — the table above already carried every
+field.
 
 ---
 

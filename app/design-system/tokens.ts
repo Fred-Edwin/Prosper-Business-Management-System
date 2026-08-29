@@ -54,8 +54,7 @@ export const tokens = {
   "--surface-selected": "rgb(76 59 115 / 7%)",
   "--surface-active": "rgb(76 59 115 / 12%)",
   "--surface-raised": "oklch(93.3% 0.011 308.3)",
-  /** @deprecated D2 / ADR-41 — backward-compat alias only; use --surface-raised. */
-  "--surface-panel-tint": "#a690b838",
+  // --surface-panel-tint retired in Session 11 (D2 / ADR-41) — use --surface-raised.
 
   // --- Color: semantic text -----------------------------------------------
   "--text-primary": "var(--color-gray-900)",

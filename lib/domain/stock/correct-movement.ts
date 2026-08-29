@@ -26,7 +26,16 @@ import { toBusinessDate, businessDateOnly } from "@/lib/time";
  *   - If the day is still open → `admin` **or the original recorder** may
  *     correct (`FORBIDDEN` for any other actor).
  *
+ * `delta` is measured against the target's **current derived value**
+ * (`original.quantity` + every existing correction delta for it), not the
+ * bare original — so re-submitting the same `correctedQuantity` (a retry, a
+ * double-click) computes `delta = 0` and is rejected rather than stacking a
+ * second identical delta row and moving the balance twice (Session 17 F-1).
  * A `delta` of zero is a `VALIDATION_ERROR` — nothing to correct.
+ *
+ * The target must be an **original** row: a correction delta (one whose
+ * `correctsMovementId` is set) cannot itself be corrected — corrections
+ * don't chain. Correct the original again instead.
  */
 export async function correctMovement(
   input: CorrectMovementInput,
@@ -40,6 +49,16 @@ export async function correctMovement(
     });
     if (!original) {
       throw new DomainError("NOT_FOUND", "Movement not found.", "movementId");
+    }
+
+    // Corrections don't chain — the target must be an original row, never a
+    // delta written by an earlier `correctMovement` (Session 17 F-1).
+    if (original.correctsMovementId !== null) {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "This row is itself a correction. Correct the original movement instead.",
+        "movementId",
+      );
     }
 
     const businessDate = toBusinessDate(original.occurredAt);
@@ -65,7 +84,19 @@ export async function correctMovement(
       );
     }
 
-    const delta = corrected.sub(original.quantity);
+    // Measure against the *current derived value* of this movement — the
+    // original plus every correction delta already applied to it — so a
+    // repeated identical correction is a no-op (delta 0) and is rejected,
+    // rather than stacking another delta and moving the balance again.
+    const priorDeltas = await tx.stockMovement.aggregate({
+      _sum: { quantity: true },
+      where: { correctsMovementId: original.id },
+    });
+    const currentValue = original.quantity.add(
+      priorDeltas._sum.quantity ?? 0,
+    );
+
+    const delta = corrected.sub(currentValue);
     if (delta.isZero()) {
       throw new DomainError(
         "VALIDATION_ERROR",
