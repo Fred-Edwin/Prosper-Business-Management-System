@@ -142,6 +142,17 @@ This is where a bug is most expensive and least visible. Attack it first.
   and `correctsMovementId = null` and no sibling `transfer` row pointing
   back at it. Confirm the incoming-transfer banner's query matches that
   definition and collapses only on accept/flag.
+- **KNOWN GAP (flagged by Session 14 — reproduce and decide):** a
+  `transfer` dispatch row is stored with `locationId = source`, but
+  `listMovements` scopes a location-bound role to
+  `where.locationId = actor.locationId`. So the **receiver's**
+  `useStaffStock` list never contains the pending inbound dispatch, and
+  `deriveIncomingTransfers` on their hub renders no Accept banner for a
+  real cross-location transfer. `POST …/accept` works when handed a valid
+  dispatch id directly. Decide: should the receiver's list/derivation
+  also match on `transferCounterpartLocationId = actor.locationId` for
+  `transfer` rows, or is a dedicated inbound-transfers endpoint the
+  answer? This is a Design call as much as a bug — route it accordingly.
 
 ---
 

@@ -5,6 +5,161 @@ shipped, what's blocked, what changed from plan.
 
 ---
 
+## 2026-08-29 — Development Sprint Session 14: D1 staff-FORBIDDEN blocker + M1 copy sweep + Catalog drawer rail — DONE
+
+**Role:** Developer. Bugfix + copy session off the owner's M1 manual
+walkthrough (`docs/sprints/m1-manual-verification-observations.md`).
+Handled **D1, B1, B4, C2, A3** only. **Not** a kit change
+(`components/kit/*` untouched; `components/shells/*` touched for two
+label strings only — the sanctioned B1 exception). **Not** a design
+sprint — A2/A4/A5/C1/B3 and the B5 re-repro are Sessions 15–17.
+
+`git diff --stat 9bd1ab4..HEAD`: `app/api/{products,locations}/route.ts`
++ their new `route.test.ts`, `app/admin/catalog/product-drawer.tsx`,
+`app/admin/financials/{payment-drawer,financials-client}.tsx`,
+`app/admin/stock/opening/opening-client.tsx`,
+`components/shells/{admin-shell,mobile-nav-drawer}.tsx`, `docs/API.md`,
+`docs/PROGRESS.md`, `docs/sprints/m1-manual-verification-observations.md`.
+
+### D1 — staff FORBIDDEN across every Phase-3 stock flow — FIXED
+
+**Root cause: cause 2** (role missing from an endpoint allow-list), not
+cause 1. Reproduced on localhost as `Store Manager` / `Canteen Attendant`
+(PIN 1234) via the NextAuth credentials flow + curl against `:3000`:
+
+- The staff `User` rows in the dev DB **do** have valid `staffId` →
+  `Staff.locationId` links (`resolveActorLocationId` returns non-null) —
+  so the seed's `update: {}` latent bug (cause 1) was **not** the active
+  cause here. Left the seed as-is; noted below as a follow-up.
+- `POST /api/stock-movements` itself is fine — `STOCK_ROLES` and the
+  per-`movementType` allow-list both include the staff roles, and the
+  own-location guard works.
+- **The actual break:** `GET /api/products` and `GET /api/locations`
+  were guarded `requireApiRole("admin")`. The staff stock hooks
+  (`app/store-manager/use-staff-stock.ts` — `useStaffStock`,
+  `useStockLevels`) fetch **both** inside a `Promise.all` for the flow
+  product pickers and the mobile stock-levels views. As a staff role
+  those calls 403, the batch rejects, and every staff hub + flow renders
+  the FORBIDDEN error state on load.
+
+**Fix:** widened the GET guard on both routes to
+`["admin","store_manager","canteen_attendant"]` (`requireApiRoleIn`).
+`POST /api/products` stays admin-only. `listProducts` already strips
+`buyingPrice` to `null` for non-admin (`lib/domain/catalog/list-products.ts`),
+so the widened read does **not** expose buying price. `docs/API.md`
+updated — it already anticipated this ("widen when a second consumer
+appears"). Role scoping is **not** weakened: products carry no location,
+the location list is non-sensitive, and the location-bound write path
+(ADR-26) is untouched.
+
+**Regression tests** (`app/api/products/route.test.ts`,
+`app/api/locations/route.test.ts` — new; `next-auth` `getServerSession`
+mocked, real dev Postgres for the product row): a `store_manager` /
+`canteen_attendant` session gets **200 not 403** from both GETs;
+`buyingPrice` comes back `null` for `store_manager` (guards the
+price-hiding rule at the same time); `cashier` is still **403**; an
+inactive session is **401**.
+
+**Manual re-walk (localhost, all 7 staff flows):** receive
+(`purchase_receipt`), issue, production, `non_sale_consumption`, transfer
+dispatch → all **201**; both stock-levels `balances` reads → **200**;
+all staff pages (`/store-manager/*`, `/canteen/*`) render **200** for
+their role. FORBIDDEN wall is gone.
+
+**Two expected/known secondary items observed during the re-walk (NOT
+regressions, NOT fixed here):**
+
+1. `GET /api/stock-movements/outstanding` is **Admin-only by design**
+   (Session 12 carry) — both staff hubs read it behind a `TODO(mock)`
+   fixture (`store-manager/hub-client.tsx`,
+   `store-manager/flows/receive/receive-flow.tsx`) and degrade
+   gracefully; the 403 does **not** block the screen. Left as-is.
+2. **Accept-transfer visibility gap (for Session 17):** a `transfer`
+   dispatch row is stored with `locationId = source`. `listMovements`
+   scopes a location-bound role strictly to
+   `where.locationId = actor.locationId`, so the **receiver never sees
+   the pending inbound dispatch** through the list, and
+   `deriveIncomingTransfers` on their hub has nothing to show — the
+   Accept banner never appears for a real cross-location transfer. The
+   `POST …/accept` endpoint works when given a valid id; the gap is
+   purely which rows the receiver's list returns. This is a pre-existing
+   2-phase-transfer design/data-scope question, out of scope for a
+   bugfix session (touches the domain read contract) — **flagged for
+   Session 17 QA** (`docs/sprints/final-qa-handoff.md`), likely needing a
+   Design decision on how the receiver queries inbound transfers.
+
+### B4 + C2 — copy sweep (display only, no route/enum/value change)
+
+- **B4:** `opening-client.tsx` `CATEGORY_LABEL.goods` and the goods TAB
+  label `"Shop Goods"` → `"Goods"`. Other kind labels left as-is per the
+  note's scope. `grep` confirms no residual "Shop Goods" in
+  `app/ components/ lib/`.
+- **C2:** `payment-drawer.tsx` `PAID_FROM_LABELS` / `PAID_FROM_KEY` /
+  `PAID_FROM_LABEL` — the `"Cash at Hand"` string → `"Cash"`; stored
+  value stays `"cash"`. `financials-client.tsx` — the Paid From reverse
+  map **and** the `"Cash at Hand"` KPI-tile label → `"Cash"` (kept
+  consistent across the handoff's listed line range). `"M-Pesa / Bank
+  Till"` and `"mpesa_bank"` untouched. `grep` confirms no residual "Cash
+  at Hand".
+  - **OPEN (Session 15):** the KPI tile "Cash" is semantically a
+    *balance* readout, not the Paid From payment-source picker — renamed
+    here for term-consistency, but Session 15's Financials
+    Purchases↔Deliveries redesign should confirm the tile wording.
+
+### B1 — Admin primary nav "Stock" → "Ledger"
+
+- `components/shells/admin-shell.tsx` + `mobile-nav-drawer.tsx`: `label`
+  only → `"Ledger"`. `key` (`"stock"`) and `href` (`/admin/stock`)
+  unchanged — no route rename, no redirect.
+- **Scope decided with the owner in-session: Admin primary nav only.**
+  Left as-is (open, not owned by a specific later session yet): the
+  `/admin/stock/opening` breadcrumb ("Stock & Reconciliation"), the
+  Financials "Stock Purchases" tab, and the **staff-shell** "Stock"
+  bottom-nav entry (`components/layout/staff-shell-client.tsx`). If the
+  rename should go app-wide, that's a follow-up naming pass.
+
+### A3 — Catalog product drawer: floating `panel` → full-height `rail`
+
+- `app/admin/catalog/product-drawer.tsx`: added `variant="rail"` to the
+  `<Drawer>` + primary `<Button className="grow">` in the footer to match
+  the other three M1 drawers (correction / payment / asset). Kit change:
+  **none** — `<Drawer>` ships both variants by design (ADR-37b).
+- `tests/screens/catalog.screen.test.tsx` stays green (5/5) — `rail` and
+  `panel` share the kit internals (`role="dialog"`, focus-trap,
+  Esc-restore).
+- `FrictionDeleteDialog` (`product-delete-dialog`) unchanged — moving
+  delete into the drawer (A2) is a Session 15 design decision.
+
+### Gate state
+
+- `pnpm tsc --noEmit` — exit 0.
+- `pnpm build` — clean.
+- `pnpm test` — **162 / 163**. The single failure,
+  `tests/screens/opening.screen.test.tsx > "enables Save once a count is
+  entered, and toasts on a successful batch"` (a `findByText(/Saved 1
+  opening count…/)` timeout), is **pre-existing on the branch tip** —
+  verified by restoring `opening-client.tsx` to `9bd1ab4` and re-running
+  (fails identically 3/3). It is unrelated to the two tab-label constants
+  B4 changed. It sits under **B2** (bulk opening-stock post-save
+  behaviour), which the handoff assigns to **Session 17 QA** — flagged
+  there, not fixed here. (Session 13's "154 green" predates the Assets
+  suite; the suite is now 163 total.)
+- kit `test:visual` / `test:a11y` — not re-run; `components/kit/*` has a
+  **zero diff** this session, so nothing invalidates them.
+
+### Follow-ups noted
+
+- **`prisma/seed.ts`** still `upsert`s the staff `User` with
+  `update: {}`, so a staff row created before `staffId` existed would
+  never be backfilled — a latent re-seed hazard even though the current
+  dev DB is clean. A one-line fix (backfill `staffId`/`role`/`active` in
+  the `update` block) would harden it; deferred as out of D1's diagnosed
+  cause and not needed to unblock M1.
+- **`docs/sprints/session-15-handoff.md`** appeared in the working tree
+  during this session (owner-authored, 21 KB, a fuller Session 15 plan
+  than the table in the Session 14 handoff). Left **untracked** — not
+  Session 14's to commit.
+
 ## 2026-08-28 — Development Sprint Session 13: M1-F3 Assets (backend + frontend, one session) — DONE
 
 **Role:** Developer. Built F3 Assets end-to-end: `lib/domain/assets` +
