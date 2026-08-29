@@ -2,10 +2,7 @@
 // app/admin/layout.tsx's <AdminShell> (which supplies the sidebar + toolbar);
 // this page renders the approved catalog content region only. The interactive
 // container lives in ./catalog-client.tsx.
-//
-// The standalone design-export skeletons (with their own sidebars) stay at
-// /design-preview/admin-catalog-product-catalog (+ mobile, drawer, dialog) as
-// the permanent visual-regression fixtures — see docs/design/screens/*.
+// Visual acceptance target: the approved Paper artboards for this screen.
 
 import { CatalogClient } from "./catalog-client";
 

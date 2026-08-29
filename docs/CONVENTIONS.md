@@ -165,3 +165,47 @@ Rules:
   does this fall on" (day-close, opening/closing stock) converts using a
   fixed `Africa/Nairobi` constant defined once in `lib/domain/audit` (or a
   shared `lib/time` helper) — never inferred from server locale/timezone.
+
+---
+
+## 6. Working practices (lessons carried forward)
+
+Distilled from Milestone 1. These are cheap to follow and each one maps
+to a real regression that cost a session.
+
+- **Prove a component before a screen uses it.** A new kit component gets
+  its states designed in Paper, then built with the §9 interaction
+  contract + a Storybook story per state + visual-regression + `axe`
+  a11y (ADR-42) — *before* any screen composes it. Wiring data onto an
+  unproven "picture of a control" is the M1 kit-remediation trap.
+- **Never eyeball a screenshot for a value.** Pull exact values with
+  `get_computed_styles`. Reconstructing screens from computed styles (no
+  `get_jsx`) is what scrapped the Sprint 06 export.
+- **Run explicit audit passes as named steps** before calling a
+  multi-screen body of work done — not folded into "does it look right":
+  (a) token hygiene (no raw hex; the only sanctioned exception is
+  `--color-gold-brand`), (b) kit-coverage gaps (a pattern built 3× and
+  not in the kit is a gap even when every instance works), (c) structural
+  parity (column counts, header/footer alignment), (d) nothing bespoke
+  that should be a kit component. Delegate large mechanical
+  cross-referencing to a subagent with a narrow brief; tell it to
+  **flag ambiguous cases, not guess**.
+- **A written rule is not a checklist step.** When a bug recurs after
+  the fix was documented, convert the rule into an item actually executed
+  per screen/per instance, not "kept in mind".
+- **Owner walkthrough per feature, not per milestone.** After a feature's
+  frontend sprint, the owner drives it on `pnpm dev` as every role that
+  touches it before it is called done. (M1's staff-wide FORBIDDEN wall
+  would have been caught in minutes.)
+- **Re-baseline plans, don't annotate them.** When a milestone's session
+  sequence changes, rewrite the plan's session table to reflect reality
+  and add one line to its changelog — never stack `> UPDATED` blocks.
+- **Screenshot top-level artboards for verification**, not inner frames —
+  an isolated inner node shows Paper's dark canvas and reads as a
+  contrast bug that isn't one.
+- **Ledgers, not stored totals** (also in `ARCHITECTURE.md`): stock and
+  money balances are always derived by summing append-only rows.
+  Corrections are new rows linked to the original, never overwrites, and
+  a correction of a correction is rejected — compute the delta against
+  `original + Σ existing deltas` so a double-submit is a no-op (M1
+  finding F-1).

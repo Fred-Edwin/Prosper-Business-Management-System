@@ -12,11 +12,14 @@ them is working blind, not saving time.
 
 ## Before making any code change, read — in this order
 
-1. The current sprint file, `docs/sprints/sprint-XX-*.md` — its scope
-   and acceptance criteria define what "done" means for this session.
-   Check its `Status:` field; don't start work already marked `done`.
+1. The current milestone plan, `docs/sprints/milestone-XX-plan.md` — its
+   scope, cross-cutting contracts, and session sequence define what
+   "done" means. If a per-session handoff exists
+   (`docs/sprints/milestone-XX-session-N-handoff.md`), read that too.
+   Check the plan's session table; don't start work already marked done.
 2. `docs/CONVENTIONS.md` — naming, folder structure, error shape, the
-   correction-entry pattern, the `TODO(mock)` convention.
+   correction-entry pattern, the `TODO(mock)` convention, and §6 working
+   practices (lessons carried forward).
 3. Whichever of `docs/ARCHITECTURE.md`, `docs/API.md`, `docs/SCHEMA.md`
    are relevant to the module being touched.
 
@@ -35,13 +38,13 @@ silently reinvent a convention that already exists, or contradict one.
 | Naming, folder structure, error shape, correction pattern | `docs/CONVENTIONS.md` |
 | Testing strategy | `docs/TEST_PLAN.md` |
 | Feature sequencing, milestones | `docs/ROADMAP.md` |
-| Current sprint scope/status | `docs/sprints/sprint-XX-*.md` |
+| Current milestone plan + session sequence | `docs/sprints/milestone-XX-plan.md` (+ any `…-session-N-handoff.md`) |
 | Product-wide UI/UX rules | `docs/design/design-principles.md` (§9 is an ENFORCED contract) |
 | What each kit component now does (before → after, per-component) | `docs/design/kit-audit.md` |
 | Kit component state matrix + implementation status | `docs/design/component-states.md` §2 / §9 |
-| Paper → code method (compose screens from the proven kit; artboard = visual target) | `docs/design/export-workflow.md` |
+| Paper → code method (compose screens from the proven kit; artboard = visual target; backend before frontend, no skeleton/fixtures/`/design-preview`) | `docs/design/export-workflow.md` |
 | Per-feature user flow | `docs/design/flows/*.md` |
-| What shipped last, what's blocked | `docs/PROGRESS.md` |
+| What shipped last, what's blocked (full detail = current milestone; older = ledger) | `docs/PROGRESS.md` |
 | Process this project follows | `docs/sdlc.md` |
 
 ## How sessions work
@@ -125,10 +128,12 @@ fixes) — not just a summary at the end.
 
 ## Updating memory across sessions
 
-At the end of every sprint session: update that sprint file's `Status:`
-field, and add an entry to `docs/PROGRESS.md` (what shipped, what's
-blocked, what changed from plan). The next session has no memory beyond
-what's written down.
+At the end of every sprint session: update the current milestone plan's
+session table (`docs/sprints/milestone-XX-plan.md §7`), and add an entry
+to `docs/PROGRESS.md` (what shipped, what's blocked, what changed from
+plan). If sequencing changed, re-baseline that table and add one line to
+the plan's changelog — never stack `> UPDATED` blocks. The next session
+has no memory beyond what's written down.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

@@ -5,10 +5,7 @@
 // M1 cut (milestone-1-plan §2 / ADR-36): stock-purchase table +
 // reconciliation Match cards + record-payment drawer. The KPI stat strip is
 // kept as markup but unwired (no F2 data source — F3 MoneyMovement ledger).
-//
-// The standalone design-export skeletons (with their own sidebars) stay at
-// /design-preview/admin-financials-full-table (+ -payment-drawer-open) as the
-// permanent visual-regression fixtures — see docs/design/screens/*.
+// Visual acceptance target: the approved Paper artboards for this screen.
 
 import { FinancialsClient } from "./financials-client";
 

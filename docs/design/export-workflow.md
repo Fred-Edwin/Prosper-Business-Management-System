@@ -10,6 +10,16 @@ source to copy. The old `get_jsx` → frame-drop → component-swap →
 screenshot-verify flow (Sessions 3–4) is retired; a short "historical"
 note at the bottom records how it worked so the change is legible.
 
+**As of Milestone 2 the flow simplified further.** No skeleton-export
+step, no `fixtures.ts` mock layer, no `/design-preview/<slug>` route. A
+feature's backend is built **before** its frontend session, so the
+assembled screen wires straight to real `lib/domain` calls — nothing to
+mock. The M2 model: **screenshot the approved Paper artboard → assemble
+kit components in the real route to match it → wire to the real domain →
+gate with a `*.screen.test.tsx` spec → owner walkthrough.** The Paper
+artboard is the standing visual reference (re-screenshot it to diff);
+nothing is kept in-repo as a render fixture.
+
 **Read this** before any session whose job is to (a) design a feature's
 screens in Paper, (b) build or extend the component kit in
 `components/kit/`, or (c) assemble a screen from the kit and wire it to a
@@ -43,18 +53,20 @@ copied into a screen file.**
 
 ---
 
-## The four phases
+## The phases
 
-Backend and frontend implementation (Phase C) can happen in either
-order — the fixtures file decouples them.
+From Milestone 2 the phases run **in order**: Design → Kit (only if a new
+component is needed) → Backend → Frontend assembly → QA. Backend precedes
+frontend so the assembled screen wires to real logic directly.
 
-Phases A–D map onto `docs/sdlc.md`'s sprint types:
+Phases map onto `docs/sdlc.md`'s sprint types:
 
 | Phase | Role / sprint type | Output |
 |---|---|---|
-| A — Design | Product Designer (Design Sprint) | Approved Paper artboards: every screen, every component with states, every screen-state |
-| B — Kit | Developer (Design Sprint) — backend-independent | `components/kit/*` built + **proven in Storybook** (one story per state, visual-diff + axe + §9 `postVisit` assertions — ADR-42) |
-| C — Assembly + Implementation | Developer (Development Sprint), per feature | Screens **composed** from the kit into `app/**`; `lib/domain/<module>`, `app/api/*`; fixtures swapped for real calls |
+| A — Design | Product Designer (Design Sprint) | Approved Paper artboards (every screen + every meaning-bearing state); flow docs; the confirmed new-component list |
+| B — Kit | Developer (kit Sprint) — backend-independent; **skipped if no new component** | New `components/kit/*` built + **proven in Storybook** (one story per state, visual-diff + axe + §9 `postVisit` — ADR-42) |
+| C1 — Backend | Developer (Development Sprint), per feature | `lib/domain/<module>`, `app/api/*`, tests — before the frontend session |
+| C2 — Frontend assembly | Developer (Development Sprint), per feature | Screens **composed** from the kit into `app/**` to match the artboard, wired to the real domain; `*.screen.test.tsx` specs; owner walkthrough |
 | D — QA | QA Engineer | Adversarial findings report, then fixes |
 
 ---
@@ -116,11 +128,17 @@ default; the exceptions on record are ADR-37 (a/b/c) and ADR-43.
 
 ---
 
-## PHASE C — ASSEMBLY + IMPLEMENTATION (Development Sprint, per feature)
+## PHASE C1 — BACKEND (Development Sprint, per feature)
 
-Backend and frontend in **either order** — `fixtures.ts` decouples them.
+`lib/domain/<module>` + `app/api/*` per `CONVENTIONS.md` and `API.md`.
+Route handlers: parse → validate (Zod) → check auth/role/ownership → call
+`lib/domain/<module>` → standard response shape. **No business logic in
+handlers.** Ships its own tests (`sdlc.md` / ADR-31). Done before the
+feature's frontend session starts.
 
-### C1. Compose the screen from the kit
+## PHASE C2 — FRONTEND ASSEMBLY (Development Sprint, per feature)
+
+### Compose the screen from the kit
 
 1. Start from the feature's Paper artboard as the **visual target** — pull
    it with `get_screenshot` (top-level artboard node, at 2× for detail)
@@ -148,32 +166,28 @@ Backend and frontend in **either order** — `fixtures.ts` decouples them.
    own their own scrim, portal, focus-trap and Esc-restore. **Do not**
    hand-roll a `fixed inset-0 bg-black/30` wrapper around them.
 
-### C2. Wire the data
+### Wire the data
 
-1. **Backend:** `lib/domain/<module>` + `app/api/*` per `CONVENTIONS.md`
-   and `API.md`. Route handlers: parse → validate (Zod) → check
-   auth/role/ownership → call `lib/domain/<module>` → standard response
-   shape. **No business logic in handlers.**
-2. **Frontend:** the screen's data comes from a per-feature hook
-   (`use-catalog`, `use-stock`, …) that owns every fetch. The composed
-   screen is pure presentation + orchestration over that hook:
-   `useState` for which drawer/tab/filter is active; `onClick` handlers;
-   submit → domain call → toast + close + refresh.
-3. Swap the `fixtures.ts` import for real hook calls and **delete the
-   `TODO(mock)` markers**. Grep for `TODO(mock)` before calling the
-   feature done (`CONVENTIONS.md §4`).
-4. **No new UI/UX decisions in this phase.** If a screen needs a state the
+1. The screen's data comes from a per-feature hook (`use-orders`,
+   `use-customers`, …) that owns every fetch. The composed screen is pure
+   presentation + orchestration over that hook: `useState` for which
+   drawer/tab/filter is active; `onClick` handlers; submit → domain call
+   → toast + close + refresh.
+2. There is no fixtures import to swap and no `TODO(mock)` marker to
+   delete — the hook calls the real domain from the start. Still grep for
+   `TODO(mock)` before calling the feature done (`CONVENTIONS.md §4`).
+3. **No new UI/UX decisions in this phase.** If a screen needs a state the
    kit + artboards don't cover, **stop and flag it** in `PROGRESS.md` — it
    goes back to a Design Sprint.
 
-### C3. Per-screen gate
+### Per-screen gate
 
 For each composed screen, **all** of:
 
 1. **Visual-diff vs the Paper artboard** (rest state) — `get_screenshot`
    the artboard, compare, pull exact values with `get_computed_styles` for
-   anything that looks off. If `paper` is unreachable, diff against the
-   committed `/design-preview/<slug>` skeleton and note it.
+   anything that looks off. If `paper` is unreachable, note it and defer
+   the visual check to the owner walkthrough.
 2. **Interaction spec** — a `*.screen.test.tsx` under `tests/screens/`
    (jsdom + React Testing Library, the per-feature hook mocked, no server
    / DB). It drives the interactive elements and asserts the kit
@@ -184,17 +198,15 @@ For each composed screen, **all** of:
 3. **Responsive** — where the screen swaps a mobile card layout for a
    desktop table (`--bp-md`), both match their artboards.
 4. **axe** — no serious/critical violations on the rendered screen.
+5. **Owner walkthrough** — after the feature's screens are assembled and
+   wired, the owner drives it on `pnpm dev` as every role that touches it
+   before it is called done (`milestone-2-plan.md §8` guardrail 3).
 
 Global gates (unchanged): `pnpm test` stays green (add screen specs,
 don't weaken the unit suite); `pnpm tsc --noEmit` exit 0; `pnpm build`
 clean; the kit's `pnpm test:visual` + `pnpm test:a11y` still pass (you
 should not be touching `components/kit/*` — if you do, re-run them and
 re-baseline only the affected story).
-
-### C4. The `/design-preview` route stays
-
-`/design-preview/<slug>` keeps importing `fixtures.ts` as the permanent
-visual-regression reference. Do not delete it when the real route lands.
 
 ---
 
@@ -205,22 +217,11 @@ doc. Report findings before fixing anything, unless told otherwise.
 
 ---
 
-## The fixtures file
-
-`docs/design/screens/<slug>/fixtures.ts` is a ~20-line file per screen,
-written once during Phase B/early C, that:
-
-- holds that screen's literal data, lifted verbatim from the artboard;
-- doubles as the render fixture for `/design-preview/<slug>`;
-- carries a `TODO(mock)` marker until Phase C wires the real hook;
-- **stays forever** as the design-preview / visual-regression fixture.
-
----
-
 ## Session discipline (per CLAUDE.md's "one role per session")
 
-- The **Phase B kit work** and the **Phase C screen assembly** are
-  **separate sessions**, even though both are Developer role.
+- The **Phase B kit work**, the **Phase C1 backend**, and the **Phase C2
+  screen assembly** are **separate sessions**, even where the role is the
+  same (Developer).
 - Screen assembly may split across sessions if the screen count is
   large — scope each session to what it can hold in context and still
   gate properly, committing per screen cluster.

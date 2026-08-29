@@ -16,7 +16,6 @@
 6. [Phase 5 — Monitor & Iterate](#phase-5--monitor--iterate)
 7. [Codebase Structure](#codebase-structure)
 8. [Document Index Reference](#document-index-reference)
-9. [Prompt Templates](#prompt-templates)
 
 ---
 
@@ -53,8 +52,6 @@ This ensures the PRD reflects exactly what was reviewed and approved, section by
 
 **Output:** `docs/PRD.md` — a complete Product Requirements Document covering scope, user stories, functional and non-functional requirements, and explicit out-of-scope items.
 
-*Prompt template: [1 — PM Alignment & PRD](#1--pm-alignment--prd)*
-
 > **Why this matters:** An agent that silently fills gaps with assumptions is the single most common cause of agentic development producing confidently wrong output. This session exists to eliminate that failure mode before a single architectural decision is made.
 
 ### Session 2 — Software Architect Role: Technical Foundation
@@ -73,8 +70,6 @@ This ensures the PRD reflects exactly what was reviewed and approved, section by
 - `CONVENTIONS.md` — naming, folder structure, error-handling patterns, and the `TODO(mock):` convention used to mark mock data during design sprints (see Phase 3.1)
 - `TEST_PLAN.md` — **strategy only** at this stage (what needs E2E vs. unit coverage, and why) — not detailed test cases, which are written per-sprint against real code
 
-*Prompt template: [2 — Software Architect: Technical Foundation](#2--software-architect-technical-foundation)*
-
 ### Session 3 — Tech Lead / Scrum Master Role: Roadmap & Sprints
 
 **Agent role:** Tech Lead / Scrum Master.
@@ -91,8 +86,6 @@ Sprint sizing rule: **a sprint is scoped to what one agent session can hold full
 **Output:**
 - `docs/ROADMAP.md` — the full feature roadmap
 - `docs/sprints/sprint-XX-name.md` — one file per sprint, each labeled by type (Design / Development / QA), scope, acceptance criteria, and status — written incrementally as each feature/epic's breakdown is approved, not all at once
-
-*Prompt template: [3 — Tech Lead: Roadmap & Sprints](#3--tech-lead-roadmap--sprints)*
 
 ### Session 3.5 — Repository & Git Setup
 
@@ -122,8 +115,6 @@ Using Paper's MCP connection to Claude Code, the agent builds the complete compo
 
 > **Why both artifacts, not one:** the markdown doc carries intent ("cards are used only for grouping unrelated actions, never for single CTAs"); the Paper file carries the implementation. An agent reasons better from an explicit written rule than from inferring intent out of component styling alone.
 
-*Prompt template: [4 — Design System Foundation](#4--design-system-foundation)*
-
 ---
 
 ## Phase 3 — The Feature Loop (Design → Development → QA)
@@ -134,32 +125,26 @@ Once the design foundation exists, every feature moves through this three-stage 
 
 **Agent role:** Product Designer (feature-scoped).
 
-**Process:** The agent reads `design-principles.md` and the established component library, then builds the screens and flows for this specific feature in Paper.design, assembling from existing approved components rather than inventing new ones. Iteration happens here until the design is approved.
+**Process:** The agent reads `design-principles.md` and the proven component kit (in Storybook), then designs this feature's screens and states in Paper.design, assembling from approved kit components rather than inventing new ones. Iteration happens here until the owner approves.
 
-Paper.design does not have a built-in clickable-prototype mode — its output is static, styled frames, not linked screens. Rather than building a throwaway prototype in a separate tool (which would mean building the UI twice), the approved screens are assembled directly by Claude Code into their **real Next.js routes and components**, wired with **mock data behind the same interface real data will eventually use**. This is not a sandbox copy — it is the first commit of the actual feature. Clicking through it validates the flow the same way a traditional prototype would, but nothing gets rebuilt later; the development sprint only replaces the mock data source, never the UI itself.
+If a screen genuinely needs something with no kit equivalent, the agent **flags it as a new component** — it does not draw a one-off. A flagged component gets its own design + a kit build sprint (states in Paper, then `components/kit/*` with the §9 contract, Storybook story per state, visual-regression + a11y gates — ADR-42) **before any screen composes it**.
 
-> **Required method — read `docs/design/export-workflow.md` before any Paper-to-code export.** It defines the four phases (Design → Export → Implementation → QA), and the non-negotiable export rules: use `get_jsx` (never reconstruct from `get_computed_styles`), swap kit-component spans for kit-component imports instead of rebuilding markup, drop the Paper artboard frame so screens fill the viewport, and screenshot-verify every screen and component against its artboard before calling the export done. Sprint 06 skipped these and its 21 screens had to be scrapped and redone.
-
-**Convention:** every mock data source is marked with a `// TODO(mock):` comment at its definition, so a repo-wide search always shows exactly what's still fake and needs wiring in the development sprint.
+> **Required method — read `docs/design/export-workflow.md`.** From Milestone 2: the design sprint's output is **Paper artboards + flow docs + the confirmed new-component list** — no code. The backend is then built in its own Development Sprint(s), and a later frontend assembly sprint screenshots each approved artboard and composes kit components in the real route to match it, wired to the real domain. No skeleton export, no `fixtures.ts`, no `/design-preview`. (Sprint 06 reconstructed 21 screens from `get_computed_styles` and had to scrap them all — hence "never eyeball a screenshot for a value; pull it with `get_computed_styles`".)
 
 **Output:**
-- Approved designs in Paper.design for this feature
-- Real, routed Next.js pages/components for the feature, functioning end-to-end on mock data, with all mock sources marked `TODO(mock)`
+- Approved Paper.design artboards for every screen + every meaning-bearing state of this feature
 - `docs/design/flows/feature-name-flow.md` — the user flow for this feature, written **now, at the start of this feature's design sprint** — never upfront for the whole product
+- The confirmed list of any new kit components this feature needs (or an explicit "none")
 
 > **Why flows are written per-feature, not upfront:** a flow document is only trustworthy if written immediately before use. Writing all flows during Phase 1 risks them going stale by the time later features are reached, as understanding of the product evolves through building earlier ones.
-
-*Prompt template: [5 — Feature Design Sprint](#5--feature-design-sprint)*
 
 ### 3.2 — Development Sprint(s)
 
 **Agent role:** Developer / Tech Lead (implementation mode).
 
-**Process:** The UI already exists — it was built and approved in the design sprint, routed and functioning on mock data. This sprint's job is narrower than a traditional "build the feature" sprint: **replace every `TODO(mock)` data source with real logic** (API calls, database queries, business rules), without touching the approved UI. This is Phase C of `docs/design/export-workflow.md` — move the screen skeleton from `docs/design/screens/<slug>/` to its real `app/**` route, wire orchestration (which drawer/tab/filter is active, what submit does), swap the fixtures import for real `lib/domain` calls, delete the `TODO(mock)` markers, and leave the `/design-preview/<slug>` route in place as the permanent visual-regression reference. **No new UI/UX decisions get made in this sprint.** Design questions are out of scope here; if one surfaces, it goes back to a design sprint, not resolved ad hoc mid-build. Use Plan Mode before non-trivial implementation work. Delegate to subagents deliberately — an Explore subagent for unfamiliar code areas, an implementation subagent for the feature itself, a reviewer subagent to check the work before it's considered done. Use hooks to enforce what a human tech lead would otherwise have to nag about: run tests before stopping, lint/format on every edit, block edits outside intended paths.
+**Process (Milestone 2 onward):** the feature's **backend is built first**, in its own Development Sprint(s) — `lib/domain/<module>` + `app/api/*` + tests. Then a **frontend assembly sprint** takes the approved Paper artboards, **screenshots each one, assembles kit components in the real `app/**` route to match it**, and wires that screen to the real `lib/domain` calls through a per-feature hook. There is no skeleton-export step, no `fixtures.ts` mock layer, and no `/design-preview` route — see `docs/design/export-workflow.md` Phases C1/C2. Wire orchestration (which drawer/tab/filter is active, what submit does); grep for any stray `TODO(mock)` before calling the feature done. **No new UI/UX decisions get made in this sprint.** Design questions are out of scope here; if one surfaces, it goes back to a design sprint, not resolved ad hoc mid-build. Use Plan Mode before non-trivial implementation work. Delegate to subagents deliberately — an Explore subagent for unfamiliar code areas, an implementation subagent for the feature itself, a reviewer subagent to check the work before it's considered done. After each feature's frontend sprint, the owner walks the feature on `pnpm dev` as every role that touches it before it is called done.
 
 **Output:** Working, committed code with all `TODO(mock)` sources replaced by real data/logic — including the tests defined in this sprint's scope, per the sprint-sizing rule from Phase 1, Session 3.
-
-*Prompt template: [6 — Feature Development Sprint](#6--feature-development-sprint)*
 
 ### 3.3 — QA Sprint (Mandatory, Not Optional)
 
@@ -168,8 +153,6 @@ Paper.design does not have a built-in clickable-prototype mode — its output is
 **Process:** Once the feature is functionally complete, the agent adopts an adversarial QA mindset — goes through the implemented feature against its acceptance criteria, tests edge cases, attempts to break it, and reports findings. This step is a **hard rule for every feature, with no exceptions** — it is the discipline that prevents "build everything, test later," which produces compounding, hard-to-trace bugs.
 
 **Output:** A bug/findings report, followed by fixes, before moving to the next feature.
-
-*Prompt template: [7 — Feature QA Sprint](#7--feature-qa-sprint)*
 
 ### Repeat
 
@@ -268,348 +251,27 @@ project-root/
 | `sprints/sprint-XX-[type]-[name].md` | Phase 1, Session 3 (per sprint) | Sprint type (Design/Development/QA), scope, acceptance criteria, status |
 | `design-principles.md` | Phase 2 | Product-wide UI/UX rules and anti-patterns |
 | Paper.design component library | Phase 2 | Reusable, stateful components |
-| `design/export-workflow.md` | Phase 2 (method), applied every Phase 3.1/3.2 | Required Paper-to-code export method: get_jsx, component-swap, screenshot-verify |
+| `design/export-workflow.md` | Phase 2 (method), applied every Phase 3 | Paper → code method: compose screens from the proven kit to match the artboard; from M2, backend-first then a frontend assembly sprint (no skeleton export, no fixtures, no `/design-preview`) |
 | `design/flows/feature-name-flow.md` | Phase 3.1 (per feature) | User flow for that specific feature |
-| `PROGRESS.md` | Ongoing, updated per sprint | Running status log across sessions |
+| `PROGRESS.md` | Ongoing, updated per sprint | Running status log — full detail for the current milestone only; older entries compressed to a one-line ledger |
+| `sprints/milestone-XX-plan.md` | One per milestone | The living plan for that milestone: scope, cross-cutting contracts, session sequence (re-baselined as it changes), guardrails |
 
 ---
 
-## Prompt Templates
+## Notes on this project's shape (deviations from the generic structure above)
+
+- **Single Next.js app**, not the `apps/web` + `server` split drawn in
+  the Codebase Structure diagram — modular monolith on Vercel
+  (`ARCHITECTURE.md` ADR-2/6/8). `lib/domain/<module>` is the business
+  layer; `app/api/*` handlers stay thin.
+- **No `.claude/agents/` or `.claude/hooks/`** — a deliberate choice
+  (`CLAUDE.md`). Rely on the written rules, each sprint's acceptance
+  criteria, and `TEST_PLAN.md`. Ad hoc subagent use is fine.
+- **One plan file per milestone** (`sprints/milestone-XX-plan.md`),
+  updated as the milestone runs — not one file per session. Per-session
+  handoff docs are not kept after the session's PROGRESS entry is
+  written.
+- **Prompt templates** for each session type were removed from this doc
+  once the process was internalised; the per-milestone plan file carries
+  the concrete session scopes instead.
 
-These are starting prompts for each Claude Code session in the lifecycle. Each one sets the agent's role, hands it the correct input files, and states the required output explicitly — including the behavioral rules established earlier in this document (e.g., "grill me until aligned," "no new design decisions during dev sprints"). Treat these as templates: fill in the bracketed placeholders, and adjust freely as you learn what works for your projects.
-
-> **General tip:** paste the relevant `docs/` files' contents (or point Claude Code to their paths) at the start of each session rather than assuming the agent will go find them unprompted — being explicit about input files costs one line and removes ambiguity.
-
----
-
-### 1 — PM Alignment & PRD
-
-*Used in: Phase 1, Session 1*
-
-```
-You are acting as a Product Manager at a software agency. I've attached my
-discovery/requirements notes below (or at docs/discovery.md — read it first).
-
-This session has three stages. Do not skip ahead — complete each stage
-fully before moving to the next.
-
-STAGE 1 — Align.
-Your job here is NOT to produce a finished document quickly. Your job is
-to find every gap in my thinking before we lock anything down.
-1. Reiterate your understanding of what I'm trying to build, in your own
-   words — this lets me catch any early misreading before we go further.
-2. Actively question me on anything that is ambiguous, missing, assumed,
-   or contradictory in my notes. Do not fill gaps with your own assumptions
-   — ask. Keep asking until you have real answers, not just your best guess.
-3. Continue this back-and-forth until we are both genuinely aligned on
-   every detail this build depends on — scope, users, core workflows,
-   what's explicitly OUT of scope, and any constraints (budget, timeline,
-   compliance, technical limitations I already know about).
-
-STAGE 2 — Outline the PRD.
-Once we're aligned, list every section the PRD will contain (e.g.,
-overview, target users, functional requirements, non-functional
-requirements, out-of-scope items) as a table of contents. Do not write
-section content yet. Present this outline and wait for my approval
-before continuing.
-
-STAGE 3 — Write the PRD, section by section.
-Once I approve the outline, go through it in order, one section at a
-time. Draft that section's content, then stop and wait for my explicit
-approval before moving to the next section. Do not bundle multiple
-sections into one message expecting a single approval.
-
-Only once every section has been approved, assemble and write the full
-docs/PRD.md.
-
-Begin with Stage 1 now.
-
-[Paste discovery.md / requirements.md content here, or point to its path]
-```
-
----
-
-### 2 — Software Architect: Technical Foundation
-
-*Used in: Phase 1, Session 2*
-
-This session runs in three stages, in order, inside one conversation: **outline → walk through and approve, section by section → write files.** No file gets written until every section covering it has been approved. This ensures every non-trivial decision is seen and approved before it's locked in, rather than trusting the agent to judge on its own which decisions are worth surfacing.
-
-```
-You are acting as a Software Architect at a software agency. Read
-docs/PRD.md fully before responding.
-
-This session has three stages. Do not skip ahead — complete each stage
-fully before moving to the next.
-
-STAGE 1 — Outline the decisions to be made.
-Based on the PRD, list every category of technical decision this project
-needs before development can start: tech stack, system architecture/
-shape, data model, API design, and anything else you judge necessary.
-For each category, list the specific decisions within it (e.g., under
-"data model," list each major entity that needs a schema decision).
-Do not make any decisions yet — this stage is a table of contents for
-the conversation, so I know everything we're about to cover and in what
-order. Present this list and wait for my go-ahead before continuing.
-
-STAGE 2 — Walk through each decision, one at a time, for approval.
-Once I approve the outline, go through it in order, one decision (or
-tightly related small group of decisions) at a time. For each:
-- State your recommendation
-- Explain your reasoning — the tradeoffs involved and why this option
-  wins for this project specifically, not just in general. I'm learning,
-  so make the reasoning legible, not just the conclusion.
-- If there's a genuine tradeoff with no clearly-better answer, say so
-  explicitly and ask for my input rather than deciding silently.
-- Then stop and wait for my explicit approval before moving to the next
-  decision. Do not bundle multiple unrelated decisions into one message
-  expecting a single approval — one decision (or tightly coupled group)
-  per turn.
-
-Default to current industry-standard choices over novel or trendy ones
-unless there's a specific, stated reason this project needs otherwise.
-
-STAGE 3 — Write the files.
-Only once every decision in the outline has been approved, produce the
-following files in docs/, reflecting exactly what was approved — no new
-decisions introduced at this stage:
-- ARCHITECTURE.md — system shape, major components, how they interact
-- API.md — the API contract (endpoints, inputs, outputs, error shapes)
-- SCHEMA.md — the data model
-- DECISIONS.md — a decision log, one entry per major decision, with the
-  reasoning behind each (ADR-style: context, decision, consequences)
-- CONVENTIONS.md — naming conventions, folder structure, error-handling
-  patterns, and the TODO(mock) convention used in design sprints
-- TEST_PLAN.md — testing STRATEGY only at this stage: what categories
-  of functionality need E2E coverage vs. unit-test coverage, and why.
-  Not detailed test cases — those get written per-sprint.
-
-Begin with Stage 1 now.
-```
-
----
-
-### 3 — Tech Lead: Roadmap & Sprints
-
-*Used in: Phase 1, Session 3*
-
-```
-You are acting as a Tech Lead / Scrum Master at a software agency. Read
-docs/PRD.md and all files in docs/ from the architecture session
-(ARCHITECTURE.md, API.md, SCHEMA.md, DECISIONS.md, CONVENTIONS.md) before
-responding.
-
-This session has three stages. Do not skip ahead — complete each stage
-fully before moving to the next.
-
-STAGE 1 — Outline the roadmap.
-Propose the full sequence of features/epics needed to build this
-project, in order, with brief reasoning for the sequencing (what depends
-on what, and why). Do not break anything into sprints yet. Present this
-roadmap outline and wait for my approval before continuing.
-
-STAGE 2 — Walk through sprint breakdown, one feature/epic at a time.
-Once the roadmap is approved, go through it in order. Every feature/epic
-MUST be broken down into this exact sequence of sprint types — never a
-single generic "build feature X" sprint:
-
-  1. One Design Sprint — screens and flow for this feature, assembled
-     into real routed pages/components running on mock data
-  2. One or more Development Sprints — replacing mock data with real
-     logic; split into multiple sprints if the feature is large, per
-     the sizing rule below
-  3. One QA Sprint — adversarial testing of the completed feature
-
-Sprint-sizing rule: a sprint is scoped to what a single Claude Code agent
-session can hold fully in context while staying coherent — NOT a fixed
-calendar unit like "one week." This applies mainly to the Development
-stage — a large feature's Development work may need several Development
-Sprints, while its Design Sprint and QA Sprint are typically each a
-single sprint. Every Development Sprint's definition of done MUST
-include its own tests — a sprint is not complete without them.
-
-For each feature/epic, propose this sprint breakdown (each sprint's type,
-scope, and acceptance criteria), and wait for my explicit approval before
-moving to the next feature/epic. Do not bundle multiple features into one
-message expecting a single approval.
-
-STAGE 3 — Write the files.
-Write docs/ROADMAP.md once the Stage 1 outline is approved. For each
-feature/epic, once its breakdown is approved in Stage 2, write one
-docs/sprints/sprint-XX-[name].md file per sprint — clearly labeled by
-type (Design / Development / QA) — each containing scope, acceptance
-criteria, and a status field (not started / in progress / done). Don't
-wait until every feature is reviewed to start writing.
-
-Note: this is planning only — no code should be written in this session.
-
-Begin with Stage 1 now.
-```
-
----
-
-### 4 — Design System Foundation
-
-*Used in: Phase 2*
-
-```
-You are acting as a Product Designer at a software agency, with access to
-Paper.design via MCP. Read docs/PRD.md and docs/ARCHITECTURE.md before
-responding.
-
-This session happens ONCE, before any individual feature is designed. Its
-job is to establish the rules every later design decision must follow.
-
-Part A — Design Principles:
-Research current, non-generic design references relevant to this product's
-domain and audience — don't default to generic training-data instincts.
-Establish the UI/UX principles this entire product will follow: visual
-tone, layout patterns, typography scale, spacing system, and interaction
-patterns.
-
-Explicitly name the "AI slop" patterns to avoid in this project, and state
-WHY each is being avoided for this specific product: unnecessary gradient
-overlays, rounded-everything without functional reason, more than 2-3 font
-weights/sizes doing real work, decorative icons with no function, generic
-centered-hero layouts, and any other pattern you judge to be a lazy default
-rather than a deliberate choice.
-
-Write this as docs/design/design-principles.md.
-
-Part B — Component Library:
-Using Paper.design, build the complete component set this product will
-need — buttons, forms, inputs, tables, cards, navigation, etc. — in EVERY
-relevant state: default, hover, focus, loading, error, empty, disabled.
-These should be built to match the principles from Part A, and should be
-directly reusable (not one-off) — later feature design sessions will
-assemble from this library rather than inventing new components.
-
-Ask me anything you need clarified, and show me your direction for Part A
-before proceeding to Part B — I want to approve the philosophy before the
-component library is built against it.
-```
-
----
-
-### 5 — Feature Design Sprint
-
-*Used in: Phase 3.1, once per feature*
-
-```
-You are acting as a Product Designer at a software agency, scoped to a
-single feature: [FEATURE NAME].
-
-Read the following before starting:
-- docs/design/design-principles.md
-- The existing Paper.design component library
-- docs/PRD.md (the section relevant to this feature)
-- docs/sprints/sprint-XX-[feature-name].md
-
-Using ONLY components already in the library (do not invent new ones
-unless something genuinely doesn't exist yet — if so, flag it rather than
-silently creating a one-off), design the screens and user flow for this
-feature in Paper.design.
-
-Also produce docs/design/flows/[feature-name]-flow.md — a written user
-flow for this specific feature (the path a user takes, step by step,
-including edge cases like empty states or errors).
-
-Iterate with me until the design is approved.
-
-Once approved, assemble the screens directly into their REAL Next.js
-routes and components — the same files and paths this feature will
-permanently live at, not a separate sandbox or prototype folder. Wire
-them with mock data so the flow is genuinely clickable end-to-end.
-
-Mock data rule: every mock data source must sit behind the same
-interface real data will eventually use (e.g., a getX() function the
-component calls, never data inlined directly in the component), and
-must be marked with a `// TODO(mock):` comment at its definition. This
-is what lets the development sprint find and replace every mock source
-without touching the approved UI.
-
-Do not write any real API calls, database queries, or business logic in
-this session — mock data only. That work belongs to the development
-sprint.
-```
-
----
-
-### 6 — Feature Development Sprint
-
-*Used in: Phase 3.2, once per feature (or once per sub-sprint for larger features)*
-
-```
-You are acting as a Developer / Tech Lead implementing [FEATURE NAME] /
-[SPRINT NAME], scoped to docs/sprints/sprint-XX-[name].md.
-
-The UI for this feature already exists — it was built and approved during
-the design sprint, routed at its real paths, and currently running on
-mock data. Your job in this session is NOT to build UI. Your job is to
-find every `// TODO(mock):` marker in this feature's code and replace
-that mock data source with real logic (API calls, database queries,
-business rules) — without changing the approved UI itself.
-
-Read before starting:
-- docs/sprints/sprint-XX-[name].md (this sprint's scope and acceptance
-  criteria)
-- docs/CONVENTIONS.md
-- The feature's existing code, and every `TODO(mock):` marker within it
-- docs/ARCHITECTURE.md, docs/API.md, docs/SCHEMA.md as relevant
-
-Ground rule: do not make new UI/UX decisions in this session, and do not
-restructure or rebuild components that already exist and work on mock
-data — only replace what sits behind the TODO(mock) markers. If you hit a
-design question the approved designs or flow doc don't answer, STOP and
-flag it to me rather than deciding it yourself — it goes back to a design
-sprint, not resolved ad hoc here.
-
-Confirm every TODO(mock) marker in this feature's scope has been
-resolved before considering the sprint done.
-
-Use Plan Mode before starting any non-trivial implementation work.
-Delegate to subagents where it makes sense (e.g., an Explore subagent if
-you need to understand existing code before touching it; a reviewer
-subagent to check your own work before declaring this sprint done).
-
-This sprint is not complete without its tests, per docs/TEST_PLAN.md and
-this sprint's acceptance criteria. Write them as part of this session, not
-as a follow-up.
-
-When finished, update docs/PROGRESS.md and this sprint's status field, and
-commit your work with a clear commit message.
-```
-
----
-
-### 7 — Feature QA Sprint
-
-*Used in: Phase 3.3, mandatory at the end of every feature*
-
-```
-You are acting as a QA Engineer. Your mindset in this session is
-adversarial — your job is to find problems, not confirm the feature works.
-
-Read before starting:
-- docs/sprints/sprint-XX-[name].md and its acceptance criteria
-- docs/design/flows/[feature-name]-flow.md
-- docs/TEST_PLAN.md
-
-Go through the implemented feature ([FEATURE NAME]) and:
-1. Verify it meets every acceptance criterion in the sprint doc — call out
-   anything that doesn't, precisely.
-2. Actively try to break it: unexpected inputs, edge cases, empty states,
-   error conditions, unusual sequences of actions a real user might take.
-3. Check it against the approved design and flow doc — flag any mismatch
-   between what was designed and what was built.
-
-Produce a findings report: a list of issues found, each with severity
-(critical / major / minor) and clear reproduction steps.
-
-Do not fix issues in this session unless I explicitly ask you to — report
-first, so I can review before anything changes.
-```
-
----
-
-*This document is itself a living artifact — update it as the process is refined across real projects.*

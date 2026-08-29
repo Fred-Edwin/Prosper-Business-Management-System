@@ -5,8 +5,15 @@ which categories of functionality need which kind of coverage, and why.
 Detailed test cases are written per-sprint against the features being
 built that sprint.
 
-**Tooling:** Vitest for unit tests, Playwright for end-to-end tests. See
-`DECISIONS.md` ADR-35.
+**Tooling:** Vitest for everything below the browser — unit tests,
+domain-integration tests (DB-backed, multi-module flows), and
+`*.screen.test.tsx` interaction specs (jsdom + React Testing Library).
+The Storybook test-runner (`test:visual` / `test:a11y`) gates the kit.
+**No headless-browser app-level e2e** — dropped after Milestone 1 (too
+slow for the value it added); the "critical multi-step flows" in §2 are
+now covered by Vitest domain-integration tests plus the per-feature owner
+walkthrough on `pnpm dev`. See `DECISIONS.md` ADR-35 (+ its M2
+superseding note).
 
 ---
 
@@ -63,10 +70,15 @@ confidence in the part of the system that matters most.
 
 ---
 
-## 2. End-to-end tests (Playwright) — critical multi-step flows
+## 2. Domain-integration tests (Vitest) — critical multi-step flows
 
 **Coverage: the handful of flows where multiple modules must work
-together correctly, across a real request/response/database cycle.**
+together correctly, across a real domain-call + database cycle.** These
+run as DB-backed Vitest suites (`tests/integration/**`, `test:e2e`
+script), each namespacing its rows by a per-file prefix and cleaning up
+only its own. They call `lib/domain` + route handlers directly — no
+headless browser. The per-feature owner walkthrough on `pnpm dev` is the
+real click-through check on top of these.
 
 - **Order → stock deduction** — placing a Restaurant order actually reduces
   stock and, for credit orders, creates a `Debt`.
@@ -88,10 +100,10 @@ together correctly, across a real request/response/database cycle.**
   with linked orders is rejected with the correct error; a product with no
   history can be hard-deleted.
 
-Why end-to-end specifically: these flows cross module boundaries (stock +
-sales, handovers + money, staff + audit) — the risk here isn't any single
-function being wrong, it's the *handoff* between modules being wrong,
-which only a real request-through-database test can catch.
+Why integration-level specifically: these flows cross module boundaries
+(stock + sales, handovers + money, staff + audit) — the risk here isn't
+any single function being wrong, it's the *handoff* between modules being
+wrong, which only a real domain-call-through-database test can catch.
 
 ---
 
@@ -129,8 +141,8 @@ newly-composed screen cluster is gated by **all** of:
 1. **Visual-diff vs the Paper artboard** (rest state) — `get_screenshot`
    the top-level artboard node, compare; `get_computed_styles` for any
    value in doubt (never eyeball a screenshot for a value). If `paper` is
-   unreachable, diff against the committed `/design-preview/<slug>`
-   skeleton and note it.
+   unreachable, note it and defer the visual check to the owner
+   walkthrough (`export-workflow.md` Phase C2).
 2. **Interaction spec** — a `*.screen.test.tsx` under `tests/screens/`
    (jsdom + React Testing Library, per-file `// @vitest-environment
    jsdom`, the per-feature hook / `stockApi` mocked, **no server / DB /
@@ -147,9 +159,9 @@ newly-composed screen cluster is gated by **all** of:
    scope table assertions to `role="table"`.)
 4. **axe** — no serious/critical violations on the rendered screen.
 
-The Playwright end-to-end flows in §2 remain the coverage for
-cross-module correctness through a real request/DB cycle; the §2b spec is
-**component-level** and deliberately server-free, so it stays fast and
+The Vitest domain-integration flows in §2 remain the coverage for
+cross-module correctness through a real domain-call/DB cycle; the §2b spec
+is **component-level** and deliberately server-free, so it stays fast and
 runs in the same `vitest` invocation as the ledger math. `@testing-
 library/react` + `jsdom` are dev-only; the `environment: "node"` default
 is unchanged (domain tests are unaffected).
@@ -172,9 +184,10 @@ is unchanged (domain tests are unaffected).
 
 - Ledger/domain unit tests are written alongside the domain function they
   cover, in the same sprint — not deferred.
-- End-to-end tests are added once a flow is feature-complete enough to run
-  start to finish; sprint-level detailed test cases (specific inputs,
-  specific assertions) are defined at that time, not here.
+- Domain-integration tests (§2) are added once a flow is feature-complete
+  enough to run start to finish; sprint-level detailed test cases
+  (specific inputs, specific assertions) are defined at that time, not
+  here.
 - `TODO(mock)` locations (see `CONVENTIONS.md` §4) are not considered
   test-complete until the mock is replaced and covered by the appropriate
   category above.

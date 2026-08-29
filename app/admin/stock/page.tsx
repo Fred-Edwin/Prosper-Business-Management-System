@@ -3,11 +3,7 @@
 // + the Maximize/collapse toggle, ADR-36b); this page renders the approved
 // ledger content region only. The interactive container lives in
 // ./stock-client.tsx.
-//
-// The standalone design-export skeletons (with their own sidebars) stay at
-// /design-preview/admin-stock-ledger-full-width (+ -sidebar-collapsed,
-// -drawer-open, admin-stock-mobile) as the permanent visual-regression
-// fixtures — see docs/design/screens/*.
+// Visual acceptance target: the approved Paper artboards for this screen.
 
 import { StockClient } from "./stock-client";
 

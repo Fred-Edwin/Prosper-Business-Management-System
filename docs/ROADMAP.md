@@ -9,13 +9,17 @@ through an adversarial QA pass (Session 17: `pnpm test` 226/226, `tsc` 0,
 `build` clean; the one High finding — F-1 correction-stacking — fixed
 in-session). Two non-blocking follow-ups are recorded: F-2 (2-phase
 transfer receiver visibility — a Design call, M2 territory) and the
-misleading ledger "Edit" column (Design Sprint). Plan + session history:
-**`docs/sprints/milestone-1-plan.md`**; findings:
-`docs/sprints/session-17-findings.md`.
-`docs/milestones/milestone-01-the-business-exists.md` is retained for
-original intent/reasoning only.
+misleading ledger "Edit" column (Design Sprint). Record: the
+`docs/PROGRESS.md` M1 ledger + `docs/DECISIONS.md` ADR-13–48;
+`docs/sprints/milestone-1-plan.md` is a closed stub.
 
-Milestones 2–5 below are unchanged and not yet broken into sprints.
+**Milestone 2 — planned (2026-08-29), not started.** Restaurant Sales
+(Orders), Customers & Credit, Canteen Derived Sales — the money ledger
+goes live. 7-session sequence (6 if no new kit component is needed).
+Living plan: **`docs/sprints/milestone-2-plan.md`**; Session 1 handoff:
+`docs/sprints/milestone-2-session-1-handoff.md`.
+
+Milestones 3–5 below are unchanged and not yet broken into sprints.
 
 This roadmap groups the system's features into milestones, ordered by
 dependency, and framed around what the business can actually *do* once
@@ -54,10 +58,12 @@ Design/Development/QA pattern.
 
 ---
 
-## Milestone 1 — The business exists in the system
+## Milestone 1 — The business exists in the system — DONE (2026-08-29)
 
-**Current plan & session sequence:** [`docs/sprints/milestone-1-plan.md`](sprints/milestone-1-plan.md).
-Original intent/reasoning: [`docs/milestones/milestone-01-the-business-exists.md`](milestones/milestone-01-the-business-exists.md) (historical).
+**Record:** `docs/PROGRESS.md` (per-session ledger) + `docs/DECISIONS.md`
+ADR-13–48. [`docs/sprints/milestone-1-plan.md`](sprints/milestone-1-plan.md)
+is a closed stub; [`docs/milestones/milestone-01-the-business-exists.md`](milestones/milestone-01-the-business-exists.md)
+is retained for original intent only.
 
 | Feature | PRD | Status |
 |---|---|---|
@@ -88,6 +94,10 @@ no dependency on stock, sales, or money.
 ---
 
 ## Milestone 2 — Staff can sell, every day
+
+**Plan & session sequence:** [`docs/sprints/milestone-2-plan.md`](sprints/milestone-2-plan.md)
+(living — re-baselined as it runs). Session 1 handoff:
+[`docs/sprints/milestone-2-session-1-handoff.md`](sprints/milestone-2-session-1-handoff.md).
 
 | Feature | PRD |
 |---|---|

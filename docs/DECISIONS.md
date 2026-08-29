@@ -553,6 +553,18 @@ the current standard for full-flow browser/API testing in Next.js
 projects, with good support for testing API routes directly as well as
 real browser flows.
 
+**Superseded in part (Milestone 2, 2026-08-29):** the **headless-browser
+app-level e2e layer is dropped** — too slow for the value it added over
+DB-backed domain-integration tests, and the M1 e2e harness was never
+actually built. Replacement: the "critical multi-step flows" of
+`TEST_PLAN.md §2` are covered by **Vitest domain-integration suites**
+(`tests/integration/**`, the `test:e2e` script now runs Vitest) that call
+`lib/domain` + route handlers directly, **plus the per-feature owner
+walkthrough** on `pnpm dev` (`milestone-2-plan.md §8` guardrail 3).
+Playwright itself **stays as a dependency** because the Storybook
+test-runner (`test:visual` / `test:a11y`, ADR-42) uses it under the hood
+to gate the kit — that is unaffected. Vitest's role is unchanged.
+
 ---
 
 ## ADR-36: Open design decisions carried out of the Sprint 05/06 design-export effort

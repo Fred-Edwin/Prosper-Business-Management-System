@@ -1,17 +1,16 @@
 # Milestone 1: The Business Exists in the System
 
-**Document Status: HISTORICAL.** The authoritative, current plan for
-finishing Milestone 1 is **`docs/sprints/milestone-1-plan.md`** — pinned
-feature list, the 21-screen master table with artboard IDs, carried-forward
-design decisions, and the remaining session plan. Read that first.
+**Document Status: HISTORICAL.** Milestone 1 is **COMPLETE** (2026-08-29,
+merged to `main`). This document is kept only for its original intent and
+reasoning — sections 1–3 (goal, key architectural/UX decisions, screen
+inventory) describe *why* M1 is shaped the way it is. Sections 0 and 4–6
+(status note, technical tasks, slice breakdown, checklist) are the
+**original plan** and are entirely superseded.
 
-This document is kept for its original intent and reasoning: sections
-1–3 (goal, key architectural/UX decisions, screen inventory) still
-describe *why* M1 is shaped the way it is; sections 4–6 (technical
-tasks, slice breakdown, progress checklist) are the **original plan**
-and their sprint numbers / checkboxes are historical, not current
-status. §0 below was a mid-effort status note — now also superseded by
-`milestone-1-plan.md`.
+The current record of what M1 built lives in:
+`docs/sprints/milestone-1-plan.md` (closed stub + pointers),
+`docs/PROGRESS.md` (per-session ledger), `docs/DECISIONS.md` (ADR-13–48).
+Process lessons from M1 are folded into `docs/CONVENTIONS.md §6`.
 **Milestone Goal:** Establish the master product catalog, location pricing, asset register, and the complete append-only stock movement ledger across Restaurant, Canteen, and Store.
 
 ---
@@ -77,8 +76,7 @@ carried forward, current, in `docs/sprints/milestone-1-plan.md` §4.
 | Binding design rules, current token set, component kit inventory, open design decisions | `docs/design/design-principles.md` |
 | Required Paper → code export method | `docs/design/export-workflow.md` |
 | Open, undecided design/dev questions | `docs/DECISIONS.md` ADR-36 |
-| Process lessons from the design sprint (mistakes, fixes, what to repeat) | `docs/sprints/sprint-05-lessons-learned.md` |
-| Kit audit findings / known-suspect patterns | `docs/sprints/component-audit-report.md` |
+| Process lessons carried forward from M1 | `docs/CONVENTIONS.md §6` |
 | Paper-tool-specific extraction gotchas | `docs/design/paper-workflow-lessons.md` |
 
 ### What's left
