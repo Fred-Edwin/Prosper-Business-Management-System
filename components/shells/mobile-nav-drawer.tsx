@@ -135,7 +135,7 @@ const NAV_GROUPS: DrawerNavGroupDef[] = [
     label: "Operations",
     items: [
       { key: "catalog", label: "Catalog", href: "/admin/catalog", icon: ICON_CATALOG },
-      { key: "stock", label: "Stock", href: "/admin/stock", icon: ICON_STOCK },
+      { key: "stock", label: "Ledger", href: "/admin/stock", icon: ICON_STOCK },
       { key: "sales", label: "Sales", href: "/admin/sales", icon: ICON_SALES },
       { key: "handovers", label: "Handovers", href: "/admin/handovers", icon: ICON_HANDOVERS },
     ],
