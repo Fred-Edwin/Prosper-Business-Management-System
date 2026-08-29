@@ -1,8 +1,16 @@
 # Milestone 1 — Pinned Scope & Session Plan
 
-**Status:** Active. This is the authoritative plan for finishing
-Milestone 1 after the Sprint 06 export was scrapped. It supersedes the
-session/slice tables in
+**Status: DONE (2026-08-29).** All plan sessions (2–17, incl. the 4
+inserted M1 design-change sessions) are complete. Session 17's adversarial
+QA pass closed with `pnpm test` 226/226, `tsc` 0, `build` clean; the one
+High finding (F-1, correction-stacking) was fixed in-session. Two deferred
+items are recorded as follow-ups, neither M1-blocking: F-2 (2-phase
+transfer receiver visibility — a Design call, M2 territory) and the
+misleading ledger "Edit" column (B5 — Design Sprint). See
+`docs/sprints/session-17-findings.md` and the PROGRESS Session 17 entry.
+
+This was the authoritative plan for finishing Milestone 1 after the Sprint
+06 export was scrapped. It supersedes the session/slice tables in
 `docs/milestones/milestone-01-the-business-exists.md` §5/§6 (kept there
 as historical intent) and folds in the still-live decisions and the
 master screen list from the now-deleted Sprint 05/06 handover docs.
@@ -482,10 +490,10 @@ pass**:
 
 | Session | Role | Scope | Status |
 |---|---|---|---|
-| **14** | Developer (Development Sprint) | D1 blocker + B1/B4/C2 copy + A3 (Catalog drawer → rail) | in progress |
+| **14** | Developer (Development Sprint) | D1 blocker + B1/B4/C2 copy + A3 (Catalog drawer → rail) | **DONE (2026-08-29)** |
 | **15** | Product Designer (Design Sprint) | A1/A2, A4, C1, B3 designed; **Financials reconciliation redesign**; A5 Archive designed + **ADR-46 / ADR-47**. Paper + ADRs only. | **DONE (2026-08-29)** |
-| **16** | Developer (Development Sprint) | Build everything Session 15 designed **+ the full A5 Archive feature** (Unarchive endpoints, Archived UI, the stock-flow picker exclusion, the `StockMovement` migration for real purchase-payment fields, tests) | not started |
-| **17** | QA Engineer | Adversarial M1 pass + Playwright e2e harness; also picks up B2, B5 | not started |
+| **16** | Developer (Development Sprint) | Build everything Session 15 designed **+ the full A5 Archive feature** (Unarchive endpoints, Archived UI, the stock-flow picker exclusion, the `StockMovement` migration for real purchase-payment fields, tests) | **DONE (2026-08-29)** |
+| **17** | QA Engineer | Adversarial M1 pass; B2, B5; M1-flow integration tests (Playwright dropped for Vitest integration — WSL2). F-1 ledger-integrity finding fixed. | **DONE (2026-08-29)** |
 
 ### Final session — QA Engineer: adversarial M1 pass
 

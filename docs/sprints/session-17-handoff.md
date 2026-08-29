@@ -1,8 +1,15 @@
 # Session 17 Handoff — QA Engineer: the adversarial M1 pass + Playwright e2e + B2 + B5
 
-**Status:** NOT STARTED. **UNBLOCKED** — Session 16 closed the last M1
-development sprint (ADR-46 / ADR-47: Financials reconciliation table,
-purchase-payment real fields, delete-in-drawer, A4 kind hint, A5 Archive).
+**Status: DONE (2026-08-29).** Adversarial pass complete. Findings:
+`docs/sprints/session-17-findings.md`. 1 High finding (F-1,
+correction-stacking) fixed in-session; F-2 (transfer receiver visibility)
+routed to a Design call; F-3 (Low) noted. B2 explained + spec fixed; B5
+reproduced (no code bug — misleading affordance, → Design Sprint).
+Playwright dropped for Vitest integration tests
+(`tests/integration/m1-flows/`) per the owner — WSL2 made the browser
+harness unworkable. `pnpm test` 226/226, `tsc` 0, `build` clean.
+**Milestone 1 is done** — plan / ROADMAP / PROGRESS updated. Merging to
+`main`.
 
 **Role:** QA Engineer, Prosper project. **QA Sprint.** This session is
 **adversarial** (`CLAUDE.md`, `sdlc.md` Phase D, `export-workflow.md`

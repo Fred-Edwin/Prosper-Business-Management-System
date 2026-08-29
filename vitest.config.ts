@@ -9,7 +9,7 @@ export default defineConfig({
     // (they are named `*.screen.test.tsx`).
     environment: "node",
     include: ["**/*.test.ts", "**/*.test.tsx"],
-    exclude: ["node_modules/**", "tests/e2e/**"],
+    exclude: ["node_modules/**"],
     setupFiles: ["./vitest.setup.ts"],
   },
   resolve: {

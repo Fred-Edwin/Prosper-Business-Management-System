@@ -169,11 +169,32 @@ describe("/admin/catalog — kit composition", () => {
     // The friction gate: the confirm button is disabled until the name is retyped.
     const permanently = within(confirm).getByRole("button", { name: /Delete Product/ });
     expect(permanently).toBeDisabled();
-    await user.type(
-      within(confirm).getByRole("textbox"),
-      "Chicken Breast",
-    );
+    // Wrong case does NOT enable it.
+    await user.type(within(confirm).getByRole("textbox"), "chicken breast");
+    expect(permanently).toBeDisabled();
+
+    // The exact name does.
+    await user.clear(within(confirm).getByRole("textbox"));
+    await user.type(within(confirm).getByRole("textbox"), "Chicken Breast");
     expect(permanently).toBeEnabled();
+  });
+
+  it("a successful hard-delete closes the drawer (Session 16 §4)", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(within(screen.getByRole("table")).getByRole("button", { name: "Edit" }));
+    const drawer = await screen.findByRole("dialog");
+    await user.click(
+      within(drawer).getByRole("button", { name: /Delete this product/ }),
+    );
+    const confirm = await screen.findByRole("alertdialog");
+    await user.type(within(confirm).getByRole("textbox"), "Chicken Breast");
+    await user.click(within(confirm).getByRole("button", { name: /Delete Product/ }));
+
+    expect(state.hardDelete).toHaveBeenCalledWith("p1", "Chicken Breast");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   });
 
   it("the kind hint under the SegmentedControl changes with the selected kind (A4)", async () => {

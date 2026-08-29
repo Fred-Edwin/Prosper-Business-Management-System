@@ -2,7 +2,7 @@
 // Session 11 per-screen gate — /admin/stock/opening rebuilt as a kit composition.
 // Drives the Breadcrumb, the Tabs, the BulkEntryGrid editable cell, and the
 // save -> toast path, with stockApi mocked.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "@/components/kit/toast";
@@ -60,10 +60,16 @@ function renderScreen() {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date(NOW));
   vi.clearAllMocks();
   api.listProducts.mockResolvedValue(PRODUCTS);
   api.listLocations.mockResolvedValue(LOCATIONS);
   api.setOpeningStock.mockResolvedValue({});
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("/admin/stock/opening — kit composition", () => {

@@ -5,6 +5,147 @@ shipped, what's blocked, what changed from plan.
 
 ---
 
+## 2026-08-29 — QA Sprint Session 17: adversarial M1 pass + B2/B5 + M1-flow integration tests — DONE. **Milestone 1 complete.**
+
+**Role:** QA Engineer (adversarial). Handoff:
+`docs/sprints/session-17-handoff.md`. Full findings report:
+`docs/sprints/session-17-findings.md`. Branch:
+`session-16-financials-archive` → PR to `main`.
+
+**Baseline at start:** `pnpm test` 200/201 (1 red = B2), `tsc` 0, `build`
+clean. **End state:** `pnpm test` **226/226**, `tsc` 0, `build` clean. No
+existing test deleted or loosened.
+
+### Findings
+
+- **F-1 (High, LEDGER INTEGRITY) — FIXED this session (owner-approved).**
+  `correctMovement` measured `delta = corrected − original.quantity`
+  against the bare original and had no guard against correcting a
+  correction. So a **retry / double-submit of the same correction stacked
+  a second delta row and moved the balance again** (`201` both times — the
+  zero-delta guard compared the wrong baseline), and a delta row could
+  itself be corrected (unbounded chains). The ledger UI was protected (a
+  corrected cell becomes a non-re-openable aggregate cell); the API /
+  transport-retry path was exposed.
+  **Fix** (`lib/domain/stock/correct-movement.ts`): reject a target whose
+  `correctsMovementId` is set (`VALIDATION_ERROR`, field `movementId`);
+  compute `delta = corrected − (original.quantity + Σ existing deltas)` so
+  a repeat is `delta 0` and the existing guard rejects it. Input contract
+  ("the corrected final quantity") unchanged. Regression cover:
+  `correct-movement.test.ts` (+2) + `finding-correction-stacking.test.ts`
+  (2). `flow-5`'s zero-delta test updated to target the current derived
+  value.
+- **F-2 (Design call) — 2-phase transfer receiver visibility.** Confirmed
+  the Session-14 gap: a `transfer` dispatch row is stored with
+  `locationId = source`; `listMovements` for a location-bound role
+  hard-filters `where.locationId = actor.locationId` and never matches
+  `transferCounterpartLocationId`, so the receiver never sees the pending
+  inbound dispatch and the hub's Accept banner never appears.
+  `POST …/accept` works with a valid id. **Not M1 scope** (2-phase
+  transfer is M2 territory) — routed to a Design Sprint. Deferred, not a
+  blocker for M1 done.
+- **F-3 (Low) — correction not location-scoped for a *reassigned* staff
+  member.** Still `recordedById`-gated so impact is minimal. Left as-is
+  (owner's call); noted for defence-in-depth.
+
+**Everything else passed** — A5 archive picker-exclusion (all deep-linked
+`productId` smuggle attempts → `NOT_FOUND`), the unarchive/restore
+endpoints (403 non-admin, 400 bad `?mode`, idempotent, ADR-38
+ProductLocation rule), ledger derived-balance reconciliation, day-close
+gating, Session-16 purchase-payment real columns + backfill (5/5 dev rows
+sane, malformed note → 4 nulls + row kept, no `MoneyMovement`), the
+four-term reconciliation vocabulary, staff role-scoping, hard-delete
+guards (Product + Asset 409/400/200), B3 typography (every numeric
+`SimpleTable` column is `cell:"mono"` — nothing needs `tabular-nums`).
+
+### B2 — Bulk Opening Stock "does the entry disappear?" — EXPLAINED + FIXED
+
+Post-save behaviour is **correct by design**: the row switches to a
+"saved" (or "corrected", on a re-submit — server-side additive `opening`
+delta) state; nothing vanishes. What reads as "gone" is the cell ceasing
+to be an open text input.
+**The failing test was wrong, not the screen:**
+`opening.screen.test.tsx > "…toasts on a successful batch"` hard-coded the
+date literal `2026-08-28` in the expected toast but never faked the clock,
+so once the real date rolled to `2026-08-29` the `findByText(/2026-08-28/)`
+never matched. **Fix:** `vi.useFakeTimers()` + `vi.setSystemTime(NOW)` in
+`beforeEach` / `afterEach`. Assertion unchanged. Spec now green.
+
+### B5 — "Stock correction Edit button not clickable" — REPRODUCED, no code bug
+
+The correction mechanism round-trips correctly (verified live: cell click
+→ `<CorrectionDrawer>` → `POST …/correct` → additive delta, original
+untouched, ledger shows the derived value). The owner's report is the
+**inert "Edit" text in the last ledger column**
+(`components/kit/dense-ledger.tsx:280`) — a plain `<div>`, no handler; the
+real correction targets are the numeric cells. Also: a fresh DB has no
+single-movement correctable cells (everything is "—" or a derived
+Opening/Closing column), and an aggregate cell shows the "not designed
+yet" note. **Recommend a Design Sprint** to drop or re-purpose that "Edit"
+column; no blind change. Single-movement round-trip now covered at the API
+level in `flow-5`.
+
+### Playwright → Vitest integration tests (owner's call)
+
+The Playwright browser e2e harness was **stood up then removed** — under
+WSL2 it was too slow/flaky (dev server kept dying; first run hung with
+zero output). Per the owner, the M1 flows are server-contract flows that
+don't need a browser, so flows 4–8 (`TEST_PLAN.md §2`) were rewritten as
+**Vitest integration tests** hitting the real route handlers against the
+real dev Postgres (same `vi.mock("next-auth")` seam every `route.test.ts`
+uses). Run in ~2s as part of `pnpm test`.
+- `tests/integration/m1-flows/helpers.ts` — `actAs(...)` session mock +
+  typed `api.*` route drivers + `seedUsers()` (pins to the seed users by
+  stable `name`, never `findFirst({ role })` — a parallel domain suite may
+  own a same-role user).
+- `flow-4` purchase reconciliation · `flow-5` day-close correction ·
+  `flow-6` role access (incl. the two restore endpoints) · `flow-7`
+  hard-delete guard · `flow-8` archive picker-exclusion ·
+  `finding-correction-stacking` — F-1 regression cover.
+- `package.json` `test:e2e` now runs `vitest run tests/integration/m1-flows`.
+- Flows 1–3 (Order→stock, Canteen count→sale, Handover→variance) stay
+  documented in `TEST_PLAN.md §2` — M2/M3, routes don't exist.
+- The two UI-only assertions (delete retype **widget**, reconciliation
+  **table render**) stay covered by `tests/screens/*.screen.test.tsx`;
+  `catalog.screen.test.tsx` gained the wrong-case + drawer-closes cases.
+
+### Not tested (with reasoning)
+
+- **`prisma migrate deploy` on a clean migration-tracked DB.** The dev DB
+  has no `_prisma_migrations` history (all `db push`) and no scratch
+  tracked DB was available. The Session-16 migration is a single
+  `ALTER TABLE … ADD COLUMN` ×4 (nullable, no default/constraint/index);
+  no prior migration adds those columns. Safe by inspection; recommend a
+  one-off `migrate deploy` against a scratch DB before/at the `main`
+  merge as belt-and-braces.
+
+### Gate state
+
+- `pnpm test` — **226 / 226**. `pnpm tsc --noEmit` — 0. `pnpm build` —
+  clean. Kit `test:visual` / `test:a11y` — not re-run; `components/kit/*`
+  zero-diff this session.
+- Tests added: `tests/integration/m1-flows/**` (7 files),
+  `correct-movement.test.ts` (+2), `catalog.screen.test.tsx` (+2),
+  `opening.screen.test.tsx` (B2 fix). Deleted / loosened: none.
+- Restored `docs/sdlc.md` + `docs/design/screenshots/*` — deleted from the
+  working tree during the session (not by this session's work; a stray
+  WSL/Turbopack filesystem event during a dev-server crash).
+
+### Follow-ups recorded (not done)
+
+F-2 → Design Sprint (transfer receiver visibility). F-3 → optional
+location-scope check. B5 → Design Sprint (the misleading ledger "Edit"
+column). `payment-drawer.tsx` → `<Select searchable>` swap (ADR-48).
+A kit `destructive-text` Button variant. Whether `ReconTable` should be
+kit-`<SimpleTable>`-backed. `migrate deploy` scratch-DB dry-run.
+
+### Milestone 1
+
+**DONE.** `docs/sprints/milestone-1-plan.md §5` + `docs/ROADMAP.md` M1
+table marked complete this session.
+
+---
+
 ## 2026-08-29 — Development Sprint Session 16: build Session 15's design changes + the full A5 Archive feature — DONE
 
 **Role:** Developer (Development Sprint, `export-workflow.md` Phase C).

@@ -142,4 +142,62 @@ describe("correctMovement", () => {
       field: "correctedQuantity",
     });
   });
+
+  it("F-1: a repeated identical correction is a no-op against the current derived value, not the original", async () => {
+    const { productId, locationIds, recorderId } = ctx;
+    const locationId = locationIds.canteen;
+    const receipt = await recordPurchaseReceipt({
+      productId,
+      locationId,
+      quantity: "30",
+      recordedById: recorderId,
+    });
+
+    // First correction: +30 → +18, delta −12.
+    const first = await correctMovement(
+      { movementId: receipt.id, correctedQuantity: "18", recordedById: recorderId },
+      { userId: recorderId, role: "store_manager", locationId: null },
+    );
+    expect(first.quantity).toBe("-12.0000");
+
+    // Same request again — the current value is already 18, so delta 0.
+    await expect(
+      correctMovement(
+        { movementId: receipt.id, correctedQuantity: "18", recordedById: recorderId },
+        { userId: recorderId, role: "store_manager", locationId: null },
+      ),
+    ).rejects.toMatchObject({ constructor: DomainError, code: "VALIDATION_ERROR" });
+
+    // Exactly one delta row exists — no stacking.
+    const deltas = await prisma.stockMovement.count({
+      where: { correctsMovementId: receipt.id },
+    });
+    expect(deltas).toBe(1);
+  });
+
+  it("F-1: a correction delta row cannot itself be corrected", async () => {
+    const { productId, locationIds, recorderId } = ctx;
+    const locationId = locationIds.restaurant;
+    const receipt = await recordPurchaseReceipt({
+      productId,
+      locationId,
+      quantity: "20",
+      recordedById: recorderId,
+    });
+    const delta = await correctMovement(
+      { movementId: receipt.id, correctedQuantity: "14", recordedById: recorderId },
+      { userId: recorderId, role: "store_manager", locationId: null },
+    );
+
+    await expect(
+      correctMovement(
+        { movementId: delta.id, correctedQuantity: "0", recordedById: recorderId },
+        { userId: recorderId, role: "store_manager", locationId: null },
+      ),
+    ).rejects.toMatchObject({
+      constructor: DomainError,
+      code: "VALIDATION_ERROR",
+      field: "movementId",
+    });
+  });
 });
