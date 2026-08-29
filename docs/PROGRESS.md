@@ -66,6 +66,76 @@ Not a feature sprint — a planning + cleanup pass before M2 Session 1.
   done).
 - Gates: `pnpm tsc --noEmit` 0, `pnpm build` clean, `pnpm test` **226/226**.
 
+### 2026-08-29 — M2 Session 3: Money ledger + Customers & Credit (Developer) — DONE
+
+Backend-only Development Sprint; ran in parallel with Session 1 (Design)
+on disjoint files. Unblocks Sessions 4 (Orders) and 5 (Canteen sales).
+
+**Shipped:**
+
+- **Migration `20260829130000_add_m2_money_source_types`** — adds `order`,
+  `repayment`, `canteen_sale` to the `MoneySourceType` enum (plain
+  `ALTER TYPE … ADD VALUE`, no table change). **Applied to the dev DB via
+  `prisma db push`** (the dev DB carries no `_prisma_migrations` history —
+  carried convention from M1); the migration file is committed for a real
+  deploy. S4/S5 consume `order` / `canteen_sale` and need no further
+  migration.
+- **`lib/domain/financials/`** — the money ledger (ADR-17):
+  - `recordMoneyMovement(input, { actorId, tx? })` — internal, no route.
+    Appends one signed `MoneyMovement` row + an `AuditLog` row. Takes an
+    **optional Prisma tx client** so S4/S5 can write it inside the same
+    transaction as the `Order` / `StockCount` and its `StockMovement`s —
+    money and stock commit together or not at all. With no `tx` it opens
+    its own transaction. Shaped for a future `correctMoneyMovement`
+    (offsetting row via `correctsMovementId`, ADR-15) — not built.
+  - `getAccountBalances()` → `{ cash, mpesaBank }` as `Prisma.Decimal`,
+    one grouped `SUM(amount)` by account over the whole ledger. No stored
+    total. `serialiseAccountBalances` stringifies at the route boundary.
+- **`lib/domain/customers/`** — Customers & Credit (ADR-19):
+  - `createCustomer` (trim + non-empty name/phone; no phone format /
+    uniqueness — SCHEMA sets none; `AuditLog` on create).
+  - `listCustomers({ search?, hasBalance? })` — derived `balance`
+    computed **set-wise** (two grouped sums, `Σdebts − Σrepayments`),
+    `lastActivityAt`, case-insensitive name-or-phone search.
+  - `getCustomerLedger` — debts + repayments interleaved by `occurredAt`
+    then `createdAt`, running balance, `NOT_FOUND` for an unknown id.
+  - `recordRepayment` — one transaction: `Repayment` + a `+amount`
+    `MoneyMovement` (`sourceType: "repayment"`) + two `AuditLog` rows.
+    `amount > 0`. **Overpayment allowed → negative balance** (see flag).
+    `occurredAt` stamped, not day-gated (no Day Close in M2).
+  - `recordDebt({ customerId, orderId, amount, occurredAt }, { tx })` —
+    **tx-only helper for S4** to call from `createOrder` on a `credit`
+    order. S3 only reads `Debt`; it never originates one.
+- **Routes** (each mirrors `app/api/products/route.ts` in shape; no logic
+  in the handler): `GET`/`POST /api/customers`, `GET /api/customers/:id`,
+  `POST /api/customers/:id/repayments` — all **Admin or Cashier**;
+  `GET /api/money/balances` — **Admin only**. Zod in
+  `lib/validation/customers.ts`.
+
+**Changed from plan:** none — scope as handoff. `recordDebt` helper built
+this session (handoff left it to my discretion; building it keeps S4 out
+of Prisma for `Debt` writes).
+
+**Flag for Session 1 flow doc + QA:** a repayment greater than the
+outstanding balance is **accepted** and drives the derived balance
+negative (credit in hand). Deliberate per the handoff; not silently
+blocked. If the owner wants it blocked that is a follow-up, not a code
+change made here.
+
+**One existing test adjusted (not weakened):**
+`tests/integration/m1-flows/flow-4-purchase-reconciliation.test.ts` —
+its "purchase_payment writes NO MoneyMovement" check used a global
+`prisma.moneyMovement.count()` before/after, which is now flaky because
+the money ledger is live and other suites hold `MoneyMovement` rows
+concurrently. Rescoped to "no `MoneyMovement` linked to *this* payment"
+(by `stockMovementId` / `sourceId`) — a stricter assertion of the same
+intent.
+
+- Gates: `pnpm tsc --noEmit` **0**; `pnpm build` **clean**; `pnpm test`
+  **268/268** (226 existing + 42 new: financials 7, customers domain 17,
+  routes 18), stable across repeated runs.
+  `grep TODO(mock)` in the new modules → none.
+
 *(Full per-session entries for M2 Sessions 1–7 go here as they run.)*
 
 ---

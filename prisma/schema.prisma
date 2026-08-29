@@ -72,6 +72,9 @@ enum MoneySourceType {
   owner_draw
   owner_return
   account_transfer
+  order
+  repayment
+  canteen_sale
 }
 
 enum ExpenseCategory {

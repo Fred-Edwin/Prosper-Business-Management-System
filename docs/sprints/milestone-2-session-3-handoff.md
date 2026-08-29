@@ -1,8 +1,10 @@
 # M2 Session 3 Handoff — Developer: Money Ledger + Customers & Credit (backend)
 
-**Status:** READY. May start immediately — **runs in parallel with
-Session 1** (Design). No dependency on the artboards; the API surface is
-fixed by the PRD + ADRs + schema, not by any screen.
+**Status:** DONE (2026-08-29). Delivered the `MoneySourceType` migration,
+`lib/domain/financials` (money ledger), `lib/domain/customers`, the 5
+routes, and 42 new tests (`pnpm test` 268/268; `tsc` 0; `build` clean).
+See `docs/PROGRESS.md` → "M2 Session 3" for the full entry. **What
+Sessions 4 / 5 need is in "Session Notes" at the bottom.**
 
 **Role:** Developer (Development Sprint — backend only). One role this
 session: `lib/domain` + `lib/validation` + `app/api` + tests + the doc
@@ -301,10 +303,58 @@ price / margin never appears in any customer payload anyway.
 
 ## Session Notes
 
-*(Live notes added during the session.)*
+- **Migration applied via:** `prisma db push` (dev DB has no
+  `_prisma_migrations` history — built by `db push` every session, per
+  M1). Migration file `prisma/migrations/20260829130000_add_m2_money_source_types/`
+  committed for a real deploy. Ran `prisma generate` after.
+- **`recordDebt` helper added? YES.** `lib/domain/customers/record-debt.ts`,
+  exported from the barrel. Signature:
+  `recordDebt({ customerId, orderId, amount: Prisma.Decimal, occurredAt: Date }, { tx })`
+  — **tx-only** (throws if you don't pass a `TransactionClient`). It
+  `create`s one `Debt` row and nothing else (no money movement — a credit
+  order writes a `Debt`, not a `MoneyMovement`; no `AuditLog` — the order's
+  own audit entry covers it, and the debt is self-evident from its order).
+  Rejects a non-positive amount (`VALIDATION_ERROR`, field `amount`).
+  Tested in `lib/domain/customers/record-debt.test.ts` (append inside a
+  tx, rollback with the tx, reject ≤ 0).
 
-- **Migration applied via:** _db push / migrate dev — record which._
-- **`recordDebt` helper added?** _yes/no — if yes, S4 calls it._
-- **Overpayment (repayment > balance):** allowed → negative balance.
-  Flagged for Session 1 flow doc + QA.
-- **Flags / escalations:** _none yet._
+### For Session 4 (Orders)
+
+- **Money seam:** `import { recordMoneyMovement } from "@/lib/domain/financials"`.
+  Call it **inside** your `createOrder` `prisma.$transaction(async (tx) => …)`
+  with `{ actorId, tx }` so the `Order` + `OrderLine[]` + `Sale`
+  `StockMovement[]` + the `MoneyMovement` all commit atomically. For a
+  Cash/M-Pesa order: `sourceType: "order"`, `sourceId: order.id`,
+  `account:` the matching account, `amount:` `+total` (positive = money
+  in), `occurredAt:` the order's `occurredAt`.
+- **Credit order:** write **no** `MoneyMovement`. Instead
+  `import { recordDebt } from "@/lib/domain/customers"` and call it with
+  your `tx`; `customerId` is required (§3.2 — 400 otherwise).
+- **The M1 `purchases.ts` `TODO(mock)`** (a `purchase_payment` should also
+  debit Cash/M-Pesa) is **S4's** to resolve, per the plan — the seam
+  (`recordMoneyMovement` with `sourceType: "purchase_payment"`,
+  `sourceId` = the stock-movement id) now exists. `flow-4`'s test was
+  rescoped this session to check "no money row linked to *this* payment"
+  rather than a global count, so it won't block you.
+- **AuditLog pattern:** M1 domain modules didn't write `AuditLog`;
+  M2 requires it (ADR-25). See `lib/domain/financials/record-money-movement.ts`
+  and `lib/domain/customers/record-repayment.ts` for the shape
+  (`entityType`, `action: "create"`, `userId`, `newValue`, `occurredAt`).
+  Note: `AuditLog.userId` RESTRICTs — test-helpers must delete audit rows
+  before their users (see `lib/domain/customers/test-helpers.ts`).
+
+### For Session 5 (Canteen derived sales)
+
+- Same money seam: `recordMoneyMovement` inside your `recordStockCount`
+  transaction — `sourceType: "canteen_sale"`, `sourceId:` the
+  `StockCount` id, `account: "cash"` (plan §3.5), `amount:`
+  `+(sold × canteen selling price)`.
+
+### Flags / escalations
+
+- **Overpayment (repayment > outstanding balance): allowed** → the derived
+  balance goes negative (credit in hand). Deliberate per this handoff §4.
+  **Session 1** should reflect this in `customers-credit-flow.md`; **QA**
+  should treat "can I overpay?" as expected-yes unless the owner changes
+  it. Not blocked in code.
+- No other escalations.

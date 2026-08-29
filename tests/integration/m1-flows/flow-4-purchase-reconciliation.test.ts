@@ -59,7 +59,6 @@ afterAll(async () => {
 describe("purchase payment writes real columns and no money row", () => {
   it("a purchase_payment carries zero stock quantity, the 4 purchase_* columns, and writes NO MoneyMovement", async () => {
     actAs({ id: adminId, role: "admin" });
-    const moneyBefore = await prisma.moneyMovement.count();
 
     const res = await api.createMovement({
       movementType: "purchase_payment",
@@ -78,8 +77,20 @@ describe("purchase payment writes real columns and no money row", () => {
     expect(res.body.data.purchaseTotalCost).toBe("4000.00");
     expect(res.body.data.purchasePaidFrom).toBe("cash");
 
-    // No money ledger row — still F3/M3 (ADR-39 §4).
-    expect(await prisma.moneyMovement.count()).toBe(moneyBefore);
+    // `recordPurchasePayment` writes NO money ledger row — that boundary is
+    // S4's to resolve (ADR-39 §4 / M2 plan §2). Scoped to this payment
+    // (by linked stock-movement id and by source), not a global count:
+    // since M2 Session 3 the money ledger is live and other suites
+    // legitimately hold `MoneyMovement` rows concurrently.
+    const linkedMoney = await prisma.moneyMovement.count({
+      where: {
+        OR: [
+          { stockMovementId: res.body.data.id },
+          { sourceType: "purchase_payment", sourceId: res.body.data.id },
+        ],
+      },
+    });
+    expect(linkedMoney).toBe(0);
 
     // The balance over this product/location is unmoved.
     const bal = await api.balances(`?productIds=${awaitingProductId}&locationId=${storeId}`);

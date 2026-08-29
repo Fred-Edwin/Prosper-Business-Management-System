@@ -220,12 +220,21 @@ M-Pesa/Bank. Current balance of either account = signed sum of its rows.
 |---|---|
 | account | enum: `cash`, `mpesa_bank` |
 | amount | signed NUMERIC |
-| source_type | enum: `handover_receipt`, `expense`, `purchase_payment`, `owner_draw`, `owner_return`, `account_transfer` |
-| source_id | polymorphic FK → the originating record (ReceiptOfHandover, Expense, StockMovement[purchase_payment], OwnerTransaction) |
+| source_type | enum: `handover_receipt`, `expense`, `purchase_payment`, `owner_draw`, `owner_return`, `account_transfer`, `order`, `repayment`, `canteen_sale` |
+| source_id | polymorphic FK → the originating record (ReceiptOfHandover, Expense, StockMovement[purchase_payment], OwnerTransaction, Order, Repayment, StockCount) |
 | recorded_by | FK → `User` |
 | occurred_at | |
 | corrects_movement_id | FK → `MoneyMovement`, nullable, self-referencing |
 | note | text, nullable |
+
+The write path is `lib/domain/financials.recordMoneyMovement` (internal —
+no route). As of M2 Session 3 it is exercised for `repayment` (a customer
+debt repayment, `+amount`). `order` (Cash/M-Pesa Restaurant order revenue,
+S4) and `canteen_sale` (Canteen derived-sale revenue, S5) are reserved —
+the enum values exist so those sessions add no further migration. The
+`purchase_payment` money row (ADR-39 §4) is still deferred to S4.
+Migration: `20260829130000_add_m2_money_source_types` (`ALTER TYPE …
+ADD VALUE`, no table change; applied to the dev DB via `prisma db push`).
 
 ---
 
@@ -273,7 +282,11 @@ Writes a `MoneyMovement` row per account for the received amounts.
 | phone | |
 
 Running balance is derived: sum of `Debt.amount` minus sum of
-`Repayment.amount` for that customer.
+`Repayment.amount` for that customer — never a stored column (ADR-17).
+`lib/domain/customers.listCustomers` computes it set-wise (two grouped
+sums), `getCustomerLedger` interleaves the two tables with a running
+balance. Overpayment is allowed, so the balance may be negative (credit
+in hand). No phone format or uniqueness constraint.
 
 ### `Debt`
 | Column | Notes |
@@ -282,6 +295,10 @@ Running balance is derived: sum of `Debt.amount` minus sum of
 | order_id | FK → `Order` — created automatically on a Credit order |
 | amount | NUMERIC |
 | occurred_at | |
+
+Written only by `createOrder` (S4) for a `credit` order, inside its
+transaction. S3 ships a tx-only `lib/domain/customers.recordDebt` helper
+for S4 to call; S3 itself only reads `Debt` (for balances / the ledger).
 
 ### `Repayment`
 | Column | Notes |

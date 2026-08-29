@@ -292,11 +292,65 @@ Roles: Admin (all), staff (own).
 
 ## Customers & Credit
 
+> **Implemented M2 Session 3 (2026-08-29).** The contract below reflects
+> what shipped. `camelCase` JSON; money fields are decimal **strings**
+> (`"1200.00"`). Running balances are **derived** — `Σ debts − Σ
+> repayments` — never stored (ADR-17). Every route is Admin **or**
+> Cashier (PRD §4.6); nothing customer-side is per-cashier and no
+> buying-price / margin field appears in any payload.
+
 ### `GET /api/customers`
-Roles: Admin.
+Roles: Admin, Cashier. Query: `?search=` (case-insensitive contains on
+`name` **or** `phone`), `?hasBalance=true` (only customers whose derived
+balance ≠ 0). Returns `{ data: CustomerListRow[] }`, sorted by name. Each
+item: `{ id, name, phone, balance, lastActivityAt }` — `balance` is a
+signed decimal string (negative = overpaid / credit in hand);
+`lastActivityAt` is the ISO max of the customer's debt/repayment
+`occurredAt`, or `null`.
+
+### `POST /api/customers`
+Roles: Admin, Cashier. Body: `{ "name": "...", "phone": "..." }` (both
+trimmed, non-empty; phone kept lenient — no format or uniqueness check).
+Returns `{ data: Customer }` (`{ id, name, phone, createdAt, updatedAt }`),
+`201`. Writes an `AuditLog` row.
+
+### `GET /api/customers/:id`
+Roles: Admin, Cashier. Returns `{ data: { customer, entries, balance } }`
+— the customer's debt/repayment ledger, interleaved and ordered by
+`occurredAt` then `createdAt`. Each entry:
+`{ kind: "debt" | "repayment", amount, occurredAt, orderId?, runningBalance }`
+(`orderId` present only on a debt; `runningBalance` accumulates `+debt` /
+`−repayment`). `balance` is the final derived figure. `404 NOT_FOUND` if
+the customer doesn't exist.
 
 ### `POST /api/customers/:id/repayments`
-Roles: Admin, Cashier. Body: `{ amount }`.
+Roles: Admin, Cashier. Body:
+`{ "amount": "300.00", "account": "cash" | "mpesa_bank", "occurredAt"?: ISO, "note"?: "..." }`.
+`amount` must be `> 0` (`400 VALIDATION_ERROR`, `field: "amount"`).
+**Overpayment is allowed** — a repayment larger than the outstanding
+balance succeeds and drives the derived balance negative. In one
+transaction: writes the `Repayment`, a `+amount` `MoneyMovement`
+(`sourceType: "repayment"`, `sourceId` = the repayment id, on the chosen
+account), and two `AuditLog` rows. `occurredAt` defaults to now and is not
+day-gated in M2 (no Day Close). Returns
+`{ data: { id, customerId, amount, account, occurredAt, createdAt } }`,
+`201`. `404 NOT_FOUND` for an unknown customer.
+
+---
+
+## Money
+
+> **Implemented M2 Session 3 (2026-08-29).** The money ledger
+> (`MoneyMovement`) is live. Balances are derived — `SUM(amount)` grouped
+> by account over every row (ADR-17), no stored total. The write path
+> (`recordMoneyMovement`) is internal: called by repayments now, by orders
+> (S4) and canteen sales (S5) next. No public write route in M2.
+
+### `GET /api/money/balances`
+Roles: **Admin only** (`403` for every other role). Returns
+`{ data: { cash, mpesaBank } }`, both decimal strings (may be negative).
+No screen consumes this in M2 — it exists so QA and the owner walkthrough
+can eyeball the ledger.
 
 ---
 
