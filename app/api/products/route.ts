@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
+import type { Role } from "@prisma/client";
 import { requireApiRole } from "@/lib/api/require-role";
+import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { ok, fail } from "@/lib/api/response";
 import {
   createProductSchema,
@@ -12,8 +14,19 @@ import {
   type CreateProductInput,
 } from "@/lib/domain/catalog";
 
+// GET is read-only and consumed by the staff stock hooks (product picker
+// in the receive / issue / production / non-sale / transfer flows and the
+// mobile stock-levels views). `listProducts` strips `buyingPrice` to
+// `null` for non-`admin` callers, so widening the read here does not
+// expose buying price. Mutations below stay `admin`-only.
+const PRODUCT_READ_ROLES: readonly Role[] = [
+  "admin",
+  "store_manager",
+  "canteen_attendant",
+];
+
 export async function GET(req: NextRequest) {
-  const auth = await requireApiRole("admin");
+  const auth = await requireApiRoleIn(PRODUCT_READ_ROLES);
   if (auth instanceof NextResponse) return auth;
 
   const sp = req.nextUrl.searchParams;

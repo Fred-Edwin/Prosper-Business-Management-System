@@ -1,13 +1,22 @@
 import { NextResponse } from "next/server";
-import { requireApiRole } from "@/lib/api/require-role";
+import type { Role } from "@prisma/client";
+import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { ok, fail } from "@/lib/api/response";
 import { DomainError, listLocations } from "@/lib/domain/catalog";
 
-// API.md lists this as "Roles: all", but in M1 only the Admin catalog
-// drawer consumes it. Gated to `admin` for now; widen when another
-// consumer (e.g. the cashier order screen) appears. Noted in PROGRESS.md.
+// API.md: "widen to all when a second consumer appears" — the staff stock
+// hooks (`useStaffStock` / `useStockLevels`) now consume this for the
+// transfer destination picker and the location scope. The list is
+// non-sensitive (active locations, name only); reads are role-scoped to
+// these three roles, mutations live elsewhere.
+const LOCATION_READ_ROLES: readonly Role[] = [
+  "admin",
+  "store_manager",
+  "canteen_attendant",
+];
+
 export async function GET() {
-  const auth = await requireApiRole("admin");
+  const auth = await requireApiRoleIn(LOCATION_READ_ROLES);
   if (auth instanceof NextResponse) return auth;
 
   try {

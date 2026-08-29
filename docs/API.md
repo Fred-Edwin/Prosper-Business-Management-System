@@ -40,12 +40,14 @@ value and computes the delta internally (ADR-15).
 Success envelope is `{ "data": ... }`; errors use the standard shape.
 
 ### `GET /api/locations`
-Roles: Admin (M1 — widen to "all" when a second consumer appears).
+Roles: Admin, Store Manager, Canteen Attendant (widened in Session 14 —
+the staff stock hooks consume this for the transfer destination picker).
 Returns active locations, `{ data: Location[] }`, sorted by name.
 
 ### `GET /api/products`
-Roles: Admin (buying price stripped to `null` for non-Admin roles once
-they consume this).
+Roles: Admin, Store Manager, Canteen Attendant. `buyingPrice` is stripped
+to `null` for the non-Admin roles (they consume this for the stock-flow
+product pickers and the mobile stock-levels views). `POST` stays Admin.
 Query: `?kind=ingredient|dish|goods`, `?search=` (case-insensitive `name`
 contains), `?includeArchived=true` (default excludes soft-deleted).
 Returns `{ data: ProductWithLocations[] }`, sorted kind→name. Each item:
