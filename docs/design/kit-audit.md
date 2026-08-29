@@ -293,6 +293,17 @@ error (ADD — danger border + helper), disabled (GLOBAL).
 Required (`§2 C5`): default (ARTBOARD ✓), open (ARTBOARD ✓ — real popover
 listbox), error (ARTBOARD ✓), filled/disabled/focus (GLOBAL).
 
+**Searchable mode — designed, not yet built.** Phase A of
+`docs/sprints/kit-searchable-select-handoff.md` (kit Design Sprint,
+2026-08-29) added 3 `6CG-0` state rows — `Select — Searchable (closed)` /
+`(open, query typed, list filtered)` / `(open, no matches)` — and
+promoted `§2 C5` from FLAGGED to ARTBOARD. **Phase B (Developer) is
+pending:** an opt-in `searchable` prop that turns the trigger into an
+APG editable-combobox filter input over the existing option list
+(`label`-contains, `max-height ≈ 8 × --control-sm` then scroll, a
+`noMatchesLabel` row), `searchable` off = byte-unchanged, +3 Storybook
+stories.
+
 | aspect | BEFORE | AFTER |
 |---|---|---|
 | tokens-only? | **NO** — `[box-shadow:#00000014_0px_4px_12px]` raw → `--shadow-md` (X7); `z-10` → `--z-dropdown` (X14); `tracking-[0.04em]` (X15). | _tbd_ |

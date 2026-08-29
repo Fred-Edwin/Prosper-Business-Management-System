@@ -1663,22 +1663,29 @@ max-height, and limiting which kinds appear.
   API does not reject a `dish` productId but the UI never offers one.*
   (A server-side `400` for a `dish` productId on `purchase_payment` is a
   reasonable Session 16 add but is **not required** by this ADR.)
-- **Control — the kit `Select` gets a searchable / combobox variant.**
-  This **is a kit component change**, so it is **flagged for a kit
-  Design Sprint**, not built by Session 16 into the screen:
-  - New artboard rows on `6CG-0`: **Select — Searchable (closed)**,
+- **Control — the kit `Select` gets a searchable / combobox mode.**
+  This **is a kit component change**, so it goes through the kit
+  pipeline, **not** Session 16. Full handoff:
+  **`docs/sprints/kit-searchable-select-handoff.md`** — two sessions:
+  - **Phase A (kit Design Sprint):** 3 new artboard rows on `6CG-0` —
+    **Select — Searchable (closed)** (identical to Default),
     **Select — Searchable (open, query typed, list filtered)**,
     **Select — Searchable (open, no matches)**. States otherwise inherit
-    §9 (focus ring, disabled) and the existing open-listbox row.
-    Behaviour: a text input inside the trigger; typing filters the option
-    list (case-insensitive `label` contains); `max-height` ~= 8 rows then
-    scroll; keyboard = the existing APG listbox pattern + the query
-    field. `component-states.md §2 C5` gains this variant row and §9
+    §9. `component-states.md §2 C5` promoted from FLAGGED → ARTBOARD; §9
     gains a "searchable" line.
-  - Until the kit variant ships, **Session 16's interim** is acceptable:
-    the plain `Select` popover with `max-height: ~280px` + scroll, the
-    list already cut down by the `ingredient + goods` filter. ADR records
-    this as the interim, not the target.
+  - **Phase B (kit Developer Sprint):** an **opt-in `searchable` mode**
+    added to `components/kit/select.tsx` — a text input in the trigger
+    filters the option list (`label` contains, case-insensitive),
+    `max-height` ≈ 8 rows then scroll, a "No matches" row, keyboard =
+    the existing APG combobox extended to the input. `searchable` off =
+    byte-unchanged behaviour, so no existing call site moves. +3
+    Storybook stories, `test:visual` + `test:a11y` + §9 `postVisit`.
+    This is an **edit** of the Session-10 APG-listbox `Select`, **not a
+    rebuild**.
+  - Until Phase B ships, **Session 16's interim** is acceptable: the
+    plain `Select` popover with `max-height: ~280px` + scroll, the list
+    already cut down by the `ingredient + goods` filter. The interim,
+    not the target.
 - **Artboard redrawn:** `85W-0` (Payment Drawer) — product row shows the
   searchable control; a caption notes "Ingredients & Goods only".
 

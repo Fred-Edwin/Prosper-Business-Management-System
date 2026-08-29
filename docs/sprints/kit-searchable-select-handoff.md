@@ -1,6 +1,6 @@
 # Handoff — Kit: add a `searchable` mode to `<Select>` (design + build)
 
-**Status:** NOT STARTED.
+**Status:** PHASE A DONE (2026-08-29). PHASE B NOT STARTED.
 **Origin:** flagged in **ADR-46 §6** (Design Sprint Session 15) and
 `docs/design/component-states.md §2 C5`. The Financials payment-drawer
 product picker will hold many products in production; a plain dropdown is
@@ -170,6 +170,19 @@ changes — **no new non-token values**.
 - `design-principles.md §9` line added.
 - `kit-audit.md` + `PROGRESS.md` noted.
 - **Phase B can start** — hand it this file.
+
+**Phase A completion note (2026-08-29):** all criteria met. The 3 rows
+are children of `6CH-0` on `6CG-0`, layer-named
+`Select — Searchable (closed)` / `Select — Searchable (open, query typed,
+list filtered)` / `Select — Searchable (open, no matches)`, built with
+inline token styles duplicated from the canonical `Select — Open` nodes
+(Paper's `write_html` does not parse arbitrary-value Tailwind — Phase B
+reads exact values with `get_computed_styles`, not the class strings).
+**Provisional calls for Phase B:** (1) matched substring is **not**
+highlighted — do not add substring bolding; (2) no-matches copy is the
+generic `"No matches"`, overridable via `noMatchesLabel`. Popover cap
+drawn at `max-height: 288px` (= 8 × 36px; use a
+`calc(var(--control-sm)*8)` token expression in code).
 
 ---
 

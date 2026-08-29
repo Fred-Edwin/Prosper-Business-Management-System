@@ -140,7 +140,20 @@ primary-loading, destructive-loading. Everything else is global.
 | filled | GLOBAL (value text in place of placeholder) |
 | error | ARTBOARD (ADD — danger border; "Location required" on Asset Drawer) |
 | disabled | GLOBAL (`--surface-subtle`, `--text-disabled`, no chevron interaction) |
-| **searchable / combobox variant** | **FLAGGED FOR A KIT DESIGN SPRINT + KIT DEVELOPER SPRINT (Session 15, ADR-46 §6).** Full handoff: **`docs/sprints/kit-searchable-select-handoff.md`** — Phase A (Design: 3 `6CG-0` state rows — Searchable closed / open-filtered / open-no-match) then Phase B (Developer: add a `searchable` **opt-in mode** to `components/kit/select.tsx` — a text input in the trigger filters the option list `label`-contains, `max-height` ≈ 8 rows then scroll, a "No matches" row, keyboard = the existing APG combobox extended to the input; +3 Storybook stories; `test:visual` + `test:a11y` + §9 `postVisit`). It is an **edit** of the existing APG-listbox `Select`, not a rebuild — `searchable` off = byte-unchanged. Not built by a Development Sprint into a screen. **Session 16 interim** until Phase B ships: plain `Select` popover `max-height ~280px` + scroll + the drawer's `ingredient`/`goods` kind filter. |
+| **searchable / combobox variant** | **ARTBOARD** (Phase A done — kit Design Sprint, 2026-08-29; ADR-46 §6). 3 state rows on `6CG-0`: **`Select — Searchable (closed)`** (identical to Default closed), **`Select — Searchable (open, query typed, list filtered)`** (search glyph + text input + caret, accent border, capped/scrolling filtered popover), **`Select — Searchable (open, no matches)`** (single non-interactive "No matches" row). Full handoff: **`docs/sprints/kit-searchable-select-handoff.md`**. **Phase B (Developer) still pending:** add a `searchable` **opt-in mode** to `components/kit/select.tsx` — a text input in the trigger filters the option list `label`-contains, `max-height` ≈ 8 rows then scroll, a "No matches" row, keyboard = the existing APG combobox extended to the input; +3 Storybook stories; `test:visual` + `test:a11y` + §9 `postVisit`. It is an **edit** of the existing APG-listbox `Select`, not a rebuild — `searchable` off = byte-unchanged. Not built by a Development Sprint into a screen. **Session 16 interim** until Phase B ships: plain `Select` popover `max-height ~280px` + scroll + the drawer's `ingredient`/`goods` kind filter. |
+
+**Searchable-mode state matrix** (per Phase A):
+
+| State | artboard? |
+|---|---|
+| searchable — closed | ARTBOARD ✅ (identical to Default closed; caption says so) |
+| searchable — open, filtered | ARTBOARD ✅ (input + 14px search glyph + `max-height ≈ 8 × --control-sm` capped/scrolling filtered list) |
+| searchable — open, no matches | ARTBOARD ✅ (one centred non-interactive `--text-tertiary` "No matches" row) |
+| searchable — focus (keyboard) | GLOBAL (§9.1 — accent ring on the input) |
+| searchable — input focus border | GLOBAL (§9.2 — accent border on focus; already true when open) |
+| searchable — disabled | GLOBAL (§9.7) |
+
+Phase-A provisional calls (documented for Phase B): the matched substring is **not** highlighted in the filtered list; the empty-popover copy is the generic **"No matches"**, screen-overridable via a `noMatchesLabel` prop.
 
 ### C6 — Segmented control
 

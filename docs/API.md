@@ -152,8 +152,17 @@ Query: `?productId=&locationId=&movementType=&date=` (`date` is a
 Each row: `{ id, productId, locationId, movementType, quantity (signed
 decimal string, from this row's location's perspective), recordedById,
 occurredAt (ISO), reason, reasonNote, orderId, stockCountId,
-transferCounterpartLocationId, purchasePaymentId, correctsMovementId,
-note, createdAt, updatedAt }`.
+transferCounterpartLocationId, purchasePaymentId, purchaseSupplier,
+purchaseOrderedQty, purchaseTotalCost, purchasePaidFrom,
+correctsMovementId, note, createdAt, updatedAt }`.
+
+`purchaseSupplier` / `purchaseOrderedQty` (4dp decimal string) /
+`purchaseTotalCost` (2dp decimal string) / `purchasePaidFrom` (`"cash"` |
+`"mpesa_bank"`) are **non-null only on `purchase_payment` rows** (ADR-46
+§3); `null` on every other movement type, and `null` on any legacy
+payment row whose `note` didn't parse during the one-time backfill. The
+`note` string is still written (a human sentence) but is no longer the
+source of truth for these values.
 
 ### `POST /api/stock-movements`
 Body is discriminated on `movementType`. Role allowed **varies by type**;
@@ -163,7 +172,7 @@ with the created row. Inputs take an **unsigned magnitude**; the domain
 applies the sign.
 
 - `opening` — Admin. `{ movementType: "opening", productId, locationId, businessDate (YYYY-MM-DD), quantity }`. Writes an `opening` row at that business day's start. A second call for the same product/location/date is a **correction** of the first (ADR-15), not a duplicate.
-- `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`; ordered magnitude + cost in `note`). The `MoneyMovement` debit is **not** written yet — F3 owns it (ADR-39).
+- `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`). `supplier` / `quantity` / `cost` / `paidFromAccount` are persisted to the real `purchaseSupplier` / `purchaseOrderedQty` / `purchaseTotalCost` / `purchasePaidFrom` columns (ADR-46 §3); a human `note` sentence is also composed for display. The `MoneyMovement` debit is **not** written yet — F3 owns it (ADR-39). The **payment-drawer product picker shows `ingredient` + `goods` only** (a `dish` is never purchased — ADR-33); the API does not reject a `dish` productId, the UI just never offers one.
 - `purchase_receipt` — Store Manager / Canteen Attendant. `{ movementType: "purchase_receipt", productId, locationId, quantity, purchasePaymentId? }`. `+quantity` at `locationId`. `purchasePaymentId`, if given, must reference a real `purchase_payment` row → `404` otherwise.
 - `issue` — Store Manager. `{ movementType: "issue", productId, locationId, quantity }`. `−quantity` at the Store (Store → cooking; single row).
 - `production` — Store Manager. `{ movementType: "production", productId, locationId, quantity }`. `+quantity` at `locationId`, which **must be a `restaurant` location**; `productId` **must be `kind = "dish"`** → `400` otherwise.

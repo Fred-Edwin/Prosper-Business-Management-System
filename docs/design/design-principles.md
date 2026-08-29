@@ -510,6 +510,14 @@ everything below is the uniform rule for the rest.
     variant color, dims its label to `opacity: 0.7`, shows a 14px
     inline spinner in the label color, and sets `pointer-events: none`.
 
+11. **Searchable `Select`.** A searchable `Select` (combobox with a
+    filter input) keeps the full §9 contract of the plain `Select` — the
+    filter input is a `.kit-field` (§9.2 accent border on focus), the
+    option list scrolls inside a `max-height` container (§10 skeleton
+    rule N/A — the list is never a loading surface), and a no-matches
+    state renders one non-interactive `var(--text-tertiary)` row, never
+    an empty popover.
+
 > **As of Session 10 the §9 contract is implemented per-component; as of the
 > Session 10b–10d harness it is _enforced_ per-component (see the §9 header);
 > as of Session 11 the shipped Admin screens are composed from those

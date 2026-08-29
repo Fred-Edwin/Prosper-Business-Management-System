@@ -79,6 +79,15 @@ export function toMovementView(row: StockMovementRow): StockMovementView {
     stockCountId: row.stockCountId,
     transferCounterpartLocationId: row.transferCounterpartLocationId,
     purchasePaymentId: row.purchasePaymentId,
+    purchaseSupplier: row.purchaseSupplier,
+    purchaseOrderedQty:
+      row.purchaseOrderedQty == null ? null : row.purchaseOrderedQty.toFixed(4),
+    purchaseTotalCost:
+      row.purchaseTotalCost == null ? null : row.purchaseTotalCost.toFixed(2),
+    purchasePaidFrom:
+      row.purchasePaidFrom === "cash" || row.purchasePaidFrom === "mpesa_bank"
+        ? row.purchasePaidFrom
+        : null,
     correctsMovementId: row.correctsMovementId,
     note: row.note,
     createdAt: row.createdAt.toISOString(),

@@ -5,6 +5,57 @@ shipped, what's blocked, what changed from plan.
 
 ---
 
+## 2026-08-29 — Kit Design Sprint: `<Select>` searchable mode — Phase A (design) DONE; Phase B (build) NOT STARTED
+
+**Role:** Product Designer (kit Design Sprint). Paper artboards + spec
+docs only — **no code**. Origin: ADR-46 §6 / `component-states.md §2 C5`
+FLAGGED row. Handoff: `docs/sprints/kit-searchable-select-handoff.md`.
+
+### Shipped
+
+- **3 new state rows on `6CG-0` (Component Kit — Form Controls)**, built
+  from tokens only over the canonical `Select — Open` nodes (no divergent
+  copy of the base Select):
+  - `Select — Searchable (closed)` — identical to Default closed; caption
+    notes searchability is an open-state behaviour.
+  - `Select — Searchable (open, query typed, list filtered)` — trigger
+    becomes a text input: 14px search glyph (`--text-tertiary`) left,
+    query `ric` + caret in `--text-body`/`--text-primary`, chevron up,
+    border `--color-accent`. Popover unchanged from `Select — Open`
+    (`--shadow-md`, `border-strong`, `--radius-md`, 4px pad, 2px gap, 32px
+    rows) but height-capped at `max-height ≈ 8 × --control-sm` (288px)
+    then scroll; only label-contains matches shown; active row =
+    `--surface-hover`, selected row = `--color-accent` label
+    (`--weight-medium`).
+  - `Select — Searchable (open, no matches)` — query `zzz`, one centred
+    non-interactive `--text-tertiary` / `--text-sm` "No matches" row; no
+    option rows.
+- `component-states.md §2 C5` — FLAGGED → ARTBOARD, 3 artboards listed +
+  a searchable-mode state matrix.
+- `design-principles.md §9` — new rule 11 (searchable `Select` keeps the
+  full §9 contract).
+- `kit-audit.md` — Select section notes the mode is designed, Phase B
+  pending.
+
+### Design decisions (Designer's remit, recorded for Phase B)
+
+- **No matched-substring highlight** in the filtered list — pick the
+  lighter option; Phase B must not add substring bolding.
+- No-matches copy = generic **"No matches"**, screen-overridable via a
+  `noMatchesLabel` prop.
+
+### Not done / handed off
+
+- **Phase B (kit Developer Sprint)** — add the opt-in `searchable` mode
+  to `components/kit/select.tsx` (APG editable-combobox filter input, 288px
+  cap + scroll, `noMatchesLabel` row), +3 Storybook stories, `test:visual`
+  + `test:a11y` + §9 `postVisit`. Hand it
+  `docs/sprints/kit-searchable-select-handoff.md`.
+- No screen file touched — `payment-drawer.tsx` keeps its Session 16
+  interim until Phase B ships.
+
+---
+
 ## 2026-08-29 — Design Sprint Session 15: M1 design-change pass (A1/A2, A4, C1, B3) + Financials reconciliation redesign + A5 Archive design + ADR-46 / ADR-47 — DONE
 
 **Role:** Product Designer (Design Sprint). Works in Paper + writes ADRs
@@ -171,11 +222,16 @@ Assets Register Archived tab, Asset Drawer delete section, `6CG-0`
 searchable-`Select` state rows (a **kit** Design Sprint draws these), the
 `6OE-0` "Edit Drawer — archived record" caption row.
 
-### Flagged for a kit Design Sprint (not built by Session 16 into a screen)
+### Flagged for the kit pipeline (not built by Session 16 into a screen)
 
-- **`Select` — searchable / combobox variant.** New `6CG-0` rows +
-  `component-states.md §2 C5` update + a `§9` "searchable" line. Session
-  16 uses the documented interim on the plain `Select` until this ships.
+- **`Select` — searchable / combobox mode.** Full handoff written:
+  **`docs/sprints/kit-searchable-select-handoff.md`** — Phase A (kit
+  Design Sprint: 3 `6CG-0` state rows) then Phase B (kit Developer
+  Sprint: an opt-in `searchable` mode on `components/kit/select.tsx` — an
+  **edit** of the existing APG-listbox `Select`, not a rebuild; +3
+  Storybook stories + `test:visual` / `test:a11y` / §9 `postVisit`).
+  Session 16 uses the documented interim on the plain `Select` until
+  Phase B ships.
 
 ### Consistency (export-workflow Phase A exit)
 

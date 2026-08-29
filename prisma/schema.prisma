@@ -265,6 +265,14 @@ model StockMovement {
 
   purchasePaymentId String? @map("purchase_payment_id")
 
+  // Real purchase-payment detail (ADR-46 §3). All nullable; set only for
+  // `movementType = "purchase_payment"`. Before ADR-46 these lived in a
+  // free-text `note` scraped by a client-side regex (`parsePaymentNote`).
+  purchaseSupplier   String?  @map("purchase_supplier")
+  purchaseOrderedQty Decimal? @map("purchase_ordered_qty") @db.Decimal(14, 4)
+  purchaseTotalCost  Decimal? @map("purchase_total_cost") @db.Decimal(14, 2)
+  purchasePaidFrom   String?  @map("purchase_paid_from") // "cash" | "mpesa_bank"
+
   correctsMovementId String?         @map("corrects_movement_id")
   correctsMovement   StockMovement?  @relation("StockMovementCorrection", fields: [correctsMovementId], references: [id])
   corrections        StockMovement[] @relation("StockMovementCorrection")
