@@ -180,6 +180,7 @@ export function ProductDrawer({
     <Drawer
       open={open}
       onClose={onClose}
+      variant="rail"
       title={isEdit ? "Edit Product" : "New Product"}
       footer={
         <>
@@ -191,6 +192,7 @@ export function ProductDrawer({
             onClick={handleSave}
             loading={saving}
             disabled={saving}
+            className="grow"
           >
             Save Product
           </Button>
