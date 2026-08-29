@@ -123,9 +123,9 @@ export function CatalogClient() {
     ? products.filter((p) => p.deletedAt != null)
     : products;
 
-  const count = `${visibleProducts.length} product${
-    visibleProducts.length === 1 ? "" : "s"
-  }`;
+  const count = tab.archived
+    ? `${visibleProducts.length} archived`
+    : `${visibleProducts.length} product${visibleProducts.length === 1 ? "" : "s"}`;
   const filtered = search.trim() !== "";
 
   const columns: SimpleTableColumn<ProductWithLocations>[] = [

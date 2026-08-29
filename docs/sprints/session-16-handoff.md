@@ -1,6 +1,13 @@
 # Session 16 Handoff — Developer (Development Sprint): build Session 15's design changes + the full A5 Archive feature
 
-**Status:** NOT STARTED.
+**Status:** DONE (2026-08-29). See `docs/PROGRESS.md` — Session 16 entry.
+Deviations flagged there: the backfill-regex format, the bespoke
+`ReconTable` (not `<SimpleTable>`), the plain `text-danger` delete button
+(no kit destructive-text variant), and the `BBS-0` inline-text vs
+`StatusChip` archived marker (followed the written specs). The
+`payment-drawer.tsx` → `<Select searchable>` swap is a follow-up
+Development Sprint (kit variant shipped in `79f7f74` / ADR-48). QA:
+`docs/sprints/session-17-handoff.md`.
 **Role:** Developer, Prosper project. **Development Sprint**
 (`sdlc.md` Phase 3.1 / 3.2, `export-workflow.md` Phase C). This session
 **composes** the approved screens from the proven kit and **wires real

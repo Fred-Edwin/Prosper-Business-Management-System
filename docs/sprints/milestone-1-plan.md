@@ -513,12 +513,14 @@ re-export sessions + 5 development sessions + 1 QA).
 
 > **Updated 2026-08-29:** the 9 development sessions and the 2
 > design-phase sessions are done. The **M1 design-change pass** (above)
-> adds **4 sessions before the QA pass**: Session 14 (Developer, in
-> progress), Session 15 (Product Designer, **done**), Session 16
-> (Developer — builds Session 15's designs + the full A5 Archive
-> feature), Session 17 (QA Engineer — the adversarial pass, now also
-> owning B2 / B5 and the Playwright e2e harness). Net: **2 sessions
-> remaining after Session 15** (Session 16 build + Session 17 QA).
+> adds **4 sessions before the QA pass**: Session 14 (Developer,
+> **done**), Session 15 (Product Designer, **done**), Session 16
+> (Developer — built Session 15's designs + the full A5 Archive feature,
+> **done**; plus a parallel kit Developer Sprint that added the opt-in
+> searchable `<Select>` mode, **done**), Session 17 (QA Engineer — the
+> adversarial pass, also owning B2 / B5 and the Playwright e2e harness —
+> `docs/sprints/session-17-handoff.md`). Net: **1 session remaining**
+> (Session 17 QA).
 
 **Reasoning for N = 5:** F1 (Catalog) is one contained
 domain + one screen cluster → 1 session. F2 (Stock) is the milestone's
