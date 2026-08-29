@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { createAsset } from "./create-asset";
-import { hardDeleteAsset, softDeleteAsset } from "./delete-asset";
+import { hardDeleteAsset, softDeleteAsset, restoreAsset } from "./delete-asset";
 import { listAssets } from "./list-assets";
 import {
   cleanupAssetsTestData,
@@ -127,5 +127,39 @@ describe("delete-asset", () => {
     await expect(softDeleteAsset("nope")).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
+  });
+
+  it("restoreAsset clears deletedAt and the asset returns to the default listing (ADR-47 §4)", async () => {
+    const asset = await createAsset({
+      name: `${P} Restore Me`,
+      locationId: ctx.locationIds.canteen,
+      purchaseDate: "2024-10-01",
+      purchaseCost: "7500",
+      condition: "Good",
+    });
+
+    await softDeleteAsset(asset.id);
+    await restoreAsset(asset.id);
+
+    const row = await prisma.asset.findUniqueOrThrow({ where: { id: asset.id } });
+    expect(row.deletedAt).toBeNull();
+
+    const listed = await listAssets(
+      { search: `${P} Restore Me` },
+      { role: "admin" },
+    );
+    expect(listed.find((a) => a.id === asset.id)).toBeDefined();
+  });
+
+  it("restoreAsset is idempotent on an active asset and NOT_FOUND on a missing one", async () => {
+    const asset = await createAsset({
+      name: `${P} Always Active`,
+      locationId: ctx.locationIds.store,
+      purchaseDate: "2024-11-01",
+      purchaseCost: "1000",
+      condition: "Good",
+    });
+    await expect(restoreAsset(asset.id)).resolves.toBeUndefined();
+    await expect(restoreAsset("nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });

@@ -16,6 +16,7 @@ import { SearchInput } from "@/components/kit/search-input";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
 import { StatusChip } from "@/components/kit/status-chip";
 import { Button } from "@/components/kit/button";
+import { useToast } from "@/components/kit/toast";
 import type { ProductWithLocations } from "@/lib/domain/catalog";
 import { useCatalog, type CatalogListFilter } from "./use-catalog";
 import { ProductDrawer } from "./product-drawer";
@@ -77,8 +78,18 @@ export function CatalogClient() {
     includeArchived: tab.archived,
   };
 
-  const { products, locations, loading, error, create, update, archive, hardDelete } =
-    useCatalog(filter);
+  const {
+    products,
+    locations,
+    loading,
+    error,
+    create,
+    update,
+    archive,
+    hardDelete,
+    unarchive,
+  } = useCatalog(filter);
+  const { toast } = useToast();
 
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [selected, setSelected] = React.useState<ProductWithLocations | null>(null);
@@ -93,7 +104,28 @@ export function CatalogClient() {
     setDrawerOpen(true);
   }
 
-  const count = `${products.length} product${products.length === 1 ? "" : "s"}`;
+  async function handleUnarchive(product: ProductWithLocations) {
+    try {
+      await unarchive(product.id);
+      toast("Product restored", { tone: "success" });
+    } catch (e) {
+      toast(
+        e instanceof Error ? e.message : "Could not restore the product.",
+        { tone: "danger" },
+      );
+    }
+  }
+
+  // `includeArchived=true` returns active + archived rows; on the Archived
+  // tab show only the archived ones (ADR-47 §1 — the tab is archived-only,
+  // and an unarchived row must leave it).
+  const visibleProducts = tab.archived
+    ? products.filter((p) => p.deletedAt != null)
+    : products;
+
+  const count = `${visibleProducts.length} product${
+    visibleProducts.length === 1 ? "" : "s"
+  }`;
   const filtered = search.trim() !== "";
 
   const columns: SimpleTableColumn<ProductWithLocations>[] = [
@@ -102,7 +134,12 @@ export function CatalogClient() {
       header: "Name",
       width: "grow min-w-[180px]",
       cell: "strong",
-      render: (r) => r.name,
+      render: (r) => (
+        <span className="flex items-center gap-(--sp-4)">
+          {r.name}
+          {r.deletedAt && <StatusChip variant="neutral">Archived</StatusChip>}
+        </span>
+      ),
     },
     {
       key: "category",
@@ -149,10 +186,21 @@ export function CatalogClient() {
     },
     {
       key: "edit",
-      header: "Edit",
+      header: tab.archived ? "Action" : "Edit",
       width: "w-[110px]",
-      render: (r) => (
-        <span className="flex items-center gap-(--sp-3)">
+      render: (r) =>
+        tab.archived ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleUnarchive(r);
+            }}
+            className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
+          >
+            Unarchive
+          </button>
+        ) : (
           <button
             type="button"
             onClick={(e) => {
@@ -163,19 +211,7 @@ export function CatalogClient() {
           >
             Edit
           </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDeleteTarget(r);
-            }}
-            aria-label={`Delete ${r.name}`}
-            className="font-ui font-(--weight-medium) text-danger text-sm/micro kit-focus-ring rounded-sm"
-          >
-            Delete
-          </button>
-        </span>
-      ),
+        ),
     },
   ];
 
@@ -224,9 +260,9 @@ export function CatalogClient() {
         <div className="hidden md:block">
           <SimpleTable
             columns={columns}
-            rows={products}
+            rows={visibleProducts}
             rowKey={(r) => r.id}
-            loading={loading && products.length === 0}
+            loading={loading && visibleProducts.length === 0}
             emptyState={{
               variant: filtered ? "filtered" : "default",
               title: filtered ? "No products match your search" : "No products yet",
@@ -241,11 +277,11 @@ export function CatalogClient() {
 
         {/* Mobile card list */}
         <div className="flex md:hidden flex-col [width:100%]">
-          {loading && products.length === 0 ? (
+          {loading && visibleProducts.length === 0 ? (
             <div className="font-ui [color:var(--text-tertiary)] text-body/sm py-(--sp-4)">
               Loading…
             </div>
-          ) : products.length === 0 ? (
+          ) : visibleProducts.length === 0 ? (
             <div className="font-ui [color:var(--text-tertiary)] text-body/sm py-(--sp-4)">
               {filtered ? "No products match your search." : "No products yet."}
             </div>
@@ -280,21 +316,23 @@ export function CatalogClient() {
                       </div>
                     </div>
                     <div className="flex items-center gap-(--sp-3)">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(card)}
-                        className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(card)}
-                        aria-label={`Delete ${card.name}`}
-                        className="font-ui font-(--weight-medium) text-danger text-sm/micro kit-focus-ring rounded-sm"
-                      >
-                        Delete
-                      </button>
+                      {tab.archived ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleUnarchive(card)}
+                          className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
+                        >
+                          Unarchive
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openEdit(card)}
+                          className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
+                        >
+                          Edit
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center [width:100%] rounded-sm [background-color:var(--surface-subtle)]">
@@ -335,13 +373,22 @@ export function CatalogClient() {
         product={selected}
         onCreate={create}
         onUpdate={update}
+        onRequestDelete={
+          selected ? () => setDeleteTarget(selected) : undefined
+        }
       />
       <ProductDeleteDialog
         open={deleteTarget !== null}
         product={deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        onHardDelete={hardDelete}
-        onArchive={archive}
+        onHardDelete={async (id, confirmName) => {
+          await hardDelete(id, confirmName);
+          setDrawerOpen(false); // the product is gone — close the Edit drawer too
+        }}
+        onArchive={async (id) => {
+          await archive(id);
+          setDrawerOpen(false);
+        }}
       />
     </PageShell>
   );

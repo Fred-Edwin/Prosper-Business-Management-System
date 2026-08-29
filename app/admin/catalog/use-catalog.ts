@@ -132,6 +132,18 @@ export function useCatalog(filter: CatalogListFilter) {
     [refresh],
   );
 
+  // A5 (ADR-47 §4) — mirror of `?mode=archive`. Admin only, idempotent,
+  // clears `deletedAt`; does NOT auto-reactivate ProductLocation rows.
+  const unarchive = React.useCallback(
+    async (id: string) => {
+      await request<{ archived: false }>(`/api/products/${id}?mode=unarchive`, {
+        method: "POST",
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
   return {
     products,
     locations,
@@ -142,5 +154,6 @@ export function useCatalog(filter: CatalogListFilter) {
     update,
     archive,
     hardDelete,
+    unarchive,
   };
 }

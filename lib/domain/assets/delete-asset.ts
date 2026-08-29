@@ -26,6 +26,26 @@ export async function softDeleteAsset(id: string): Promise<void> {
 }
 
 /**
+ * Restore a soft-deleted asset (ADR-47 §4) — mirror of `softDeleteAsset`.
+ * Clears `Asset.deletedAt`. Idempotent — restoring an active asset is a
+ * no-op success. `NOT_FOUND` only if the asset never existed.
+ */
+export async function restoreAsset(id: string): Promise<void> {
+  const existing = await prisma.asset.findUnique({ where: { id } });
+  if (!existing) {
+    throw new DomainError("NOT_FOUND", "Asset not found.");
+  }
+  if (existing.deletedAt == null) {
+    return;
+  }
+
+  await prisma.asset.update({
+    where: { id },
+    data: { deletedAt: null },
+  });
+}
+
+/**
  * Permanently delete an asset.
  *
  * - `confirmName` must equal `asset.name` **exactly** (case-sensitive) —

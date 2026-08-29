@@ -8,5 +8,5 @@ export { listProducts } from "./list-products";
 export { getProduct } from "./get-product";
 export { createProduct } from "./create-product";
 export { updateProduct } from "./update-product";
-export { archiveProduct, hardDeleteProduct } from "./delete-product";
+export { archiveProduct, unarchiveProduct, hardDeleteProduct } from "./delete-product";
 export { listLocations } from "./locations";

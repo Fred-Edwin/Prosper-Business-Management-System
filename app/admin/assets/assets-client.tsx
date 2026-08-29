@@ -16,14 +16,17 @@
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
+import { Tabs } from "@/components/kit/tabs";
 import { SearchInput } from "@/components/kit/search-input";
 import {
   SimpleTable,
   type SimpleTableColumn,
 } from "@/components/kit/simple-table";
 import { ConditionChip } from "@/components/kit/condition-chip";
+import { StatusChip } from "@/components/kit/status-chip";
 import { ErrorState } from "@/components/kit/error-state";
 import { Button } from "@/components/kit/button";
+import { useToast } from "@/components/kit/toast";
 // Value + types imported from the leaf module, not the domain barrel: the
 // barrel re-exports server-only code (prisma), and a "use client" file that
 // pulls a *value* from it drags lib/db into the browser bundle. `import type`
@@ -57,16 +60,24 @@ const CONDITION_FILTERS: { key: string; label: string; value?: AssetCondition }[
   ...ASSET_CONDITIONS.map((c) => ({ key: c, label: c, value: c })),
 ];
 
+const ASSET_TABS = [
+  { key: "active", label: "All", archived: false },
+  { key: "archived", label: "Archived", archived: true },
+];
+
 export function AssetsClient() {
   const [search, setSearch] = React.useState("");
   const [conditionKey, setConditionKey] = React.useState("all");
+  const [tabKey, setTabKey] = React.useState("active");
 
+  const activeTab = ASSET_TABS.find((t) => t.key === tabKey) ?? ASSET_TABS[0];
   const activeConditionFilter =
     CONDITION_FILTERS.find((c) => c.key === conditionKey) ?? CONDITION_FILTERS[0];
 
   const filter: AssetsListFilter = {
     search,
     condition: activeConditionFilter.value,
+    includeDeleted: activeTab.archived,
   };
 
   const {
@@ -78,12 +89,20 @@ export function AssetsClient() {
     create,
     update,
     softDelete,
+    restore,
     hardDelete,
   } = useAssets(filter);
+  const { toast } = useToast();
 
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [selected, setSelected] = React.useState<AssetView | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<AssetView | null>(null);
+
+  // On the Archived tab, listAssets(includeDeleted:true) returns both active
+  // and archived rows — show only the archived ones there.
+  const visibleAssets = activeTab.archived
+    ? assets.filter((a) => a.deletedAt != null)
+    : assets;
 
   function openCreate() {
     setSelected(null);
@@ -94,7 +113,20 @@ export function AssetsClient() {
     setDrawerOpen(true);
   }
 
-  const count = `${assets.length} asset${assets.length === 1 ? "" : "s"}`;
+  async function handleRestore(asset: AssetView) {
+    try {
+      await restore(asset.id);
+      toast("Asset restored", { tone: "success" });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not restore the asset.", {
+        tone: "danger",
+      });
+    }
+  }
+
+  const count = `${visibleAssets.length} asset${
+    visibleAssets.length === 1 ? "" : "s"
+  }`;
   const filtered = search.trim() !== "" || activeConditionFilter.value != null;
 
   function clearFilters() {
@@ -108,7 +140,12 @@ export function AssetsClient() {
       header: "Asset Name",
       width: "grow min-w-[180px]",
       cell: "strong",
-      render: (r) => r.name,
+      render: (r) => (
+        <span className="flex items-center gap-(--sp-4)">
+          {r.name}
+          {r.deletedAt && <StatusChip variant="neutral">Archived</StatusChip>}
+        </span>
+      ),
     },
     {
       key: "location",
@@ -139,10 +176,21 @@ export function AssetsClient() {
     },
     {
       key: "edit",
-      header: "Edit",
+      header: activeTab.archived ? "Action" : "Edit",
       width: "w-[110px]",
-      render: (r) => (
-        <span className="flex items-center gap-(--sp-3)">
+      render: (r) =>
+        activeTab.archived ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleRestore(r);
+            }}
+            className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
+          >
+            Unarchive
+          </button>
+        ) : (
           <button
             type="button"
             onClick={(e) => {
@@ -153,19 +201,7 @@ export function AssetsClient() {
           >
             Edit
           </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDeleteTarget(r);
-            }}
-            aria-label={`Delete ${r.name}`}
-            className="font-ui font-(--weight-medium) text-danger text-sm/micro kit-focus-ring rounded-sm"
-          >
-            Delete
-          </button>
-        </span>
-      ),
+        ),
     },
   ];
 
@@ -189,6 +225,13 @@ export function AssetsClient() {
       }
     >
       <div className="flex flex-col grow gap-(--sp-8)">
+        {/* Active / Archived tab (A5 / ADR-47 §1) */}
+        <Tabs
+          tabs={ASSET_TABS.map((t) => ({ key: t.key, label: t.label }))}
+          activeKey={tabKey}
+          onChange={setTabKey}
+        />
+
         {/* Filters */}
         <div className="flex items-center justify-between gap-(--sp-4)">
           <div
@@ -236,9 +279,9 @@ export function AssetsClient() {
             <div className="hidden md:block">
               <SimpleTable
                 columns={columns}
-                rows={assets}
+                rows={visibleAssets}
                 rowKey={(r) => r.id}
-                loading={loading && assets.length === 0}
+                loading={loading && visibleAssets.length === 0}
                 emptyState={{
                   variant: filtered ? "filtered" : "default",
                   title: filtered
@@ -255,18 +298,18 @@ export function AssetsClient() {
 
             {/* Mobile card list */}
             <div className="flex md:hidden flex-col [width:100%]">
-              {loading && assets.length === 0 ? (
+              {loading && visibleAssets.length === 0 ? (
                 <div className="font-ui [color:var(--text-tertiary)] text-body/sm py-(--sp-4)">
                   Loading…
                 </div>
-              ) : assets.length === 0 ? (
+              ) : visibleAssets.length === 0 ? (
                 <div className="font-ui [color:var(--text-tertiary)] text-body/sm py-(--sp-4)">
                   {filtered
                     ? "No assets match these filters."
                     : "No assets registered yet."}
                 </div>
               ) : (
-                assets.map((card) => (
+                visibleAssets.map((card) => (
                   <div
                     key={card.id}
                     className="flex flex-col [width:100%] py-(--sp-4) gap-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
@@ -281,24 +324,29 @@ export function AssetsClient() {
                             {card.locationName}
                           </div>
                           <ConditionChip condition={card.condition} />
+                          {card.deletedAt && (
+                            <StatusChip variant="neutral">Archived</StatusChip>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-(--sp-3)">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(card)}
-                          className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeleteTarget(card)}
-                          aria-label={`Delete ${card.name}`}
-                          className="font-ui font-(--weight-medium) text-danger text-sm/micro kit-focus-ring rounded-sm"
-                        >
-                          Delete
-                        </button>
+                        {activeTab.archived ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleRestore(card)}
+                            className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
+                          >
+                            Unarchive
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openEdit(card)}
+                            className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
+                          >
+                            Edit
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center [width:100%] rounded-sm [background-color:var(--surface-subtle)]">
@@ -336,13 +384,20 @@ export function AssetsClient() {
         asset={selected}
         onCreate={create}
         onUpdate={update}
+        onRequestDelete={selected ? () => setDeleteTarget(selected) : undefined}
       />
       <AssetDeleteDialog
         open={deleteTarget !== null}
         asset={deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        onHardDelete={hardDelete}
-        onSoftDelete={softDelete}
+        onHardDelete={async (id, confirmName) => {
+          await hardDelete(id, confirmName);
+          setDrawerOpen(false);
+        }}
+        onSoftDelete={async (id) => {
+          await softDelete(id);
+          setDrawerOpen(false);
+        }}
       />
     </PageShell>
   );

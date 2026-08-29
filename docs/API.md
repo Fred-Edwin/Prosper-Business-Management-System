@@ -90,6 +90,15 @@ Roles: Admin.
   deletes the `ProductLocation` rows then the product. Returns
   `{ data: { deleted: true } }`.
 
+### `POST /api/products/:id?mode=unarchive`
+Roles: Admin. Restore an archived product (ADR-47 §4) — the mirror of
+`DELETE …?mode=archive`. Clears `deletedAt`. Does **not** reactivate the
+product's `ProductLocation` rows (they were deactivated on archive per
+ADR-38; the Admin re-enables the ones they want via the Edit drawer,
+which restores each row's last-known selling price). Idempotent
+(unarchiving an active product is a no-op success). A missing / wrong
+`mode` → `400 VALIDATION_ERROR`. Returns `{ data: { archived: false } }`.
+
 ### `GET /api/products/:id`
 Roles: Admin. Returns `{ data: ProductWithLocations }` for the edit
 drawer; `404` if missing or soft-deleted.
@@ -377,6 +386,12 @@ Roles: Admin. Two shapes on the same route:
 Roles: Admin. Stamps `deletedAt`; the asset drops out of the default
 `GET /api/assets` view (`?includeDeleted=true` still surfaces it).
 Idempotent. Returns `{ data: { softDeleted: true } }`.
+
+### `POST /api/assets/:id/restore`
+Roles: Admin. Restore a soft-deleted asset (ADR-47 §4) — the mirror of
+`.../soft-delete`. Clears `deletedAt`; the asset returns to the default
+register view. Idempotent (restoring an active asset is a no-op success).
+Returns `{ data: { softDeleted: false } }`.
 
 ### `POST /api/assets/:id/hard-delete`
 Roles: Admin. Body `{ "confirmName": "..." }` must equal the asset name

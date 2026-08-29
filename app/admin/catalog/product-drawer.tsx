@@ -32,8 +32,16 @@ const LABEL_BY_KIND: Record<"ingredient" | "dish" | "goods", string> = {
   goods: "Goods",
 };
 
-const DISH_NOTE =
-  "Dishes carry zero buying price; true food cost is derived from ingredients.";
+// A4 (ADR-46 §8): a selection-driven hint under the Product-kind control.
+// Replaces the old dish-only info banner — the `dish` line now carries the
+// same fact in the same place as the other two.
+const KIND_HINT: Record<"ingredient" | "dish" | "goods", string> = {
+  ingredient:
+    "A raw item you buy and cook with. Has a buying price; used up by production.",
+  dish: "A finished item you sell from the menu. It has no buying price — its cost comes from the ingredients it uses.",
+  goods:
+    "An item you buy and resell as-is. Has a buying price and a selling price.",
+};
 
 type LocationRowState = {
   locationId: string;
@@ -50,6 +58,8 @@ export type ProductDrawerProps = {
   product: ProductWithLocations | null;
   onCreate: (input: CreateProductInput) => Promise<void>;
   onUpdate: (id: string, input: CreateProductInput) => Promise<void>;
+  /** Opens the friction delete dialog for the product being edited (A2). */
+  onRequestDelete?: () => void;
 };
 
 export function ProductDrawer({
@@ -59,8 +69,14 @@ export function ProductDrawer({
   product,
   onCreate,
   onUpdate,
+  onRequestDelete,
 }: ProductDrawerProps) {
   const isEdit = product !== null;
+  // Archived-record guard (ADR-47 §3.2) — the Archived tab only offers
+  // "Unarchive", so the Edit drawer should never open on an archived row.
+  // If it does (deep link / stale state), render read-only: fields
+  // disabled, an info line, and a Close-only footer.
+  const isArchived = product?.deletedAt != null;
   const { toast } = useToast();
 
   const [name, setName] = React.useState("");
@@ -181,24 +197,47 @@ export function ProductDrawer({
       open={open}
       onClose={onClose}
       variant="rail"
-      title={isEdit ? "Edit Product" : "New Product"}
+      title={isArchived ? "Product (archived)" : isEdit ? "Edit Product" : "New Product"}
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose} disabled={saving}>
-            Cancel
+        isArchived ? (
+          <Button variant="secondary" onClick={onClose} className="grow">
+            Close
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleSave}
-            loading={saving}
-            disabled={saving}
-            className="grow"
-          >
-            Save Product
-          </Button>
-        </>
+        ) : (
+          <>
+            <Button variant="secondary" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              loading={saving}
+              disabled={saving}
+              className="grow"
+            >
+              Save Product
+            </Button>
+          </>
+        )
       }
     >
+      {isArchived && (
+        <div className="flex items-start p-(--sp-5) rounded-sm gap-(--sp-4) bg-info-bg">
+          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0, marginTop: 2 }}>
+            <circle cx="12" cy="12" r="10" fill="none" stroke="var(--color-info)" strokeWidth="1.5" />
+            <line x1="12" y1="16" x2="12" y2="12" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" />
+            <line x1="12" y1="8" x2="12.01" y2="8" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          <div className="font-ui text-info text-sm/sm">
+            This record is archived. Unarchive it to make changes.
+          </div>
+        </div>
+      )}
+
+      <fieldset
+        disabled={isArchived}
+        className="contents disabled:[&_input]:opacity-[0.5] disabled:[&_input]:cursor-not-allowed"
+      >
       {/* General Information */}
       <div className="flex flex-col gap-(--sp-6)">
         <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:0.06em] [color:var(--text-tertiary)] text-caption/micro">
@@ -230,12 +269,20 @@ export function ProductDrawer({
           )}
         </FormField>
 
-        <SegmentedControl
-          label="Product kind"
-          options={[...KIND_LABELS]}
-          value={LABEL_BY_KIND[kind]}
-          onChange={pickKind}
-        />
+        <div className="flex flex-col gap-[6px]">
+          <SegmentedControl
+            label="Product kind"
+            options={[...KIND_LABELS]}
+            value={LABEL_BY_KIND[kind]}
+            onChange={pickKind}
+          />
+          <div className="flex mt-[6px] gap-[6px] font-ui text-caption/micro">
+            <span className="shrink-0 [color:var(--text-tertiary)]">
+              {LABEL_BY_KIND[kind]} —
+            </span>
+            <span className="[color:var(--text-secondary)]">{KIND_HINT[kind]}</span>
+          </div>
+        </div>
 
         <FormField
           label="Unit Label"
@@ -300,22 +347,6 @@ export function ProductDrawer({
             </div>
           )}
         </FormField>
-        {isDish && (
-          <div className="flex items-start p-(--sp-5) rounded-sm gap-(--sp-4) bg-info-bg">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              aria-hidden
-              style={{ flexShrink: 0, marginTop: 2 }}
-            >
-              <circle cx="12" cy="12" r="10" fill="none" stroke="var(--color-info)" strokeWidth="1.5" />
-              <line x1="12" y1="16" x2="12" y2="12" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" />
-              <line x1="12" y1="8" x2="12.01" y2="8" stroke="var(--color-info)" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            <div className="font-ui text-info text-sm/sm">{DISH_NOTE}</div>
-          </div>
-        )}
       </div>
 
       {/* Location Availability & Selling Prices */}
@@ -372,10 +403,51 @@ export function ProductDrawer({
           </div>
         ))}
       </div>
+      </fieldset>
 
       {formError && (
         <div role="alert" className="font-ui text-danger text-caption/micro">
           {formError}
+        </div>
+      )}
+
+      {/* Delete section (A2 / ADR-46 §5) — edit mode only, not on an archived
+          record. Opens the unchanged <ProductDeleteDialog>; the friction
+          retype-gate is untouched. */}
+      {isEdit && !isArchived && onRequestDelete && (
+        <div className="flex flex-col mt-[4px] pt-[20px] gap-[8px] border-t border-t-solid [border-top-color:var(--border-subtle)]">
+          <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:0.04em] [color:var(--text-tertiary)] text-caption/micro">
+            Delete this product
+          </div>
+          <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
+            Removes it from the catalog. Blocked if it has transaction history —
+            archive it instead.
+          </div>
+          <button
+            type="button"
+            onClick={onRequestDelete}
+            className="kit-interactive kit-focus-ring inline-flex self-start items-center h-[32px] mt-[2px] px-[4px] gap-[6px] shrink-0 rounded-sm"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              aria-hidden
+              style={{ flexShrink: 0 }}
+            >
+              <path
+                d="M4 7h16M9 7V5h6v2M6 7l1 12h10l1-12"
+                fill="none"
+                stroke="var(--color-danger)"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="font-ui font-(--weight-medium) text-danger text-sm/sm">
+              Delete this product…
+            </span>
+          </button>
         </div>
       )}
     </Drawer>

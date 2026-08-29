@@ -32,6 +32,13 @@ const ASSET: AssetView = {
   updatedAt: NOW.toISOString(),
 };
 
+const ARCHIVED_ASSET: AssetView = {
+  ...ASSET,
+  id: "a-arch",
+  name: "Retired Blender",
+  deletedAt: NOW.toISOString(),
+};
+
 const state = {
   assets: [ASSET] as AssetView[],
   loading: false,
@@ -40,6 +47,7 @@ const state = {
   update: vi.fn().mockResolvedValue(undefined),
   softDelete: vi.fn().mockResolvedValue(undefined),
   hardDelete: vi.fn().mockResolvedValue(undefined),
+  restore: vi.fn().mockResolvedValue(undefined),
 };
 
 vi.mock("@/app/admin/assets/use-assets", async () => {
@@ -58,6 +66,7 @@ vi.mock("@/app/admin/assets/use-assets", async () => {
       update: state.update,
       softDelete: state.softDelete,
       hardDelete: state.hardDelete,
+      restore: state.restore,
     }),
   };
 });
@@ -131,16 +140,30 @@ describe("/admin/assets — kit composition", () => {
     expect(await screen.findByText("Asset registered")).toBeInTheDocument();
   });
 
-  it("FrictionDeleteDialog confirm (after retype) calls hardDelete and toasts", async () => {
+  it("the row has a single 'Edit' affordance and NO Delete button (A1/A2)", () => {
+    renderScreen();
+    const table = screen.getByRole("table");
+    expect(within(table).getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(
+      within(table).queryByRole("button", { name: /^Delete / }),
+    ).not.toBeInTheDocument();
+  });
+
+  /** Open the friction delete dialog via the Edit drawer's bottom section. */
+  async function openDeleteViaDrawer(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(within(screen.getByRole("table")).getByRole("button", { name: "Edit" }));
+    const drawer = await screen.findByRole("dialog");
+    await user.click(
+      within(drawer).getByRole("button", { name: /Delete this asset/ }),
+    );
+    return screen.findByRole("alertdialog");
+  }
+
+  it("Delete lives in the Edit drawer; confirm (after retype) calls hardDelete and toasts", async () => {
     renderScreen();
     const user = userEvent.setup();
-    // open the delete dialog from the desktop row
-    const table = screen.getByRole("table");
-    await user.click(
-      within(table).getByRole("button", { name: "Delete Commercial Deep Fryer Double" }),
-    );
+    const dlg = await openDeleteViaDrawer(user);
 
-    const dlg = await screen.findByRole("alertdialog");
     await user.type(
       within(dlg).getByPlaceholderText("Commercial Deep Fryer Double"),
       "Commercial Deep Fryer Double",
@@ -162,11 +185,7 @@ describe("/admin/assets — kit composition", () => {
     );
     renderScreen();
     const user = userEvent.setup();
-    const table = screen.getByRole("table");
-    await user.click(
-      within(table).getByRole("button", { name: "Delete Commercial Deep Fryer Double" }),
-    );
-    const dlg = await screen.findByRole("alertdialog");
+    const dlg = await openDeleteViaDrawer(user);
     await user.type(
       within(dlg).getByPlaceholderText("Commercial Deep Fryer Double"),
       "Commercial Deep Fryer Double",
@@ -192,5 +211,20 @@ describe("/admin/assets — kit composition", () => {
     expect(
       within(alert).getByRole("button", { name: "Retry" }),
     ).toBeInTheDocument();
+  });
+
+  it("the Archived tab shows an 'Archived' chip and an 'Unarchive' action; Unarchive calls restore + toasts", async () => {
+    state.assets = [ARCHIVED_ASSET];
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: "Archived" }));
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Archived")).toBeInTheDocument();
+    expect(within(table).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+
+    await user.click(within(table).getByRole("button", { name: "Unarchive" }));
+    expect(state.restore).toHaveBeenCalledWith("a-arch");
+    expect(await screen.findByText("Asset restored")).toBeInTheDocument();
   });
 });

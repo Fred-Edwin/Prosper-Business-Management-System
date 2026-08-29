@@ -7,4 +7,4 @@ export * from "./types";
 export { listAssets } from "./list-assets";
 export { createAsset } from "./create-asset";
 export { updateAsset, transitionCondition } from "./update-asset";
-export { softDeleteAsset, hardDeleteAsset } from "./delete-asset";
+export { softDeleteAsset, restoreAsset, hardDeleteAsset } from "./delete-asset";

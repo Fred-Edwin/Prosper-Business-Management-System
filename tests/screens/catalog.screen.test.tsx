@@ -27,6 +27,13 @@ const PRODUCT: ProductWithLocations = {
   locations: [],
 };
 
+const ARCHIVED_PRODUCT: ProductWithLocations = {
+  ...PRODUCT,
+  id: "p-arch",
+  name: "Diet Soda 300ml",
+  deletedAt: NOW.toISOString(),
+};
+
 const state = {
   products: [PRODUCT] as ProductWithLocations[],
   loading: false,
@@ -35,6 +42,7 @@ const state = {
   update: vi.fn().mockResolvedValue(undefined),
   archive: vi.fn().mockResolvedValue(undefined),
   hardDelete: vi.fn().mockResolvedValue(undefined),
+  unarchive: vi.fn().mockResolvedValue(undefined),
 };
 
 vi.mock("@/app/admin/catalog/use-catalog", async () => {
@@ -53,6 +61,7 @@ vi.mock("@/app/admin/catalog/use-catalog", async () => {
       update: state.update,
       archive: state.archive,
       hardDelete: state.hardDelete,
+      unarchive: state.unarchive,
     }),
   };
 });
@@ -134,5 +143,72 @@ describe("/admin/catalog — kit composition", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Failed to load the catalog.",
     );
+  });
+
+  it("the row has a single 'Edit' affordance and NO Delete button (A1/A2)", () => {
+    renderScreen();
+    const table = screen.getByRole("table");
+    expect(within(table).getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(
+      within(table).queryByRole("button", { name: /^Delete / }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("Delete lives in the Edit drawer, and opens the friction dialog gated on the retyped name (A2)", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(within(screen.getByRole("table")).getByRole("button", { name: "Edit" }));
+    const drawer = await screen.findByRole("dialog");
+
+    const deleteBtn = within(drawer).getByRole("button", {
+      name: /Delete this product/,
+    });
+    await user.click(deleteBtn);
+
+    const confirm = await screen.findByRole("alertdialog");
+    // The friction gate: the confirm button is disabled until the name is retyped.
+    const permanently = within(confirm).getByRole("button", { name: /Delete Product/ });
+    expect(permanently).toBeDisabled();
+    await user.type(
+      within(confirm).getByRole("textbox"),
+      "Chicken Breast",
+    );
+    expect(permanently).toBeEnabled();
+  });
+
+  it("the kind hint under the SegmentedControl changes with the selected kind (A4)", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("button", { name: "Add Product" })[0]);
+    const drawer = await screen.findByRole("dialog");
+
+    expect(
+      within(drawer).getByText(/A raw item you buy and cook with/),
+    ).toBeInTheDocument();
+    // No standalone dish-only banner exists any more.
+    await user.click(within(drawer).getByRole("radio", { name: "Dish" }));
+    expect(
+      within(drawer).getByText(/It has no buying price/),
+    ).toBeInTheDocument();
+    await user.click(within(drawer).getByRole("radio", { name: "Goods" }));
+    expect(
+      within(drawer).getByText(/An item you buy and resell as-is/),
+    ).toBeInTheDocument();
+  });
+
+  it("the Archived tab shows an 'Archived' chip and an 'Unarchive' action, no 'Edit'", async () => {
+    state.products = [ARCHIVED_PRODUCT];
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: "Archived" }));
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Archived")).toBeInTheDocument();
+    const unarchive = within(table).getByRole("button", { name: "Unarchive" });
+    expect(within(table).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+
+    await user.click(unarchive);
+    expect(state.unarchive).toHaveBeenCalledWith("p-arch");
+    expect(await screen.findByText("Product restored")).toBeInTheDocument();
   });
 });

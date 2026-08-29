@@ -101,6 +101,12 @@ export const assetApi = {
     });
   },
 
+  restore(id: string): Promise<{ softDeleted: false }> {
+    return request<{ softDeleted: false }>(`/api/assets/${id}/restore`, {
+      method: "POST",
+    });
+  },
+
   hardDelete(id: string, confirmName: string): Promise<{ deleted: true }> {
     return request<{ deleted: true }>(`/api/assets/${id}/hard-delete`, {
       method: "POST",
@@ -178,6 +184,15 @@ export function useAssets(filter: AssetsListFilter) {
     [refresh],
   );
 
+  // A5 (ADR-47 §5) — mirror of softDelete. Admin only, idempotent.
+  const restore = React.useCallback(
+    async (id: string) => {
+      await assetApi.restore(id);
+      await refresh();
+    },
+    [refresh],
+  );
+
   return {
     assets,
     locations,
@@ -187,6 +202,7 @@ export function useAssets(filter: AssetsListFilter) {
     create,
     update,
     softDelete,
+    restore,
     hardDelete,
   };
 }
