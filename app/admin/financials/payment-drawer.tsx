@@ -38,15 +38,25 @@ export function PaymentDrawer({
   locations,
   onClose,
   onRecorded,
+  preselectedProductId,
 }: {
   products: ProductWithLocations[];
   locations: Location[];
   onClose: () => void;
   onRecorded: () => void | Promise<void>;
+  /** Reconciliation "Record payment" action pre-selects the delivered product. */
+  preselectedProductId?: string;
 }) {
   const { toast } = useToast();
+  // The payment-drawer product picker only ever offers `ingredient` + `goods`
+  // — a Dish is never purchased from a supplier (its cost is derived from
+  // ingredients, ADR-33). ADR-46 §6.
+  const purchasableProducts = React.useMemo(
+    () => products.filter((p) => p.kind !== "dish"),
+    [products],
+  );
   const [supplier, setSupplier] = React.useState("");
-  const [productId, setProductId] = React.useState("");
+  const [productId, setProductId] = React.useState(preselectedProductId ?? "");
   const [locationId, setLocationId] = React.useState("");
   const [quantity, setQuantity] = React.useState("");
   const [cost, setCost] = React.useState("");
@@ -54,7 +64,7 @@ export function PaymentDrawer({
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const product = products.find((p) => p.id === productId);
+  const product = purchasableProducts.find((p) => p.id === productId);
   const validQty = /^\d+(\.\d{1,4})?$/.test(quantity.trim());
   const validCost = /^\d+(\.\d{1,2})?$/.test(cost.trim());
   const canSubmit =
@@ -140,18 +150,23 @@ export function PaymentDrawer({
         )}
       </FormField>
 
-      <Select
-        label="Product"
-        required
-        className="w-full"
-        placeholder="Select a product…"
-        value={productId}
-        onChange={setProductId}
-        options={products.map((p) => ({
-          value: p.id,
-          label: `${p.name} (${p.unitLabel})`,
-        }))}
-      />
+      <div className="flex flex-col gap-(--sp-2) w-full">
+        <Select
+          label="Product"
+          required
+          className="w-full"
+          placeholder="Select a product…"
+          value={productId}
+          onChange={setProductId}
+          options={purchasableProducts.map((p) => ({
+            value: p.id,
+            label: `${p.name} (${p.unitLabel})`,
+          }))}
+        />
+        <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
+          Ingredients &amp; Goods only — a Dish is never purchased
+        </div>
+      </div>
 
       <Select
         label="Destination"

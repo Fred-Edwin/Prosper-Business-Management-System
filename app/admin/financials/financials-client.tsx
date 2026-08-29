@@ -1,7 +1,15 @@
-// Session 11 rebuild — COMPOSED from the kit, no longer a transcription of
-// Paper artboards 7ZJ-0 / 85W-0. Assembled from <PageShell> + <Tabs> +
-// <SimpleTable> + <StatusChip> + <MatchCard> (reconciliation, in a role="list")
-// + the rail <Drawer> + <Toast>.
+// Session 11 rebuild — COMPOSED from the kit. Session 16 (ADR-46): the
+// Reconciliation section is rebuilt from a <MatchCard> list into a table
+// (Date · Supplier/Item · Product · Destination · Amount · Status · Action)
+// with the four-term status vocabulary and a "Record payment" action on
+// deliveries with no payment. Everything above the Reconciliation heading —
+// the KPI strip, the tabs, the transactions table — is UNCHANGED (scope
+// correction, ADR-46 box at top). No <MatchCard> on this screen any more.
+//
+// The recon table is bespoke screen markup (not the kit <SimpleTable>):
+// it needs a per-row background tint (`--surface-subtle` on the
+// "Received, no payment" row) and `min-h` rows, neither of which the kit
+// <SimpleTable> exposes. It matches Paper artboard BHJ-0 / BR7-0.
 //
 // M1 Financials cut (milestone-1-plan §2 / ADR-36 D-FIN): the 4-tile KPI stat
 // strip has NO F2 data source (the MoneyMovement ledger is F3). Per the owner:
@@ -18,8 +26,7 @@ import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
 import { Tabs } from "@/components/kit/tabs";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
-import { StatusChip, type StatusChipVariant } from "@/components/kit/status-chip";
-import { MatchCard } from "@/components/kit/match-card";
+import { StatusChip } from "@/components/kit/status-chip";
 import { Button } from "@/components/kit/button";
 import type {
   OutstandingPurchases,
@@ -41,19 +48,6 @@ const PAID_FROM_LABEL: Record<string, string> = {
   mpesa_bank: "M-Pesa / Bank Till",
 };
 
-/** Pull "supplier" / "cost" out of a purchase_payment note. Best-effort, display-only. */
-function parsePaymentNote(note: string | null): {
-  supplier?: string;
-  cost?: string;
-  paidFrom?: string;
-} {
-  if (!note) return {};
-  const supplier = note.match(/supplier[:=]\s*([^;|]+)/i)?.[1]?.trim();
-  const cost = note.match(/cost[:=]\s*([\d,]+(?:\.\d{2})?)/i)?.[1]?.trim();
-  const paidFrom = note.match(/(cash|mpesa_bank)/i)?.[1]?.toLowerCase();
-  return { supplier, cost, paidFrom };
-}
-
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
@@ -62,6 +56,75 @@ function fmtDate(iso: string): string {
     timeZone: "Africa/Nairobi",
   });
 }
+
+/** Short "Aug 24" for the reconciliation table's Date column. */
+function fmtDateShort(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "Africa/Nairobi",
+  });
+}
+
+/** "18,000.00" from a "18000.00" decimal string; "" for null. */
+function fmtMoney(dec: string | null): string {
+  if (dec == null) return "";
+  const n = Number(dec);
+  return Number.isFinite(n)
+    ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : dec;
+}
+
+/** "100.0" from a "100.0000" decimal string. */
+function trimQty(dec: string): string {
+  const n = Number(dec);
+  return Number.isFinite(n) ? n.toFixed(1) : dec;
+}
+
+/** The Africa/Nairobi calendar day of an instant (YYYY-MM-DD), for the
+ * "recently delivered" window on the reconciliation table. */
+function nairobiDay(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: "Africa/Nairobi" });
+}
+
+type ReconStatus =
+  | "awaiting_delivery"
+  | "delivered"
+  | "received_no_payment"
+  | "flagged";
+
+type ReconRow = {
+  id: string;
+  dateIso: string;
+  /** Supplier name (payment rows) or a delivery label (receipt rows). */
+  supplierOrItem: string;
+  /** "Rice Basmati · 100.0 kg" — product name + qty. */
+  product: string;
+  destination: string;
+  /** Formatted "18,000.00", or null → renders "—". */
+  amount: string | null;
+  status: ReconStatus;
+  /** Set on `received_no_payment` rows — pre-selects the payment drawer. */
+  recordPaymentProductId?: string;
+};
+
+const RECON_STATUS: Record<
+  ReconStatus,
+  { label: string; dot: string; text: string }
+> = {
+  awaiting_delivery: {
+    label: "Awaiting delivery",
+    dot: "bg-warning",
+    text: "text-warning",
+  },
+  delivered: { label: "Delivered", dot: "bg-success", text: "text-success" },
+  received_no_payment: {
+    label: "Received, no payment",
+    dot: "bg-info",
+    text: "text-info",
+  },
+  flagged: { label: "Flagged", dot: "bg-danger", text: "text-danger" },
+};
 
 type PurchaseTxRow = {
   payment: StockMovementView;
@@ -80,6 +143,14 @@ export function FinancialsClient() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [drawerProductId, setDrawerProductId] = React.useState<string | undefined>(
+    undefined,
+  );
+
+  const openDrawer = React.useCallback((productId?: string) => {
+    setDrawerProductId(productId);
+    setDrawerOpen(true);
+  }, []);
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -127,6 +198,72 @@ export function FinancialsClient() {
     matched: !awaitingIds.has(p.id),
   }));
 
+  // Reconciliation table rows (ADR-46 §2). No new endpoint: rows come from
+  // `outstanding` (awaiting + unmatched) plus the recently-Delivered
+  // payments (a payment a receipt links back to, occurring on today's
+  // Africa/Nairobi business day — the "recently" window is a
+  // Development-Sprint detail, not a design decision).
+  const reconRows: ReconRow[] = React.useMemo(() => {
+    const productLabel = (m: StockMovementView, qty: string) => {
+      const p = productById.get(m.productId);
+      return `${p ? p.name : m.productId} · ${trimQty(qty)}${
+        p ? ` ${p.unitLabel}` : ""
+      }`;
+    };
+    const destName = (m: StockMovementView) =>
+      locationById.get(m.locationId)?.name ?? "—";
+    const today = nairobiDay(new Date().toISOString());
+
+    const rows: ReconRow[] = [];
+
+    // Awaiting delivery — a payment with no receipt linking back.
+    for (const m of outstanding.awaitingReceipt) {
+      rows.push({
+        id: m.id,
+        dateIso: m.occurredAt,
+        supplierOrItem: m.purchaseSupplier ?? "Supplier not recorded",
+        product: productLabel(m, m.purchaseOrderedQty ?? "0"),
+        destination: destName(m),
+        amount: m.purchaseTotalCost != null ? fmtMoney(m.purchaseTotalCost) : null,
+        status: m.note?.toLowerCase().includes("variance")
+          ? "flagged"
+          : "awaiting_delivery",
+      });
+    }
+
+    // Delivered — a payment a receipt links back to, on today's business day.
+    for (const m of payments) {
+      if (awaitingIds.has(m.id)) continue; // still awaiting → handled above
+      if (nairobiDay(m.occurredAt) !== today) continue; // outside the window
+      rows.push({
+        id: m.id,
+        dateIso: m.occurredAt,
+        supplierOrItem: m.purchaseSupplier ?? "Supplier not recorded",
+        product: productLabel(m, m.purchaseOrderedQty ?? "0"),
+        destination: destName(m),
+        amount: m.purchaseTotalCost != null ? fmtMoney(m.purchaseTotalCost) : null,
+        status: m.note?.toLowerCase().includes("variance") ? "flagged" : "delivered",
+      });
+    }
+
+    // Received, no payment — a receipt with a null purchasePaymentId.
+    for (const m of outstanding.unmatchedReceipts) {
+      const p = productById.get(m.productId);
+      rows.push({
+        id: m.id,
+        dateIso: m.occurredAt,
+        supplierOrItem: `${p ? p.name : m.productId} delivery`,
+        product: productLabel(m, m.quantity),
+        destination: destName(m),
+        amount: null,
+        status: "received_no_payment",
+        recordPaymentProductId: m.productId,
+      });
+    }
+
+    return rows.sort((a, b) => b.dateIso.localeCompare(a.dateIso));
+  }, [outstanding, payments, awaitingIds, productById, locationById]);
+
   const TAB_PURCHASES = "purchases";
   const TAB_DELIVERIES = "deliveries";
   const tabs = [
@@ -148,16 +285,20 @@ export function FinancialsClient() {
       header: "Vendor / Description",
       width: "grow min-w-[200px]",
       render: ({ payment }) => {
-        const note = parsePaymentNote(payment.note);
         const product = productById.get(payment.productId);
+        const costLabel = fmtMoney(payment.purchaseTotalCost);
         return (
           <div className="flex flex-col gap-[2px]">
             <div className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/micro">
-              {note.supplier ?? "—"}
+              {payment.purchaseSupplier ?? (
+                <span className="[color:var(--text-tertiary)]">
+                  Supplier not recorded
+                </span>
+              )}
             </div>
             <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
               {product ? `${product.name} (${product.unitLabel})` : payment.productId}
-              {note.cost ? ` · KES ${note.cost}` : ""}
+              {costLabel ? ` · KES ${costLabel}` : ""}
             </div>
           </div>
         );
@@ -173,10 +314,10 @@ export function FinancialsClient() {
       key: "paidFrom",
       header: "Paid From",
       width: "w-[130px]",
-      render: ({ payment }) => {
-        const { paidFrom } = parsePaymentNote(payment.note);
-        return paidFrom ? (PAID_FROM_LABEL[paidFrom] ?? paidFrom) : "—";
-      },
+      render: ({ payment }) =>
+        payment.purchasePaidFrom
+          ? (PAID_FROM_LABEL[payment.purchasePaidFrom] ?? payment.purchasePaidFrom)
+          : "—",
     },
     {
       key: "amount",
@@ -184,7 +325,14 @@ export function FinancialsClient() {
       width: "w-[130px]",
       align: "right",
       cell: "mono",
-      render: ({ payment }) => parsePaymentNote(payment.note).cost ?? "—",
+      render: ({ payment }) =>
+        payment.purchaseTotalCost != null ? (
+          fmtMoney(payment.purchaseTotalCost)
+        ) : (
+          <span className="font-ui [color:var(--text-tertiary)]">
+            Cost not recorded
+          </span>
+        ),
     },
     {
       key: "status",
@@ -250,10 +398,6 @@ export function FinancialsClient() {
     },
   ];
 
-  const reconciliationEmpty =
-    outstanding.awaitingReceipt.length === 0 &&
-    outstanding.unmatchedReceipts.length === 0;
-
   return (
     <PageShell
       toolbar={
@@ -265,7 +409,7 @@ export function FinancialsClient() {
             ({fmtDate(new Date().toISOString())})
           </div>
           <div className="grow" />
-          <Button variant="primary" onClick={() => setDrawerOpen(true)}>
+          <Button variant="primary" onClick={() => openDrawer()}>
             Record Payment
           </Button>
         </>
@@ -322,7 +466,7 @@ export function FinancialsClient() {
               title: "No purchase payments recorded",
               description: "Record a payment to a supplier to start the 2-way match.",
               actionLabel: "Record Payment",
-              onAction: () => setDrawerOpen(true),
+              onAction: () => openDrawer(),
             }}
           />
         ) : (
@@ -338,65 +482,29 @@ export function FinancialsClient() {
           />
         )}
 
-        {/* Reconciliation — a list of <MatchCard>s (payments awaiting delivery,
-            deliveries with no matching payment). */}
+        {/* Reconciliation — a table (ADR-46 §2): one row per open or
+            recently-resolved purchase. Bespoke markup (per-row tint +
+            min-h rows aren't in the kit <SimpleTable>). Matches BHJ-0 / BR7-0. */}
         <div className="flex flex-col [width:100%] gap-(--sp-5)">
           <div className="flex flex-col gap-[2px]">
             <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h2/h2">
               Reconciliation
             </div>
             <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
-              Payments awaiting delivery, and deliveries without a matching payment
+              Has each payment been delivered? And which deliveries still need a
+              payment recorded?
             </div>
           </div>
 
           {loading ? (
-            <div className="font-ui [color:var(--text-tertiary)] text-sm/micro">
-              Loading…
-            </div>
-          ) : reconciliationEmpty ? (
-            <div className="font-ui [color:var(--text-tertiary)] text-sm/micro">
-              Everything reconciles — no open items.
+            <ReconTable rows={[]} loading onRecordPayment={openDrawer} />
+          ) : reconRows.length === 0 ? (
+            <div className="font-ui [color:var(--text-secondary)] [background-color:var(--surface-subtle)] border border-solid [border-color:var(--border-subtle)] px-(--sp-6) py-(--sp-5) text-sm/sm">
+              Every payment is matched to a delivery, and every delivery has a
+              payment. Nothing to reconcile.
             </div>
           ) : (
-            <div
-              role="list"
-              aria-label="Reconciliation items"
-              className="flex flex-col gap-(--sp-4)"
-            >
-              {outstanding.awaitingReceipt.map((m) => {
-                const note = parsePaymentNote(m.note);
-                const product = productById.get(m.productId);
-                return (
-                  <MatchCard
-                    key={m.id}
-                    supplier={note.supplier ?? "—"}
-                    status="awaiting"
-                    details={[
-                      `${product ? product.name : m.productId} · paid, awaiting receipt`,
-                      note.cost ? `KES ${note.cost}` : "",
-                    ].filter(Boolean)}
-                    actionLabel="Awaiting delivery — match on receipt"
-                  />
-                );
-              })}
-              {outstanding.unmatchedReceipts.map((m) => {
-                const product = productById.get(m.productId);
-                return (
-                  <MatchCard
-                    key={m.id}
-                    supplier={
-                      product ? `${product.name} (${product.unitLabel})` : m.productId
-                    }
-                    status="flagged"
-                    details={[
-                      `${Number(m.quantity).toFixed(1)} received · no matching payment`,
-                    ]}
-                    resultLabel="Receipt, no payment — needs a matching payment"
-                  />
-                );
-              })}
-            </div>
+            <ReconTable rows={reconRows} onRecordPayment={openDrawer} />
           )}
         </div>
       </div>
@@ -405,10 +513,139 @@ export function FinancialsClient() {
         <PaymentDrawer
           products={products}
           locations={locations}
-          onClose={() => setDrawerOpen(false)}
+          preselectedProductId={drawerProductId}
+          onClose={() => {
+            setDrawerOpen(false);
+            setDrawerProductId(undefined);
+          }}
           onRecorded={refresh}
         />
       )}
     </PageShell>
+  );
+}
+
+// ── Reconciliation table (ADR-46 §2, artboards BHJ-0 / BR7-0) ──────────────
+// Bespoke, not the kit <SimpleTable>: the "Received, no payment" row is
+// tinted `--surface-subtle` and rows are `min-h` — neither is a
+// <SimpleTable> capability. Status is a dot + colored text at table
+// density (design-principles §4.4), not a filled StatusChip pill.
+
+const RECON_COL = {
+  date: "w-[84px] shrink-0",
+  supplier: "grow basis-0 min-w-[150px]",
+  product: "w-[170px] shrink-0",
+  destination: "w-[90px] shrink-0",
+  amount: "w-[110px] shrink-0 text-right flex justify-end flex-wrap",
+  status: "w-[150px] shrink-0",
+  action: "w-[110px] shrink-0",
+} as const;
+
+const RECON_HEADER_CELL =
+  "font-ui text-[10px] [letter-spacing:var(--tracking-caps)] leading-[12px] uppercase font-(--weight-semibold) text-info";
+
+function ReconTable({
+  rows,
+  loading = false,
+  onRecordPayment,
+}: {
+  rows: ReconRow[];
+  loading?: boolean;
+  onRecordPayment: (productId?: string) => void;
+}) {
+  return (
+    <div className="[font-synthesis:none] flex flex-col [width:100%] border border-solid [border-color:var(--border-subtle)] antialiased">
+      {/* Header */}
+      <div className="flex items-center h-[32px] px-[16px] gap-[16px] shrink-0 bg-info-bg border-b border-b-solid border-b-gray-600">
+        <div className={`${RECON_COL.date} ${RECON_HEADER_CELL}`}>Date</div>
+        <div className={`${RECON_COL.supplier} ${RECON_HEADER_CELL}`}>
+          Supplier / Item
+        </div>
+        <div className={`${RECON_COL.product} ${RECON_HEADER_CELL}`}>Product</div>
+        <div className={`${RECON_COL.destination} ${RECON_HEADER_CELL}`}>
+          Destination
+        </div>
+        <div className={`${RECON_COL.amount} ${RECON_HEADER_CELL}`}>Amount</div>
+        <div className={`${RECON_COL.status} ${RECON_HEADER_CELL}`}>Status</div>
+        <div className={`${RECON_COL.action} ${RECON_HEADER_CELL}`}>Action</div>
+      </div>
+
+      {loading
+        ? [0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="flex items-center h-[44px] px-[16px] gap-[16px] border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
+            >
+              <div className="kit-skeleton h-[12px] grow rounded-sm" />
+            </div>
+          ))
+        : rows.map((row) => {
+            const status = RECON_STATUS[row.status];
+            const tinted = row.status === "received_no_payment";
+            return (
+              <div
+                key={row.id}
+                className={`flex items-center min-h-[44px] py-[8px] px-[16px] gap-[16px] border-b border-b-solid [border-bottom-color:var(--border-subtle)] ${
+                  tinted ? "[background-color:var(--surface-subtle)]" : ""
+                }`}
+              >
+                <div
+                  className={`${RECON_COL.date} font-mono [color:var(--text-secondary)] text-sm/sm`}
+                >
+                  {fmtDateShort(row.dateIso)}
+                </div>
+                <div
+                  className={`${RECON_COL.supplier} font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm`}
+                >
+                  {row.supplierOrItem}
+                </div>
+                <div
+                  className={`${RECON_COL.product} font-ui [color:var(--text-secondary)] text-sm/sm`}
+                >
+                  {row.product}
+                </div>
+                <div
+                  className={`${RECON_COL.destination} font-ui [color:var(--text-secondary)] text-sm/sm`}
+                >
+                  {row.destination}
+                </div>
+                <div
+                  className={`${RECON_COL.amount} font-mono text-sm/sm ${
+                    row.amount == null
+                      ? "[color:var(--text-tertiary)] font-ui"
+                      : "[color:var(--text-primary)]"
+                  }`}
+                >
+                  {row.amount ?? "—"}
+                </div>
+                <div className={`${RECON_COL.status} flex items-center gap-[6px]`}>
+                  <span
+                    className={`w-[6px] h-[6px] rounded-[3px] shrink-0 ${status.dot}`}
+                  />
+                  <span
+                    className={`font-ui font-(--weight-medium) ${status.text} text-sm/sm`}
+                  >
+                    {status.label}
+                  </span>
+                </div>
+                <div className={RECON_COL.action}>
+                  {row.status === "received_no_payment" ? (
+                    <button
+                      type="button"
+                      onClick={() => onRecordPayment(row.recordPaymentProductId)}
+                      className="kit-interactive font-ui font-(--weight-medium) text-accent text-sm/sm"
+                    >
+                      Record payment
+                    </button>
+                  ) : (
+                    <span className="font-ui [color:var(--text-tertiary)] text-sm/sm">
+                      —
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+    </div>
   );
 }
