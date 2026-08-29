@@ -469,8 +469,23 @@ decouples them. Each session ends with its own tests (`sdlc.md` /
 
 **N = 9** development sessions (Sessions 5–13): 5–7 shipped F1/F2
 backend+frontend; 9–10 kit remediation; 11 screen rebuild; 12–13
-F2-staff + F3. **All 9 development sessions complete — only the QA pass
-(`docs/sprints/final-qa-handoff.md`) remains.**
+F2-staff + F3. **All 9 development sessions complete.**
+
+### M1 design-change pass (added 2026-08-29, after the owner's manual walkthrough)
+
+The owner's pre-QA manual walkthrough
+(`docs/sprints/m1-manual-verification-observations.md`) surfaced items
+that go beyond bug-fixing — a confusing Financials reconciliation UI, no
+kind explainer, an unclear Archive model, delete-in-drawer, ledger
+typography. Triage split them into **4 sessions inserted before the QA
+pass**:
+
+| Session | Role | Scope | Status |
+|---|---|---|---|
+| **14** | Developer (Development Sprint) | D1 blocker + B1/B4/C2 copy + A3 (Catalog drawer → rail) | in progress |
+| **15** | Product Designer (Design Sprint) | A1/A2, A4, C1, B3 designed; **Financials reconciliation redesign**; A5 Archive designed + **ADR-46 / ADR-47**. Paper + ADRs only. | **DONE (2026-08-29)** |
+| **16** | Developer (Development Sprint) | Build everything Session 15 designed **+ the full A5 Archive feature** (Unarchive endpoints, Archived UI, the stock-flow picker exclusion, the `StockMovement` migration for real purchase-payment fields, tests) | not started |
+| **17** | QA Engineer | Adversarial M1 pass + Playwright e2e harness; also picks up B2, B5 | not started |
 
 ### Final session — QA Engineer: adversarial M1 pass
 
@@ -495,6 +510,15 @@ lose stock. Report findings before fixing.
 
 **Total remaining after this session: 8 sessions** (2 design-phase
 re-export sessions + 5 development sessions + 1 QA).
+
+> **Updated 2026-08-29:** the 9 development sessions and the 2
+> design-phase sessions are done. The **M1 design-change pass** (above)
+> adds **4 sessions before the QA pass**: Session 14 (Developer, in
+> progress), Session 15 (Product Designer, **done**), Session 16
+> (Developer — builds Session 15's designs + the full A5 Archive
+> feature), Session 17 (QA Engineer — the adversarial pass, now also
+> owning B2 / B5 and the Playwright e2e harness). Net: **2 sessions
+> remaining after Session 15** (Session 16 build + Session 17 QA).
 
 **Reasoning for N = 5:** F1 (Catalog) is one contained
 domain + one screen cluster → 1 session. F2 (Stock) is the milestone's

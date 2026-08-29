@@ -162,6 +162,33 @@ standard, not exceptions:
    not a banned container shadow) *and* accent-colored label text — a
    plain white pill with no shadow read as too weak to register as
    "selected" against the house's restrained palette.
+6. **Numeric cell typography — the deliberate answer (B3, Design Sprint
+   Session 15).** The owner asked what font / weight the ledger's
+   numeric cells use and whether it is the right choice for a
+   financial / stock table. Confirmed and now a stated rule:
+   - **Ledger movement + value cells use `--font-mono`** (JetBrains
+     Mono). Monospace is inherently tabular — every digit occupies the
+     same advance width — which is exactly the reconciliation-table
+     convention: figures line up in their columns so the eye can scan
+     and compare down a column without landing on a ragged edge. This
+     is the industry-standard choice for a finance/stock table; the
+     current build is already correct, this pins it so it isn't
+     "improved" away.
+   - **Weights:** movement value cells (Opening, Purchases, Issues,
+     Production, Transfer In/Out, Sold, …) are `--weight-regular`. The
+     **derived-total columns** (Closing, Closing Value) and the **dark
+     sticky-footer totals** are `--weight-semibold` — the heavier weight
+     is the signal that these are the reconciled bottom-line figures,
+     not raw movements. A corrected cell keeps its column's base weight
+     and takes the semantic colour + 1px underline from §4.3.
+   - **`SimpleTable` numeric columns** (Financials amounts, Assets cost
+     basis) that use a proportional font for the row text still render
+     their numeric cells with **`font-variant-numeric: tabular-nums`**
+     (house rule §1) so those columns align the same way without
+     switching to mono.
+   - No artboard changed — the kit ledger (`6ET-0`) and the ledger
+     screen artboards already render this. This item is
+     confirm-and-document only.
 
 ---
 

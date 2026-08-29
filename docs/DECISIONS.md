@@ -1401,3 +1401,527 @@ On inspection:
   3–4 visual-regression reference (not the acceptance target).
 - `docs/API.md` + `docs/SCHEMA.md` Assets sections rewritten to what
   shipped; no Prisma migration.
+
+---
+
+## ADR-46: Financials `/admin/financials` (M1 cut) — the **Reconciliation section becomes a table** (rest of the screen unchanged); one status vocabulary for that table; purchase-payment detail promoted to real fields; plus the M1 row-action pattern (delete-in-drawer), the payment-drawer product picker, the A4 kind explainer, and B3 typography (Design Sprint Session 15)
+
+**Status:** Accepted (owner-authorised in-session, 2026-08-29). Design
+Sprint — Product Designer. Builds in **Session 16** (Development Sprint).
+
+> **Scope correction (2026-08-29, after the owner reviewed the first
+> draft).** The first version of this ADR proposed a full
+> "reconciliation-first" restructure: drop the transaction tabs, drop the
+> KPI strip, put a `MatchCard` attention region at the top. **The owner
+> rejected that** — the tabs are a wanted feature (they let the user
+> filter transaction types) and the KPI strip + transactions table are to
+> stay exactly as they are. **The only thing that changes is the
+> Reconciliation section**, and it changes from a thin
+> vendor/amount/status list into a **fuller table** (Date · Supplier /
+> Item · Product · Destination · Amount · Status · Action) so the user
+> can (a) see whether each payment has been delivered and (b) click a
+> "Record payment" action on a delivery that has no payment. §1 and §4
+> below are rewritten to this smaller scope; §2–3 and §5–9 are unchanged
+> and still apply.
+
+**Context.** The owner's M1 manual walkthrough
+(`m1-manual-verification-observations.md` §C) plus a follow-up: *"the
+Financials reconciliation UI for purchases and receipts does not really
+make sense — it's confusing."* The confusion is in the **Reconciliation
+section specifically**:
+
+- It shows only "what's outstanding" in a shape (vendor / amount /
+  status / a "Match" link) that doesn't tell the user what state a
+  purchase is in at a glance, and it doesn't show **delivered** items at
+  all — so the user can't confirm "yes, that payment arrived".
+- For a **received item with no payment**, the affordance to go record
+  the payment is unclear.
+- Supplier / cost / paid-from are **not first-class data** anywhere on
+  the screen — they're regex-scraped from a free-text `note`
+  (`parsePaymentNote`, ADR-39 §4); misses render as `—`. A proper
+  reconciliation table needs real Supplier / Amount columns (§3).
+- The three status vocabularies across the screen ("Received / Pending
+  Delivery" in the transactions table, "Matched / Unmatched", "awaiting /
+  flagged" in reconciliation) don't read as one relationship — the
+  reconciliation table adopts **one** set of terms (§2).
+
+M1 constraint respected throughout: **no `MoneyMovement`, no KPI
+wiring** — that is F3 / Milestone 3 (ADR-36 D-FIN, `milestone-1-plan §2`).
+
+---
+
+### 1. Structure — everything above the Reconciliation heading is UNCHANGED; only the Reconciliation section changes, from a thin list to a table
+
+**Decision.** `/admin/financials` (M1) keeps its current top-to-bottom
+structure **exactly as the approved `7ZJ-0` artboard and the shipped
+screen have it**:
+
+1. **Toolbar** — title + **Record Payment** button. *Unchanged.*
+2. **KPI stat strip** — the 4 tiles. **Unchanged** (they render `—` /
+   "M3" per the M1 cut, ADR-36 D-FIN — not wired, not removed).
+3. **Transaction tabs** — All Transactions / Stock Purchases / Operating
+   Expenses / Owner Draws. **Unchanged** — these are the user's filter
+   for transaction *type* and the owner explicitly wants them kept. In M1
+   only "Stock Purchases" has data; the other three are populated in M3.
+4. **Transactions table** — the `<SimpleTable>` under the tabs.
+   **Unchanged** in structure. (Session 16 *may* align its "Delivery
+   Status" column labels to the §2 vocabulary for consistency — low
+   priority, owner's call; not required by this ADR.)
+5. **Reconciled Outflows footer** — the dark summary strip. *Unchanged.*
+6. **Reconciliation section** — **THIS is the only thing that changes.**
+
+**The Reconciliation section — before → after:**
+
+- **Before:** a thin 4-column table (Vendor / Description · Amount ·
+  Status · Action) that lists only *outstanding* items — payments
+  awaiting a receipt, and receipts with no payment — with a "Match"
+  link. It never shows what has already been delivered, and the "Match"
+  affordance is unclear.
+- **After:** a **fuller table** with these columns:
+  **Date · Supplier / Item · Product · Destination · Amount · Status ·
+  Action.** It shows **one row per open or recently-resolved purchase**,
+  so the user can both *confirm* deliveries and *act on* gaps:
+  - **Awaiting delivery** (`warning` dot) — a `purchase_payment` with no
+    `purchase_receipt` linking back. Action column: `—`.
+  - **Delivered** (`success` dot) — a `purchase_payment` matched to a
+    `purchase_receipt`. Action column: `—`. Shown so the user can
+    confirm the payment arrived — this is new; the old list hid these.
+  - **Received, no payment** (`info` dot, the row gets a
+    `--surface-subtle` tint to draw the eye) — a `purchase_receipt` with
+    a null `purchasePaymentId`. Action column: a **"Record payment"**
+    text affordance (accent) that opens the payment drawer (§6),
+    pre-scoped to that product.
+  - (**Flagged** (`danger` dot) — a variance was raised on a match;
+    Action column: `—`. Only appears when such a row exists.)
+- The section keeps its heading; the subtitle becomes *"Has each payment
+  been delivered? And which deliveries still need a payment recorded?"*
+- When nothing is outstanding **and** nothing was recently resolved, the
+  table area collapses to a single all-clear line ("Every payment is
+  matched to a delivery, and every delivery has a payment. Nothing to
+  reconcile.").
+
+**Data source.** The rows come from
+`GET /api/stock-movements/outstanding` (`awaitingReceipt` +
+`unmatchedReceipts`) **plus** the recently-`Delivered` `purchase_payment`
+rows (a payment that has a `purchase_receipt` linking back). Session 16
+decides the "recently" window (e.g. same business day, or last N) — a
+Development-Sprint detail, not a design decision. No new endpoint is
+required; `outstanding` already returns the open items and
+`GET /api/stock-movements?movementType=purchase_payment` the delivered
+ones.
+
+**Kit impact: none.** This is a `<SimpleTable>` with a per-screen
+`columns` mapper and a `<StatusChip>` (or a dot+text status cell at table
+density, per `design-principles.md §4.4`) — all existing kit. The
+"Record payment" affordance is a text button in the Action cell, same as
+"Edit" elsewhere. **`MatchCard` is no longer used on this screen** — the
+first draft's plan to build the reconciliation region out of `MatchCard`s
+is dropped; `MatchCard` stays a kit component for the staff mobile hubs
+where it is already used.
+
+**Rejected (first-draft proposals the owner turned down):** removing the
+transaction tabs; removing / shrinking the KPI strip; a
+"reconciliation-first" layout with an attention region at the top of the
+screen; building the reconciliation region out of `MatchCard`s.
+
+---
+
+### 2. One status vocabulary — used on every card and every table row
+
+| Term | Meaning | Old terms it replaces |
+|---|---|---|
+| **Awaiting delivery** | `purchase_payment` row with no `purchase_receipt` linking back | "Pending Delivery", "awaiting", "Payment made, no receipt" |
+| **Delivered** | `purchase_payment` matched to a `purchase_receipt` | "Received", "Received (50kg)", "Matched", "Paid (Direct Exp.)" |
+| **Delivery, no payment** | `purchase_receipt` with null `purchasePaymentId` | "Unmatched", "flagged", "Receipt, no payment" |
+| **Flagged** | a quantity/price variance was raised on a match (`flagTransfer`-style note on the row) | "flagged" (reconciliation), "VARIANCE" |
+
+Chip variants (kit `StatusChip`, `component-states.md §2 C13`):
+**Awaiting delivery** → `warning`; **Delivered** → `success`;
+**Delivery, no payment** → `info`; **Flagged** → `danger`. These are the
+only four status strings the screen renders. `financials-client.tsx`
+drops the three ad-hoc vocabularies.
+
+---
+
+### 3. Data-shape — promote supplier / ordered-qty / cost / paid-from to real fields (option (b))
+
+**The choice.** The redesign can either (a) keep reading the parsed
+`note` and design around missing values, or (b) make the fields real.
+**The owner chose (b).** Recorded consequences:
+
+- **Schema (Session 16 — Prisma migration).** Add nullable columns to
+  `StockMovement`, populated only for `movementType = "purchase_payment"`:
+  - `purchaseSupplier   String?`
+  - `purchaseOrderedQty  Decimal?  @db.Decimal(14, 4)`
+  - `purchaseTotalCost   Decimal?  @db.Decimal(14, 2)`
+  - `purchasePaidFrom    String?`  // "cash" | "mpesa_bank"
+  Chosen over a separate `PurchasePaymentDetail` table: it is one
+  migration with no new relation, the read path (`GET
+  /api/stock-movements`) already returns the whole row, and
+  `purchase_payment` is the only movement type that ever sets them
+  (`quantity` stays `0`, ADR-39 §4 unchanged). `SCHEMA.md §3` gains these
+  four fields with the "purchase_payment only" note.
+- **API (Session 16).** `POST /api/stock-movements` `purchase_payment`
+  body is unchanged (`supplier`, `quantity`, `cost`, `paidFromAccount`
+  are already sent) — `recordPurchasePayment` now writes them to the new
+  columns **and** still composes a human `note` sentence for display
+  ("Ordered 20 crate from Nairobi Grains Millers; KES 18,000 from
+  M-Pesa / Bank Till"). The row shape in `API.md` "Stock Movements" gains
+  `purchaseSupplier` / `purchaseOrderedQty` / `purchaseTotalCost` /
+  `purchasePaidFrom`. `GET /api/stock-movements/outstanding` returns the
+  same enriched rows.
+- **Backfill (Session 16 — one-time, in the migration).** Re-parse every
+  existing `purchase_payment` `note` with the old `parsePaymentNote`
+  regex; write what parses to the new columns; leave unparseable ones
+  `null`. Irreversible-safe (the `note` is retained).
+- **Client (Session 16).** `parsePaymentNote` is **deleted**. The
+  reconciliation-table mapper and the transactions-table mapper in
+  `financials-client.tsx` read the real fields. A `null` renders as
+  **"Supplier not recorded"** / **"Cost not recorded"** (muted
+  `--text-tertiary`), never a bare `—`.
+- **Not in scope.** No `MoneyMovement`, no cash-balance debit — still F3
+  (ADR-39 §4). Promoting these four display fields does **not** change
+  that boundary.
+
+---
+
+### 4. KPI stat strip — KEPT exactly as it is (scope correction)
+
+**Decision.** The 4-tile KPI stat strip **stays on the M1 screen and the
+`7ZJ-0` artboard, unchanged.** The first draft of this ADR proposed
+removing it and replacing it with a one-line note; **the owner turned
+that down** — it stays. In M1 the four tiles continue to render `—` /
+"M3" (correct per the M1 cut, ADR-36 D-FIN); they are **not wired** and
+**not removed**. `component-states.md §2 C20` stays "deferred to M3"
+(unchanged). The existing `TODO(mock)` comment in `financials-client.tsx`
+noting the strip is intentionally unwired stays as-is.
+
+---
+
+### 5. Row-action pattern for M1 tables — one "Edit" affordance per row; delete lives in the drawer (A1 + A2)
+
+**Context.** `m1-manual-verification-observations.md` A1 (cramped
+Edit/Delete columns) + A2 (owner wants delete initiated from *inside* the
+Edit drawer, no standalone row Delete button). Note: the approved
+artboards `6ZO-0` (Product Catalog) and `8DL-0` (Assets Register) **each
+already draw a single "Edit" column** — the shipped
+`catalog-client.tsx` diverged by adding a second Delete button. So this
+is mostly bringing the code back to the artboards plus a new drawer
+section.
+
+**Decision — one pattern for every M1 `SimpleTable` (Catalog + Assets):**
+
+- **Table row:** a single **"Edit"** text affordance in the last column
+  (accent, `--text-sm`). No Delete column. Row click is **not** wired to
+  open Edit in M1 — an explicit "Edit" target is unambiguous at table
+  density and leaves row-click free for a future multi-select. (This is
+  a documented choice, not a new decision requiring its own ADR.)
+- **Edit drawer (rail — see ADR-37b; Catalog's move to `rail` is
+  Session 14 / A3):** after the last form section, a full-width
+  `--border-subtle` divider, then a **delete section** at the bottom:
+  - a `--text-caption` / `--weight-semibold` / `--text-tertiary` uppercase
+    label **"Delete this record"** (Catalog: "Delete this product";
+    Assets: "Delete this asset");
+  - one line of `--text-sm` / `--text-secondary` copy: *"Removes it from
+    the catalog. Blocked if it has transaction history — archive it
+    instead."* (Assets: *"Removes it from the register. Blocked if it has
+    audit history."*);
+  - a **destructive tertiary** button (danger label, no fill, per
+    `component-states.md §2 C1` — text-only destructive) reading
+    **"Delete this product…"** that opens the **unchanged**
+    `FrictionDeleteDialog` (ADR-36c retype-gate mechanic — only the
+    *entry point* moves, not the friction).
+  - The delete section is **not rendered in create mode** (`product ===
+    null`) — there is nothing to delete.
+- **Kit impact:** none. `Drawer` already supports arbitrary children and
+  a footer; the delete section is screen markup composed from an existing
+  destructive `<Button variant="tertiary">` + the existing dialog. The
+  `Drawer` "footer primary disabled" state is unaffected.
+- **Artboards redrawn:** `6ZO-0` (confirm single Edit column — remove the
+  divergent Delete if the artboard ever gained one), `796-0` (Product
+  Drawer — add the bottom delete section, in the `rail` shape from A3),
+  and the Assets equivalents `8DL-0` + `8JO-0` (Asset Drawer — same
+  bottom delete section). The `FrictionDeleteDialog` artboards `797-0` /
+  `8IV-0` are **unchanged**.
+
+---
+
+### 6. Payment-drawer product picker — scoped to ingredient + goods, and a searchable Select (C1)
+
+**Context.** `m1-manual-verification-observations.md` C1: the product
+`<Select>` in Record Payment will hold many products in production; a
+plain dropdown is unusable at length. Owner asked about type-to-filter,
+max-height, and limiting which kinds appear.
+
+**Decision.**
+
+- **Kind scope — ingredient + goods only.** A `dish` is never purchased
+  from a supplier (its cost is derived from ingredients — ADR-33). The
+  payment drawer filters its product list to `kind !== "dish"`.
+  `API.md` "Stock Movements" `purchase_payment` gains a note: *the
+  payment-drawer product picker shows only `ingredient` and `goods`; the
+  API does not reject a `dish` productId but the UI never offers one.*
+  (A server-side `400` for a `dish` productId on `purchase_payment` is a
+  reasonable Session 16 add but is **not required** by this ADR.)
+- **Control — the kit `Select` gets a searchable / combobox variant.**
+  This **is a kit component change**, so it is **flagged for a kit
+  Design Sprint**, not built by Session 16 into the screen:
+  - New artboard rows on `6CG-0`: **Select — Searchable (closed)**,
+    **Select — Searchable (open, query typed, list filtered)**,
+    **Select — Searchable (open, no matches)**. States otherwise inherit
+    §9 (focus ring, disabled) and the existing open-listbox row.
+    Behaviour: a text input inside the trigger; typing filters the option
+    list (case-insensitive `label` contains); `max-height` ~= 8 rows then
+    scroll; keyboard = the existing APG listbox pattern + the query
+    field. `component-states.md §2 C5` gains this variant row and §9
+    gains a "searchable" line.
+  - Until the kit variant ships, **Session 16's interim** is acceptable:
+    the plain `Select` popover with `max-height: ~280px` + scroll, the
+    list already cut down by the `ingredient + goods` filter. ADR records
+    this as the interim, not the target.
+- **Artboard redrawn:** `85W-0` (Payment Drawer) — product row shows the
+  searchable control; a caption notes "Ingredients & Goods only".
+
+---
+
+### 7. Artboards this ADR produces / redraws
+
+| Artboard | Change |
+|---|---|
+| `Admin Financials — Full Table (Recon = table) [S15]` (a copy of `7ZJ-0`) | KPI strip, tabs, transactions table, reconciled-outflows footer — **all unchanged**. **Only the Reconciliation section is redrawn** as the fuller table (Date · Supplier/Item · Product · Destination · Amount · Status · Action) with the three status rows (Awaiting delivery / Delivered / Received-no-payment + a "Record payment" action). Session 16 folds this back onto `7ZJ-0`. |
+| `Financials Reconciliation — section states [S15]` (standalone artboard) | **All reconciled** (single all-clear line) + **Loading** (3 skeleton rows). Both are *just the reconciliation section*, not whole-screen states. |
+| `Admin Financials — Payment Drawer (searchable picker) [S15]` (a copy of `85W-0`) | Searchable, `ingredient`/`goods`-scoped product Select; Destination restored as its own field; "Ingredients & Goods only" caption. Rail shape unchanged. The two `Body` frames are renamed `Body — screen (no drawer)` / `Body — screen + drawer open` (that split is `85W-0`'s own pre-existing construction, not new). |
+| `Product Drawer — rail + kind hint + delete section [S15]` (a copy of `796-0`) | Rail shape (A3-intended); A4 kind-explainer hint under the `SegmentedControl`; the `dish`-only info-banner removed; the bottom "Delete this product" section (A2). |
+| `Admin Catalog — Archived tab [S15]` (a copy of `6ZO-0`) | ADR-47 — the "Archived" tab active: neutral "Archived" chip, "Unarchive" row action, "N archived" count. Confirms the single-Edit-column row pattern (the base `6ZO-0` already draws one). |
+| `6CG-0` Form Controls | **New rows to draw in a kit Design Sprint** (not this session): Select searchable (closed / open-filtered / open-no-match). The kind hint is a **screen** composition, not a kit row. |
+| Not drawn — spec'd for Session 16 | Assets Register "Archived" tab; Asset Drawer bottom delete section; the `6OE-0` "Edit Drawer — archived record" caption. Direct repeats of the patterns above. |
+
+### 8. A4 — Ingredient / Dish / Goods explainer (folded in here)
+
+The kind selector gets a **selection-driven hint line** directly under
+the `SegmentedControl` (the `FormField` `hint` slot pattern — no new kit
+component; `SegmentedControl` gains no description slot). The line
+changes with the selected segment:
+
+- **Ingredient** — "A raw item you buy and cook with. Has a buying price;
+  used up by production."
+- **Dish** — "A finished item you sell from the menu. It has no buying
+  price — its cost comes from the ingredients it uses."
+- **Goods** — "An item you buy and resell as-is. Has a buying price and a
+  selling price."
+
+This replaces the current static `DISH_NOTE` info-banner that only shows
+for `dish`. The `dish` hint carries the same fact in the same place as
+the other two, so the standalone amber banner is removed.
+`component-states.md` records the hint as a screen-level composition of
+`FormField` `hint`, not a kit change.
+
+### 9. B3 — ledger digit typography (folded in here → `design-principles.md §4`)
+
+Confirm + document, no redesign. The ledger's numeric cells use
+`--font-mono` (JetBrains Mono). Monospace is inherently tabular, which is
+the finance-table convention — digits align in their columns for
+scan-and-compare down a reconciliation sheet. Weights, now pinned as a
+stated rule:
+
+- **movement value cells** (Opening, Purchases, Issues, …) —
+  `--weight-regular`;
+- **derived-total columns** (Closing, Closing Value) and the **sticky
+  footer totals** — `--weight-semibold`;
+- any **proportional-font numeric column** in a `SimpleTable` (e.g.
+  Financials amounts) carries `font-variant-numeric: tabular-nums`
+  (house rule §1, now cross-referenced from §4).
+
+No artboard changes. Written into `design-principles.md §4` as a numbered
+item.
+
+---
+
+### Consequences
+
+- Session 16 build list is in `PROGRESS.md` (Session 15 entry) and
+  `session-16-handoff.md`.
+- One Prisma migration (four nullable `StockMovement` columns + a
+  data-only backfill step). `SCHEMA.md §3` + `API.md` "Stock Movements" /
+  "Catalog" updated by Session 16.
+- One kit item flagged for a future kit Design Sprint: **searchable
+  `Select`** (the `6CG-0` rows are *spec'd* this session, drawn by that
+  kit session — see §7).
+- `financials-client.tsx` loses `parsePaymentNote` and rebuilds **only
+  the Reconciliation section** as the fuller table with the §2
+  vocabulary. The tabs, the KPI strip markup, the transactions table, and
+  the reconciled-outflows footer are **untouched** (scope correction —
+  see the box at the top of this ADR).
+- `product-delete-dialog.tsx` / `asset-delete-dialog.tsx` are unchanged;
+  only their **caller** moves (from a table-row button to a drawer
+  button).
+- No `MatchCard` change and no `MatchCard` use on this screen.
+
+---
+
+## ADR-47: Archive model — the Archived list is a table tab, Unarchive is a friction-free reverse, and M1 enforces the stock-flow picker exclusion (Design Sprint Session 15)
+
+**Status:** Accepted (owner-authorised in-session, 2026-08-29). Design
+Sprint — Product Designer. Design + API spec only; **built in Session
+16** (Development Sprint). Extends ADR-23 (soft/hard-delete mechanics);
+adjacent to but distinct from ADR-38 (dropped *locations* deactivated).
+
+**Context.** `m1-manual-verification-observations.md` A5. The owner's
+expectation for Archive (products / ingredients / goods, and by extension
+assets):
+
+1. An archived item is **removed from the main list entirely** and
+   appears **only** in a dedicated **Archived** list.
+2. While archived it is **blocked from every action** an active item has
+   (no edit, no price change, no use in any flow).
+3. **Reversible** via an **Unarchive** action from the Archived list.
+
+**Current reality.** Soft-delete stamps `deletedAt` and hides the row
+from the default list unless `?includeArchived=true` (products) /
+`?includeDeleted=true` (assets). But: there is **no Archived-list UI**
+for assets (Catalog *does* already have an "Archived" tab —
+`catalog-client.tsx`), **no Unarchive endpoint** for either, and
+"blocked from all actions" is **not enforced or tested**.
+
+---
+
+### 1. The Archived list — a tab on the existing table
+
+**Decision.** The Archived list is **a tab on the existing record
+table**, not a separate route or view:
+
+- **Catalog:** the **"Archived" tab already exists** in
+  `catalog-client.tsx` (`{ key: "archived", ... archived: true }`). Keep
+  it. It sits last, after All / Ingredients / Dishes / Goods.
+- **Assets:** **add an "Archived" tab** to the Assets Register
+  (`8DL-0` currently draws All Categories / Kitchen Equipment / …). It
+  sits last, after the category tabs.
+- **Columns:** the **same columns as the active list**, with the
+  last-column action changed from **"Edit"** to **"Unarchive"** (accent
+  text affordance, same slot). No other column differs. The active
+  list's row count chip ("47 products") reflects the active tab's count,
+  as today.
+- An archived row shows a **neutral "Archived" `StatusChip`** in its
+  name cell (Catalog mobile already does this — extend to the desktop
+  table and to Assets) so the tab's contents are unmistakably a
+  different class of record.
+
+**Rejected:** a separate `/admin/catalog/archived` route (more
+navigation for a rarely-visited list; the tab is already there); a
+modal/drawer "Archived items" panel (loses the table columns the user
+needs to identify the right row).
+
+---
+
+### 2. Unarchive — no friction
+
+**Decision.** Unarchive is a **single-click action from the Archived
+tab** — a plain confirm-free button. Rationale: unarchiving is **safe and
+fully reversible** (it only clears `deletedAt`); it creates no data loss
+risk and needs no retype gate (contrast hard-delete, ADR-23). On success:
+a `<Toast>` ("Product restored" / "Asset restored") and the row leaves
+the Archived tab (it now appears in the active tabs).
+
+No "Unarchive" confirmation dialog. No `FrictionDeleteDialog` variant.
+
+---
+
+### 3. M1 enforcement scope — the stock-flow picker exclusion is the line that matters
+
+"Blocked from every action" is broad. M1 enforces the subset that
+protects **trustworthy numbers**, and defers the rest:
+
+**Enforced in M1:**
+
+1. **Excluded from every product/asset picker in every stock flow** —
+   this is the integrity-critical one. Archived products must not be
+   selectable in: `issue`, `production`, `transfer` (both ends),
+   `non_sale_consumption`, `purchase_payment` (the Record Payment
+   drawer), the bulk opening-stock grid, and the mobile stock-levels
+   views. Archived assets must not be selectable in the asset
+   condition-transition surface. Mechanism: every one of these already
+   calls `listProducts` / `listAssets`, which **already** exclude
+   `deletedAt != null` by default — Session 16's job is a **call-site
+   audit** confirming **none** of them pass `includeArchived` /
+   `includeDeleted`, plus a test per flow that an archived product does
+   not appear in its picker.
+2. **Edit is unavailable while archived.** The Archived tab offers only
+   **Unarchive**, no **Edit** — so the Edit drawer never opens for an
+   archived row, and therefore **price change, kind change, and
+   per-location edits are all impossible** while archived, with no
+   per-field lockout UI needed. If a deep link / stale state does open
+   the drawer on an archived row, the drawer renders its fields
+   **disabled** and shows a single info line ("This record is archived.
+   Unarchive it to make changes.") with only a **Close** button — cheap
+   to add, no new component.
+3. **`GET /api/products/:id` / `GET /api/assets/:id` already `404`** a
+   soft-deleted row (API.md, unchanged) — so any direct-fetch path is
+   already blocked.
+
+**Deferred past M1 (documented, not built):**
+
+- A dedicated read-only "view archived record" drawer (M1 has no
+  read-only drawer pattern; Unarchive-then-view is the M1 path).
+- Blocking an archived product from appearing in **historical**
+  read surfaces (the ledger, reports) — archived records **must** still
+  show in history (that is the point of soft-delete, ADR-23); "blocked
+  from actions" never meant "erased from the past".
+- Recipe editing referencing an archived ingredient — recipes are
+  informational only (ADR-33) and out of the M1 cut.
+
+---
+
+### 4. API delta for Session 16
+
+Aligned with ADR-23 and the existing `?mode=archive` / `soft-delete`
+shapes:
+
+- **Products — Unarchive.** `POST /api/products/:id?mode=unarchive`
+  (mirror of the existing `DELETE /api/products/:id?mode=archive`).
+  Roles: Admin. Clears `deletedAt`. Does **not** reactivate
+  `ProductLocation` rows automatically (they were deactivated on archive
+  per ADR-38; the Admin re-enables the ones they want via the Edit
+  drawer — matches ADR-38's "re-enabling a location restores its last
+  price"). Idempotent. Returns `{ data: { archived: false } }`.
+  - *Alternative spelling if the team prefers verb symmetry:* a
+    `PATCH /api/products/:id` with `{ "unarchive": true }` as a
+    third body shape. ADR recommends the `?mode=unarchive` query form —
+    it mirrors the archive path exactly and keeps `PATCH` meaning "edit
+    the fields".
+- **Assets — Restore.** `POST /api/assets/:id/restore` (mirror of the
+  existing `POST /api/assets/:id/soft-delete`). Roles: Admin. Clears
+  `deletedAt`. Idempotent. Returns `{ data: { softDeleted: false } }`.
+- **List filters — unchanged behaviour, audited call sites.**
+  `listProducts` / `listAssets` already default to excluding
+  `deletedAt != null`; `?includeArchived=true` / `?includeDeleted=true`
+  are the Archived-tab's own reads. Session 16 audits that **only** the
+  Archived tab passes them.
+- **`GET /api/products` / `GET /api/assets`** gain no new params.
+- **`SCHEMA.md`** unchanged (no new columns — `deletedAt` already
+  exists).
+
+---
+
+### 5. Artboards this ADR produces
+
+| Artboard | Change |
+|---|---|
+| `6ZO-0` Product Catalog | **New state artboard** — "Archived" tab active: rows show the neutral "Archived" chip, last column reads **"Unarchive"**, no "Edit". |
+| `8DL-0` Assets Register | **Redrawn** — an "Archived" tab added after the category tabs; **new state artboard** for that tab active (same treatment as Catalog). |
+| `8L7-0` Admin Catalog — Mobile | **Touched** — the mobile card's row action on the Archived tab is "Unarchive", not "Edit". |
+| Flow pickers (`85W-0`, `8XH-0`, `92M-0`, `9FE-0`, bulk grid `7UD-0`) | **No visual change** — archived products simply do not appear. One **caption** added to the `Select` / picker artboard note: "archived products are excluded". |
+| Edit drawer archived-guard state | **New row on `6OE-0`** — "Edit Drawer — archived record (fields disabled, Close only)" — the cheap fallback from §3.2. Flagged as a small kit-caption addition, not a new component. |
+
+---
+
+### Consequences
+
+- Session 16 builds: two endpoints (`?mode=unarchive`, `/assets/:id/restore`),
+  the Assets "Archived" tab, the desktop "Archived" chip on both tables,
+  the Unarchive button + toast, the drawer archived-guard fallback, the
+  call-site audit + one picker-exclusion test per stock flow.
+- No schema migration.
+- `ADR-23` is unchanged; this ADR is the "how the reverse works + how far
+  M1 enforces it" that ADR-23 left open.
+- `component-states.md §2` gains: `SimpleTable` — "Archived tab" row
+  treatment; `Drawer` — archived-guard caption.

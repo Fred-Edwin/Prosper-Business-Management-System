@@ -140,6 +140,7 @@ primary-loading, destructive-loading. Everything else is global.
 | filled | GLOBAL (value text in place of placeholder) |
 | error | ARTBOARD (ADD — danger border; "Location required" on Asset Drawer) |
 | disabled | GLOBAL (`--surface-subtle`, `--text-disabled`, no chevron interaction) |
+| **searchable / combobox variant** | **FLAGGED FOR A KIT DESIGN SPRINT + KIT DEVELOPER SPRINT (Session 15, ADR-46 §6).** Full handoff: **`docs/sprints/kit-searchable-select-handoff.md`** — Phase A (Design: 3 `6CG-0` state rows — Searchable closed / open-filtered / open-no-match) then Phase B (Developer: add a `searchable` **opt-in mode** to `components/kit/select.tsx` — a text input in the trigger filters the option list `label`-contains, `max-height` ≈ 8 rows then scroll, a "No matches" row, keyboard = the existing APG combobox extended to the input; +3 Storybook stories; `test:visual` + `test:a11y` + §9 `postVisit`). It is an **edit** of the existing APG-listbox `Select`, not a rebuild — `searchable` off = byte-unchanged. Not built by a Development Sprint into a screen. **Session 16 interim** until Phase B ships: plain `Select` popover `max-height ~280px` + scroll + the drawer's `ingredient`/`goods` kind filter. |
 
 ### C6 — Segmented control
 
@@ -256,6 +257,8 @@ D3 on the dot+pill vs dot+text rendering.)
 | body row selected | ARTBOARD (ADD, **conditional**) — only if any M1 simple-table is multi-select. Assets/Financials M1 tables are **not** selectable (row click = open edit drawer, not select). → **Skip unless owner says otherwise.** |
 | empty state (no rows) | **ARTBOARD (ADD)** — see §7 open decision on EmptyState. If EmptyState becomes a component, this row references it; if not, draw the inline "No records" treatment here. |
 | loading (skeleton rows) | GLOBAL — 3 shimmer rows using `--surface-subtle` / `--surface-hover`; one rule for both tables. |
+| **Archived-tab row treatment** (Session 15, ADR-47 §1) | **SCREEN COMPOSITION, not a kit change.** On the "Archived" tab (Catalog + Assets), each row shows a neutral **"Archived"** `StatusChip` in the name cell and the last-column action is **"Unarchive"** (accent text) instead of "Edit". Same columns otherwise. Artboard: `Admin Catalog — Archived tab [S15]`. |
+| **row action = single "Edit"** (Session 15, ADR-46 §5) | Confirmed: every M1 `SimpleTable` (Catalog + Assets) has **one "Edit" affordance** in the last column, **no Delete column**. Row click is not wired to open Edit in M1. This matches the approved `6ZO-0` / `8DL-0` artboards; the shipped `catalog-client.tsx` diverged with a second Delete button (fixed in Session 16). |
 
 ### C16 — Dense Ledger
 
@@ -319,6 +322,8 @@ decides: per-entity label props, or unify. Recorded as §6 D2.
 | footer: primary disabled (form invalid / no changes) | ARTBOARD (ADD — one artboard; the "Save changes" disabled) |
 | footer: submitting | GLOBAL (primary-loading from C1) |
 | scrolled (header hairline appears) | GLOBAL (add `--border-subtle` bottom border to header on scroll > 0) |
+| **bottom "Delete this record" section** (Session 15, ADR-46 §5) | **SCREEN COMPOSITION, not a kit change.** A2/A1: the Edit drawer for Catalog + Assets gets a bottom section — divider → uppercase "Delete this &lt;record&gt;" label → one line of copy → a **destructive-`tertiary`** `<Button>` that opens the unchanged `FrictionDeleteDialog`. Rendered only in edit mode. It is arbitrary drawer children + an existing button variant + an existing dialog — the `Drawer` component is untouched. Artboard: `Product Drawer — rail + kind hint + delete section [S15]`. |
+| **archived-record guard** (Session 15, ADR-47 §3.2) | **CAPTION on `6OE-0` — a small fallback, not a new component.** If the Edit drawer is opened on an archived row (deep link / stale state), it renders its fields **disabled** + a single info line ("This record is archived. Unarchive it to make changes.") + a **Close**-only footer. The normal path is that the Archived tab offers only "Unarchive", so the drawer never opens for an archived row. |
 
 ### C19 — Bottom Sheet
 

@@ -52,11 +52,27 @@ order observed.
 The row-level **Edit** and **Delete** action columns sit too close and
 are easy to mis-tap.
 
+> **DESIGNED — Session 15 (ADR-46 §5).** Resolved by A2: the row keeps a
+> single **"Edit"** affordance and the Delete button moves into the Edit
+> drawer, so the cramped two-column cluster is gone. One row-action
+> pattern across every M1 `SimpleTable`. Artboard: `6ZO-0` already draws
+> a single Edit column.
+
 ### A2. Delete should live inside the Edit drawer, not as its own row action
 Owner's model: to delete a product you should **open Edit**, scroll to a
 dedicated **Delete** section at the bottom of the drawer, and act there —
 not have a standalone Delete button in the table row. This removes the
 cramped two-column action cluster (A1) at the same time.
+
+> **DESIGNED — Session 15 (ADR-46 §5).** A **"Delete this product"**
+> section at the bottom of the rail Edit drawer: divider → uppercase
+> label → one line of copy → a **destructive-tertiary** "Delete this
+> product…" button that opens the **unchanged** `FrictionDeleteDialog`
+> (ADR-36c mechanic untouched; only the entry point moves). Not rendered
+> in create mode. The table row keeps a single "Edit" affordance — one
+> pattern for every M1 `SimpleTable`, Assets included. Artboards:
+> `Product Drawer — rail + kind hint + delete section [S15]`; Assets
+> equivalent spec'd in ADR-46 §7 for Session 16.
 
 ### A3. Overlay components are floating cards, not full-height right rails
 The Catalog Edit/Create drawer renders as a **floating centered card**
@@ -84,6 +100,16 @@ When adding a product, the kind selector (Ingredient / Dish / Goods) has
 the user can't tell which to pick. Owner wants context UI (helper text,
 tooltip, or a short description per option).
 
+> **DESIGNED — Session 15 (ADR-46 §8).** A **selection-driven hint line**
+> under the `SegmentedControl` (the `FormField` `hint` pattern — no new
+> kit component). Copy: **Ingredient** — "A raw item you buy and cook
+> with. Has a buying price; used up by production." · **Dish** — "A
+> finished item you sell from the menu. It has no buying price — its cost
+> comes from the ingredients it uses." · **Goods** — "An item you buy and
+> resell as-is. Has a buying price and a selling price." Replaces the
+> static `dish`-only info-banner. Artboard: `Product Drawer — rail + kind
+> hint + delete section [S15]`.
+
 ### A5. Archiving behaviour is unclear / probably wrong
 Owner doesn't understand how "Archive" currently works and believes it
 should mean:
@@ -101,6 +127,19 @@ the row from the default list unless `?includeDeleted=true` — but there
 is **no Archived-list UI** to view or reverse it, and "blocked from all
 actions" isn't explicitly enforced/tested. ADR-38 also says dropped
 *locations* are deactivated, not deleted — related but distinct.)
+
+> **DESIGNED — Session 15 (ADR-47).** Archived list = **a tab on the
+> record table** (Catalog already has it; Assets gets one). Each archived
+> row: a neutral "Archived" chip + an **"Unarchive"** action in place of
+> "Edit". Unarchive is **friction-free** (safe, reversible). **M1
+> enforcement scope = the integrity subset:** archived products are
+> excluded from **every product/asset picker in every stock flow**
+> (call-site audit + one test per flow), and **Edit is unavailable while
+> archived** (so no price/kind/location change is possible) — a
+> dedicated read-only viewer and per-field lockout UI are **deferred**.
+> API delta: `POST /api/products/:id?mode=unarchive` +
+> `POST /api/assets/:id/restore` (no schema change). Artboard:
+> `Admin Catalog — Archived tab [S15]`; Assets tab spec'd in ADR-47 §5.
 
 ---
 
@@ -134,6 +173,17 @@ ledger (e.g. under the **Closing** column), and whether that is an
 industry-standard choice for a financial/stock table. Wants a
 deliberate answer: tabular figures? mono? current weight? vs. what a
 finance table should use.
+
+> **DESIGNED — Session 15 (confirm + document; `design-principles.md
+> §4.6`).** The answer: **`--font-mono` (JetBrains Mono)** for ledger
+> numeric cells — monospace is inherently tabular, which is the
+> finance-table convention (digits align in their columns for
+> scan-and-compare). The current build is already correct; the rule is
+> now stated so it isn't "improved" away. Weights: movement cells
+> `--weight-regular`; **Closing / Closing Value + sticky-footer totals
+> `--weight-semibold`** (the heavier weight marks the reconciled
+> bottom-line figures). `SimpleTable` proportional-font numeric columns
+> use `font-variant-numeric: tabular-nums`. No artboard change.
 
 ### B4. "Shop goods" wording should be "Goods"
 Somewhere the label reads **"Shop Goods"** where it should just say
@@ -181,6 +231,16 @@ Owner wants:
   shown here?"
 - Open UX question flagged by owner: what's the best pattern for this
   control at scale.
+
+> **DESIGNED — Session 15 (ADR-46 §6).** **Kind scope:** the picker
+> shows **`ingredient` + `goods` only** — a Dish is never purchased. The
+> drawer filters `kind !== "dish"`; `API.md` note added. **Control:** the
+> kit `Select` gains a **searchable / combobox variant** — **flagged for
+> a kit Design Sprint** (new `6CG-0` state rows: searchable-closed /
+> open-filtered / open-no-match). Session 16's **interim** if the kit
+> variant isn't ready: plain `Select` popover with `max-height ~280px` +
+> scroll + the kind filter cutting the list. Artboard: `Admin Financials
+> — Payment Drawer (searchable picker) [S15]`.
 
 ### C2. Rename "Cash at Hand" → "Cash" in the Paid From control
 The payment drawer's **Paid From** options read **"Cash at Hand"**;
