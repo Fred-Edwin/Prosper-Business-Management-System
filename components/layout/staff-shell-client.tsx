@@ -3,7 +3,7 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { LayoutGrid, Boxes, History, ShoppingCart } from "lucide-react";
+import { LayoutGrid, Boxes, History, ShoppingBag, Home, MessageSquare } from "lucide-react";
 import { StaffShell } from "@/components/shells/staff-shell";
 import { ToastProvider } from "@/components/kit/toast";
 import type { BottomNavItem } from "@/components/kit/bottom-nav";
@@ -22,9 +22,14 @@ interface StaffNavDef {
 }
 
 const NAV_DEFS_BY_BASE: Record<string, StaffNavDef[]> = {
+  // restaurant-sales-flow.md "The screens" + artboard D8E-0: BottomNav =
+  // Today · New order · Customers (home / bag / speech-bubble glyphs per the
+  // artboard). First key ("today") is the bare /cashier route (C1, lands 6c);
+  // "customers" is C6 (built 6a, app/cashier/customers); "new-order" is C2 (6c).
   "/cashier": [
-    { key: "new-order", label: "New Order", icon: ShoppingCart },
-    { key: "history", label: "History", icon: History },
+    { key: "today", label: "Today", icon: Home },
+    { key: "new-order", label: "New Order", icon: ShoppingBag },
+    { key: "customers", label: "Customers", icon: MessageSquare },
   ],
   "/store-manager": [
     { key: "hub", label: "Hub", icon: LayoutGrid },

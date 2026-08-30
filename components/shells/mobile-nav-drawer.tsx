@@ -136,7 +136,10 @@ const NAV_GROUPS: DrawerNavGroupDef[] = [
     items: [
       { key: "catalog", label: "Catalog", href: "/admin/catalog", icon: ICON_CATALOG },
       { key: "stock", label: "Ledger", href: "/admin/stock", icon: ICON_STOCK },
-      { key: "sales", label: "Sales", href: "/admin/sales", icon: ICON_SALES },
+      // M2 6b: mirrors admin-shell.tsx — "Sales" → Admin Orders list (A3);
+      // "Derived sales" → Canteen Derived Sales (A4).
+      { key: "orders", label: "Sales", href: "/admin/orders", icon: ICON_SALES },
+      { key: "derived-sales", label: "Derived sales", href: "/admin/canteen/derived-sales", icon: ICON_SALES },
       { key: "handovers", label: "Handovers", href: "/admin/handovers", icon: ICON_HANDOVERS },
     ],
   },

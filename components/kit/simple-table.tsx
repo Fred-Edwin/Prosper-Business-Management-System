@@ -11,11 +11,34 @@
 //   - `sortable` columns render a header <button> with `aria-sort` + a caret
 //     (.kit-interactive); `onSort(key)` toggles.
 //   - minimal table semantics: role="table" / "row" / "columnheader" / "cell".
+//
+// M2 6b: `rowChevron` — opt-in trailing `›` on clickable rows only (A1/A2/A3/A4
+// artboards draw one on every clickable row). Off (default) → byte-identical to
+// before. On: a fixed-width w-[24px] trailing slot is added to the header (empty
+// spacer) and to each clickable body row (a right-pointing chevron), so column
+// lanes stay aligned. Only takes effect when `onRowClick` is also set.
 "use client";
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { EmptyState, type EmptyStateProps } from "./empty-state";
+
+// Trailing row affordance — matches the A1 artboard (16×16, ChevronRight,
+// --text-tertiary, 1.5 stroke) in a w-[24px] right-aligned slot.
+const ROW_CHEVRON = (
+  <div className="w-[24px] shrink-0 flex justify-end" aria-hidden>
+    <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+      <polyline
+        points="9 18 15 12 9 6"
+        fill="none"
+        stroke="var(--text-tertiary)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  </div>
+);
 
 export interface SimpleTableColumn<Row> {
   key: string;
@@ -40,6 +63,11 @@ export interface SimpleTableProps<Row> {
   emptyState?: EmptyStateProps;
   sort?: { key: string; direction: "asc" | "desc" };
   onSort?: (key: string) => void;
+  /**
+   * Render a trailing `›` chevron on each clickable row (and a matching header
+   * spacer). Opt-in — off by default and only active when `onRowClick` is set.
+   */
+  rowChevron?: boolean;
   className?: string;
 }
 
@@ -61,8 +89,10 @@ export function SimpleTable<Row>({
   emptyState,
   sort,
   onSort,
+  rowChevron = false,
   className,
 }: SimpleTableProps<Row>) {
+  const showChevron = rowChevron && !!onRowClick;
   return (
     <div
       role="table"
@@ -116,6 +146,7 @@ export function SimpleTable<Row>({
             </div>
           );
         })}
+        {showChevron && <div className="w-[24px] shrink-0" aria-hidden />}
       </div>
 
       {/* Body */}
@@ -195,6 +226,7 @@ export function SimpleTable<Row>({
               className={cn(rowCls, "kit-row kit-focus-ring cursor-pointer")}
             >
               {inner}
+              {showChevron && ROW_CHEVRON}
             </div>
           ) : (
             <div key={rowKey(row)} role="row" className={rowCls}>

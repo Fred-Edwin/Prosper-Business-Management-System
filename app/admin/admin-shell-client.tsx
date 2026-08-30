@@ -3,15 +3,26 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { AdminShell } from "@/components/shells/admin-shell";
+import { AdminShell, ADMIN_NAV_ITEMS } from "@/components/shells/admin-shell";
 import { ToastProvider } from "@/components/kit/toast";
 
-// Mirrors the route segment used under /admin/<segment> for each nav key
-// in components/shells/admin-shell.tsx's NAV_GROUPS. "dashboard" is the
-// bare /admin root and has no segment of its own.
+// Resolve the active nav key by longest matching href prefix — most items sit
+// at /admin/<key>, but a few (e.g. Derived sales → /admin/canteen/derived-sales)
+// don't, so a bare first-segment match isn't enough. "/admin" itself → dashboard.
 function activeNavKeyFromPathname(pathname: string): string {
-  const segment = pathname.replace(/^\/admin\/?/, "").split("/")[0];
-  return segment || "dashboard";
+  let best = "dashboard";
+  let bestLen = -1;
+  for (const item of ADMIN_NAV_ITEMS) {
+    if (item.href === "/admin") continue;
+    if (
+      (pathname === item.href || pathname.startsWith(item.href + "/")) &&
+      item.href.length > bestLen
+    ) {
+      best = item.key;
+      bestLen = item.href.length;
+    }
+  }
+  return best;
 }
 
 // ADR-36b (resolved 2026-08-27, owner): the Ledger's "Maximize" toggles

@@ -493,11 +493,40 @@ Add an M2 dev-data block so `pnpm dev` shows **populated** states:
   gap), nav wiring, `SimpleTable` chevron, Catalog `category` input,
   remaining Customers state artboards, Customers owner walkthrough.
 
-### 6b
-- **Admin shell responsive:** _…_
-- **Nav wired:** _…_
-- **`SimpleTable` chevron:** _…_
-- **Customers walkthrough:** _date, roles, sign-off / defects._
+### 6b (done 2026-08-30 — owner walkthrough still owed)
+- **Admin shell responsive:** mobile chrome (`6BD-0` header + `1ZP-0`
+  drawer) **merged into `components/shells/admin-shell.tsx`**, not a shell
+  swap — sidebar/rail `hidden md:flex`, a `flex md:hidden` header +
+  hamburger opens the existing kit `MobileNavDrawer` (one internal
+  `useState`). `children` renders once. `MobileShellAdmin` is now
+  unreferenced (left in place — valid `6B1-0` transcription; 6d/QA may
+  delete). `admin-shell-client.tsx` active-key → longest href-prefix
+  match against exported `ADMIN_NAV_ITEMS`.
+- **Nav wired:** `admin-shell.tsx` + `mobile-nav-drawer.tsx` — **Sales** →
+  `/admin/orders` (key `orders`), new **Derived sales** →
+  `/admin/canteen/derived-sales` (key `derived-sales`) in Operations.
+  Cashier bottom nav (`staff-shell-client.tsx`) → **Today · New Order ·
+  Customers** (`today` = bare `/cashier`; glyphs per `D8E-0`).
+- **`SimpleTable` chevron:** opt-in `rowChevron?: boolean` — off =
+  byte-identical; on (+ `onRowClick`) = a `w-[24px]` trailing slot
+  (header spacer + `ChevronRight` per clickable row). Story `RowChevron`
+  + one new baseline `kit-simpletable--row-chevron.png` (no existing
+  baseline moved). `kit-audit.md` / `component-states.md` updated. Set on
+  A1; A2 ledger rows aren't click targets so no chevron there.
+- **Catalog `category`:** free-text `<FormField label="Category">` in the
+  product drawer's General Information, wired to create/update body.
+  `catalog.screen.test.tsx` asserts it round-trips.
+- **Customers artboards verified:** `E41-0` `DZ0-0` `E97-0` / `EXK-0`
+  `F23-0` / `D8E-0` `DBH-0` `DF9-0` — all **structural** states match;
+  only minor copy deltas (shorter EmptyState descriptions; A1 error shows
+  the live error string; C6 toast omits the amount — `RepaymentForm.onDone`
+  carries none, shared with A1, deferred). Logged in PROGRESS for QA.
+- **Gates:** `tsc` 0; kit `test:visual`+`test:a11y` green (181/181, 1 new
+  snapshot); `catalog.screen.test.tsx` 10/10. **Full `pnpm test` deferred
+  to 6d** (owner directive — run once, at the end).
+- **Customers walkthrough:** _PENDING — owner drives C6 (Cashier) + A1/A2
+  (Admin) on `pnpm dev`. Needs a minimal customer seed block or a couple
+  added by hand._
 
 ### 6c
 - **Screen routes chosen (C2/C3/C4/C5):** _…_

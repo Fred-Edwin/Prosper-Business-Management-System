@@ -19,12 +19,81 @@ Running status log, updated at the end of every sprint session.
 
 **Plan:** `docs/sprints/milestone-2-plan.md` (living — Session 6 split
 into 6a / 6b / 6c / 6d).
-**Status:** Sessions 2, 3, 4, 5 done; 1a + 1b done. **Session 6a done**
-(backend gap-fills + Customers feature). Sessions **6b / 6c / 6d pending**
-(frontend assembly of the remaining screens + shell/nav), then Session 7
-(QA). S1a + S3 + S4 + S5 sit on `feat/m2-session-4-orders`; 6a is on
-`feat/m2-session-6-screens`. Merge order to `main`: the whole M2 chain →
-6a → 6b → 6c → 6d → S7 (one PR after QA, mirroring how M1 landed).
+**Status:** Sessions 2, 3, 4, 5 done; 1a + 1b done. **Sessions 6a + 6b
+done** (backend gap-fills + Customers feature; responsive Admin shell +
+nav wiring + `SimpleTable` rowChevron + Catalog `category` field).
+Sessions **6c / 6d pending** (Restaurant Orders; Admin Orders + Canteen),
+then Session 7 (QA). S1a + S3 + S4 + S5 sit on
+`feat/m2-session-4-orders`; 6a + 6b are on `feat/m2-session-6-screens`.
+Merge order to `main`: the whole M2 chain → 6a → 6b → 6c → 6d → S7 (one
+PR after QA, mirroring how M1 landed).
+
+### 2026-08-30 — M2 Session 6b: responsive Admin shell + nav wiring + SimpleTable rowChevron + Catalog category (Developer) — DONE
+
+Development Sprint (frontend assembly). Closes the five 6a-flagged frontend
+gaps + the one approved kit change. No schema, no `lib/domain`.
+
+- **6b.1 — Admin shell responsive.** The mobile chrome (`6BD-0` header +
+  `1ZP-0` drawer) was **merged into `components/shells/admin-shell.tsx`**
+  rather than swapping shell components: below `--bp-md` the fixed
+  sidebar / icon-rail is `hidden md:flex`, a `flex md:hidden` header with
+  a hamburger opens the already-built kit **`MobileNavDrawer`** (one
+  internal `useState`, the same rule as `MobileShellAdmin` / `StaffShell`).
+  `children` renders once. At/above `--bp-md` the 240px sidebar is
+  unchanged. `MobileShellAdmin` (`components/shells/mobile-shell-admin.tsx`)
+  is now unreferenced — left in place (a valid transcription of `6B1-0`);
+  QA/6d may remove it.
+- **6b.2 — Admin nav wired.** In both `admin-shell.tsx` and
+  `mobile-nav-drawer.tsx`: **Sales** → `/admin/orders` (A3, key `orders`);
+  new **Derived sales** item → `/admin/canteen/derived-sales` (A4, key
+  `derived-sales`) in the Operations group (`canteen-derived-sales-flow.md
+  §G` allows a top-level item). Active-nav resolution moved from
+  first-path-segment to **longest matching href prefix** (exported
+  `ADMIN_NAV_ITEMS`) so `/admin/canteen/derived-sales` lights the right
+  item. Links land ahead of their screens — a 404 until 6d is acceptable
+  per the handoff.
+- **6b.3 — Cashier bottom nav** (`components/layout/staff-shell-client.tsx`)
+  → **Today · New Order · Customers** (was New Order · History). `today`
+  key = the bare `/cashier` route (C1, lands 6c); `customers` →
+  `/cashier/customers` (C6, built 6a); `new-order` → C2 (6c). Glyphs
+  match artboard `D8E-0` (home / bag / speech-bubble).
+- **6b.4 — `SimpleTable` `rowChevron`** — opt-in `rowChevron?: boolean`.
+  Off (default) → byte-identical. On (and `onRowClick` set): a fixed
+  `w-[24px]` trailing slot — header spacer + a `ChevronRight`
+  (`--text-tertiary`) per clickable row — so column lanes stay aligned.
+  Matches the M2 A1–A4 artboards. New story `Kit/SimpleTable → RowChevron`
+  + baseline `kit-simpletable--row-chevron.png` (only that snapshot
+  added; no existing baseline moved). `kit-audit.md` /
+  `component-states.md` updated. First consumer: **A1**
+  (`customers-client.tsx`). A2's ledger rows are not click targets — no
+  chevron there.
+- **6b.5 — Catalog `category` field** (`app/admin/catalog/product-drawer.tsx`)
+  — one free-text `<FormField label="Category">` in "General Information",
+  wired to the create/update body (`"" → null`). Domain + Zod already
+  accepted it (6a). Without this C2/K1's tabs are permanently
+  "Uncategorised". `catalog.screen.test.tsx` asserts it round-trips into
+  the create payload.
+- **6b.6 — Customers state artboards verified** (`E41-0` `DZ0-0` `E97-0` /
+  `EXK-0` `F23-0` / `D8E-0` `DBH-0` `DF9-0`). **All structural states
+  match** — correct kit component in the correct place. Minor **copy**
+  deltas only (6a-built screens, not state gaps) — logged for QA:
+  empty/filtered-empty/zero-history `EmptyState` descriptions are shorter
+  than the artboards'; A1 error shows the live error string rather than
+  the artboard's static line; C6 success toast is "Repayment recorded ·
+  {name}" vs the artboard's "… · KES {amt} from {name}" (the shared
+  `RepaymentForm.onDone` carries no amount — deferred, would touch A1
+  too).
+
+**Gate state:** `tsc --noEmit` 0 · kit `test:visual` + `test:a11y` green
+(181/181, 1 new snapshot) · `catalog.screen.test.tsx` 10/10 · full
+`pnpm test` run <PENDING — fill on completion>.
+
+**Owner walkthrough (Customers & Credit, Cashier C6 + Admin A1/A2) —
+still owed** (the real e2e gate). Needs seed data: minimal customer block
+or a couple added by hand during the walk (full M2 seed is a 6d task).
+
+**Flow-doc-vs-behaviour / doc gaps for QA:** none new. (Canteen
+negative-sold gap from S5 still stands for 6c/6d.)
 
 ### 2026-08-30 — M2 Session 6a: backend gap-fills + Customers screens (Developer) — DONE
 

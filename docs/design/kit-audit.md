@@ -412,6 +412,7 @@ use `<EmptyState>`), loading (GLOBAL — `.kit-skeleton` rows).
 | keyboard | **rows are `<div onClick>`** — not keyboard-focusable/operable when `onRowClick` is set. Need `role="button"` + `tabIndex=0` + Enter/Space, or a real `<button>`/`<a>` inside. Also no table semantics. | _tbd_ |
 | ARIA | no `role="table"` / `row` / `columnheader` / `cell`; no `aria-sort` (component has no sort controls today — if a screen adds them they get `.kit-interactive` + `aria-sort`, document the contract). Clickable rows need an accessible name + `role`. | _tbd_ |
 | notes | Add `loading` + empty slot + keyboard-operable rows + minimal grid/table roles. | |
+| `rowChevron` (M2 6b) | n/a — no trailing affordance on clickable rows. | Opt-in `rowChevron?: boolean`; off = byte-identical. On (+ `onRowClick`): fixed `w-[24px]` trailing slot — header spacer + a `ChevronRight` (`--text-tertiary`) per clickable row — so lanes stay aligned. Matches the M2 A1–A4 artboards. Story `RowChevron` + baseline `kit-simpletable--row-chevron.png`. First consumer: A1. |
 
 ### DenseLedger — `components/kit/dense-ledger.tsx`
 

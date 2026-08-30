@@ -84,6 +84,9 @@ export function ProductDrawer({
     "ingredient",
   );
   const [unitLabel, setUnitLabel] = React.useState("");
+  // M2 6b: Admin-set menu category — free-text, optional. Powers the C2 / K1
+  // category tab rows (`null` → an "Uncategorised" tab).
+  const [category, setCategory] = React.useState("");
   const [buyingPrice, setBuyingPrice] = React.useState("0.00");
   const [rows, setRows] = React.useState<LocationRowState[]>([]);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>(
@@ -102,6 +105,7 @@ export function ProductDrawer({
       setName(product.name);
       setKind(product.kind);
       setUnitLabel(product.unitLabel);
+      setCategory(product.category ?? "");
       setBuyingPrice(product.buyingPrice ?? "0.00");
       setRows(
         locations.map((loc) => {
@@ -120,6 +124,7 @@ export function ProductDrawer({
       setName("");
       setKind("ingredient");
       setUnitLabel("");
+      setCategory("");
       setBuyingPrice("0.00");
       setRows(
         locations.map((loc) => ({
@@ -160,6 +165,7 @@ export function ProductDrawer({
       name: name.trim(),
       kind,
       unitLabel: unitLabel.trim(),
+      category: category.trim() === "" ? null : category.trim(),
       buyingPrice: isDish ? "0" : buyingPrice.trim(),
       locations: rows.map((r) => ({
         locationId: r.locationId,
@@ -303,6 +309,34 @@ export function ProductDrawer({
                 value={unitLabel}
                 onChange={(e) => setUnitLabel(e.target.value)}
                 placeholder="e.g. kg, pcs, crate, packet"
+                className="font-ui [color:var(--text-primary)] text-sm/micro w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
+              />
+            </div>
+          )}
+        </FormField>
+
+        {/* M2 6b: menu category — free-text, optional. Groups the C2 / K1
+            product grids into category tabs ("" → the "Uncategorised" tab). */}
+        <FormField
+          label="Category"
+          hint="Optional. Groups this item on the Cashier order grid (e.g. Mains, Drinks)."
+          error={fieldErrors.category}
+          className="w-full"
+        >
+          {({ id, "aria-describedby": describedBy, "aria-invalid": invalid }) => (
+            <div
+              className={`${fieldBox} ${
+                invalid ? "border-danger" : "[border-color:var(--border-strong)]"
+              }`}
+              data-invalid={invalid || undefined}
+            >
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder="e.g. Mains, Drinks, Sides"
                 className="font-ui [color:var(--text-primary)] text-sm/micro w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
               />
             </div>

@@ -132,9 +132,13 @@ describe("/admin/catalog — kit composition", () => {
 
     await user.type(within(dialog).getByLabelText("Product Name"), "New Ingredient");
     await user.type(within(dialog).getByLabelText("Unit Label"), "kg");
+    // M2 6b: the Category field is optional and free-text; it round-trips into
+    // the create payload so C2 / K1 can group by it.
+    await user.type(within(dialog).getByLabelText("Category"), "Mains");
     await user.click(within(dialog).getByRole("button", { name: "Save Product" }));
 
     expect(state.create).toHaveBeenCalledOnce();
+    expect(state.create.mock.calls[0][0]).toMatchObject({ category: "Mains" });
     expect(await screen.findByText("Product created")).toBeInTheDocument();
   });
 

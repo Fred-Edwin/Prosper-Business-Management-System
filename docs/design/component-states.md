@@ -272,6 +272,7 @@ D3 on the dot+pill vs dot+text rendering.)
 | loading (skeleton rows) | GLOBAL — 3 shimmer rows using `--surface-subtle` / `--surface-hover`; one rule for both tables. |
 | **Archived-tab row treatment** (Session 15, ADR-47 §1) | **SCREEN COMPOSITION, not a kit change.** On the "Archived" tab (Catalog + Assets), each row shows a neutral **"Archived"** `StatusChip` in the name cell and the last-column action is **"Unarchive"** (accent text) instead of "Edit". Same columns otherwise. Artboard: `Admin Catalog — Archived tab [S15]`. |
 | **row action = single "Edit"** (Session 15, ADR-46 §5) | Confirmed: every M1 `SimpleTable` (Catalog + Assets) has **one "Edit" affordance** in the last column, **no Delete column**. Row click is not wired to open Edit in M1. This matches the approved `6ZO-0` / `8DL-0` artboards; the shipped `catalog-client.tsx` diverged with a second Delete button (fixed in Session 16). |
+| **`rowChevron` — trailing `›` on clickable rows** (M2 6b) | Opt-in `rowChevron?: boolean` prop. Off (default) → byte-identical to before. On (and `onRowClick` set): a fixed `w-[24px]` trailing slot is added to the header (empty spacer) and to each clickable body row (a `ChevronRight`, `--text-tertiary`, 1.5 stroke), so column lanes stay aligned. Matches the M2 A1/A2/A3/A4 artboards, which draw a `›` on every clickable row. Story: `Kit/SimpleTable → RowChevron`; baseline `kit-simpletable--row-chevron.png`. First consumer: A1 (`app/admin/customers/customers-client.tsx`). |
 
 ### C16 — Dense Ledger
 
@@ -885,7 +886,7 @@ per-component before → after record).
 | C12 PillFilter | active/inactive/hover/**disabled**/focus | **implemented** — now `role="radiogroup"` (was `aria-pressed`); arrows. **Pattern pending owner review** |
 | C13 StatusChip | 5 semantic variants | **no change needed** (display-only, verified) |
 | C14 ConditionChip | 3 variants | **no change needed** |
-| C15 SimpleTable | header/row/**row hover**/empty/loading | **implemented** — clickable rows are `<button>`s; `loading` skeleton; `<EmptyState>` slot; `sortable` + `aria-sort` |
+| C15 SimpleTable | header/row/**row hover**/empty/loading/**rowChevron** | **implemented** — clickable rows are keyboard-operable `role="row"`; `loading` skeleton; `<EmptyState>` slot; `sortable` + `aria-sort`; opt-in `rowChevron` trailing `›` (M2 6b) |
 | C16 DenseLedger | header/row/**row hover**/**corrected cell**/empty/loading | **implemented** — `.kit-row` gated on `onCellClick`; cells are keyboard-operable; `loading` skeleton |
 | C17 FrictionDeleteDialog | pending/confirmed/**retype-mismatch**/submitting | **implemented** — full overlay contract; field neutral→danger on mismatch; footer `<Button>` |
 | C18 Drawer | shell/open/footer-disabled/submitting/scrolled | **implemented** — scrim + opaque panel + focus-trap + scroll-lock + inert + focus-restore + single-overlay guard + slide; `panel`/`rail` |

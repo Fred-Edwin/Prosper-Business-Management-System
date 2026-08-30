@@ -103,6 +103,30 @@ export const ClickableRowsKeyboard: Story = {
   },
 };
 
+export const RowChevron: Story = {
+  name: "rowChevron ⇒ trailing › on clickable rows + header spacer (M2 6b)",
+  args: {
+    columns: COLUMNS,
+    rows: ROWS,
+    rowKey: (r) => r.id,
+    onRowClick: () => {},
+    rowLabel: (r) => `Open ${r.name}`,
+    rowChevron: true,
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    // one chevron slot per clickable body row (header spacer carries no svg)
+    const rows = c.getAllByRole("row", { name: /^Open / });
+    await expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      await expect(row.querySelector("svg polyline")).toBeInTheDocument();
+    }
+    // header row gained a matching fixed-width spacer so lanes stay aligned
+    const header = c.getAllByRole("row")[0];
+    await expect(header.lastElementChild).toHaveClass("w-[24px]");
+  },
+};
+
 export const Empty: Story = {
   name: "Empty ⇒ <EmptyState> slot",
   args: {

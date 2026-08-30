@@ -20,6 +20,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { MobileNavDrawer } from "./mobile-nav-drawer";
 
 interface AdminNavItemDef {
   key: string;
@@ -126,7 +127,11 @@ const NAV_GROUPS: AdminNavGroupDef[] = [
     items: [
       { key: "catalog", label: "Catalog", href: "/admin/catalog", icon: ICON_CATALOG },
       { key: "stock", label: "Ledger", href: "/admin/stock", icon: ICON_STOCK },
-      { key: "sales", label: "Sales", href: "/admin/sales", icon: ICON_SALES },
+      // M2 6b: "Sales" now routes to the Admin Orders list (A3, app/admin/orders).
+      { key: "orders", label: "Sales", href: "/admin/orders", icon: ICON_SALES },
+      // M2 6b: Canteen Derived Sales (A4). `canteen-derived-sales-flow.md §G`
+      // allows a top-level "Derived sales" item — kept in Operations next to Sales.
+      { key: "derived-sales", label: "Derived sales", href: "/admin/canteen/derived-sales", icon: ICON_SALES },
       { key: "handovers", label: "Handovers", href: "/admin/handovers", icon: ICON_HANDOVERS },
     ],
   },
@@ -154,6 +159,13 @@ const NAV_GROUPS: AdminNavGroupDef[] = [
 ];
 
 const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+
+// Flat {key, href} list — the shell client resolves the active nav key against
+// this (longest matching href prefix) so multi-segment routes like
+// /admin/canteen/derived-sales light the right item.
+export const ADMIN_NAV_ITEMS: { key: string; href: string }[] = ALL_ITEMS.map(
+  ({ key, href }) => ({ key, href }),
+);
 
 const ICON_PANEL = (
   <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
@@ -206,13 +218,18 @@ export function AdminShell({
   onToggleCollapsed,
   children,
 }: AdminShellProps) {
+  // M2 6b: below --bp-md the fixed sidebar is hidden and a hamburger opens the
+  // MobileNavDrawer (Paper 6B1-0 / 1ZP-0). The ONE internal useState the mobile
+  // shell needs for its own drawer (same rule as MobileShellAdmin / StaffShell).
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+
   return (
-    <div className="[font-synthesis:none] flex h-screen w-full antialiased text-caption/micro">
+    <div className="[font-synthesis:none] flex flex-col md:flex-row h-screen w-full antialiased text-caption/micro">
       {collapsed ? (
-        /* Icon Rail — 6GN-0 */
+        /* Icon Rail — 6GN-0 (≥ --bp-md only) */
         <nav
           aria-label="Primary"
-          className="flex flex-col w-[56px] h-full shrink-0 bg-(--nav-bg)"
+          className="hidden md:flex flex-col w-[56px] h-full shrink-0 bg-(--nav-bg)"
         >
           <div className="flex flex-col items-center pt-[20px] pb-[16px] gap-[16px]">
             <div
@@ -255,10 +272,10 @@ export function AdminShell({
           </div>
         </nav>
       ) : (
-        /* Side nav — 64I-0 */
+        /* Side nav — 64I-0 (≥ --bp-md only) */
         <nav
           aria-label="Primary"
-          className="flex flex-col w-[240px] shrink-0 self-stretch bg-(--nav-bg)"
+          className="hidden md:flex flex-col w-[240px] shrink-0 self-stretch bg-(--nav-bg)"
         >
           <div className="flex items-center shrink-0 gap-(--sp-3) w-[240px] pt-[20px] pb-[16px] justify-between px-[16px]">
             <div
@@ -379,10 +396,41 @@ export function AdminShell({
       )}
 
       {/* Body — 64A-0 / 67U-0 */}
-      <div className="flex grow min-w-0">
-        <div className="flex items-start flex-1 flex-col">
-          <div className="flex flex-col grow min-w-0 self-stretch h-screen">
-            <div className="flex items-center h-[44px] shrink-0 gap-(--sp-4) pr-[24px] pl-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+      <div className="flex grow min-w-0 min-h-0">
+        <div className="flex items-start flex-1 flex-col min-h-0">
+          <div className="flex flex-col grow min-w-0 self-stretch md:h-screen min-h-0">
+            {/* Mobile header — 6BD-0 (< --bp-md). Hamburger opens MobileNavDrawer. */}
+            <div className="flex md:hidden items-center h-[48px] shrink-0 px-[16px] gap-[12px] bg-(--surface-page) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(true)}
+                aria-label="Open menu"
+                className="flex items-center justify-center w-[32px] h-[32px] shrink-0 rounded-sm kit-interactive kit-focus-ring"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                  <line x1="3" y1="12" x2="21" y2="12" stroke="var(--text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  <line x1="3" y1="6" x2="21" y2="6" stroke="var(--text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  <line x1="3" y1="18" x2="21" y2="18" stroke="var(--text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
+                {toolbarTitle}
+              </div>
+              <div className="grow" />
+              <button
+                type="button"
+                onClick={onAccountClick}
+                aria-label="Account"
+                className="w-[28px] h-[28px] flex items-center justify-center shrink-0 rounded-[50%] bg-gray-700 kit-interactive kit-focus-ring"
+              >
+                <span className="font-ui font-(--weight-medium) text-(--nav-text-active) text-micro/micro">
+                  {accountInitials}
+                </span>
+              </button>
+            </div>
+
+            {/* Desktop toolbar — 64A-0 (≥ --bp-md) */}
+            <div className="hidden md:flex items-center h-[44px] shrink-0 gap-(--sp-4) pr-[24px] pl-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
               {collapsed && (
                 <button
                   type="button"
@@ -418,6 +466,24 @@ export function AdminShell({
           </div>
         </div>
       </div>
+
+      {/* Sidebar drawer — 1ZP-0 (< --bp-md; portaled, closed until the
+          hamburger opens it). Reuses the shared MobileNavDrawer. */}
+      <MobileNavDrawer
+        open={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        activeNavKey={activeNavKey}
+        onNavigate={(href) => {
+          setMobileNavOpen(false);
+          onNavigate(href);
+        }}
+        brandLabel={toolbarTitle}
+        brandSubLabel={accountRole}
+        accountName={accountName}
+        accountRole={accountRole}
+        accountInitials={accountInitials}
+        onAccountClick={onAccountClick}
+      />
     </div>
   );
 }

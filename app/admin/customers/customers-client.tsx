@@ -234,6 +234,8 @@ export function CustomersClient() {
                 rowKey={(r) => r.id}
                 onRowClick={openRepayment}
                 rowLabel={(r) => `Record repayment for ${r.name}`}
+                rowChevron
+                /* DU2-0 draws a trailing › on every clickable row (M2 6b). */
                 loading={loading && customers.length === 0}
                 emptyState={{
                   variant: filtered ? "filtered" : "default",
