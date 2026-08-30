@@ -217,9 +217,14 @@ export function MobileNavDrawer({
   if (!mounted || !host) return null;
 
   return createPortal(
+    // Non-positioned wrapper (mirrors the kit `Drawer`) — a `position: fixed`
+    // wrapper with `z-index: auto` creates a level-0 stacking context that
+    // TRAPS the scrim / panel below a `PageShell` sticky toolbar (`--z-sticky`
+    // = 1100). Instead the scrim (`.kit-scrim`, `fixed`, `--z-overlay`) and the
+    // panel (`fixed`, `--z-drawer`) escape straight to the root context.
     <div
       ref={rootRef}
-      className="[font-synthesis:none] fixed inset-0 flex antialiased text-caption/micro"
+      className="[font-synthesis:none] antialiased text-caption/micro"
     >
       {/* Scrim — the shared blurred/dimmed backdrop (was `bg-black/30`). */}
       <div className="kit-scrim" data-state={phase} onClick={onClose} aria-hidden />
@@ -235,7 +240,7 @@ export function MobileNavDrawer({
         onTransitionEnd={(e) => {
           if (e.target === panelRef.current && phase === "closing") endExit();
         }}
-        className="kit-drawer-panel relative flex flex-col w-[310px] h-full shrink-0 [box-shadow:var(--shadow-drawer)] bg-(--nav-bg) [z-index:var(--z-drawer)]"
+        className="kit-drawer-panel fixed inset-y-0 left-0 flex flex-col w-[310px] h-full shrink-0 [box-shadow:var(--shadow-drawer)] bg-(--nav-bg) [z-index:var(--z-drawer)]"
       >
         {/* Drawer Brand Header — 1ZR-0 */}
         <div className="flex items-center justify-between pt-[24px] pb-[16px] h-[72px] shrink-0 px-[16px] border-b border-b-solid border-b-(--nav-border)">
