@@ -102,9 +102,14 @@ describe("stock reads are scoped to the actor's location", () => {
 });
 
 describe("catalogue read scope", () => {
-  it("a cashier cannot read the product catalogue at all", async () => {
+  it("a cashier can read products but buyingPrice is stripped to null", async () => {
+    // M2 Session 6 (owner-approved): the Cashier's C2 New-Order product
+    // grid reads the catalogue. buyingPrice is still stripped for every
+    // non-admin caller — no cost/margin leak (plan §3.6).
     actAs({ id: cashierId, role: "cashier" });
-    expect((await api.listProducts()).status).toBe(403);
+    const res = await api.listProducts();
+    expect(res.status).toBe(200);
+    for (const p of res.body.data) expect(p.buyingPrice).toBeNull();
   });
 
   it("a store manager can read products but buyingPrice is stripped to null", async () => {

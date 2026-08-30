@@ -72,6 +72,8 @@ export async function recordRepayment(
       data: {
         customerId: input.customerId,
         amount,
+        account: input.account,
+        note: input.note?.trim() ? input.note.trim() : null,
         recordedById: ctx.actorId,
         occurredAt,
       },

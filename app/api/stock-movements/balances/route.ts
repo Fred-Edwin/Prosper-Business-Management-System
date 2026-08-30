@@ -9,10 +9,15 @@ import { DomainError, getDerivedStockBalances } from "@/lib/domain/stock";
 
 // Route Handlers are dynamic by default (DB + session). No caching config.
 
+// The Cashier's C2 New-Order grid reads the derived Restaurant balance
+// per product for the §3.8 over-stock block (a courtesy — the server is
+// the gate). Location scoping below still confines a location-bound role
+// to its own location; the Cashier is not location-bound.
 const STOCK_ROLES: readonly Role[] = [
   "admin",
   "store_manager",
   "canteen_attendant",
+  "cashier",
 ];
 
 const querySchema = z.object({

@@ -31,6 +31,9 @@ export async function listProducts(
   if (filter.search && filter.search.trim() !== "") {
     where.name = { contains: filter.search.trim(), mode: "insensitive" };
   }
+  if (filter.category && filter.category.trim() !== "") {
+    where.category = filter.category.trim();
+  }
 
   const rows = await prisma.product.findMany({
     where,

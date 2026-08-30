@@ -78,6 +78,7 @@ export function moneyString(value: Prisma.Decimal): string {
 export function toOrderView(row: Order & { lines: OrderLine[] }): OrderView {
   return {
     id: row.id,
+    number: row.number,
     locationId: row.locationId,
     cashierId: row.cashierId,
     orderType: row.orderType,

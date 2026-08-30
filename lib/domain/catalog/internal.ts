@@ -32,6 +32,7 @@ export function toProductView(
     kind: row.kind,
     unitLabel: row.unitLabel,
     buyingPrice: opts.stripBuyingPrice ? null : money(row.buyingPrice),
+    category: row.category ?? null,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

@@ -76,11 +76,17 @@ describe("GET /api/products — role access (D1 regression)", () => {
     expect(status).toBe(200);
   });
 
-  it("cashier is still 403 (not a stock role)", async () => {
+  it("cashier gets 200 (M2: C2 New-Order grid) with buyingPrice stripped to null", async () => {
+    // M2 Session 6 (owner-approved): the Cashier's C2 product grid needs
+    // the catalogue read. `listProducts` still strips buyingPrice for any
+    // non-admin, so no margin leaks (plan §3.6).
     mockSession.current = sessionFor("cashier");
     const { status, body } = await getProducts();
-    expect(status).toBe(403);
-    expect(body.error.code).toBe("FORBIDDEN");
+    expect(status).toBe(200);
+    const row = body.data.find(
+      (p: { id: string }) => p.id === "test-d1-product",
+    );
+    expect(row.buyingPrice).toBeNull();
   });
 
   it("an inactive staff session is 401", async () => {

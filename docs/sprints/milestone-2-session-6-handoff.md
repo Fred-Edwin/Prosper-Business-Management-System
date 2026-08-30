@@ -1,276 +1,512 @@
-# M2 Session 6 Handoff — Developer: Assemble & wire ALL M2 screens (frontend)
+# M2 Session 6 Handoff — Frontend assembly (split into 6a / 6b / 6c / 6d)
 
-**Status:** READY. Every dependency has landed:
-- **S1a + S1b (Design)** — all 12 screens (C1–C6, A1–A4, K1–K2) approved in
-  Paper ("Prosper Hotel", page "Shell+Component kit"), every structural
-  state, `… [M2-01]` artboards. 3 flow docs written + updated (canteen
-  re-spun 2026-08-30 — see §5).
-- **S2 (Kit)** — `QuantityStepper` tap-to-type verified + ADR-42-gated
-  (`kit-audit.md` §1, `component-states.md` §9 C10 = "implemented +
-  gated (M2-02)"). Use it as-is; **do not touch `components/kit/`**.
-- **S3 (Money + Customers)**, **S4 (Orders)**, **S5 (Canteen derived
-  sales)** — all backend merged; `pnpm test` 350/350, `tsc` 0, `build`
-  clean.
+**Session 6a is DONE** (2026-08-30). This file is now the handoff for
+**6b, 6c, 6d** — the rest of the M2 frontend. Read `§0` for what 6a
+changed under you, then your session's section (`§6b` / `§6c` / `§6d`).
 
-**Role:** Developer (Development Sprint — frontend assembly + wiring). One
-role: `app/**` screen routes + per-screen client components + per-feature
-hooks + `tests/screens/*.screen.test.tsx` + the doc updates in §8.
-**No changes to `lib/domain/**`, `lib/api/**`, `components/kit/**`, or any
-`prisma/**`.** If a screen needs a domain change or a UI decision the
-design didn't make — **STOP, write it in `PROGRESS.md`, and flag it.** It
-goes back to a Design Sprint or a domain follow-up. You do not design here.
+**Role for all three:** Developer (Development Sprint — frontend assembly
++ wiring). `app/**` screen routes + per-screen client components +
+per-feature hooks + `tests/screens/*.screen.test.tsx` + the shell/nav
+changes named below + the doc updates in `§9`.
 
-**Read before any code:**
-1. `docs/design/export-workflow.md` — **the binding method.** M2 model:
-   screenshot the approved Paper artboard → assemble kit components in the
-   real route to match it → wire to the real `lib/domain` call → gate with
-   a `*.screen.test.tsx` spec → owner walkthrough. **No `get_jsx`
-   transcription, no skeleton export, no `fixtures.ts`, no
-   `/design-preview` route.** Paper is the visual acceptance target only.
-2. `docs/sprints/milestone-2-plan.md` — §1 scope, §3 cross-cutting
-   contracts (**all of it**), §5 screen table, §6 (every candidate =
-   "compose from proven kit"), §7 row 6, §8 guardrails, §9 DoD.
-3. `docs/design/flows/restaurant-sales-flow.md`,
-   `customers-credit-flow.md`, `canteen-derived-sales-flow.md` — the
-   per-feature user flow + every state's copy. **The canteen flow was
-   re-spun 2026-08-30** (see §5 — the negative-sold narrative is gone;
-   it's reject + same-day undo now).
-4. `docs/design/design-principles.md` §9 (ENFORCED interaction contract),
-   `docs/design/component-states.md` §2/§9 (kit state matrix + status),
-   `docs/design/kit-audit.md` (what each component does now).
-5. `docs/API.md` — the "Orders (Restaurant)", "Customers & Credit",
-   "Money", "Canteen" sections (implemented-contract style — the real
-   request/response shapes, per-route roles, error codes).
-6. `docs/sprints/milestone-2-session-{3,4,5}-handoff.md` "Session Notes" →
-   the "For Session 6" blocks. **They spell out the return shapes, the
-   routing rules, and the flags you must honour.**
+**Branch:** continue on `feat/m2-session-6-screens` (6a is committed
+there). Commit per session (`6b`, `6c`, `6d`).
 
 ---
 
-## 0. What this session delivers
+## 0. What Session 6a changed (READ THIS — it changes the contract)
 
-Every M2 screen **live on real data** in its real Next.js route,
-assembled from the proven kit, wired to `lib/domain` through a
-per-feature hook, gated by a jsdom+RTL screen spec — then walked by the
-owner as every relevant role on `pnpm dev`.
+6a started as "assemble all 12 screens" and hit **three backend gaps the
+screen designs need but the plan never built**. The owner approved
+filling them (schema + domain — which the original handoff forbade). All
+merged, `pnpm test` **368/368**, `tsc` 0, `build` clean.
 
-| ID | Route | Shell | Wires to | Key artboards / states |
-|---|---|---|---|---|
-| **C1** | `app/cashier/page.tsx` | Staff mobile | `listOrders` (own, today) + day-open check | populated · empty · day-closed banner · loading |
-| **C2** | `app/cashier/orders/new/*` (build step) | Staff mobile | `GET /api/products` (Restaurant `ProductLocation` + derived Restaurant balance) | tap-to-add 2-col product grid + `category` tab row · line panel · sticky total · **line-blocked (§3.8)** |
-| **C3** | checkout bottom-sheet over C2 | sheet | `createOrder` | Cash · M-Pesa · Credit-no-customer · Credit-attached · Delivery(+fee) |
-| **C4** | `app/cashier/orders/[id]/*` | Staff mobile | `editOwnOrder` (same-day) / route to `correctOrder` (Admin, after) | day-open editable · day-closed read-only · corrected |
-| **C5** | customer attach/quick-create sheet over C3 | sheet | `listCustomers`, `createCustomer` | search results · no-match quick-create · phone error |
-| **C6** | `app/cashier/customers/*` | Staff mobile | `listCustomers`, `recordRepayment` | populated · empty · repayment sheet · success |
-| **A1** | `app/admin/customers/page.tsx` | Admin desktop + mobile | `listCustomers`, `recordRepayment`, `createCustomer` | populated · filtered-empty · empty · error · repayment rail-drawer · add-customer rail-drawer · mobile |
-| **A2** | `app/admin/customers/[id]/page.tsx` | Admin desktop + mobile | `getCustomerLedger` | populated · zero history · loading · mobile |
-| **A3** | `app/admin/orders/page.tsx` | Admin desktop + mobile | `listOrders` (all), `correctOrder` | populated · filtered-empty · empty · error · read-only detail drawer · correction form drawer · order+correction linked row-group · mobile. **No delete affordance.** |
-| **A4** | `app/admin/canteen/derived-sales/page.tsx` (or under an existing Sales nav — check `canteen-derived-sales-flow.md` §G) | Admin desktop + mobile | `GET /api/canteen/stock-counts` | populated · **product never counted (Never / — / muted em-dash)** · filtered-empty · loading · mobile |
-| **K1** | `app/canteen/stock-count/*` | Staff mobile, `FlowHeader` | `POST /api/canteen/stock-counts`; **undo** = `DELETE /api/canteen/stock-counts/:id` | product picker (C2 category tab row) · count entered + preview · first-ever count (distinct copy) · **counted-more-than-expected (blocked error)** · validation error · confirm success (Toast) · delete-count confirm · delete success · count-locked-previous-day |
-| **K2** | existing Canteen hub (`app/canteen/hub-client.tsx`) | — | existing hub feed + the derived-sale row type | derived-sale entry at top of `ActivityTimeline` · interleaved with a transfer + opening-stock row |
+### Backend additions — already done, just consume them
 
-**K2 is NOT a new screen** — it's a new entry *type* in the Canteen hub's
-`ActivityTimeline`. Extend the hub's movement→row mapper to render a
-`stockCountId`-linked `sale` as: title "Stock count — {product}",
-subtitle "{n} {unit} sold since {date} · closing {rem}", trailing
-"+KES {y}" green mono. (No correcting-negative case anymore — see §5.)
+| Addition | Where | Use it for |
+|---|---|---|
+| **`OrderView.number`** (`int`, monotonic, e.g. `1043`) | every order domain fn / `GET /api/orders` payload | A2 ledger "Order #1043", A3 list + "Correction of #1043", C1/C4 headers + toasts. A correction is its own `Order` row with its own `number`. |
+| **`Product.category`** (`string \| null`) on `ProductWithLocations` | `GET /api/products` (now `?category=` too) | The C2 New-Order grid + K1 Stock-Count picker **category tab rows** (kit `Tabs`, underline). Group products by `category`; `null` → an "Uncategorised" tab. |
+| **`cashier` in `PRODUCT_READ_ROLES` + `STOCK_ROLES`** | `app/api/products`, `app/api/stock-movements/balances` | C2 can now read the product list + the derived Restaurant balance as a Cashier. `buyingPrice` is still stripped for the Cashier — **do not** surface cost/margin anywhere (plan §3.6). |
+| **`CustomerLedgerEntry.orderNumber` / `.account` / `.note`** | `GET /api/customers/:id` | 6a already wired A2's "Reference" cell. No action unless you touch A2. |
+| Catalog product drawer — **no `category` input yet** | `app/admin/catalog/product-drawer.tsx` | **6b or 6c must add a `category` text/select field** so an Admin can set it, or C2/K1's tabs are always "Uncategorised". Small — one `<TextInput>` wired to the create/update body (`category` is already in the Zod schema + domain). |
+
+Deploy migration:
+`prisma/migrations/20260830120000_m2_s6_order_number_product_category_repayment_detail/`.
+Dev DB already pushed. **Do not add more schema/domain changes without
+owner sign-off** — but the owner has said: *if a fresh feature genuinely
+needs one, raise it, get the go-ahead, fill it properly* (don't ship a
+half-usable screen to stay inside a boundary). Flag → wait → fill.
+
+### `docs/API.md` already updated
+
+Orders / Customers / Catalog sections carry ADR-style notes for every
+addition above. Trust them.
 
 ---
 
-## 1. The per-feature hooks
+## 1. Standing rules for 6b–6d (unchanged from the original handoff)
+
+1. **Compose from the proven kit only.** `PageShell`, `Drawer` (rail,
+   ADR-37b), `BottomSheet`, `FormField`, `SimpleTable`, `DenseLedger` /
+   `DenseSummaryStrip`, `SegmentedControl`, `Select` (searchable),
+   `QuantityStepper`, `CalculatedImpactBanner`, `Tabs`,
+   `ActivityTimeline`, `Toast`, `EmptyState` / `ErrorState`, `IconButton`,
+   `PillFilter`, `Breadcrumb`, `SearchInput`, `MobileNavDrawer`. A **thin
+   per-screen mapper** where the kit's prop shape doesn't fit is expected.
+   **A change to a kit component is not** — except the one 6b task
+   explicitly named (`SimpleTable` chevron). If you reach for another,
+   stop and flag it.
+2. **Money + quantities are decimal strings end to end.** The hook never
+   `Number()`-parses them for the domain call; format with local helpers
+   only for display.
+3. **No new UI/UX decisions.** If a screen needs a state the kit +
+   artboards don't cover, flag it — it's a Design touch-up.
+4. **Cross-cutting contracts (plan §3)** — verified by screen specs:
+   - §3.2 — a cash/M-Pesa order → one `MoneyMovement`; a **credit** order
+     → a `Debt`, `customerId` required (C3 blocks Confirm until a
+     customer is attached; the API 400s otherwise).
+   - §3.3 / §3.4 — a Cashier edits their **own** order only while its
+     business day **is today** (`editOwnOrder`). After that C4 is
+     read-only + routes to the Admin correction path (A3 → `correctOrder`,
+     Admin-only). The API enforces this regardless.
+   - §3.5 — canteen is cash-only, no credit, no M-Pesa, no account picker
+     on K1. The derived-sale preview comes straight from
+     `recordStockCount`'s return; `periodStart: null` ⇒ first-count copy.
+   - §3.6 — a Cashier's C1 is their own orders only; **no `buyingPrice` /
+     unit cost / margin** in any cashier payload or screen. No "profit"
+     column on A3 either. Prove it in a spec.
+   - §3.8 — C2 surfaces an insufficient-Restaurant-stock line inline per
+     line (§9.8 error pattern), sticky Confirm disabled, danger caption.
+     The API returns `400 VALIDATION_ERROR` `field: "lines"` naming the
+     short line(s) + available qty.
+5. **Canteen 2026-08-30 re-spin** (`canteen-derived-sales-flow.md`):
+   counting **more** than expected is a **hard 400** on `countedQuantity`
+   ("exceeds expected stock by N …"), **not** a negative-sold
+   reconciliation. Recovery = **undo today's count**
+   (`DELETE /api/canteen/stock-counts/:id`, attendant + same-day only;
+   after the day rolls → 403 "closed"). No negative-sold / negative-revenue
+   state anywhere. If a flow doc or artboard still shows the old
+   negative-sold text, note it in `PROGRESS.md` as a doc-vs-behaviour gap
+   for QA — do not "fix" the doc (Dev session, not Design).
+
+---
+
+## 2. Testing discipline (this is why 6a ran slow — don't repeat it)
+
+**6a ran the full 368-test suite ~5 times. Most of those were wasted.**
+For 6b–6d:
+
+- **While building / iterating a screen:** run ONLY that screen's spec —
+  `pnpm vitest run tests/screens/<name>.screen.test.tsx` (~2s). Iterate
+  there.
+- **Full suite (`pnpm test`) runs ONCE per session**, at the end, before
+  the commit. Not after every edit.
+- **6b–6d touch no schema and no `lib/domain`** — so a broken M1/backend
+  test is essentially impossible. If the full suite is green after 6a's
+  commit, the only thing that can break it is your new `*.screen.test.tsx`
+  files, which you already ran individually. One end-of-session full run
+  confirms it.
+- **`tsc --noEmit`** is fast — run it freely.
+- **jsdom applies NO CSS**, so `md:block` (desktop) AND `md:hidden`
+  (mobile) BOTH render in a screen spec. Every screen that has a
+  responsive split renders each label/row **twice**. So:
+  - **never** bare `screen.getByText("Grace Wanjiru")` for content that
+    appears in both layouts — it throws "found multiple elements".
+  - Use `screen.getAllByText(...).length` **or** scope with
+    `within(screen.getByRole("table"))` (the desktop table) /
+    `within(<the mobile container>)`.
+  - `catalog.screen.test.tsx` has a comment about this — read it first.
+    `admin-customers.screen.test.tsx` (6a) is the worked example.
+- **`get_jsx` on a full 1440×900 Paper artboard takes ~20–30s to return.**
+  It is not hung. Wait for it. (6a's owner interrupted it twice thinking
+  it was stuck.)
+- **Kit `test:visual` / `test:a11y`** only need re-running if you touch
+  `components/kit/**` — i.e. only in 6b for the `SimpleTable` chevron.
+  Re-baseline **only** the `simple-table` story if its snapshot changes.
+
+---
+
+## 3. Paper verification — Paper IS reachable
+
+The auth warning at the top of a fresh session is about the **Figma** and
+**Google Drive** connectors, **not Paper**. Paper works. 6a used it
+throughout.
+
+- File: **"Prosper Hotel"**, page **"Shell+Component kit"**
+  (`mcp__paper__get_basic_info` → `pageId 1-0`).
+- Per screen: `mcp__paper__get_screenshot` the artboard (`scale: 2`) →
+  assemble to match → `mcp__paper__get_jsx` / `get_computed_styles` for
+  **exact** structure / copy / tokens. **Never eyeball a screenshot for a
+  value.** Never paste artboard markup into a screen file.
+- **Paper draws fixed pixel sizes** (`h-[52px]` rows, `grow-2` /
+  `grow-[1.4]` column ratios, hard-coded gaps). **The codebase kit is the
+  design-system source of truth**, not the artboard pixels (owner ruling,
+  6a). Match Paper on **structure, hierarchy, copy, colour tokens, which
+  components, which states** — take **row heights / control sizes /
+  spacing scale** from the kit + `--sp-*` / `--bp-md` tokens, so the
+  result is responsive. Where they conflict, the kit wins; note it in a
+  screen-file comment.
+- Artboard IDs are listed per screen below.
+
+---
+
+## 4. The per-feature hooks
 
 Mirror `app/admin/catalog/use-catalog.ts` exactly (the `request<T>`
-helper, the typed `*RequestError`, domain-typed shapes, `refresh()`):
+helper, a typed `*RequestError`, domain-typed shapes, `refresh()`).
+`app/admin/customers/use-customers.ts` (6a) is the second worked example.
 
-- **`app/cashier/use-orders.ts`** (shared with A3) — list (role-scoped by
-  the API), create, editOwn, correct. Types from `@/lib/domain/sales`
-  (`OrderView`, `CreateOrderInput`, …).
-- **`app/admin/customers/use-customers.ts`** (shared with C5/C6) — list,
-  ledger, createCustomer, recordRepayment. Types from
-  `@/lib/domain/customers`.
-- **`app/canteen/use-stock-count.ts`** (K1) + reuse for A4 —
-  recordStockCount, voidStockCount, listDerivedSales. Types from
+- **`app/cashier/use-orders.ts`** (6c; shared with A3 in 6d) — `list`
+  (role-scoped by the API), `create`, `editOwn`, `correct`. Types from
+  `@/lib/domain/sales` (`OrderView`, `CreateOrderInput`, …).
+- **`app/admin/customers/use-customers.ts`** — **already built (6a)**.
+  C5 reuses it (`useCustomers` + `createCustomer`).
+- **`app/canteen/use-stock-count.ts`** (6d; reuse for A4) —
+  `recordStockCount`, `voidStockCount`, `listDerivedSales`. Types from
   `@/lib/domain/sales` (`RecordStockCountResult`, `DerivedSaleView`, …).
 
-**Money and quantities are decimal strings end to end** — the hook never
-parses them to `number` for display; format with the existing helpers.
+---
+
+## §6b — Shell + nav + finish Customers
+
+**Goal:** the Admin shell responsive, every M2 nav link routing, the
+`SimpleTable` chevron, and Customers & Credit fully verified + walked.
+
+### 6b.1 — Make `AdminShellClient` responsive (the blocker)
+
+`app/admin/layout.tsx` → `app/admin/admin-shell-client.tsx` renders a
+**fixed 240px sidebar at every width**. There is no `--bp-md` switch to a
+mobile shell, so on a narrow viewport the admin screens keep the desktop
+frame (this is the gap the owner saw in DevTools mobile view). Every M2
+admin screen has a `— mobile [M2-01]` artboard that assumes a
+hamburger + slide-in drawer, not a fixed rail.
+
+- Below `--bp-md`: hide the fixed sidebar, show a top bar with a
+  hamburger that opens the nav in the kit **`MobileNavDrawer`**
+  (`components/kit/mobile-nav-drawer.tsx` — already built for this).
+  Match Paper **`6B1-0`** "Mobile Shell — Admin (Drawer Closed)" +
+  **`1ZP-0`** "Mobile Shell — Sidebar Drawer Open".
+- At/above `--bp-md`: unchanged (the current 240px sidebar).
+- The `StaffShellClient` is already mobile-first — **do not touch it**
+  beyond 6b.3.
+- This is `components/layout/**` + `app/admin/**`, not `components/kit/**`
+  (the drawer primitive already exists) — in scope.
+
+### 6b.2 — Wire the Admin sidebar nav
+
+`admin-shell-client.tsx` — the sidebar items currently render but several
+route nowhere. Wire:
+- **Customers** → `/admin/customers` (A1, built 6a)
+- **Sales** → `/admin/orders` (A3, built 6d — the link can land ahead of
+  the screen; a 404 until 6d is acceptable, or gate the item)
+- **Canteen / Derived sales** → `/admin/canteen/derived-sales` (A4, 6d) —
+  check `canteen-derived-sales-flow.md` §G for whether it's a top-level
+  item or under "Sales".
+- Mark the active item from the pathname (the shell already has the
+  pattern for the built ones).
+
+### 6b.3 — Add "Customers" to the Cashier bottom nav
+
+`components/layout/staff-shell-client.tsx` — `NAV_DEFS_BY_BASE["/cashier"]`
+is currently `[New Order, History]` only. Add **Customers** → `/cashier/customers`
+(C6, built 6a). Confirm against `restaurant-sales-flow.md` §"The screens"
+(C1 is the Cashier hub / "Today") — the bottom nav should be roughly
+**Today · New order · Customers**. Add the "Today" item pointing at
+`/cashier` (C1 lands in 6c; the item can precede the screen).
+
+### 6b.4 — `SimpleTable` trailing-chevron prop (the one approved kit change)
+
+The A1/A2/A3/A4 artboards draw a trailing `›` on every clickable row. The
+kit `SimpleTable` clickable row (`role="row"` + `aria-label` + `tabIndex`)
+has no chevron. Add an **opt-in** prop (e.g. `rowChevron?: boolean`) that
+renders a right-pointing chevron in a fixed-width trailing slot on
+clickable rows only. `rowChevron` off → byte-identical to today.
+- Update `components/kit/simple-table.stories.tsx` with a `RowChevron`
+  story; re-run `pnpm test:visual` + `pnpm test:a11y`; re-baseline **only**
+  the affected snapshot. Keep `kit-audit.md` / `component-states.md` in
+  sync if they enumerate `SimpleTable` states.
+- Then set `rowChevron` on A1 (and A2 if its ledger rows are clickable —
+  check `ER9-0`; 6a's A2 rows are not currently click targets).
+
+### 6b.5 — Add the `category` field to the Catalog product drawer
+
+`app/admin/catalog/product-drawer.tsx` — one `<TextInput label="Category">`
+(or a `<Select>` if the flow prefers a fixed list; the flow docs don't
+specify, so free-text is fine) wired into the create/update body. The
+domain + Zod already accept `category`. Without this, C2/K1's tabs are
+permanently "Uncategorised".
+
+### 6b.6 — Finish Customers verification + walkthrough
+
+- Screenshot + reconcile the **remaining** Customers state artboards
+  (6a only did the populated ones):
+  A1 `E41-0` (empty) · `DZ0-0` (filtered-empty) · `E97-0` (error);
+  A2 `EXK-0` (zero history) · `F23-0` (loading);
+  C6 `D8E-0` (populated) · `DBH-0` (empty) · `DF9-0` (repayment success).
+- **Owner walkthrough** of Customers & Credit on `pnpm dev` as **Cashier**
+  (C6) and **Admin** (A1, A2) — the real e2e gate (plan §8 guardrail 3).
+  Needs seed data: either do a minimal `prisma/seed.ts` customer block
+  now, or ask the owner to add a couple of customers + repayments by hand
+  during the walk. (Full M2 seed is a 6d task.)
+
+### 6b — done when
+
+Admin shell switches to the mobile drawer below `--bp-md` and matches
+`6B1-0` / `1ZP-0`; every M2 nav link routes (or is deliberately gated);
+`SimpleTable` `rowChevron` shipped + gated; Catalog drawer sets
+`category`; all Customers state artboards verified; owner has walked
+Customers as Cashier + Admin. `tsc` 0, one `pnpm test` run green, kit
+`test:visual`/`test:a11y` green.
 
 ---
 
-## 2. Compose from the proven kit — never invent
+## §6c — Restaurant Orders (C1–C5)
 
-Every M2 pattern was ruled **"compose"** in plan §6 (the one kit change,
-`QuantityStepper` tap-to-type, is already built). Use:
-`PageShell` / staff shell, `Drawer` (rail, ADR-37b), `BottomSheet`,
-`FormField`, `SimpleTable`, `DenseLedger` / `DenseSummaryStrip`,
-`SegmentedControl`, `Select` (searchable), `QuantityStepper`,
-`CalculatedImpactBanner` (the K1 preview card — exact fit), `Tabs`
-(underline — the `category` row), `ActivityTimeline`, `Toast`,
-`EmptyState` / `ErrorState`, `IconButton`.
+**Goal:** the Cashier can take an order end to end on real data.
 
-A **thin per-screen mapper** where the kit's prop shape doesn't fit the
-data is fine and expected. **A change to a kit component is not** — if you
-reach for one, stop and flag it.
+### Hook: `app/cashier/use-orders.ts`
 
-The Paper artboard is the visual target: `mcp__paper__get_screenshot` it,
-match it. Use `get_computed_styles` / `get_jsx` for **exact values**
-(spacing, colour tokens, copy) — never eyeball from the screenshot. Do
-**not** paste artboard markup into a screen file.
+Mirror `use-catalog.ts` / `use-customers.ts`. Surface: `orders` (list),
+`loading`, `error`, `refresh`, `createOrder`, `editOwnOrder`,
+`correctOrder` (correct is Admin-only at the API — the hook can still
+expose it for A3's reuse in 6d). Types from `@/lib/domain/sales`.
 
----
+### Screens
 
-## 3. Cross-cutting contracts to honour (plan §3)
+| ID | Route (record the actual path in `§10`) | Wires to | Artboards |
+|---|---|---|---|
+| **C1** Cashier Today | `app/cashier/page.tsx` (replace the `EmptyState` placeholder) | `use-orders` list (own, `?date=today`) | `BVG-0` populated · `BYQ-0` empty · `C0Z-0` day-closed banner · `C38-0` loading |
+| **C2** New Order — build | `app/cashier/orders/new/*` (path is a suggestion) | `GET /api/products` (Restaurant `ProductLocation` + `category`) + `GET /api/stock-movements/balances` for the derived Restaurant balance | `C6D-0` populated (grid + `category` `Tabs` + pinned order panel + sticky total) · `CGM-0` empty · `CJ7-0` line blocked (§3.8) |
+| **C3** Checkout | bottom-sheet over C2 | `use-orders.createOrder` | `DLP-0` Cash · `DN8-0` M-Pesa · `DOP-0` Credit-no-customer (Confirm disabled) · `DQ6-0` Credit-attached · `DRN-0` Delivery + fee |
+| **C4** Order detail / edit | `app/cashier/orders/[id]/*` | `use-orders.editOwnOrder` (same-day own) / **read-only + route to A3** otherwise | `CWU-0` day-open editable · `CZF-0` day-closed read-only · `D18-0` corrected |
+| **C5** Customer attach / quick-create | sheet over C3 | **reuse `use-customers`** (`useCustomers` search + `createCustomer`) | `D4S-0` search results · `D5P-0` no-match quick-create · `D6K-0` phone error |
 
-- **§3.2 order money effect** — a cash/M-Pesa order → one `MoneyMovement`;
-  a **credit** order → a `Debt`, `customerId` **required** (the C3 UI
-  blocks confirm until a customer is attached; the API 400s otherwise).
-- **§3.3 / §3.4 edit-vs-correct** — a Cashier edits their **own** order
-  only while its business day **is today** (`editOwnOrder`). After that,
-  C4 shows read-only + routes to the Admin correction path (A3 →
-  `correctOrder`). Reflect this in C4's affordances.
-- **§3.5 canteen** — cash only, no credit, no M-Pesa, no account picker
-  on K1. The derived-sale preview comes straight from
-  `recordStockCount`'s return (`derivedSale: { unitsSold, revenue,
-  periodStart, periodEnd }`); `periodStart: null` ⇒ first-count copy.
-- **§3.6 role scoping** — a Cashier's C1 view is their own orders only;
-  **no `buyingPrice` / unit cost / margin** in any cashier payload (the
-  `OrderView` has none — just don't add a "profit" column to A3 either).
-  Prove it in a screen spec.
-- **§3.8 BLOCK** — C2 surfaces an insufficient-Restaurant-stock line
-  inline per line (§9.8 error pattern), sticky Confirm disabled, danger
-  caption. The API returns `400 VALIDATION_ERROR` `field: "lines"` naming
-  the short line(s) + available qty — render it against the right row.
+**Notes:**
+- C2 grid: group products by `category` into a kit `Tabs` (underline) row
+  — "All" + one tab per distinct category; `null` → "Uncategorised".
+  Products with no Restaurant `ProductLocation` (or inactive) don't
+  appear.
+- C2 §3.8: read `GET /api/stock-movements/balances?productIds=…&locationId=<Restaurant>`
+  for the tiles' stock-available count; block a line whose qty exceeds it
+  (§9.8 pattern on the row, sticky Confirm disabled). The server is still
+  the gate — on a `400 VALIDATION_ERROR field: "lines"` from
+  `createOrder`, parse the short-line names out of `message` and render
+  the block against the right row.
+- C3 `account`: **omit it** — the domain derives cash→cash, mpesa→mpesa_bank
+  from `paymentMethod` (no picker in the flow doc / artboards).
+- C4 routing rule (S4 handoff): `order.cashierId === session.user.id`
+  **and** `toBusinessDate(order.occurredAt) === toBusinessDate(now)` →
+  editable (PATCH). Else read-only; "Correct this" is **Admin-only** and,
+  from a Cashier's C4, only surfaces the order **number** for the Admin
+  (flow doc walkthrough F) — it does not open a form. Use `OrderView.number`
+  for every "#1043" and the corrected-order link.
+- C1 "day open": M2 has **no Day Close** — the pill is "Day open" for
+  today, and the day-closed banner (`C0Z-0`) is for viewing a **past**
+  day. C1's scope is *today's own orders*, so the banner is effectively a
+  future hook; render the pill "Day open" and keep the banner markup
+  behind an `isPastDay` flag that is always false in M2. (Don't invent a
+  Day Close check.)
 
----
+### Spec: `tests/screens/cashier-orders.screen.test.tsx`
 
-## 4. Screen specs (`tests/screens/*.screen.test.tsx`)
+Per screen: populated, empty, error, loading, + the primary interaction.
+Contract assertions: credit → Confirm disabled until a customer is
+attached; §3.8 line block renders + disables Confirm; C4 same-day →
+editable form, past-day → read-only + no edit; **no margin/cost column or
+value anywhere** in C1–C4.
 
-Mirror `tests/screens/canteen-hub.screen.test.tsx` /
-`catalog.screen.test.tsx`: `// @vitest-environment jsdom`, mock
-`next/navigation`, mock the **feature hook** (not `fetch`), render the
-client component, assert structural states + interactions. One spec file
-per screen group (`cashier-orders`, `cashier-customers`,
-`admin-customers`, `admin-orders`, `canteen-stock-count`, plus the K2
-row in the existing `canteen-hub` spec).
+### 6c — done when
 
-Cover, per screen: populated, empty, filtered-empty (where it has
-filters), error, loading, and the primary happy-path interaction. Plus
-the contract assertions from §3 (credit-needs-customer, §3.8 line block,
-same-day edit vs correct routing, no margin column, K1
-counted-more-than-expected shows the blocked error + offers undo).
-
-**Do not weaken any existing suite.** After S5 it's **350** green. Add
-yours on top. Full `pnpm test` + `tsc --noEmit` + `build` must stay
-green; kit `test:visual` + `test:a11y` untouched and green.
+C1–C5 live on real data, every structural state renders, the spec covers
+the contracts, and the owner has walked the Cashier order flow on
+`pnpm dev` (take a cash order, an M-Pesa order, a credit order with a
+new customer, edit a same-day order, view a past-day order).
 
 ---
 
-## 5. Canteen: what changed 2026-08-30 (read this — the flow-doc history is confusing)
+## §6d — Admin Orders + Canteen + wrap
 
-The **owner overrode** the original `canteen-derived-sales-flow.md`
-narrative. What S5 actually shipped, and what K1/K2/A4 must reflect:
+**Goal:** the last 4 screens, the seed, the final gates, hand to QA.
 
-- **Counting more than expected is a hard error**, not an allowed
-  reconciliation. `POST /api/canteen/stock-counts` returns
-  `400 VALIDATION_ERROR` `field: "countedQuantity"` ("Counted quantity
-  exceeds expected stock by N — record the missing receipt or transfer
-  first, then recount"). K1 shows this inline on the count field (flow doc
-  §D pattern). **There is no negative-sold preview, no negative revenue,
-  no "correcting the previous count" copy.** If you find that copy in an
-  artboard or a flow doc, it's stale — the 1b re-spin removed it; flag
-  any leftover.
-- **Recovery = undo today's count.** K1 has a **delete/undo** affordance
-  (not "edit last count") → `DELETE /api/canteen/stock-counts/:id`. Valid
-  only for the attendant's own count, same business day. After the day
-  rolls the API 403s ("This day is closed — ask an administrator") — K1
-  shows the count-locked state. Artboards: delete-count confirm, delete
-  success, count-locked-previous-day.
-- **A4 has no negative-revenue treatment** — the `--color-danger` mono
-  cell for a "correcting period" was removed in the 1b re-spin. Every
-  `unitsSold` / `revenue` is ≥ 0 or `null` (never counted → em-dash row).
-- **K2** — the derived-sale timeline row is always a positive "+KES"
-  green value; no correcting-negative variant.
+### A3 — Admin Orders list
 
-If any of the three flow docs still contains the old negative-sold text
-when you read it: **note it in `PROGRESS.md` as a doc-vs-behaviour gap
-for QA / a Design touch-up — do not "fix" the doc yourself** (Dev
-session, not Design).
+- Route: `app/admin/orders/page.tsx`. Shell: Admin desktop + mobile
+  (uses 6b's responsive shell).
+- Hook: **reuse `use-orders`** (6c) — `list` (all, the API role-scopes),
+  `correctOrder`.
+- Artboards: `FA1-0` populated · `FHF-0` filtered-empty · `FN0-0` empty ·
+  `FSL-0` error · `FYX-0` read-only order-detail drawer · `G4I-0`
+  correction form drawer · `GCP-0` order + correction linked row-group ·
+  `GIA-0` mobile.
+- `SimpleTable` (with 6b's `rowChevron`): Time · Cashier · Type · Total ·
+  Payment · Status · (row → drawer). Status = "Posted" / "Corrected" /
+  "Correction of #{original.number}" as plain coloured text (table
+  density, §4.4 — not a chip). A corrected order + its correction render
+  as a **linked row-group** (`GCP-0` — bracketed pair, correction
+  indented, "Correction of #1043" in its Reference).
+- **Read-only** — row opens a read-only detail `Drawer` (rail). The one
+  mutating action is "Record correction" → the drawer switches to the
+  correction form: original as read context, corrected line list (reuse
+  the C2 line-row + `QuantityStepper` pattern), corrected type / fee /
+  payment, a `CalculatedImpactBanner` previewing the stock + money
+  reversal, a required **Reason** `Textarea`, "Record correction" primary.
+  → `use-orders.correctOrder` → `POST /api/orders/:id/correct`. `Toast`
+  (top-right) "Correction recorded as order #{new.number}".
+- **No delete affordance anywhere. No margin / cost / profit column**
+  (§3.6 — the `OrderView` has none; don't add one).
+- `use-orders.correctOrder` is Admin-only at the API; A3 is an admin
+  route so that's fine.
 
----
+### A4 — Canteen Derived Sales
 
-## 6. Guardrails for this session (plan §8)
+- Route: `app/admin/canteen/derived-sales/page.tsx` (or under an existing
+  "Sales" nav — check `canteen-derived-sales-flow.md` §G).
+- Hook: `app/canteen/use-stock-count.ts` → `listDerivedSales`
+  (`GET /api/canteen/stock-counts?productId=&date=`).
+- Artboards: `GL2-0` populated · `GRM-0` product never counted
+  (**Never / — / muted em-dash**, not blank) · `GVN-0` filtered-empty ·
+  `GZO-0` loading · `H4I-0` mobile.
+- `SimpleTable`: Product · Last counted (date + relative) · Period
+  covered (span) · Units sold (mono, right) · Revenue (mono, right).
+  Every `unitsSold` / `revenue` is `≥ 0` or `null` (never-counted →
+  em-dash row). **No negative-revenue treatment** (removed in the
+  2026-08-30 re-spin).
 
-1. **Compose proven kit only.** New pattern used 2×+ and not in the kit →
-   flag it, don't inline it a third time.
-2. **No headless-browser e2e.** jsdom+RTL screen specs are the automated
-   gate; the owner walkthrough is the real e2e.
-3. **Owner walkthrough per feature.** After each feature's screens work,
-   the owner drives it on `pnpm dev` as every role that touches it,
-   before it's called done. Split Cashier / (Admin+Canteen) walkthroughs
-   only if running hot.
-4. **Re-baseline the plan §7 table, don't annotate it.** §10 gets one
-   line if sequencing shifts.
-5. **Audit passes as named steps:** no raw hex (tokens only), no bespoke
-   thing that should be kit, table/layout parity with the artboard,
-   empty/error/loading state on every screen.
-6. **No UI/UX decisions.** Flag and stop.
-7. **Cross-cutting contracts locked** (§3) — verified by screen specs.
+### K1 — Stock Count
 
----
+- Route: `app/canteen/stock-count/*`. Shell: staff mobile + `FlowHeader`
+  (back, "Stock Count", no direction badge).
+- Hook: `use-stock-count` → `recordStockCount` (`POST`), `voidStockCount`
+  (`DELETE …/:id`).
+- Artboards: `H6V-0` product picker (reuses the C2 `category` `Tabs` over
+  `Product.category` — **now populated** by 6a) · `H8J-0` count entered +
+  preview · `HA3-0` first-ever count (distinct copy) · `HBN-0`
+  counted-more-than-expected (**blocked** — §9.8 inline error on the
+  count field + an `InstructionalBanner`, Confirm disabled, no preview) ·
+  `HIQ-0` confirm success (`Toast`) · `HWS-0` delete success · +
+  validation error (blank/non-numeric), count-locked-previous-day,
+  delete-count confirm (`FrictionDeleteDialog` with
+  `showTypeToConfirm={false}`).
+- The preview card is `CalculatedImpactBanner`, rendered straight from
+  `recordStockCount`'s return `derivedSale: { unitsSold, revenue,
+  periodStart, periodEnd }`. `periodStart: null` ⇒ first-count copy
+  (`HA3-0`).
+- **No account picker, no customer attach** (canteen cash-only, §3.5).
+- "Counted more than expected" → the POST returns `400 VALIDATION_ERROR`
+  `field: "countedQuantity"` ("exceeds expected stock by N …") — surface
+  it inline (`HBN-0`), and offer **Delete today's count** if a same-day
+  count for this product exists (undo = `DELETE …/:id`, same-day only;
+  past-day → 403 → the count-locked state).
 
-## 7. Gates (definition of done)
+### K2 — Canteen hub derived-sale row (NOT a new screen)
+
+- Extend `app/canteen/hub-client.tsx` — the movement→row mapper in the
+  hub's `ActivityTimeline`. A `stockCountId`-linked `sale` renders as:
+  title **"Stock count — {product}"**, subtitle
+  **"{n} {unit} sold since {date} · closing {rem}"**, trailing
+  **"+KES {y}"** green mono. A zero-sold count (no `canteen_sale`
+  `MoneyMovement`) shows a muted em-dash where the value would be. **No
+  negative variant.**
+- Artboards: `HLH-0` entry at top · `HNT-0` interleaved with a transfer +
+  an opening-stock row (the visual-consistency acceptance point).
+- Add the K2 row to the existing `tests/screens/canteen-hub.screen.test.tsx`.
+
+### Specs
+
+`tests/screens/admin-orders.screen.test.tsx`,
+`tests/screens/canteen-derived-sales.screen.test.tsx`, + the K2 row in
+`canteen-hub.screen.test.tsx`. Cover populated / empty / filtered-empty /
+error / loading / happy-path + the §3 contracts (A3: no margin column, no
+delete, correction writes a new numbered row; K1: counted-more-than-expected
+shows the blocked error + offers undo; A4: never-counted → em-dash row).
+
+### Seed — `prisma/seed.ts`
+
+Add an M2 dev-data block so `pnpm dev` shows **populated** states:
+- ~4 customers, 2–3 with outstanding `Debt` rows (via a couple of credit
+  orders) and 1–2 with `Repayment` rows (mix of cash / mpesa_bank +
+  a note on one).
+- ~6 orders across the two cashiers — cash, M-Pesa, credit, dine-in,
+  takeaway, delivery-with-fee — a couple dated **yesterday** (so C4's
+  past-day read-only path is walkable), one **corrected** (so the A3
+  linked row-group + C4 corrected state show).
+- 1–2 canteen `StockCount` rows on a canteen product (so A4 has a
+  populated row + K2 has a hub entry), plus one canteen product left
+  **never counted** (so A4's em-dash row shows).
+- Keep it idempotent (`upsert` / guard on a marker) like the existing
+  seed.
+
+### Final gates (6d closes the milestone's dev work)
 
 - `pnpm tsc --noEmit` → 0.
 - `pnpm build` → clean.
-- `pnpm test` → green; existing 350 untouched, new screen specs added.
-- Kit `pnpm test:visual` + `pnpm test:a11y` → green, **kit unchanged**.
+- `pnpm test` → green (368 from 6a + every new `*.screen.test.tsx`).
+- Kit `pnpm test:visual` + `pnpm test:a11y` → green (only the
+  `simple-table` baseline changed, in 6b).
 - `grep -rn "TODO(mock)"` across `app/**` for the M2 screens → none.
 - Every M2 screen renders every structural state from its artboard on
   real data; each matches the Paper artboard (re-screenshot to diff).
 - **Owner has walked each feature** (Restaurant sales as cashier + admin;
-  Customers & Credit as cashier + admin; Canteen derived sales as
+  Customers & Credit as cashier + admin — 6b; Canteen derived sales as
   attendant + admin) on `pnpm dev` and signed off.
 
 ---
 
-## 8. Docs to update this session
+## 9. Docs to update (6d owns the final pass; 6b/6c append as they go)
 
-- **`docs/PROGRESS.md`** — a Session 6 entry under "Milestone 2" (screens
-  shipped, hooks, any flag raised, any flow-doc-vs-behaviour gap for QA,
-  the owner-walkthrough sign-off). **Rebase before writing it.**
-- **`docs/sprints/milestone-2-plan.md`** §7 — mark Session 6 status; §10
-  only if sequencing changed.
+- **`docs/PROGRESS.md`** — a `6b` / `6c` / `6d` entry each (rebase before
+  writing). Screens shipped, hooks, any flag raised, any
+  flow-doc-vs-behaviour gap for QA, the owner-walkthrough sign-off.
+- **`docs/sprints/milestone-2-plan.md`** §7 — mark 6b / 6c / 6d status;
+  §10 changelog line only if sequencing shifts again.
 - **`docs/design/export-workflow.md`** — if the assembly turned up a
   reusable note, add it to the "M2 model" section (don't restructure).
-- **`docs/API.md`** — only if a wired screen exposed a contract
-  ambiguity you had to resolve (with an ADR-style note, not a silent
-  change).
-- **This file** — status → `DONE`, and note for Session 7 (QA) which
-  screens/states got the lightest coverage and where the
-  flow-doc-vs-behaviour gaps are.
+- **`docs/API.md`** — only if a wired screen exposed a contract ambiguity
+  you had to resolve (ADR-style note, not a silent change).
+- **`docs/design/kit-audit.md` / `component-states.md`** — the
+  `SimpleTable` `rowChevron` state (6b).
+- **This file** — 6d flips the top line to `DONE`, and adds a note for
+  Session 7 (QA): which screens/states got the lightest coverage, where
+  the flow-doc-vs-behaviour gaps are.
 
 ---
 
-## 9. Explicitly NOT this session
+## 10. Session Notes
 
-- Any `lib/domain/**` / `lib/api/**` / `prisma/**` change — if a screen
-  needs one, flag it; it's a domain follow-up or M3.
-- Any `components/kit/**` change — flag it; it's a Kit Sprint.
-- New UI/UX decisions — flag it; it's a Design Sprint.
-- Day Close / handover / expenses / owner draws — M3.
-- The `correctStockCount` Admin path for canteen counts — later session
-  (needs a `corrects_stock_count_id` migration; S5 left the module
-  shaped for it).
-- QA's adversarial pass — Session 7.
+*(Live notes added during 6b / 6c / 6d.)*
 
----
+### 6a (done, 2026-08-30)
+- **Backend fills:** `Order.number`, `Product.category` (+ `cashier` API
+  read roles), `Repayment.account`/`.note` — migration
+  `20260830120000_m2_s6_…`. `docs/API.md` updated.
+- **Screens shipped:** C6, A1, A2 (+ `use-customers.ts`,
+  `repayment-form.tsx`). 18 screen specs. `pnpm test` 368/368.
+- **Paper verified:** `DU2-0`, `EJ6-0`, `EPJ-0`, `ER9-0`, `F7F-0`,
+  `DDD-0` (populated states only).
+- **Owner rulings:** (1) kit is the design-system source of truth over
+  Paper's fixed pixels; (2) fill any gap a fresh feature needs even if it
+  crosses schema/domain — raise it, get the go-ahead, do it properly;
+  (3) `SimpleTable` chevron = a small opt-in kit prop, do it in 6b, don't
+  hand-roll.
+- **Not done / for 6b:** responsive `AdminShellClient` (the mobile-view
+  gap), nav wiring, `SimpleTable` chevron, Catalog `category` input,
+  remaining Customers state artboards, Customers owner walkthrough.
 
-## Session Notes
+### 6b
+- **Admin shell responsive:** _…_
+- **Nav wired:** _…_
+- **`SimpleTable` chevron:** _…_
+- **Customers walkthrough:** _date, roles, sign-off / defects._
 
-*(Live notes added during the session.)*
+### 6c
+- **Screen routes chosen (C2/C3/C4/C5):** _…_
+- **Flow-doc-vs-behaviour gaps found:** _…_
+- **Cashier order-flow walkthrough:** _date, sign-off / defects._
 
-- **Screen routes chosen:** _record the actual paths for C2/C3/C4/K1/A4
-  (the table above is a suggestion where the flow doc was silent)._
-- **Flow-doc-vs-behaviour gaps found:** _list them for QA._
-- **Anything flagged back to Design / domain:** _…_
-- **Owner walkthrough:** _date, roles walked, sign-off / defects found._
+### 6d
+- **Screen routes chosen (A4/K1):** _…_
+- **Seed block added:** _…_
+- **Flow-doc-vs-behaviour gaps for QA:** _…_
+- **Owner walkthrough (Admin + Canteen):** _date, sign-off / defects._
+- **Lightest-coverage areas for Session 7 (QA):** _…_

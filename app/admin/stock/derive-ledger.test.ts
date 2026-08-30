@@ -16,6 +16,7 @@ const products: ProductWithLocations[] = [
     kind: "ingredient",
     unitLabel: "kg",
     buyingPrice: "580.00",
+    category: null,
     deletedAt: null,
     createdAt: "",
     updatedAt: "",

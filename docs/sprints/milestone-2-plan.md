@@ -254,12 +254,14 @@ backend exists before the frontend session, so there is nothing to mock.
 | 3 | Development Sprint | Developer | Money ledger (`recordMoneyMovement`, `getAccountBalances`) + `lib/domain/customers` + customer/repayment routes + tests. **DONE 2026-08-29** — `MoneySourceType` migration applied (`db push`); `recordDebt(tx)` helper added for S4; overpayment allowed (flagged); `pnpm test` 268/268. | Balances derive from rows; repayment writes a money movement; tests green; `tsc` + `build` clean. |
 | 4 | Development Sprint | Developer | `lib/domain/sales` orders — create / edit-own / correct / list; order routes; tests (see §4). **DONE 2026-08-30** — all four paths + §3.8 BLOCK + append-only correction (F-1 idempotent) + cross-cashier isolation + no-margin-leak tested; **`Order.occurred_at` column added** (owner-approved; migration `20260829140000_add_order_occurred_at`); `correctDebt(tx)` helper added to `lib/domain/customers`; **M1 `purchases.ts` `TODO(mock)` resolved** (a `purchase_payment` now writes a `−cost` `MoneyMovement`); `vitest.config.ts` `maxWorkers: 4` (Postgres connection ceiling); account derived from `paymentMethod` (flow doc has no picker); correction rows listed separately (not folded); `pnpm test` 350/350. | All order paths + correction reversal + role isolation tested green. |
 | 5 | Development Sprint | Developer | `lib/domain/sales` canteen slice — `recordStockCount` + derivation + revenue movement; routes; tests. **DONE 2026-08-30** — derivation exact across a period boundary; counted-more-than-expected **rejected** (owner override of the flow doc's allow-negative narrative) with a same-day **`voidStockCount`** hard-delete undo (`DELETE /api/canteen/stock-counts/:id`); `pnpm test` 350/350. Shared `lib/domain/sales` files edited additively (S4 rebases them before its own commit). | Derivation matches a hand-worked ledger across a period boundary; tests green. |
-| 6 | Development Sprint | Developer | Assemble **all** M2 screens into their real routes from the Paper screenshots; wire to `lib/domain`; `use-orders.ts` / `use-customers.ts` hooks; per-screen jsdom+RTL specs. **No UI decisions** — flag and stop if one surfaces. Then the **owner walkthrough** of each feature (guardrail 3). Split Cashier / (Admin+Canteen) only if running hot. | Every screen live on real data; screen specs green; owner has walked each feature as every relevant role on `pnpm dev`. |
+| 6a | Development Sprint | Developer | **DONE 2026-08-30.** Backend gap-fills the M2 screen designs need but the plan never scoped (owner-approved scope exceptions): **`Order.number`** (human order number for A2/A3/C1/C4), **`Product.category`** (+ `cashier` in the products / stock-balances read roles) for the C2/K1 category tab rows, **`Repayment.account` + `.note`** for the A2 ledger Reference cell. One deploy migration. Plus the **Customers & Credit** screens (C6, A1, A2) composed from the proven kit + `use-customers.ts` + 18 screen specs. `pnpm test` 368/368; `tsc` 0; `build` clean. Paper-verified: A1/A2/C6 populated states. | Backend fills merged; Customers screens live on real data; specs green; A2 reconciled with the new fields. |
+| 6b | Development Sprint | Developer | **Shell + nav + finish Customers.** Make `AdminShellClient` responsive (sidebar → hamburger + `MobileNavDrawer` below `--bp-md`, matching Paper `6B1-0`) — the one blocker for every admin screen being responsive. Wire the Admin sidebar nav (Customers / Sales / Canteen) + add "Customers" to the Cashier bottom nav. Add an opt-in trailing-chevron prop to the kit `SimpleTable` clickable row. Verify A1/A2/C6 remaining state artboards vs Paper. Owner walkthrough of Customers & Credit as Cashier + Admin. | Admin shell responsive; every M2 nav link routes; Customers walked + signed off. |
+| 6c | Development Sprint | Developer | **Restaurant Orders.** `app/cashier/use-orders.ts` hook + C1 (Cashier Today) · C2 (New Order build — now unblocked by `category`) · C3 (checkout sheet) · C4 (order detail / edit-vs-correct) · C5 (customer attach sheet, reuses `use-customers`). `tests/screens/cashier-orders.screen.test.tsx` covering every structural state + the §3 contracts (credit-needs-customer, §3.8 line block, edit-vs-correct routing, no margin). Owner walkthrough as Cashier. | Every Cashier order screen live on real data; specs green; walked + signed off. |
+| 6d | Development Sprint | Developer | **Admin Orders + Canteen + wrap.** A3 (Admin orders list + read-only detail drawer + correction form drawer + linked row-group; `use-orders` shared; no delete affordance; no margin column). `app/canteen/use-stock-count.ts` hook + A4 (Derived Sales) + K1 (Stock Count, now unblocked) + K2 (derived-sale row type in the existing Canteen hub `ActivityTimeline`). Specs (`admin-orders`, `canteen-derived-sales`, + the K2 row in `canteen-hub`). Owner walkthrough as Admin + Canteen Attendant. Extend `prisma/seed.ts` with M2 dev data. Final gates + all doc updates. | All 12 M2 screens live; `grep TODO(mock)` in M2 `app/**` clean; full suite + `tsc` + `build` + kit gates green; per-feature walkthroughs done; PROGRESS/plan/API/handoff updated. Hand to QA (S7). |
 | 7 | QA Sprint | QA Engineer | Adversarial pass against every M2 acceptance criterion, the 3 flow docs, the approved screens. Report before fixing. | Findings report delivered; fixes applied with regression tests; full suite + `tsc` + `build` + kit gates green; PROGRESS + ROADMAP updated. |
 
-**Count: 8 session-slots** (Session 1 split into 1a + 1b, both done).
-Sessions 2, 3, 4, 5 done (S2 = kit verify-and-gate; S3–S5 = M2 backend);
-Sessions 6, 7 pending.
+**Count: 11 session-slots** (Session 1 → 1a + 1b; Session 6 → 6a + 6b +
+6c + 6d). 1a, 1b, 2, 3, 4, 5, **6a** done. 6b, 6c, 6d, 7 pending.
 
 ### Allowed concurrency
 
@@ -414,3 +416,21 @@ current reality; this is the history of how it got there.)*
   only (`components/kit/quantity-stepper.*` + baselines + `docs/design/*`
   + this plan + `PROGRESS.md`). No change to the session count. Session 6
   now has its `QuantityStepper` hard dependency (C2/C3/C4 + A3) satisfied.
+- 2026-08-30 — **Session 6 split into 6a / 6b / 6c / 6d** (count 8 → 11).
+  Session 6 started as "assemble all 12 M2 screens + owner walkthrough".
+  On discovery, three backend gaps blocked the screen designs — the menu
+  `category` field (planned M2-01 §6/§10, folded into "Session 3 + a
+  Catalog follow-up", **never built**), the absence of a human-readable
+  `Order.number` (every screen design assumes one; the model had only a
+  UUID), and the A2 ledger needing the repayment `account` on the entry.
+  **The owner approved filling all three** (schema + domain — which the
+  Session 6 handoff §9 had forbidden) rather than defer C2/K1 and ship a
+  half-usable feature. Given the volume, Session 6 was re-baselined:
+  **6a** (backend fills + the Customers screens, DONE), **6b** (responsive
+  `AdminShellClient` + nav wiring + `SimpleTable` chevron + finish
+  Customers verification/walkthrough), **6c** (Restaurant Orders: C1–C5),
+  **6d** (Admin Orders A3 + Canteen A4/K1/K2 + seed + final gates + docs
+  → hand to QA). Owner also lifted the "no schema/domain" boundary for
+  any further gap 6b–6d hit **that a fresh feature genuinely needs** —
+  raise it, get the go-ahead, fill it properly. The `category` blocker
+  from the 2026-08-30 canteen re-spin entry is now cleared (6a built it).

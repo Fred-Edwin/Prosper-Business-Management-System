@@ -16,6 +16,7 @@ function product(
     kind,
     unitLabel: "kg",
     buyingPrice: "10.00",
+    category: null,
     deletedAt: null,
     createdAt: "",
     updatedAt: "",

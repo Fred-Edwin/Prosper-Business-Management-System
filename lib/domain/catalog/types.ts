@@ -27,6 +27,11 @@ export type CreateProductInput = {
   unitLabel: string;
   /** Required for `ingredient` / `goods`; ignored (forced to 0) for `dish`. */
   buyingPrice?: string | null;
+  /**
+   * Admin-set menu category (e.g. "Mains", "Drinks"). Optional, free-text,
+   * trimmed; empty → `null`. Powers the C2 / K1 category tab rows.
+   */
+  category?: string | null;
   locations: LocationPriceInput[];
 };
 
@@ -48,6 +53,8 @@ export type ProductWithLocations = {
   unitLabel: string;
   /** Decimal string. `null` only when stripped for a non-admin role. */
   buyingPrice: string | null;
+  /** Admin-set menu category, or `null` if uncategorised. */
+  category: string | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -58,6 +65,8 @@ export type ListProductsFilter = {
   kind?: ProductKind;
   search?: string;
   includeArchived?: boolean;
+  /** Exact-match on the menu category (used by C2's category tab row). */
+  category?: string;
 };
 
 export type ActorContext = {

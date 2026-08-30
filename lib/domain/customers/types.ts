@@ -46,6 +46,12 @@ export type CustomerLedgerEntry = {
   occurredAt: string;
   /** Present only for `kind: "debt"` — the order that created it. */
   orderId?: string;
+  /** Present only for `kind: "debt"` — that order's human number ("#1043"). */
+  orderNumber?: number;
+  /** Present only for `kind: "repayment"` — the account it landed in. */
+  account?: MoneyAccount;
+  /** Present only for `kind: "repayment"` — the optional free-text note. */
+  note?: string;
   /** Balance after applying this entry (+debt, −repayment), decimal string. */
   runningBalance: string;
 };

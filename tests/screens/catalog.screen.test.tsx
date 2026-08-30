@@ -21,6 +21,7 @@ const PRODUCT: ProductWithLocations = {
   kind: "ingredient",
   unitLabel: "kg",
   buyingPrice: "580.00",
+  category: null,
   deletedAt: null,
   createdAt: NOW.toISOString(),
   updatedAt: NOW.toISOString(),

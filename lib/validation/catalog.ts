@@ -35,6 +35,14 @@ export const createProductSchema = z.object({
   // Optional here; the domain rejects a missing value for ingredient/goods
   // and ignores it for dish.
   buyingPrice: decimalString.nullable().optional(),
+  // Admin-set menu category — free-text, optional, trimmed; "" → null.
+  category: z
+    .string()
+    .trim()
+    .max(40, "Category is too long")
+    .optional()
+    .nullable()
+    .transform((v) => (v == null || v === "" ? null : v)),
   locations: z.array(locationPrice),
 });
 
@@ -47,6 +55,7 @@ export const hardDeleteProductSchema = z.object({
 export const listProductsQuerySchema = z.object({
   kind: productKind.optional(),
   search: z.string().trim().optional(),
+  category: z.string().trim().min(1).optional(),
   includeArchived: z
     .union([z.literal("true"), z.literal("false")])
     .optional()

@@ -17,49 +17,113 @@ Running status log, updated at the end of every sprint session.
 
 ## Milestone 2 — Staff can sell, every day
 
-**Plan:** `docs/sprints/milestone-2-plan.md` (living — 8 session-slots:
-Session 1 split 1a / 1b, both done).
-**Status:** Sessions 2, 3, 4, 5 done (S2 = kit verify-and-gate; S3–S5 =
-M2 backend); Sessions 1a + 1b done (all M2 design). Session 6 (screen
-assembly + owner walkthrough) **IN PROGRESS**; Session 7 (QA) pending.
-S1a + S3 + S4 + S5 all sit on `feat/m2-session-4-orders` (the M2
-integration line); S6 branches from it as `feat/m2-session-6-screens`.
-Merge order to `main`: the whole M2 chain → S6 → S7 (one PR after QA,
-mirroring how M1 landed).
+**Plan:** `docs/sprints/milestone-2-plan.md` (living — Session 6 split
+into 6a / 6b / 6c / 6d).
+**Status:** Sessions 2, 3, 4, 5 done; 1a + 1b done. **Session 6a done**
+(backend gap-fills + Customers feature). Sessions **6b / 6c / 6d pending**
+(frontend assembly of the remaining screens + shell/nav), then Session 7
+(QA). S1a + S3 + S4 + S5 sit on `feat/m2-session-4-orders`; 6a is on
+`feat/m2-session-6-screens`. Merge order to `main`: the whole M2 chain →
+6a → 6b → 6c → 6d → S7 (one PR after QA, mirroring how M1 landed).
 
-### 2026-08-30 — M2 Session 6: screen assembly (Developer) — IN PROGRESS
+### 2026-08-30 — M2 Session 6a: backend gap-fills + Customers screens (Developer) — DONE
 
-Development Sprint, Phase C2 — assemble the approved M2 screens from the
-proven kit into their real routes, wire to `lib/domain`, gate each with a
-jsdom+RTL screen spec, then owner walkthrough per feature.
+Development Sprint. Started as "assemble all M2 screens"; on discovery,
+three backend gaps blocked the designs, the owner approved filling them,
+and the session was **re-scoped and split** — 6a delivers the backend
+fills + the one feature they most affect (Customers & Credit); 6b/6c/6d
+carry the rest. See `docs/sprints/milestone-2-session-6-handoff.md` for
+the 6b–6d breakdown.
 
-**🚩 BLOCKER found at session start — the `category` product field was
-never built.** Plan §6/§10 and both 1a/1b handoffs say the new menu
-`category` attribute (Mains / Sides / Drinks — powers the C2 and K1
-category tab row) was "folded into Session 3's backend + a Catalog
-follow-up." It was not: no `prisma/schema.prisma` column, no
-`lib/domain/catalog` field, no `lib/validation/catalog` rule, not in
-`GET /api/products`, and the "Category" column already in
-`app/admin/catalog/catalog-client.tsx` is just a relabel of `kind`
-(`ingredient`/`dish`/`goods`), not the menu category. Building **C2**
-(New Order — build) and **K1** (Stock Count) as designed needs a
-`prisma/**` + `lib/domain/**` + `lib/api/**` + Catalog-UI change — all
-out of scope for this session (handoff §9). **Flagged, not built.**
+**Backend gap-fills (owner-approved scope exceptions — schema + domain,
+which the original Session 6 handoff forbade):**
 
-**Secondary gap (same blocker):** `cashier` is absent from
-`PRODUCT_READ_ROLES` in `app/api/products/route.ts` and from `STOCK_ROLES`
-in `app/api/stock-movements/balances/route.ts`. C2's product grid (as a
-cashier) needs both — a foreign role currently 403s. Also an `app/api`
-change, so folded into the same follow-up.
+- **`Order.number`** (`Int @unique @default(autoincrement())`) — a
+  human-readable, monotonic order number ("#1043") that staff and the
+  Admin say out loud. The `Order` model had only a UUID `id`; every M2
+  screen design (A2 ledger, A3 list + "Correction of #1043", C1/C4)
+  assumed a spoken number. `OrderView.number` + `toOrderView` expose it.
+  A correction is its own row with its own number.
+- **`Product.category`** (`String?`, free-text ≤40 chars) — the
+  Admin-set menu category (Mains / Drinks …) that powers the C2 grid and
+  K1 picker category tab rows. Planned M2-01 §6/§10, folded into "Session
+  3 + a Catalog follow-up", **never built**. Wired through
+  `lib/domain/catalog` (types, `toProductView`, create/update/list),
+  `lib/validation/catalog` (create/update/list schemas), and
+  `GET /api/products` (`?category=` + the field in the payload).
+- **`cashier` added to `PRODUCT_READ_ROLES`** (`app/api/products`) **and
+  `STOCK_ROLES`** (`app/api/stock-movements/balances`) — C2's product
+  grid + the §3.8 over-stock check need both as a Cashier. `buyingPrice`
+  stays stripped for the Cashier (no cost/margin leak — plan §3.6). Two
+  stale M1 tests (`route.test.ts` "cashier is still 403",
+  `flow-6-role-access` "a cashier cannot read the catalogue") updated to
+  assert the new correct behaviour (200 + `buyingPrice: null`).
+- **`Repayment.account` + `.note`** columns + `recordRepayment` writes
+  them + `CustomerLedgerEntry` carries `account` / `note` / `orderNumber`
+  — the A2 ledger "Reference" cell (artboard ER9-0) shows "Order #1043"
+  for a debt and "Cash" / "M-Pesa" / the note for a repayment. The entry
+  previously carried only a debt's `orderId` (a UUID).
+- **Migration:** dev DB via `prisma db push` (owner-consented — Prisma's
+  AI-safety guard); deploy migration
+  `prisma/migrations/20260830120000_m2_s6_order_number_product_category_repayment_detail/`.
+  `prisma generate` re-run. `docs/API.md` Orders / Customers / Catalog
+  sections carry ADR-style notes for each addition.
 
-**Consequence:** C2 and K1 are deferred to a follow-up (a small domain
-session that adds `category` + the two API role entries + a Catalog
-field to set it, then a short assembly pass). The other **10 screens are
-unblocked** and are what this session delivers: C1, C3, C4, C5
-(Restaurant orders minus C2), C6 / A1 / A2 (Customers & Credit), A3
-(Admin orders), A4 + K2 (Canteen derived sales minus K1).
+**Customers & Credit screens (C6, A1, A2) — composed from the proven kit,
+verified against Paper:**
 
-_(This entry is updated as the session progresses.)_
+- **`app/admin/customers/use-customers.ts`** — feature hook (`useCustomers`
+  list + repayment; `useCustomerLedger` for A2). Mirrors
+  `use-catalog.ts`; money stays a decimal string end to end.
+- **`app/admin/customers/repayment-form.tsx`** — shared repayment form
+  body (A1 rail Drawer, A2 rail Drawer, C6 BottomSheet) — kit `TextInput`
+  + `SegmentedControl` (Cash / M-Pesa) + `Textarea`.
+- **A1** (`customers-client.tsx` + `page.tsx`) — `PageShell` + `Breadcrumb`
+  + desktop `SimpleTable` (`md:block`) + mobile row list (`md:hidden`) +
+  `PillFilter` (All customers / Owing) + `SearchInput` + rail `Drawer`
+  (repayment + add-customer) + `EmptyState` / `ErrorState` + `Toast`.
+- **A2** (`[id]/customer-detail-client.tsx` + `page.tsx`) — `Breadcrumb`,
+  header with Current-balance read-out + Record repayment, desktop ledger
+  `SimpleTable` + mobile 2-line cards, "Reference" = `orderNumber` /
+  `account` / `note`.
+- **C6** (`app/cashier/customers/customers-client.tsx` + `page.tsx`) —
+  `SearchInput` + row list + `BottomSheet` repayment (mobile, whole-KES
+  balance per artboard DDD-0).
+- **Specs:** `tests/screens/admin-customers.screen.test.tsx` (14) +
+  `tests/screens/cashier-customers.screen.test.tsx` (6) — populated /
+  empty / filtered-empty / error / loading / repayment happy-path +
+  Esc-restore + the §3.6 "no cost/margin/order-detail on the Cashier
+  view" contract. **18 new, 368/368 total.**
+
+**Paper verification done:** artboards `DU2-0` (A1 desktop, + `get_jsx`),
+`EJ6-0` (A1 repayment drawer), `EPJ-0` (A1 mobile), `ER9-0` (A2 desktop),
+`F7F-0` (A2 mobile), `DDD-0` (C6 sheet). **Not yet verified** (6b): A1
+`E41-0`/`DZ0-0`/`E97-0`, A2 `EXK-0`/`F23-0`, C6 `D8E-0`/`DBH-0`/`DF9-0`.
+
+**Paper→code divergence handled (owner ruling):** the artboards draw
+fixed pixel row heights + grow-ratio columns + a trailing row chevron;
+the **kit `SimpleTable` is the design-system source of truth** for row
+height / header / hairlines, so those come from the kit (responsive,
+token-based), not the artboard pixels. "Has balance" pill → kit
+`PillFilter`. The trailing chevron has no kit equivalent — a small
+opt-in `SimpleTable` prop is a **6b task** (owner-approved), not
+hand-rolled.
+
+**Gate state:** `tsc --noEmit` 0 · `pnpm build` clean · `pnpm test`
+368/368 · dev server runs. Kit untouched → `test:visual` / `test:a11y`
+not re-run (no `components/kit/**` change).
+
+**Frontend gaps found (full register in the 6b–6d handoff):**
+1. **`AdminShellClient` is not responsive** — fixed 240px sidebar at all
+   widths, no breakpoint switch to the mobile hamburger + drawer shell
+   (Paper `6B1-0`). This is why the admin screens still look desktop in
+   DevTools mobile view. Shell-level, affects every admin screen (M1's
+   too). Kit `MobileNavDrawer` already exists to build it. **6b.**
+2. Admin sidebar "Customers" / "Sales" nav entries route nowhere. **6b.**
+3. Cashier bottom nav has no "Customers" entry → C6 unreachable. **6b.**
+4. Kit `SimpleTable` clickable rows have no trailing-chevron affordance
+   the artboards show. **6b (small kit change, approved).**
+5. Only the *populated* states of A1/A2/C6 verified vs Paper. **6b.**
 
 ### 2026-08-30 — M2 Session 2: QuantityStepper verify-and-gate (Developer — kit) — DONE
 

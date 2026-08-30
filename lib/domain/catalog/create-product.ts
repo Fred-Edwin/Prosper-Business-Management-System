@@ -63,6 +63,7 @@ export async function createProduct(
         kind: input.kind,
         unitLabel: core.unitLabel,
         buyingPrice: core.buyingPrice,
+        category: input.category ?? null,
         productLocations: {
           create: locationData.map((l) => ({
             locationId: l.locationId,

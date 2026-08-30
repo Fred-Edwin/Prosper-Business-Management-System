@@ -171,6 +171,8 @@ export type OrderLineView = {
 
 export type OrderView = {
   id: string;
+  /** Human-readable, monotonic order number ("#1043"). */
+  number: number;
   locationId: string;
   cashierId: string;
   orderType: OrderType;

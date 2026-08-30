@@ -16,13 +16,15 @@ import {
 
 // GET is read-only and consumed by the staff stock hooks (product picker
 // in the receive / issue / production / non-sale / transfer flows and the
-// mobile stock-levels views). `listProducts` strips `buyingPrice` to
-// `null` for non-`admin` callers, so widening the read here does not
-// expose buying price. Mutations below stay `admin`-only.
+// mobile stock-levels views) and, from M2, the Cashier's C2 New-Order
+// product grid. `listProducts` strips `buyingPrice` to `null` for
+// non-`admin` callers, so widening the read here does not expose buying
+// price. Mutations below stay `admin`-only.
 const PRODUCT_READ_ROLES: readonly Role[] = [
   "admin",
   "store_manager",
   "canteen_attendant",
+  "cashier",
 ];
 
 export async function GET(req: NextRequest) {
@@ -33,6 +35,7 @@ export async function GET(req: NextRequest) {
   const parsed = listProductsQuerySchema.safeParse({
     kind: sp.get("kind") ?? undefined,
     search: sp.get("search") ?? undefined,
+    category: sp.get("category") ?? undefined,
     includeArchived: sp.get("includeArchived") ?? undefined,
   });
   if (!parsed.success) {

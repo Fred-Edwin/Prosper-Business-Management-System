@@ -45,29 +45,43 @@ the staff stock hooks consume this for the transfer destination picker).
 Returns active locations, `{ data: Location[] }`, sorted by name.
 
 ### `GET /api/products`
-Roles: Admin, Store Manager, Canteen Attendant. `buyingPrice` is stripped
-to `null` for the non-Admin roles (they consume this for the stock-flow
-product pickers and the mobile stock-levels views). `POST` stays Admin.
+Roles: Admin, Store Manager, Canteen Attendant, **Cashier**. `buyingPrice`
+is stripped to `null` for every non-Admin role (they consume this for the
+stock-flow product pickers, the mobile stock-levels views, and — from M2 —
+the Cashier's C2 New-Order product grid). `POST` stays Admin.
 Query: `?kind=ingredient|dish|goods`, `?search=` (case-insensitive `name`
-contains), `?includeArchived=true` (default excludes soft-deleted).
+contains), `?category=` (exact match on the menu category),
+`?includeArchived=true` (default excludes soft-deleted).
 Returns `{ data: ProductWithLocations[] }`, sorted kind→name. Each item:
-`{ id, name, kind, unitLabel, buyingPrice, deletedAt, createdAt,
+`{ id, name, kind, unitLabel, buyingPrice, category, deletedAt, createdAt,
 updatedAt, locations: [{ locationId, locationName, locationType,
 sellingPrice, active }] }`. Money fields are decimal **strings**
 (`"580.00"`); `sellingPrice` is `null` when the location is stocked but
-not sold.
+not sold; `category` is `null` when uncategorised.
+
+> **`category` + Cashier read access — M2 Session 6 (2026-08-30,
+> owner-approved scope exception).** `Product.category` (`String?`,
+> free-text, ≤40 chars) is an Admin-set menu category set in the Catalog
+> product drawer; it powers the C2 New-Order grid and K1 Stock-Count
+> picker category tab rows (planned M2-01 §6/§10, never built until now).
+> `cashier` was added to this route's read roles (and to
+> `GET /api/stock-movements/balances`) so C2 works — `buyingPrice` stays
+> stripped for the Cashier, so no cost/margin leaks (plan §3.6). Same
+> deploy migration as `Order.number`.
 
 ### `POST /api/products`
 Roles: Admin. Body:
 ```json
 { "name": "...", "kind": "ingredient|dish|goods", "unitLabel": "...",
-  "buyingPrice": "580.00",
+  "buyingPrice": "580.00", "category": "Mains" | null,
   "locations": [{ "locationId": "...", "sellingPrice": "850.00" | null, "active": true }] }
 ```
 `buyingPrice` required for `ingredient`/`goods` (`>= 0`); ignored (forced
-to `"0.00"`) for `dish` — ADR-33. Writes the product + one
-`ProductLocation` per `locations[]` entry in one transaction. Returns
-`{ data: ProductWithLocations }`, `201`.
+to `"0.00"`) for `dish` — ADR-33. `category` optional, free-text, trimmed,
+≤40 chars; `""` → `null`. Writes the product + one `ProductLocation` per
+`locations[]` entry in one transaction. Returns
+`{ data: ProductWithLocations }`, `201`. `PATCH /api/products/:id` takes
+the same body shape (`category` included).
 
 ### `PATCH /api/products/:id`
 Roles: Admin. Same body as `POST`. True edit, not a correction (a catalog
@@ -258,12 +272,22 @@ windowed on `occurredAt`), `?paymentMethod=cash|mpesa|credit`,
 
 Returns `{ data: OrderView[] }`, newest first (`occurredAt` desc, then
 `createdAt` desc). An `OrderView` is
-`{ id, locationId, cashierId, orderType, deliveryFee, paymentMethod,
-customerId, total, correctsOrderId, occurredAt, createdAt, updatedAt,
-lines: [{ id, productId, quantity, unitPrice, subtotal }] }`. A
+`{ id, number, locationId, cashierId, orderType, deliveryFee,
+paymentMethod, customerId, total, correctsOrderId, occurredAt, createdAt,
+updatedAt, lines: [{ id, productId, quantity, unitPrice, subtotal }] }`. A
 correction row (`correctsOrderId` set) is returned as its **own row** with
 `correctsOrderId` exposed (the Session 6 screen badges / links it) — reads
 are not folded.
+
+> **`number` added — M2 Session 6 (2026-08-30, owner-approved scope
+> exception).** A human-readable, monotonic order number (`Int @unique
+> @default(autoincrement())`) that staff and the Admin say out loud
+> ("correct order 1043"). Rendered by A2 / A3 / C1 / C4. A correction is
+> its own `Order` row and gets its own `number`; `correctsOrderId` links
+> the pair. Deploy migration
+> `20260830120000_m2_s6_order_number_product_category_repayment_detail`.
+> The `Order` model previously had only a UUID `id`; the M2 screen designs
+> assumed a spoken order number that did not exist.
 
 ### `POST /api/orders`
 Roles: **Cashier only** (`403` otherwise). Body:
@@ -483,10 +507,19 @@ Returns `{ data: Customer }` (`{ id, name, phone, createdAt, updatedAt }`),
 Roles: Admin, Cashier. Returns `{ data: { customer, entries, balance } }`
 — the customer's debt/repayment ledger, interleaved and ordered by
 `occurredAt` then `createdAt`. Each entry:
-`{ kind: "debt" | "repayment", amount, occurredAt, orderId?, runningBalance }`
-(`orderId` present only on a debt; `runningBalance` accumulates `+debt` /
-`−repayment`). `balance` is the final derived figure. `404 NOT_FOUND` if
-the customer doesn't exist.
+`{ kind: "debt" | "repayment", amount, occurredAt, orderId?, orderNumber?,
+account?, note?, runningBalance }` — `orderId` / `orderNumber` present only
+on a debt (the order that created it); `account` (`"cash"` | `"mpesa_bank"`)
+and `note` present only on a repayment; `runningBalance` accumulates
+`+debt` / `−repayment`. `balance` is the final derived figure.
+`404 NOT_FOUND` if the customer doesn't exist.
+
+> **`orderNumber` / `account` / `note` added — M2 Session 6 (2026-08-30,
+> owner-approved).** The A2 ledger "Reference" column (artboard ER9-0)
+> renders "Order #1043" for a debt and "Cash" / "M-Pesa" / the note for a
+> repayment; the entry previously carried only a debt's `orderId` (a
+> UUID). `Repayment` gained `account` (`MoneyAccount`, default `cash`) and
+> `note` (`String?`) columns — same deploy migration as `Order.number`.
 
 ### `POST /api/customers/:id/repayments`
 Roles: Admin, Cashier. Body:

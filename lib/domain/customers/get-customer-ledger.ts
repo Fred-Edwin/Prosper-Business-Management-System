@@ -26,7 +26,10 @@ export async function getCustomerLedger(
   }
 
   const [debts, repayments] = await Promise.all([
-    prisma.debt.findMany({ where: { customerId } }),
+    prisma.debt.findMany({
+      where: { customerId },
+      include: { order: { select: { number: true } } },
+    }),
     prisma.repayment.findMany({ where: { customerId } }),
   ]);
 
@@ -36,6 +39,9 @@ export async function getCustomerLedger(
     occurredAt: Date;
     createdAt: Date;
     orderId?: string;
+    orderNumber?: number;
+    account?: "cash" | "mpesa_bank";
+    note?: string;
   };
 
   const raw: Raw[] = [
@@ -45,12 +51,15 @@ export async function getCustomerLedger(
       occurredAt: d.occurredAt,
       createdAt: d.createdAt,
       orderId: d.orderId,
+      orderNumber: d.order?.number,
     })),
     ...repayments.map((r) => ({
       kind: "repayment" as const,
       amount: r.amount,
       occurredAt: r.occurredAt,
       createdAt: r.createdAt,
+      account: r.account,
+      note: r.note ?? undefined,
     })),
   ];
 
@@ -69,6 +78,9 @@ export async function getCustomerLedger(
       amount: moneyString(e.amount),
       occurredAt: e.occurredAt.toISOString(),
       ...(e.orderId ? { orderId: e.orderId } : {}),
+      ...(e.orderNumber != null ? { orderNumber: e.orderNumber } : {}),
+      ...(e.account ? { account: e.account } : {}),
+      ...(e.note ? { note: e.note } : {}),
       runningBalance: moneyString(running),
     };
   });

@@ -75,6 +75,7 @@ export async function updateProduct(
         kind: input.kind,
         unitLabel: core.unitLabel,
         buyingPrice: core.buyingPrice,
+        category: input.category ?? null,
       },
     });
 
