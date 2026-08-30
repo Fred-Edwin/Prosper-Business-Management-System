@@ -20,10 +20,46 @@ Running status log, updated at the end of every sprint session.
 **Plan:** `docs/sprints/milestone-2-plan.md` (living — 8 session-slots:
 Session 1 split 1a / 1b, both done).
 **Status:** Sessions 2, 3, 4, 5 done (S2 = kit verify-and-gate; S3–S5 =
-M2 backend); Sessions 1a + 1b done (all M2 design). Sessions 6 (screen
-assembly + owner walkthrough), 7 (QA) pending. S4 on
-`feat/m2-session-4-orders`, S5 on its own branch; merge order to `main`:
-S3 → {S4, S5} → S1a/S1b/S2 → S6 → S7.
+M2 backend); Sessions 1a + 1b done (all M2 design). Session 6 (screen
+assembly + owner walkthrough) **IN PROGRESS**; Session 7 (QA) pending.
+S1a + S3 + S4 + S5 all sit on `feat/m2-session-4-orders` (the M2
+integration line); S6 branches from it as `feat/m2-session-6-screens`.
+Merge order to `main`: the whole M2 chain → S6 → S7 (one PR after QA,
+mirroring how M1 landed).
+
+### 2026-08-30 — M2 Session 6: screen assembly (Developer) — IN PROGRESS
+
+Development Sprint, Phase C2 — assemble the approved M2 screens from the
+proven kit into their real routes, wire to `lib/domain`, gate each with a
+jsdom+RTL screen spec, then owner walkthrough per feature.
+
+**🚩 BLOCKER found at session start — the `category` product field was
+never built.** Plan §6/§10 and both 1a/1b handoffs say the new menu
+`category` attribute (Mains / Sides / Drinks — powers the C2 and K1
+category tab row) was "folded into Session 3's backend + a Catalog
+follow-up." It was not: no `prisma/schema.prisma` column, no
+`lib/domain/catalog` field, no `lib/validation/catalog` rule, not in
+`GET /api/products`, and the "Category" column already in
+`app/admin/catalog/catalog-client.tsx` is just a relabel of `kind`
+(`ingredient`/`dish`/`goods`), not the menu category. Building **C2**
+(New Order — build) and **K1** (Stock Count) as designed needs a
+`prisma/**` + `lib/domain/**` + `lib/api/**` + Catalog-UI change — all
+out of scope for this session (handoff §9). **Flagged, not built.**
+
+**Secondary gap (same blocker):** `cashier` is absent from
+`PRODUCT_READ_ROLES` in `app/api/products/route.ts` and from `STOCK_ROLES`
+in `app/api/stock-movements/balances/route.ts`. C2's product grid (as a
+cashier) needs both — a foreign role currently 403s. Also an `app/api`
+change, so folded into the same follow-up.
+
+**Consequence:** C2 and K1 are deferred to a follow-up (a small domain
+session that adds `category` + the two API role entries + a Catalog
+field to set it, then a short assembly pass). The other **10 screens are
+unblocked** and are what this session delivers: C1, C3, C4, C5
+(Restaurant orders minus C2), C6 / A1 / A2 (Customers & Credit), A3
+(Admin orders), A4 + K2 (Canteen derived sales minus K1).
+
+_(This entry is updated as the session progresses.)_
 
 ### 2026-08-30 — M2 Session 2: QuantityStepper verify-and-gate (Developer — kit) — DONE
 
