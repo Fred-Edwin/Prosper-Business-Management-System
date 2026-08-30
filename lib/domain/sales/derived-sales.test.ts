@@ -76,6 +76,8 @@ describe("getDerivedSalesForProduct / listDerivedSales", () => {
     // second period: (80 + 10) − 15 = 75 ; 75 × 60 = 4500
     expect(view.unitsSold).toBe("75.0000");
     expect(view.revenue).toBe("4500.00");
+    expect(view.stockCountId).toBeDefined();
+    expect(typeof view.stockCountId).toBe("string");
   });
 
   it("a never-counted canteen product comes back with null figures (not an error)", async () => {
@@ -85,6 +87,7 @@ describe("getDerivedSalesForProduct / listDerivedSales", () => {
     expect(view.periodStart).toBeNull();
     expect(view.unitsSold).toBeNull();
     expect(view.revenue).toBeNull();
+    expect(view.stockCountId).toBeNull();
   });
 
   it("unknown product → NOT_FOUND", async () => {

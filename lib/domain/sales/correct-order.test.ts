@@ -90,6 +90,8 @@ describe("correctOrder", () => {
     expect(correction.correctsOrderId).toBe(order.id);
     expect(correction.total).toBe("40.00");
     expect(correction.cashierId).toBe(ctx.cashierId); // corrected on their behalf
+    expect(correction.cashierName).toBe(`${ctx.prefix} Cashier A`);
+    expect(correction.lines[0].productName).toBe(chapati.name);
 
     // original row untouched
     const originalAfter = await prisma.order.findUniqueOrThrow({

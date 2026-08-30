@@ -110,6 +110,8 @@ export type DerivedSaleView = {
   unitsSold: string | null;
   /** Decimal string (2dp) or `null` if never counted. */
   revenue: string | null;
+  /** The latest `StockCount.id` or `null` if never counted. */
+  stockCountId: string | null;
 };
 
 export type ListDerivedSalesFilter = {
@@ -161,6 +163,8 @@ export type ListOrdersFilter = {
 export type OrderLineView = {
   id: string;
   productId: string;
+  /** Product display name snapshotted/hydrated from Product table. */
+  productName: string;
   /** Decimal string (4dp). */
   quantity: string;
   /** Selling price snapshotted at order time (2dp). */
@@ -175,6 +179,8 @@ export type OrderView = {
   number: number;
   locationId: string;
   cashierId: string;
+  /** Cashier user name hydrated from User table. */
+  cashierName: string;
   orderType: OrderType;
   /** 2dp decimal string, or null on a non-delivery order. */
   deliveryFee: string | null;

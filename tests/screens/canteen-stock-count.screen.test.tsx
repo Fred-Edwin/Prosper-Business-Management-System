@@ -64,10 +64,29 @@ describe("K1 Canteen Stock Count Screen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/products")) {
+      if (url.includes("/api/canteen/products") || url.includes("/api/products")) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ data: MOCK_PRODUCTS }),
+          json: async () => ({
+            data: [
+              {
+                id: "p-soda",
+                name: "Soda 300ml",
+                unitLabel: "pcs",
+                category: "Drinks",
+                locationId: "loc-canteen",
+                sellingPrice: "60.00",
+              },
+              {
+                id: "p-mandazi",
+                name: "Mandazi",
+                unitLabel: "pcs",
+                category: "Bakery",
+                locationId: "loc-canteen",
+                sellingPrice: "20.00",
+              },
+            ],
+          }),
         });
       }
       return Promise.reject(new Error("Unknown route"));

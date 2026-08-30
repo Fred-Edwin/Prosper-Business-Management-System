@@ -18,19 +18,42 @@ Running status log, updated at the end of every sprint session.
 ## Milestone 2 — Staff can sell, every day
 
 **Plan:** `docs/sprints/milestone-2-plan.md` (living — Session 6 split
-into 6a / 6b / 6c / 6d).
+into 6a / 6b / 6c / 6d / 6e).
 **Status:** Sessions 2, 3, 4, 5 done; 1a + 1b done. **Sessions 6a + 6b +
-6c + 6d done** (backend gap-fills + Customers feature; responsive Admin shell +
+6c + 6d + 6e done** (backend gap-fills + Customers feature; responsive Admin shell +
 nav wiring + `SimpleTable` rowChevron + Catalog `category` field;
 Restaurant Orders C1–C5 + hooks + minimal seed; Admin Orders A3 + Canteen
 Derived Sales A4 + Canteen Stock Count K1 + Canteen Hub K2 + full M2 seed +
-final gates). Next: Session 6e (gap-fix sprint: cashier & product name hydration
-in OrderView domain types + count endpoints), then Session 7 (QA). S1a + S3 + S4 + S5 sit on
-`feat/m2-session-4-orders`; 6a–6d are on `feat/m2-session-6-screens`.
+Domain Gap-Fixes G1–G4 + final gates). Ready for Session 7 (QA). S1a + S3 + S4 + S5 sit on
+`feat/m2-session-4-orders`; 6a–6e are on `feat/m2-session-6-screens`.
 Merge order to `main`: the whole M2 chain → 6a → 6b → 6c → 6d → 6e → S7 (one
 PR after QA, mirroring how M1 landed).
 
-### 2026-08-30 — M2 Session 6d: Admin Orders A3 + Canteen A4/K1/K2 + Full Seed + Final Gates (Developer) — DONE
+### 2026-08-30 — M2 Session 6e: Gap-Fix Sprint — Domain & API Hydration (Developer) — DONE
+
+Development Sprint (Gap-Fixes before QA). Resolved all 4 domain/API gaps (G1–G4) identified during design review:
+
+- **G1 — Cashier Name Hydration.**
+  - Added `cashierName: string` to `OrderView` in `lib/domain/sales/types.ts`.
+  - Updated Prisma queries in `createOrder`, `editOwnOrder`, `correctOrder`, and `listOrders` to include `cashier: { select: { name: true } }`.
+  - Updated `toOrderView` in `internal.ts` to map `cashier.name`.
+  - Updated `app/admin/orders/admin-orders-client.tsx` to render `order.cashierName` in the table.
+- **G2 — Product Name Hydration.**
+  - Added `productName: string` to `OrderLineView` in `lib/domain/sales/types.ts`.
+  - Updated Prisma queries to include `lines: { include: { product: { select: { name: true } } } }`.
+  - Updated `toOrderLineView` in `internal.ts` to map `product.name`.
+  - Updated `app/admin/orders/admin-orders-client.tsx` (detail and correction drawers) and `app/cashier/orders/[id]/order-detail-client.tsx` to render `productName` instead of raw UUIDs.
+- **G3 — Dedicated Canteen Products API.**
+  - Created `app/api/canteen/products/route.ts` with role-scoped fetching for `canteen_attendant` (assigned location) and `admin`.
+  - Added route unit tests in `app/api/canteen/products/route.test.ts` (5 tests).
+  - Updated `app/canteen/stock-count/stock-count-client.tsx` to directly consume `/api/canteen/products`.
+- **G4 — Same-Day Count Detection & stockCountId.**
+  - Added `stockCountId: string | null` to `DerivedSaleView` in `lib/domain/sales/types.ts` and mapped `latest.id` in `lib/domain/sales/derived-sales.ts`.
+  - Enables K1 / Canteen Hub to identify today's count ID for same-day void and re-counting.
+- **Verification & Gates.**
+  - `pnpm tsc --noEmit` — 0 errors.
+  - `pnpm build` — Clean production build of all 41 routes.
+  - `pnpm test` — **416/416 tests passing across all 64 test files.**
 
 Development Sprint (frontend assembly + final M2 gates). Complete frontend coverage for Admin Orders (A3), Canteen Derived Sales (A4), Canteen Mobile Stock Count (K1), and Canteen Mobile Operations Hub timeline extensions (K2).
 

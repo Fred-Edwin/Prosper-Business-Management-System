@@ -272,22 +272,18 @@ windowed on `occurredAt`), `?paymentMethod=cash|mpesa|credit`,
 
 Returns `{ data: OrderView[] }`, newest first (`occurredAt` desc, then
 `createdAt` desc). An `OrderView` is
-`{ id, number, locationId, cashierId, orderType, deliveryFee,
+`{ id, number, locationId, cashierId, cashierName, orderType, deliveryFee,
 paymentMethod, customerId, total, correctsOrderId, occurredAt, createdAt,
-updatedAt, lines: [{ id, productId, quantity, unitPrice, subtotal }] }`. A
+updatedAt, lines: [{ id, productId, productName, quantity, unitPrice, subtotal }] }`. A
 correction row (`correctsOrderId` set) is returned as its **own row** with
 `correctsOrderId` exposed (the Session 6 screen badges / links it) — reads
 are not folded.
 
-> **`number` added — M2 Session 6 (2026-08-30, owner-approved scope
-> exception).** A human-readable, monotonic order number (`Int @unique
-> @default(autoincrement())`) that staff and the Admin say out loud
-> ("correct order 1043"). Rendered by A2 / A3 / C1 / C4. A correction is
-> its own `Order` row and gets its own `number`; `correctsOrderId` links
-> the pair. Deploy migration
+> **`number`, `cashierName`, `productName` added — M2 Session 6 (2026-08-30, owner-approved).**
+> A human-readable, monotonic order number (`Int @unique @default(autoincrement())`),
+> hydrated `cashierName: string` from User, and `productName: string` on each line
+> from Product. Rendered by A2 / A3 / C1 / C4. Deploy migration
 > `20260830120000_m2_s6_order_number_product_category_repayment_detail`.
-> The `Order` model previously had only a UUID `id`; the M2 screen designs
-> assumed a spoken order number that did not exist.
 
 ### `POST /api/orders`
 Roles: **Cashier only** (`403` otherwise). Body:
@@ -453,12 +449,19 @@ Query: `?productId=` (one product), `?date=YYYY-MM-DD` (windows on the
 latest count's `occurredAt`, Africa/Nairobi business day). Returns
 `{ data: DerivedSaleView[] }`, newest count first, never-counted products
 last. Each item:
-`{ productId, productName, lastCountedAt, periodStart, periodEnd, unitsSold, revenue }`
+`{ productId, productName, lastCountedAt, periodStart, periodEnd, unitsSold, revenue, stockCountId }`
 — for the product's **most recent** count: `lastCountedAt` = that count's
 `occurredAt`; `periodStart` = the previous count's `occurredAt` (or `null`
-for a first count); `unitsSold` / `revenue` decimal strings. A canteen
-product never counted comes back with every figure `null` (PRD §4.4 —
+for a first count); `unitsSold` / `revenue` decimal strings; `stockCountId`
+= the latest count ID (or `null` for never counted) for same-day detection and undo.
+A canteen product never counted comes back with every figure `null` (PRD §4.4 —
 "per product, when it was last counted and what period a figure covers").
+
+### `GET /api/canteen/products`
+Roles: **Admin** (all canteens or `?locationId=`), **Canteen Attendant** (their assigned canteen).
+Returns `{ data: CanteenProductItem[] }` containing active canteen products:
+`{ id, name, unitLabel, category, kind, sellingPrice, locationId }`. Used by K1
+Stock Count product picker and inventory overview.
 
 ---
 

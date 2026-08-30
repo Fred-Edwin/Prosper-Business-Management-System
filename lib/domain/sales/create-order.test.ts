@@ -56,6 +56,9 @@ describe("createOrder", () => {
     expect(order.total).toBe("190.00");
     expect(order.lines).toHaveLength(2);
     expect(order.cashierId).toBe(ctx.cashierId);
+    expect(order.cashierName).toBe(`${ctx.prefix} Cashier A`);
+    expect(order.lines[0].productName).toBe(chapati.name);
+    expect(order.lines[1].productName).toBe(samosa.name);
     expect(order.locationId).toBe(ctx.restaurantId);
     expect(order.correctsOrderId).toBeNull();
     expect(order.deliveryFee).toBeNull();

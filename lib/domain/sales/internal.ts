@@ -74,13 +74,19 @@ export function moneyString(value: Prisma.Decimal): string {
   return value.toFixed(2);
 }
 
-/** Map an `Order` row (+ its lines) to the wire shape. */
-export function toOrderView(row: Order & { lines: OrderLine[] }): OrderView {
+/** Map an `Order` row (+ its cashier and lines/products) to the wire shape. */
+export function toOrderView(
+  row: Order & {
+    cashier?: { name: string } | null;
+    lines: (OrderLine & { product?: { name: string } | null })[];
+  },
+): OrderView {
   return {
     id: row.id,
     number: row.number,
     locationId: row.locationId,
     cashierId: row.cashierId,
+    cashierName: row.cashier?.name ?? "Unknown Cashier",
     orderType: row.orderType,
     deliveryFee: row.deliveryFee == null ? null : moneyString(row.deliveryFee),
     paymentMethod: row.paymentMethod,
@@ -97,10 +103,11 @@ export function toOrderView(row: Order & { lines: OrderLine[] }): OrderView {
   };
 }
 
-function toOrderLineView(row: OrderLine): OrderLineView {
+function toOrderLineView(row: OrderLine & { product?: { name: string } | null }): OrderLineView {
   return {
     id: row.id,
     productId: row.productId,
+    productName: row.product?.name ?? "",
     quantity: quantityString(row.quantity),
     unitPrice: moneyString(row.unitPrice),
     subtotal: moneyString(row.subtotal),

@@ -36,6 +36,7 @@ const ORDER_TODAY: OrderView = {
   number: 1044,
   locationId: "loc-rest",
   cashierId: "me",
+  cashierName: "Cashier Me",
   orderType: "dine_in",
   deliveryFee: null,
   paymentMethod: "cash",
@@ -46,8 +47,8 @@ const ORDER_TODAY: OrderView = {
   createdAt: NOW_ISO,
   updatedAt: NOW_ISO,
   lines: [
-    { id: "l1", productId: "p-chapati", quantity: "2.0000", unitPrice: "40.00", subtotal: "80.00" },
-    { id: "l2", productId: "p-samosa", quantity: "3.0000", unitPrice: "50.00", subtotal: "150.00" },
+    { id: "l1", productId: "p-chapati", productName: "Chapati", quantity: "2.0000", unitPrice: "40.00", subtotal: "80.00" },
+    { id: "l2", productId: "p-samosa", productName: "Samosa", quantity: "3.0000", unitPrice: "50.00", subtotal: "150.00" },
   ],
 };
 
@@ -60,7 +61,7 @@ const ORDER_YESTERDAY: OrderView = {
   createdAt: YESTERDAY_ISO,
   updatedAt: YESTERDAY_ISO,
   lines: [
-    { id: "l3", productId: "p-chapati", quantity: "1.0000", unitPrice: "60.00", subtotal: "60.00" },
+    { id: "l3", productId: "p-chapati", productName: "Chapati", quantity: "1.0000", unitPrice: "60.00", subtotal: "60.00" },
   ],
 };
 

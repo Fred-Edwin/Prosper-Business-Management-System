@@ -182,8 +182,7 @@ export function AdminOrdersClient() {
       width: "grow-[1.2] basis-0",
       render: (o) => (
         <span className="font-ui [color:var(--text-primary)] text-body/sm">
-          {/* TODO(staff-api): replace with real cashier name once /api/staff exists */}
-          {cashierLabel(o.cashierId)}
+          {o.cashierName || cashierLabel(o.cashierId)}
         </span>
       ),
     },
@@ -520,7 +519,7 @@ function OrderDetailContent({ order }: { order: OrderView }) {
             >
               <div className="flex flex-col gap-px min-w-0">
                 <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
-                  {l.productId}
+                  {l.productName || l.productId}
                 </span>
                 <span className="font-ui [color:var(--text-secondary)] text-caption/micro">
                   {Number(l.quantity).toLocaleString("en-US")} ×{" "}
@@ -568,6 +567,7 @@ function DetailRow({
 
 type CorrectedLine = {
   productId: string;
+  productName: string;
   qty: number;
   unitPrice: string;
 };
@@ -584,6 +584,7 @@ function CorrectionForm({
   const [lines, setLines] = React.useState<CorrectedLine[]>(
     original.lines.map((l) => ({
       productId: l.productId,
+      productName: l.productName || l.productId,
       qty: Number(l.quantity),
       unitPrice: l.unitPrice,
     })),
@@ -617,7 +618,7 @@ function CorrectionForm({
       const origQty = Number(
         original.lines.find((ol) => ol.productId === l.productId)?.quantity ?? 0,
       );
-      return `${l.productId} +${origQty - l.qty} back to Restaurant`;
+      return `${l.productName || l.productId} +${origQty - l.qty} back to Restaurant`;
     });
 
   const impactText = [
@@ -676,7 +677,7 @@ function CorrectionForm({
           {original.lines
             .map(
               (l) =>
-                `${l.productId} × ${Number(l.quantity).toLocaleString("en-US")}`,
+                `${l.productName || l.productId} × ${Number(l.quantity).toLocaleString("en-US")}`,
             )
             .join(" · ")}{" "}
           · {ORDER_TYPE_LABEL[original.orderType]} ·{" "}
@@ -698,7 +699,7 @@ function CorrectionForm({
             >
               <div className="grow basis-0 flex flex-col gap-px min-w-0">
                 <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
-                  {l.productId}
+                  {l.productName || l.productId}
                 </span>
                 <span className="font-ui [color:var(--text-secondary)] text-caption/micro">
                   {fmtMoney(l.unitPrice)} · pcs

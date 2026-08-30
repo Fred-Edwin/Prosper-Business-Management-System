@@ -72,6 +72,7 @@ async function viewForProduct(
       periodEnd: null,
       unitsSold: null,
       revenue: null,
+      stockCountId: null,
     };
   }
 
@@ -104,6 +105,7 @@ async function viewForProduct(
     periodEnd: latest.occurredAt.toISOString(),
     unitsSold: quantityString(unitsSold),
     revenue: moneyString(revenue),
+    stockCountId: latest.id,
   };
 }
 
@@ -141,6 +143,7 @@ export async function getDerivedSalesForProduct(
       periodEnd: null,
       unitsSold: null,
       revenue: null,
+      stockCountId: null,
     };
   }
 

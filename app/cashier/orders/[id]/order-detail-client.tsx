@@ -211,8 +211,8 @@ function ReadOnlyOrder({
   onCorrectRequest: () => void;
   onGoToCorrection?: () => void;
 }) {
-  const lineName = (productId: string) =>
-    productById.get(productId)?.name ?? productId;
+  const lineName = (productId: string, productName?: string) =>
+    productName || productById.get(productId)?.name || productId;
 
   return (
     <div className="flex flex-col grow min-h-0 overflow-y-auto">
@@ -259,7 +259,7 @@ function ReadOnlyOrder({
           className="flex items-center justify-between py-(--sp-5) px-(--sp-6) gap-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
         >
           <span className="font-ui [color:var(--text-primary)] text-body/body">
-            {lineName(l.productId)} × {Math.round(Number(l.quantity))}
+            {lineName(l.productId, l.productName)} × {Math.round(Number(l.quantity))}
           </span>
           <span className="font-mono [color:var(--text-primary)] text-body/body">
             {kes(l.subtotal)}
@@ -328,7 +328,7 @@ function EditableOrder({
       productId: l.productId,
       qty: Math.round(Number(l.quantity)),
       unitPrice: l.unitPrice,
-      name: productById.get(l.productId)?.name ?? l.productId,
+      name: l.productName || productById.get(l.productId)?.name || l.productId,
     })),
   );
   const [orderTypeIdx, setOrderTypeIdx] = React.useState(

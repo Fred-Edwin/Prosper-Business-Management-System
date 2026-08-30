@@ -33,7 +33,6 @@ import { SearchInput } from "@/components/kit/search-input";
 import { Button } from "@/components/kit/button";
 import { useToast } from "@/components/kit/toast";
 import { ErrorState } from "@/components/kit/error-state";
-import type { ProductWithLocations } from "@/lib/domain/catalog";
 import {
   useStockCountActions,
   useDerivedSales,
@@ -41,16 +40,17 @@ import {
 } from "../use-stock-count";
 import { nairobiBusinessDate } from "@/app/cashier/use-orders";
 
-// ── Canteen products hook (G3 stopgap) ────────────────────────────────
-// /api/products is already accessible by canteen_attendant.
-// Filter to products with an active canteen ProductLocation.
+// ── Canteen products hook ─────────────────────────────────────────────
+// Calls dedicated GET /api/canteen/products endpoint.
 
 type CanteenProduct = {
   id: string;
   name: string;
   unitLabel: string;
   category: string | null;
-  canteenLocationId: string;
+  kind?: string;
+  sellingPrice?: string | null;
+  locationId?: string;
 };
 
 function useCanteenProducts() {
@@ -61,11 +61,11 @@ function useCanteenProducts() {
   React.useEffect(() => {
     void (async () => {
       try {
-        const res = await fetch("/api/products", {
+        const res = await fetch("/api/canteen/products", {
           headers: { "Content-Type": "application/json" },
         });
         const json = (await res.json()) as
-          | { data: ProductWithLocations[] }
+          | { data: CanteenProduct[] }
           | { error: { message: string } };
         if (!res.ok || "error" in json) {
           setError(
@@ -73,22 +73,7 @@ function useCanteenProducts() {
           );
           return;
         }
-        const canteen: CanteenProduct[] = [];
-        for (const p of json.data) {
-          const loc = p.locations.find(
-            (l) => l.locationType === "canteen" && l.active,
-          );
-          if (loc) {
-            canteen.push({
-              id: p.id,
-              name: p.name,
-              unitLabel: p.unitLabel,
-              category: p.category,
-              canteenLocationId: loc.locationId,
-            });
-          }
-        }
-        setProducts(canteen);
+        setProducts(json.data);
       } catch {
         setError("Failed to load canteen products.");
       } finally {

@@ -42,6 +42,7 @@ const SAMPLE_DERIVED_SALE: DerivedSaleView = {
   periodEnd: "2026-08-28T17:00:00.000Z",
   unitsSold: "96.0000",
   revenue: "5760.00",
+  stockCountId: "count-123",
 };
 
 describe("A4 Canteen Derived Sales Screen", () => {

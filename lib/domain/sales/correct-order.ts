@@ -297,7 +297,10 @@ export async function correctOrder(
 
     return tx.order.findUniqueOrThrow({
       where: { id: correction.id },
-      include: { lines: true },
+      include: {
+        cashier: { select: { name: true } },
+        lines: { include: { product: { select: { name: true } } } },
+      },
     });
   });
 

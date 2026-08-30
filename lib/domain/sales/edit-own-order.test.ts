@@ -62,7 +62,9 @@ describe("editOwnOrder", () => {
 
     expect(edited.id).toBe(order.id);
     expect(edited.total).toBe("40.00");
+    expect(edited.cashierName).toBe(`${ctx.prefix} Cashier A`);
     expect(edited.lines).toHaveLength(1);
+    expect(edited.lines[0].productName).toBe(chapati.name);
     expect(edited.lines[0].quantity).toBe("2.0000");
 
     // exactly one line, one sale movement, one money movement after the edit

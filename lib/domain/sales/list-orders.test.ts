@@ -57,6 +57,8 @@ describe("listOrders", () => {
     );
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.cashierId === ctx.cashierId)).toBe(true);
+    expect(rows.every((r) => r.cashierName === `${ctx.prefix} Cashier A`)).toBe(true);
+    expect(rows[0].lines[0].productName).toBe(ctx.products[0].name);
   });
 
   it("a cashierId=B filter as cashier A returns [] (no error, no leak)", async () => {

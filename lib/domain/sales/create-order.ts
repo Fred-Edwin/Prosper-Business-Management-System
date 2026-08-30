@@ -64,7 +64,10 @@ export async function createOrder(
 
     return tx.order.findUniqueOrThrow({
       where: { id: order.id },
-      include: { lines: true },
+      include: {
+        cashier: { select: { name: true } },
+        lines: { include: { product: { select: { name: true } } } },
+      },
     });
   });
 

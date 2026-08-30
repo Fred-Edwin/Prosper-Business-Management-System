@@ -47,6 +47,7 @@ const SAMPLE_ORDER: OrderView = {
   number: 1041,
   locationId: "loc-rest",
   cashierId: "cashier-uuid-123456",
+  cashierName: "Grace Cashier",
   orderType: "dine_in",
   deliveryFee: null,
   paymentMethod: "cash",
@@ -57,8 +58,8 @@ const SAMPLE_ORDER: OrderView = {
   createdAt: NOW_ISO,
   updatedAt: NOW_ISO,
   lines: [
-    { id: "l1", productId: "Chapati", quantity: "3.0000", unitPrice: "20.00", subtotal: "60.00" },
-    { id: "l2", productId: "Samosa", quantity: "4.0000", unitPrice: "30.00", subtotal: "120.00" },
+    { id: "l1", productId: "p-chapati", productName: "Chapati", quantity: "3.0000", unitPrice: "20.00", subtotal: "60.00" },
+    { id: "l2", productId: "p-samosa", productName: "Samosa", quantity: "4.0000", unitPrice: "30.00", subtotal: "120.00" },
   ],
 };
 
@@ -67,6 +68,7 @@ const CORRECTION_ORDER: OrderView = {
   number: 1042,
   locationId: "loc-rest",
   cashierId: "admin-uuid-123456",
+  cashierName: "Edwin Admin",
   orderType: "dine_in",
   deliveryFee: null,
   paymentMethod: "cash",
@@ -77,8 +79,8 @@ const CORRECTION_ORDER: OrderView = {
   createdAt: NOW_ISO,
   updatedAt: NOW_ISO,
   lines: [
-    { id: "l3", productId: "Chapati", quantity: "2.0000", unitPrice: "20.00", subtotal: "40.00" },
-    { id: "l4", productId: "Samosa", quantity: "4.0000", unitPrice: "30.00", subtotal: "120.00" },
+    { id: "l3", productId: "p-chapati", productName: "Chapati", quantity: "2.0000", unitPrice: "20.00", subtotal: "40.00" },
+    { id: "l4", productId: "p-samosa", productName: "Samosa", quantity: "4.0000", unitPrice: "30.00", subtotal: "120.00" },
   ],
 };
 
@@ -100,6 +102,7 @@ describe("A3 Admin Orders Screen", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Orders", level: 1 })).toBeDefined();
+    expect(screen.getByText("Grace Cashier")).toBeDefined();
     expect(screen.getByText("Dine-in")).toBeDefined();
     expect(screen.getByText("KES 210.00")).toBeDefined();
     expect(screen.getByText("Posted")).toBeDefined();

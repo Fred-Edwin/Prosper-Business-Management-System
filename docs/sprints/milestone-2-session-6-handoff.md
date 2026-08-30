@@ -634,9 +634,32 @@ Add an M2 dev-data block so `pnpm dev` shows **populated** states:
   - `pnpm tsc --noEmit` — 0 errors.
   - `pnpm build` — Clean production build (40 routes).
   - `pnpm test` — **411/411 passed across 63 test files.**
-- **Identified Gaps for Session 6e (Gap-Fix Sprint, agreed with Owner):**
-  - **G1:** Hydrate `cashierName: string` on `OrderView` via join in `toOrderView`.
-  - **G2:** Hydrate `productName: string` on `OrderLineView` via join in `toOrderView`.
-  - **G3 & G4:** Dedicated `/api/canteen/products` and today-count check endpoint.
-  - After 6e completes domain type updates and affected tests, proceed to Session 7 (QA).
+
+### 6e (done 2026-08-30 — Gap-Fix Sprint)
+- **G1 — Cashier Name Hydration:** `cashierName: string` added to `OrderView` in `lib/domain/sales/types.ts`. Queries include `cashier: { select: { name: true } }` and `toOrderView` maps `cashier.name`. `admin-orders-client.tsx` renders `order.cashierName`.
+- **G2 — Product Name Hydration:** `productName: string` added to `OrderLineView` in `lib/domain/sales/types.ts`. Queries include `lines: { include: { product: { select: { name: true } } } }` and `toOrderLineView` maps `product.name`. `admin-orders-client.tsx` and `order-detail-client.tsx` render `productName`.
+- **G3 — Dedicated Canteen Products API:** Created `GET /api/canteen/products` with role checks for `canteen_attendant` and `admin`. Added 5 route tests in `app/api/canteen/products/route.test.ts`. `stock-count-client.tsx` now calls `/api/canteen/products` directly.
+- **G4 — Same-Day Count Detection:** `stockCountId: string | null` added to `DerivedSaleView` and populated from `latest.id`.
+- **Gates:** `pnpm tsc --noEmit` (0 errors), `pnpm build` (41 routes clean), `pnpm test` (**416/416 tests passing across 64 test files**).
+
+---
+
+## 11. Handover to Session 7 (QA Sprint)
+
+Session 6 (6a, 6b, 6c, 6d, 6e) has completed all frontend assembly, wiring, and domain/API gap-fixing for Milestone 2. All 12 screens and 41 routes are live, backed by real domain logic, fully typed, seeded, and passing all 416 tests.
+
+### QA Execution Plan
+
+1. **Targeted Visual Parity Audit (Owner-Flagged Screens):**
+   - The Owner will flag the specific screens suspected of visual/layout divergence from Paper.
+   - For each flagged screen: fetch reference artboard via Paper MCP (`get_screenshot`), capture localhost via browser subagent, compare side-by-side, and log visual defects (spacing, tokens, hierarchy, responsive shifts).
+2. **Adversarial Contract & Ledger Checks:**
+   - **§3.2 / §3.8 (Orders & Stock Boundary):** Credit requires customer attach; zero money movement for credit; over-stock order strictly blocked with inline error.
+   - **§3.3 / §3.4 (Order Edits vs Corrections):** Same-day own orders editable; past-day orders route to Admin correction; Admin correction writes new numbered Order row with offsetting ledgers.
+   - **§3.5 (Canteen Cash-Only):** Physical count derivation exact; counted-more-than-expected returns 400 validation error; same-day undo hard-deletes count + movements.
+   - **§3.6 (Information Isolation):** No buying prices, margins, or unit costs leaked to Cashiers or Canteen Attendants.
+3. **Structured QA Findings Report:**
+   - Report visual and functional defects before fixing.
+   - Apply approved fixes with regression tests.
+   - Run gates: `pnpm tsc --noEmit` (0 errors), `pnpm build`, `pnpm test`.
 

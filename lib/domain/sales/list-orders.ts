@@ -50,7 +50,10 @@ export async function listOrders(
 
   const rows = await prisma.order.findMany({
     where,
-    include: { lines: true },
+    include: {
+      cashier: { select: { name: true } },
+      lines: { include: { product: { select: { name: true } } } },
+    },
     orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
   });
 
