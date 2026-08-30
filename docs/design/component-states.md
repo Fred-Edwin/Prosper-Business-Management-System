@@ -120,6 +120,7 @@ primary-loading, destructive-loading. Everything else is global.
 | filled | GLOBAL (filled = default box with value text; no separate style) — but keep the **"Beef Fillet" filled example** that already exists as the default sample |
 | error | **ARTBOARD (ADD)** — `--color-danger` border + helper text row below in `--color-danger`. Needed: Product Drawer name-required, delete-dialog retype-mismatch, bulk grid invalid cell. |
 | disabled | ARTBOARD ✅ ("0.00 KES" greyed sample on `6CG-0`) |
+| start-adornment | ADDED M2-6c — optional `startAdornment` node inside the box before the input (a "KES" currency marker, `--text-tertiary`, `aria-hidden`, non-focus). Artboards `DDD-0` (repayment Amount) / `DRN-0` (C3 delivery fee). Off ⇒ byte-identical. Story `StartAdornment` + baseline `kit-textinput--start-adornment`. |
 
 ### C4 — Textarea
 
@@ -350,8 +351,13 @@ drag/snap).
 | open (full task) | ARTBOARD ✅ |
 | dragging / mid-snap | GLOBAL (transform only; no distinct visual) |
 | backdrop | GLOBAL (`--surface-panel-tint` veil, matches drawer) |
+| open — titleless | ADDED M2-6c — omit `title`, pass `ariaLabel` so the dialog is still named; the sheet body renders its own header (C6 name + balance, `DDD-0`). No h1, no header divider. Story `TitlelessAriaLabel`. `visual: { disable: true }` → no baseline. |
 
-**No new artboards for C19.** ✅
+**M2-6c:** open-state `children` are now wrapped in a padded (`px-(--sp-6)
+pt-(--sp-5) pb-(--sp-8)`), `overflow-y-auto` scroll region; the panel is
+capped at `max-h-[90dvh]`. Consumers pass bare content — they no longer
+pad their own children (was a per-consumer edge-to-edge bug). Matches the
+`6ZJ-0` / `DLP-0` / `DDD-0` insets.
 
 ### C20 — Stat tile row  *(conditional on Financials M1 cut — §7)*
 

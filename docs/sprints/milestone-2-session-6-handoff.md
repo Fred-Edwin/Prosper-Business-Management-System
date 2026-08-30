@@ -329,6 +329,49 @@ new customer, edit a same-day order, view a past-day order).
 
 **Goal:** the last 4 screens, the seed, the final gates, hand to QA.
 
+### Read these first (6d may run cold, in any IDE, no session memory)
+
+Everything 6d needs is in the repo. Before writing code, read, in order:
+
+1. **This file** — `§0` (what 6a changed), `§1` (standing rules), `§2`
+   (testing discipline), `§4` (the per-feature hook pattern), `§6d`
+   (below), and `§10` (per-session notes — 6a/6b/6c are all logged).
+2. `docs/sprints/milestone-2-plan.md` — `§3` (cross-cutting contracts),
+   `§7` (session table + status), guardrails.
+3. **Worked examples already in the tree** (copy these patterns; do not
+   invent):
+   - Hooks: `app/cashier/use-orders.ts` + `app/admin/customers/use-customers.ts`
+     — the `request<T>` helper, a typed `*RequestError`, `refresh()`.
+   - Screen specs: `tests/screens/cashier-orders.screen.test.tsx` (6c) +
+     `tests/screens/admin-customers.screen.test.tsx` (6a) — the hook-mock
+     pattern, the jsdom dual-layout gotcha, `role="radio"` for
+     `SegmentedControl`, `role="dialog"` for `BottomSheet`.
+   - Screen composition: `app/cashier/orders/new/new-order-client.tsx`
+     (C2/C3/C5 — grid, `BottomSheet` overlays, `startAdornment`),
+     `app/cashier/orders/[id]/order-detail-client.tsx` (C4 — edit vs
+     read-only), `app/cashier/cashier-today-client.tsx` (C1).
+4. `docs/design/component-states.md` §2 + §9 and `docs/design/kit-audit.md`
+   — the current kit surface (6c added `TextInput.startAdornment` and
+   `BottomSheet` padding + `ariaLabel`).
+
+**The gate method (not app-level Playwright):** per-screen interaction is
+proven with **jsdom + React Testing Library** in
+`tests/screens/*.screen.test.tsx`, run under `pnpm vitest run <file>`.
+While iterating a screen, run ONLY that file (~2 s). Run the **full
+`pnpm test` once**, at the end, before the commit — not after every edit.
+`pnpm tsc --noEmit` is fast, run it freely. Visual diffing of a screen is
+done by screenshotting the Paper artboard (`mcp__paper__get_screenshot`)
+and comparing by eye — there is NO app-level headless-browser e2e
+(plan guardrail 2). The Storybook kit gate (`pnpm test:visual` /
+`pnpm test:a11y`, Playwright under the hood) is only touched if you
+change `components/kit/**`.
+
+**Owed from 6c (close it in 6d):** the visual baseline
+`tests/visual/__screenshots__/kit-textinput--start-adornment.png` was
+never generated (the `startAdornment` kit prop shipped without it — see
+`§10` 6c). Run the Storybook runner once and `-u` to write it, eyeball
+the PNG, commit. If it was already done, skip.
+
 ### A3 — Admin Orders list
 
 - Route: `app/admin/orders/page.tsx`. Shell: Admin desktop + mobile
@@ -528,10 +571,50 @@ Add an M2 dev-data block so `pnpm dev` shows **populated** states:
   (Admin) on `pnpm dev`. Needs a minimal customer seed block or a couple
   added by hand._
 
-### 6c
-- **Screen routes chosen (C2/C3/C4/C5):** _…_
-- **Flow-doc-vs-behaviour gaps found:** _…_
-- **Cashier order-flow walkthrough:** _date, sign-off / defects._
+### 6c (done 2026-08-30 — owner walkthrough owed)
+- **Screen routes:** C1 = `app/cashier/page.tsx` (→ `cashier-today-client.tsx`);
+  C2 = `app/cashier/orders/new/` (`page.tsx` + `new-order-client.tsx` —
+  C3 checkout + C5 attach are `BottomSheet` overlays composed inside the
+  same client); C4 = `app/cashier/orders/[id]/` (`page.tsx` resolves the
+  session + today's business date, `order-detail-client.tsx` renders
+  editable-vs-read-only).
+- **Hooks:** `app/cashier/use-orders.ts` (`useOrders` + `useOrder`),
+  `app/cashier/use-restaurant-products.ts` (grid + §3.8 balances).
+  `useCustomers.createCustomer` now **returns the created customer** (was
+  `void`) for C5's quick-create → attach.
+- **Spec:** `tests/screens/cashier-orders.screen.test.tsx`, 28 tests.
+  Note: `SegmentedControl` = `role="radio"`, `BottomSheet` = `role="dialog"`.
+- **Kit changes (owner-approved mid-session — defects vs the kit's own
+  artboards, found in the owner's `pnpm dev` walk):**
+  - `BottomSheet` — open-state `children` were edge-to-edge; now wrapped
+    in a padded, `overflow-y-auto` scroll region + panel `max-h-[90dvh]`.
+    New optional `ariaLabel` (name a titleless sheet — C6 `DDD-0`).
+  - `TextInput` — new optional `startAdornment` node inside the box
+    before the input (a "KES" marker, `DDD-0` / `DRN-0`). Applied to C6
+    Amount + C3/C4 delivery fee. **Visual baseline
+    `kit-textinput--start-adornment` NOT yet generated — see the "Read
+    these first" box in §6d; close it in 6d.**
+  - `component-states.md` §C3/§C19 + `kit-audit.md` updated.
+- **Seed runtime fix:** the seeded `Restaurant` `Location` had
+  `active: false` (a prior test run flipped it) → `POST /api/orders`
+  failed `resolveRestaurantId`. The seed's `location.upsert` calls now
+  `update: { active: true }`.
+- **C6 repayment sheet** brought closer to `DDD-0`: no h1 title (uses
+  `ariaLabel`), whole-KES balance line, full-width fields + button.
+- **Flow-doc-vs-behaviour gaps for QA (also in PROGRESS):**
+  (1) C4 "corrected" banner has no Admin **name** / `correctedAt` —
+  `OrderView` lacks both; shows date + `#number` only (`D18-0` shows
+  "by Edwin K. (Admin)"). (2) "Correct this (Admin)" on C4 fires a
+  **toast** with the order number, not a modal. (3) line-row
+  `QuantityStepper` uses the kit size, not the artboard's 30px cells.
+- **Seed:** `prisma/seed.ts` → `seedM2Sales()` — Restaurant menu with
+  `category` + `production` stock, "Cashier Two", 4 customers (2 with a
+  net balance after a repayment, 1 with a noted mpesa_bank repayment),
+  ~8 orders across both cashiers incl. 2 yesterday + 1 corrected pair.
+  Idempotent (`seed-*` ids). Full canteen/breadth seed → 6d.
+- **Cashier order-flow walkthrough:** _PENDING — owner drives cash /
+  M-Pesa / credit-new-customer / edit-same-day / view-past-day on
+  `pnpm dev`; also the owed 6b Customers walk._
 
 ### 6d
 - **Screen routes chosen (A4/K1):** _…_

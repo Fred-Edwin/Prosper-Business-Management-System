@@ -3,6 +3,7 @@
 import * as React from "react";
 import type {
   CreateCustomerInput,
+  Customer,
   CustomerLedger,
   CustomerListRow,
   MoneyAccount,
@@ -97,12 +98,13 @@ export function useCustomers(filter: CustomersListFilter) {
   }, [refresh]);
 
   const createCustomer = React.useCallback(
-    async (input: CreateCustomerInput) => {
-      await request<unknown>(`/api/customers`, {
+    async (input: CreateCustomerInput): Promise<Customer> => {
+      const created = await request<Customer>(`/api/customers`, {
         method: "POST",
         body: JSON.stringify(input),
       });
       await refresh();
+      return created;
     },
     [refresh],
   );

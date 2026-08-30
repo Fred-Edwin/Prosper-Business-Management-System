@@ -84,3 +84,19 @@ export const Standalone: Story = {
   name: "Standalone (no label — caller must pass aria-label)",
   args: { label: undefined, "aria-label": "Product name" },
 };
+
+export const StartAdornment: Story = {
+  name: "startAdornment (KES currency marker — DDD-0 / DRN-0)",
+  args: {
+    label: "Amount",
+    startAdornment: "KES",
+    inputMode: "decimal",
+    defaultValue: "500",
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    // The marker is decorative (aria-hidden) — not part of the a11y name.
+    await expect(c.getByText("KES")).toHaveAttribute("aria-hidden", "true");
+    await expect(c.getByRole("textbox")).toHaveValue("500");
+  },
+};

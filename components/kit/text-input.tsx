@@ -22,6 +22,13 @@ export interface TextInputProps
   /** Danger-colored helper row rendered below the field when set. */
   helperText?: string;
   required?: boolean;
+  /**
+   * Static adornment rendered inside the field box, before the input —
+   * e.g. a "KES" currency marker (artboards DDD-0 / DRN-0). Non-interactive,
+   * `--text-tertiary`, does not receive focus. A plain string is styled
+   * as `--font-mono`; pass a node for anything else.
+   */
+  startAdornment?: React.ReactNode;
 }
 
 export function TextInput({
@@ -32,6 +39,7 @@ export function TextInput({
   disabled = false,
   className,
   id,
+  startAdornment,
   ...props
 }: TextInputProps) {
   const box = error
@@ -53,11 +61,23 @@ export function TextInput({
         <div
           className={cn(
             "flex items-center h-(--control-md) px-(--sp-5) rounded-sm shrink-0 kit-field",
+            startAdornment != null && startAdornment !== false && "gap-(--sp-4)",
             box,
             className,
           )}
           data-invalid={invalid || undefined}
         >
+          {startAdornment != null && startAdornment !== false && (
+            <span
+              aria-hidden
+              className={cn(
+                "shrink-0 text-sm/sm [color:var(--text-tertiary)]",
+                typeof startAdornment === "string" ? "font-mono" : "font-ui",
+              )}
+            >
+              {startAdornment}
+            </span>
+          )}
           <input
             id={controlId}
             disabled={disabled}
@@ -65,6 +85,7 @@ export function TextInput({
             aria-invalid={invalid}
             className={cn(
               "font-ui text-sm/sm w-full bg-transparent outline-none",
+              typeof startAdornment === "string" && "font-mono",
               disabled
                 ? "[color:var(--text-disabled)]"
                 : "[color:var(--text-primary)]",

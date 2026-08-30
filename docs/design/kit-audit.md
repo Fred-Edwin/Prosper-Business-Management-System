@@ -184,7 +184,7 @@ transform only), backdrop (GLOBAL).
 | drag-to-dismiss | present (pointer down/up, `dy > 48`). Keep (optional per handoff). | keep. |
 | keyboard | Esc ✓; no trap; grab handle is a `<div>`, not focusable/operable. | _tbd_ |
 | ARIA | `role="dialog"` ✓ `aria-modal` ✓ on both states. Missing: `aria-label`/`aria-labelledby` (open state has a title node — link it); peek state has no accessible name. | _tbd_ |
-| notes | Same overlay contract as Drawer, slide from bottom (`transform: translateY`), `--dur-base`. Peek + open (`6Z4-0`). | |
+| notes | Same overlay contract as Drawer, slide from bottom (`transform: translateY`), `--dur-base`. Peek + open (`6Z4-0`). | **M2-6c:** open-state `children` now wrapped in a padded (`px-(--sp-6)`), `overflow-y-auto` scroll region + panel `max-h-[90dvh]` (consumers passed edge-to-edge content before). New optional `ariaLabel` prop names the dialog when `title` is omitted (C6's body renders its own header — `DDD-0`). |
 
 ### Button — `components/kit/button.tsx`
 
@@ -272,7 +272,7 @@ Required (`§2 C3`): default/focus/disabled (ARTBOARD ✓), error (ARTBOARD ✓ 
 | §9.7 disabled | `disabled` on the input + inline `--surface-subtle` bg + `--text-disabled` — the drawn ARTBOARD, kept. `.kit-field:disabled` also fires. Fine. | keep. |
 | keyboard | native `<input>` ✓. | keep. |
 | ARIA | `<label htmlFor>` ✓ `aria-invalid` ✓. Missing `aria-describedby` → helper. | _tbd_ |
-| notes | | |
+| notes | | **M2-6c:** optional `startAdornment` node inside the box, before the input — a "KES" currency marker (`DDD-0` / `DRN-0`). `aria-hidden`, `--text-tertiary`, not focusable; a string is set `--font-mono` and mono-izes the input too. Off ⇒ byte-identical. |
 
 ### Textarea — `components/kit/textarea.tsx`
 

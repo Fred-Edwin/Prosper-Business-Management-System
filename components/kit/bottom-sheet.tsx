@@ -32,8 +32,15 @@ export type BottomSheetState = "closed" | "peek" | "open";
 export interface BottomSheetProps {
   state: BottomSheetState;
   onStateChange: (state: BottomSheetState) => void;
-  /** Header title shown in the "open" state. */
+  /**
+   * Header title shown as an h1 in the "open" state. Omit it when the
+   * sheet body renders its own header (e.g. C6's name + balance block,
+   * artboard DDD-0) — pass `ariaLabel` instead so the dialog is still
+   * named.
+   */
   title?: string;
+  /** Accessible name when `title` is not rendered. Ignored when `title` is set. */
+  ariaLabel?: string;
   /** Content shown in the "peek" state (label row + value in the artboard sample). */
   peekContent?: React.ReactNode;
   /** Full-task content shown in the "open" state, below the header. */
@@ -45,6 +52,7 @@ export function BottomSheet({
   state,
   onStateChange,
   title,
+  ariaLabel,
   peekContent,
   children,
   className,
@@ -98,9 +106,13 @@ export function BottomSheet({
         aria-modal="true"
         // The title node only renders in the "open" branch — in "peek" there is
         // no #titleId element, so aria-labelledby there would dangle (axe:
-        // aria-dialog-name). Use aria-labelledby only when the title is shown.
+        // aria-dialog-name). Use aria-labelledby only when the title is shown;
+        // otherwise fall back to `ariaLabel` (a titleless sheet with its own
+        // in-body header) or the peek `title` / "Details".
         aria-labelledby={title && !isPeek ? titleId : undefined}
-        aria-label={title && !isPeek ? undefined : title || "Details"}
+        aria-label={
+          title && !isPeek ? undefined : title || ariaLabel || "Details"
+        }
         tabIndex={-1}
         data-state={phase}
         onPointerDown={onPointerDown}
@@ -110,7 +122,9 @@ export function BottomSheet({
         }}
         className={cn(
           "kit-sheet-panel fixed left-0 right-0 bottom-0 flex flex-col rounded-tl-[16px] rounded-tr-[16px] bg-(--surface-page) [z-index:var(--z-dialog)] [box-shadow:var(--shadow-md)] outline-none",
-          isPeek ? "pt-(--sp-5) pb-(--sp-8) gap-(--sp-4) px-(--sp-6)" : "",
+          // Open state: cap at 90dvh so a tall task sheet scrolls internally
+          // (the inner content wrapper is the scroll region).
+          isPeek ? "pt-(--sp-5) pb-(--sp-8) gap-(--sp-4) px-(--sp-6)" : "max-h-[90dvh]",
           className,
         )}
       >
@@ -137,7 +151,14 @@ export function BottomSheet({
                 </div>
               </div>
             )}
-            {children}
+            {/* Open-state content is inset to match the title bar (px-(--sp-6),
+                artboard 6ZJ-0 / DLP-0 / DDD-0) and is the sheet's scroll
+                region — tall task content (C3 checkout) scrolls here rather
+                than pushing the sheet off-screen. Consumers no longer pad
+                their own children. */}
+            <div className="flex flex-col grow min-h-0 overflow-y-auto px-(--sp-6) pt-(--sp-5) pb-(--sp-8)">
+              {children}
+            </div>
           </>
         )}
       </div>

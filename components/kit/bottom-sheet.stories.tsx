@@ -19,7 +19,13 @@ const meta: Meta<typeof BottomSheet> = {
 export default meta;
 type Story = StoryObj<typeof BottomSheet>;
 
-function Harness({ start = "closed" }: { start?: BottomSheetState }) {
+function Harness({
+  start = "closed",
+  titled = true,
+}: {
+  start?: BottomSheetState;
+  titled?: boolean;
+}) {
   const [state, setState] = React.useState<BottomSheetState>(start);
   return (
     <div style={{ padding: 24 }}>
@@ -30,12 +36,13 @@ function Harness({ start = "closed" }: { start?: BottomSheetState }) {
       <BottomSheet
         state={state}
         onStateChange={setState}
-        title="Add product"
+        // The open-state content wrapper is padded + scrollable by the
+        // component now — consumers pass bare content.
+        title={titled ? "Add product" : undefined}
+        ariaLabel={titled ? undefined : "Record repayment for Grace Wanjiru"}
         peekContent={<div style={{ fontFamily: "var(--font-ui)" }}>Quick lookup</div>}
       >
-        <div style={{ padding: 16, fontFamily: "var(--font-ui)" }}>
-          Full task content
-        </div>
+        <div style={{ fontFamily: "var(--font-ui)" }}>Full task content</div>
       </BottomSheet>
     </div>
   );
@@ -106,5 +113,21 @@ export const HandleKeyboardStepsDown: Story = {
     await waitFor(() =>
       expect(within(document.body).getByText("Quick lookup")).toBeVisible(),
     );
+  },
+};
+
+export const TitlelessAriaLabel: Story = {
+  name: "No title ⇒ dialog named via ariaLabel (DDD-0 pattern)",
+  render: () => <Harness start="open" titled={false} />,
+  play: async () => {
+    const dialog = within(document.body).getByRole("dialog");
+    // No visible h1, but the dialog is still accessibly named.
+    await expect(dialog).toHaveAttribute(
+      "aria-label",
+      "Record repayment for Grace Wanjiru",
+    );
+    await expect(
+      within(dialog).getByText("Full task content"),
+    ).toBeVisible();
   },
 };

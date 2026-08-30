@@ -35,12 +35,21 @@ export function fmtMoney(dec: string): string {
     : dec;
 }
 
-/** "owes KES 1,200" / "Settled" — the balance read-out (never an input). */
-export function balanceLabel(balance: string): string {
+/**
+ * "Owes KES 1,200" / "Settled" — the balance read-out (never an input).
+ * `whole` drops the decimals (C6's in-sheet header, artboard DDD-0 —
+ * "Owes KES 1,200"). The A1/A2 rail-Drawer "Current balance" row keeps
+ * 2dp (`whole = false`, the default).
+ */
+export function balanceLabel(balance: string, whole = false): string {
   const n = Number(balance);
   if (Number.isFinite(n) && n === 0) return "Settled";
-  if (Number.isFinite(n) && n < 0) return `KES ${fmtMoney(String(-n))} in credit`;
-  return `Owes KES ${fmtMoney(balance)}`;
+  const fmt = (dec: string) =>
+    whole && Number.isFinite(Number(dec))
+      ? Number(dec).toLocaleString("en-US", { maximumFractionDigits: 0 })
+      : fmtMoney(dec);
+  if (Number.isFinite(n) && n < 0) return `KES ${fmt(String(-n))} in credit`;
+  return `Owes KES ${fmt(balance)}`;
 }
 
 export interface RepaymentFormProps {
@@ -101,8 +110,9 @@ export function RepaymentForm({
   return (
     <>
       {customerName ? (
-        /* C6 BottomSheet in-body header (artboard DDD-0). */
-        <div className="flex flex-col gap-[2px] pb-(--sp-3)">
+        /* C6 BottomSheet in-body header (artboard DDD-0) — name then a
+           whole-KES balance line, no h1 title above it. */
+        <div className="flex flex-col gap-[2px] pb-(--sp-5)">
           <span className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h2/h2">
             {customerName}
           </span>
@@ -111,7 +121,7 @@ export function RepaymentForm({
               owes ? "text-danger" : "[color:var(--text-tertiary)]"
             }`}
           >
-            {balanceLabel(balance)}
+            {balanceLabel(balance, true)}
           </span>
         </div>
       ) : (
@@ -130,35 +140,42 @@ export function RepaymentForm({
         </div>
       )}
 
-      <TextInput
-        label="Amount (KES)"
-        inputMode="decimal"
-        required
-        placeholder="0.00"
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-        error={amount.trim() !== "" && !amountValid}
-        helperText={
-          amount.trim() !== "" && !amountValid
-            ? "Enter an amount greater than 0"
-            : undefined
-        }
-      />
-
-      <SegmentedControl
-        label="Account in"
-        options={[...ACCOUNT_LABELS]}
-        value={accountLabel}
-        onChange={setAccountLabel}
-      />
-
-      {withNote && (
-        <Textarea
-          label="Note (optional)"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
+      {/* The kit form controls wrap in a FormField hard-set to `w-[280px]`;
+          in the C6 sheet / rail Drawer the fields should fill the width
+          (artboards DDD-0 / EJ6-0). Force the FormField wrapper + the
+          `.kit-field` box to full width here. */}
+      <div className="flex flex-col gap-(--sp-6) [&>*]:w-full [&_.kit-field]:w-full">
+        <TextInput
+          label="Amount"
+          startAdornment="KES"
+          inputMode="decimal"
+          required
+          placeholder="0.00"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          error={amount.trim() !== "" && !amountValid}
+          helperText={
+            amount.trim() !== "" && !amountValid
+              ? "Enter an amount greater than 0"
+              : undefined
+          }
         />
-      )}
+
+        <SegmentedControl
+          label="Account in"
+          options={[...ACCOUNT_LABELS]}
+          value={accountLabel}
+          onChange={setAccountLabel}
+        />
+
+        {withNote && (
+          <Textarea
+            label="Note (optional)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        )}
+      </div>
 
       {error && (
         <div role="alert" className="font-ui text-danger text-sm/sm">

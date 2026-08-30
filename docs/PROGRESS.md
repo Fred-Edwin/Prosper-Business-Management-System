@@ -19,30 +19,189 @@ Running status log, updated at the end of every sprint session.
 
 **Plan:** `docs/sprints/milestone-2-plan.md` (living — Session 6 split
 into 6a / 6b / 6c / 6d).
-**Status:** Sessions 2, 3, 4, 5 done; 1a + 1b done. **Sessions 6a + 6b
-done** (backend gap-fills + Customers feature; responsive Admin shell +
-nav wiring + `SimpleTable` rowChevron + Catalog `category` field).
-Sessions **6c / 6d pending** (Restaurant Orders; Admin Orders + Canteen),
+**Status:** Sessions 2, 3, 4, 5 done; 1a + 1b done. **Sessions 6a + 6b +
+6c done** (backend gap-fills + Customers feature; responsive Admin shell +
+nav wiring + `SimpleTable` rowChevron + Catalog `category` field;
+Restaurant Orders C1–C5 + hooks + a minimal M2 sales seed). Session **6d
+pending** (Admin Orders A3 + Canteen A4/K1/K2 + full seed + final gates),
 then Session 7 (QA). S1a + S3 + S4 + S5 sit on
-`feat/m2-session-4-orders`; 6a + 6b are on `feat/m2-session-6-screens`.
+`feat/m2-session-4-orders`; 6a + 6b + 6c are on `feat/m2-session-6-screens`.
 Merge order to `main`: the whole M2 chain → 6a → 6b → 6c → 6d → S7 (one
 PR after QA, mirroring how M1 landed).
+
+### 2026-08-30 — M2 Session 6c: Restaurant Orders C1–C5 (Developer) — DONE (owner walkthrough owed)
+
+Development Sprint (frontend assembly). The Cashier can take a Restaurant
+order end to end on real data. No schema. Small hook additions:
+`useCustomers.createCustomer` now returns the created customer (C5
+quick-create attach). **Two kit changes were approved mid-session by the
+owner** (both defects vs the kit's own artboards, not new design
+decisions) — see the "6c follow-up" block below.
+
+- **Hooks.**
+  - `app/cashier/use-orders.ts` — mirrors `use-catalog.ts` /
+    `use-customers.ts` (typed `OrdersRequestError`, `request<T>`,
+    domain-typed shapes). `useOrders({ date })` list (the API role-scopes
+    to the caller; `date: "today"` resolved against Africa/Nairobi
+    client-side), `createOrder`, `editOwnOrder`, `correctOrder`
+    (exposed for A3's reuse in 6d — Admin-only at the API). `useOrder(id)`
+    for C4 — finds the row in the caller's list (M2 has no `GET
+    /api/orders/:id`), plus the linked `correction` row if visible.
+    `isSameBusinessDay` / `nairobiBusinessDate` helpers.
+  - `app/cashier/use-restaurant-products.ts` — `GET /api/products`
+    filtered to products with an active, priced Restaurant
+    `ProductLocation` (the Restaurant `locationId` comes from the
+    payload's `locationType`, so the Cashier needs no `/api/locations`
+    access), joined with `GET /api/stock-movements/balances` for the
+    tile stock-available count + the §3.8 block.
+- **C1 Cashier Today** (`app/cashier/page.tsx` → `cashier-today-client.tsx`).
+  Own orders for today, newest first; day running total; "Day open" pill
+  (M2 has no Day Close — `isPastDay` is a permanently-false hook and the
+  `C0Z-0` day-closed banner stays behind it). `CORRECTED` / `Correction`
+  chip derived from whether another visible row's `correctsOrderId` points
+  at this one. States: populated / empty / loading / error. Sticky "New
+  order" (the `flow-scaffold.tsx` `sticky bottom-0` pattern — the staff
+  shell's `stickyActionBar` slot isn't wired for hub routes).
+- **C2 New Order build** (`app/cashier/orders/new/*`). `SearchInput` +
+  kit `Tabs` (underline) `category` row ("All" + one per distinct
+  `Product.category`; `null` → "Uncategorised") + a 2-col product-tile
+  grid (tap to add / +1, qty badge) + a pinned order-line panel
+  (`QuantityStepper` per row) + a sticky total bar. §3.8: a line whose
+  qty exceeds the derived Restaurant balance renders the §9.8 error
+  pattern on the row and disables "Review order" with a danger caption —
+  the server is still the gate. States: populated / empty (no sellable
+  products) / loading / error / line-blocked.
+- **C3 Checkout** — a `BottomSheet` over C2. Order-type + payment
+  `SegmentedControl`s; the delivery-fee `TextInput` appears only for
+  Delivery and is dropped on switch-back; **`account` is omitted** (the
+  domain derives cash→cash / mpesa→mpesa_bank). Credit reveals the
+  customer-attach block and **Confirm stays disabled until a customer is
+  attached** (plan §3.2). On confirm → `createOrder` → toast → back to C1.
+- **C4 Order detail / edit** (`app/cashier/orders/[id]/*`). The server
+  page resolves `currentUserId` + today's business date so the client
+  needs no session hook. Editable iff own **and** same Africa/Nairobi
+  business day (`editOwnOrder` / PATCH) — reuses the C2 line rows + C3
+  controls, "Save changes", same §3.8 block. Otherwise **read-only**: a
+  static list + a warning banner + "Correct this (Admin)" which does
+  **not** open a form (ADR-15) — it fires a toast surfacing the order
+  **number** for the Cashier to give the Admin (flow doc walkthrough F).
+  A corrected order shows a `CORRECTED` banner + "View correction entry —
+  order #N" linking the correction row; no Correct button.
+- **C5 Customer attach / quick-create** — a `BottomSheet` over C3, reusing
+  `useCustomers` (search + `createCustomer`). Search results / no-match
+  quick-create (name prefilled from the search text until edited) / phone
+  validation error / an explicit "Add new customer" row.
+- **Spec** `tests/screens/cashier-orders.screen.test.tsx` — 28 tests.
+  Per screen: populated / empty / error / loading + the primary
+  interaction. Contracts proven: credit → Confirm disabled until a
+  customer is attached; §3.8 line block disables Review; C4 same-day →
+  editable form, past-day / not-own → read-only + no edit + Admin path;
+  **no margin / cost / profit value or "buying price" string anywhere in
+  C1–C4**. `SegmentedControl` renders `role="radio"` (not tab);
+  `BottomSheet` renders `role="dialog"`.
+- **Seed** — `prisma/seed.ts` gained a `seedM2Sales()` block (idempotent
+  by fixed `seed-*` ids): the Restaurant menu now carries `category` +
+  `production` stock so C2 tiles aren't all §3.8-blocked; a **second
+  cashier** ("Cashier Two" / PIN 1234); 4 customers (Grace owes 220 net
+  after a 200 cash repayment, John owes 100 net after a 500 mpesa_bank
+  repayment **with a note**, Mary owes 400, Peter clear); ~8 orders
+  across the two cashiers — cash / M-Pesa / credit / dine-in / takeaway /
+  delivery+fee, two dated **yesterday**, one **corrected** (original +
+  linked correction row). Enables both the owed 6b Customers walkthrough
+  and the 6c Cashier walkthrough on `pnpm dev`. The **full** M2 seed
+  (canteen counts, more breadth) stays a 6d task.
+- **Flow-doc-vs-behaviour deltas for QA (Session 7):**
+  - C4 "corrected" banner omits the correcting Admin's **name** and shows
+    only the correction's date + number — `OrderView` carries neither a
+    `correctedByName` nor a `correctedAt`; `D18-0` shows "by Edwin K.
+    (Admin)". Data gap, not a bug.
+  - "Correct this (Admin)" on C4 fires a **toast** with the order number
+    rather than a modal/alert; the flow doc only says it "surfaces the
+    order reference … does not open a form".
+  - C2/C4 line-row `QuantityStepper` uses the **kit** control size, not
+    the artboard's fixed 30px cells (owner ruling 6a — kit wins on
+    sizing).
+- **Gates (as of the 6c screen work):** `pnpm tsc --noEmit` 0;
+  `pnpm build` clean (new routes `/cashier`, `/cashier/orders/new`,
+  `/cashier/orders/[id]` registered); **`pnpm test` 396/396**;
+  `grep TODO(mock) app/cashier` clean.
+- **Owner walkthrough:** _PENDING — owner drives the Cashier order flow
+  on `pnpm dev` (cash, M-Pesa, credit-with-new-customer, edit a same-day
+  order, view a past-day order), plus the still-owed 6b Customers walk
+  (C6 as Cashier, A1/A2 as Admin). Seed data is in place._
+
+#### 6c follow-up (owner-driven review on `pnpm dev`, same day)
+
+The owner walked C1–C6 on `pnpm dev` and found four issues; all fixed
+this session:
+
+1. **Runtime — `POST /api/orders` failed "No active Restaurant location
+   is configured."** The seeded `Restaurant` `Location` row had
+   `active: false` (flipped by an earlier test run against the dev DB;
+   the seed's `update: {}` never healed it). `resolveRestaurantId`
+   requires an **active** restaurant. Fix: the seed's three
+   `location.upsert` calls now `update: { active: true }` (self-healing).
+   Dev DB re-seeded.
+2. **Kit `BottomSheet` — open-state `children` rendered edge-to-edge.**
+   Only the (now-removed) h1 title bar was padded; C3 checkout, C5
+   attach and the 6a C6 repayment sheet all had text running to the
+   screen edge. **Kit fix (owner-approved):** the open-state content is
+   wrapped in a padded (`px-(--sp-6) pt-(--sp-5) pb-(--sp-8)`),
+   `overflow-y-auto` scroll region; the panel is capped `max-h-[90dvh]`
+   so tall sheets scroll internally. Consumers pass bare content now.
+   Matches artboards `6ZJ-0` / `DLP-0` / `DDD-0`. Story `visual: {
+   disable: true }` → no baseline to re-key.
+3. **Kit `TextInput` — no in-field currency marker.** `DDD-0` (repayment
+   Amount) and `DRN-0` (C3 delivery fee) show a "KES" marker *inside* the
+   box. **Kit fix (owner-approved):** new optional `startAdornment`
+   prop — a node rendered before the input, `aria-hidden`,
+   `--text-tertiary`, not focusable; a string is `--font-mono` and
+   mono-izes the input. Off ⇒ byte-identical. Applied to the C6 Amount
+   field (label → "Amount", `startAdornment="KES"`) and both C3 + C4
+   delivery-fee fields (label → "Delivery fee"). New story `StartAdornment`.
+   ⚠️ **Owed:** the visual baseline `kit-textinput--start-adornment.png`
+   has NOT been generated — the Playwright story runner
+   (`pnpm test:visual` / `test:a11y`, Storybook on :6006) needs to run
+   once and `-u` to write it, then eyeball + commit. `tsc` + the jsdom
+   screen specs are green.
+4. **C6 repayment sheet — fidelity gaps vs `DDD-0`:** (a) dropped the
+   "Record repayment" h1 sheet title — `BottomSheet` now takes an
+   `ariaLabel` prop so a titleless sheet is still named; the in-body
+   name + balance IS the header. (b) balance line now whole-KES
+   ("Owes KES 1,200", not "…220.00") via `balanceLabel(balance, true)` —
+   the A1/A2 rail-drawer "Current balance" row keeps 2dp. (c) fields +
+   the C6 button are now full-width (kit `FormField` hard-codes
+   `w-[280px]`; overridden locally with `[&_.kit-field]:w-full` in
+   `RepaymentForm` and `[&>button]:w-full` in C6's `renderFooter`).
+   A1/A2 footer (Cancel + primary row) unchanged.
+
+Docs updated for the kit changes: `component-states.md` §C3 / §C19,
+`kit-audit.md` (TextInput / BottomSheet rows).
+
+**Full-suite re-run after the follow-up: `pnpm test` 396/396, `tsc` 0.**
 
 ### 2026-08-30 — M2 Session 6b: responsive Admin shell + nav wiring + SimpleTable rowChevron + Catalog category (Developer) — DONE
 
 Development Sprint (frontend assembly). Closes the five 6a-flagged frontend
 gaps + the one approved kit change. No schema, no `lib/domain`.
 
-- **6b.1 — Admin shell responsive.** The mobile chrome (`6BD-0` header +
-  `1ZP-0` drawer) was **merged into `components/shells/admin-shell.tsx`**
-  rather than swapping shell components: below `--bp-md` the fixed
-  sidebar / icon-rail is `hidden md:flex`, a `flex md:hidden` header with
-  a hamburger opens the already-built kit **`MobileNavDrawer`** (one
-  internal `useState`, the same rule as `MobileShellAdmin` / `StaffShell`).
-  `children` renders once. At/above `--bp-md` the 240px sidebar is
-  unchanged. `MobileShellAdmin` (`components/shells/mobile-shell-admin.tsx`)
-  is now unreferenced — left in place (a valid transcription of `6B1-0`);
-  QA/6d may remove it.
+- **6b.1 — Admin shell responsive.** _(first attempt merged the mobile
+  chrome into `admin-shell.tsx`; that entangled the desktop flex-row and
+  mobile fixed-height-column box models and shipped two bugs — see the
+  fix commit `921fe6d` below.)_ **Final:** `admin-shell.tsx` stays
+  **desktop-only**; `app/admin/admin-shell-client.tsx` renders **both**
+  proven shells and toggles with `hidden md:block` / `md:hidden` — the
+  desktop `AdminShell` (`649-0`/`67T-0`) and the existing
+  `MobileShellAdmin` (`6B1-0`/`1ZP-0`, hamburger → kit `MobileNavDrawer`).
+  `children` renders in both subtrees (client-only, no server effects;
+  the hidden shell's hooks still run — accepted). Also fixed:
+  `MobileNavDrawer`'s portal wrapper was `position: fixed` +
+  `z-index: auto`, a level-0 stacking context that trapped the scrim
+  (`--z-overlay`) / panel (`--z-drawer`) **below** `PageShell`'s
+  `--z-sticky` (1100) toolbar — the drawer painted under the page header.
+  Wrapper is now non-positioned (mirrors the kit `Drawer`); scrim + panel
+  (`fixed inset-y-0 left-0`) escape to root and cover the page. Owner
+  verified on localhost (drawer over toolbar; both viewports).
 - **6b.2 — Admin nav wired.** In both `admin-shell.tsx` and
   `mobile-nav-drawer.tsx`: **Sales** → `/admin/orders` (A3, key `orders`);
   new **Derived sales** item → `/admin/canteen/derived-sales` (A4, key

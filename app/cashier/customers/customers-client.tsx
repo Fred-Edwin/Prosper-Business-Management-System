@@ -131,7 +131,10 @@ export function CashierCustomersClient() {
           setSheetState(s);
           if (s === "closed") setSelected(null);
         }}
-        title="Record repayment"
+        // DDD-0 has no h1 title — the in-body name + balance IS the header.
+        ariaLabel={
+          selected ? `Record repayment for ${selected.name}` : "Record repayment"
+        }
       >
         {selected && (
           <RepaymentForm
@@ -143,7 +146,9 @@ export function CashierCustomersClient() {
               toast(`Repayment recorded · ${selected.name}`, { tone: "success" });
               closeSheet();
             }}
-            renderFooter={(node) => <div className="pt-(--sp-4)">{node}</div>}
+            renderFooter={(node) => (
+              <div className="pt-(--sp-4) [&>button]:w-full">{node}</div>
+            )}
           />
         )}
       </BottomSheet>
