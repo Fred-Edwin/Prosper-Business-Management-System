@@ -322,24 +322,34 @@ change, no new component.
 - **A4 Canteen Derived Sales** (`worldY 19300`, 5): `desktop populated`
   (GL2-0) · `product never counted` (GRM-0) · `filtered-empty` (GVN-0)
   · `loading` (GZO-0) · `mobile` (H4I-0).
-- **K1 Stock Count** (`worldY 20400`, 6): `product picker` (H6V-0) ·
+- **K1 Stock Count** (`worldY 20400`, **9** — 6 as of 2026-08-29, re-spun
+  to 9 on 2026-08-30 for `voidStockCount`): `product picker` (H6V-0) ·
   `count entered + preview` (H8J-0) · `first-ever count` (HA3-0) ·
-  `correcting re-count, negative sold` (HBN-0) · `validation error`
-  (HD7-0) · `confirm success` (HIQ-0, = Canteen hub + Toast).
+  `counted more than expected (blocked)` (HBN-0 — was "correcting
+  re-count, negative sold") · `delete count confirm` (HSF-0) ·
+  `delete count success` (HWS-0) · `count locked, previous day`
+  (HUZ-0) · `validation error` (HD7-0, blank/non-numeric only) ·
+  `confirm success` (HIQ-0, = Canteen hub + Toast).
 - **K2 Canteen Hub** (`worldY 21400`, 2): `derived-sale entry in
   timeline` (HLH-0) · `derived-sale interleaved with other movements`
   (HNT-0). New `ActivityTimeline` entry type on `9BA-0` — no new
   screen.
 
-- **Patterns added to "M2 Sales Patterns [M2-01]" (`DIN-0`):** three new
-  sections — `Section — Chip filter bar` (HQN-0), `Section — Derived-sale
-  timeline row` (HR5-0), `Section — Correction linked row-group` (HRN-0).
-  Note text updated to cover all of M2. One canonical artboard; no
-  divergent second version anywhere.
+- **Patterns added to "M2 Sales Patterns [M2-01]" (`DIN-0`):**
+  `Section — Chip filter bar` (HQN-0), `Section — Derived-sale timeline
+  row` (HR5-0), `Section — Correction linked row-group` (HRN-0), and
+  (2026-08-30) `Section — Stock-count delete confirm` (HZG-0). Note text
+  updated to cover all of M2. One canonical artboard; no divergent
+  second version anywhere.
 
-- **Flags / escalations:** none. §3.8 (BLOCK) and the one-kit-change
-  verdict from 1a stand; nothing surfaced that the flow docs + kit +
-  M2-01 patterns didn't cover.
+- **Flags / escalations:** none at the time (2026-08-29). **2026-08-30
+  re-spin** — Session 5's `voidStockCount` (reject + same-day
+  hard-delete undo) overrode the flow doc's "allow a negative-sold
+  reconciliation" design. The Canteen artboards + `canteen-derived-
+  sales-flow.md` were brought back in sync (K1 6 → 9 states; A4
+  negative-revenue removed; timeline zero-sold variant; delete-confirm
+  section). See `PROGRESS.md` → "M2 Canteen design re-spin". §3.8
+  (BLOCK) and the one-kit-change verdict from 1a still stand.
 
 ---
 

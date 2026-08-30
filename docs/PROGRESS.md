@@ -18,12 +18,74 @@ Running status log, updated at the end of every sprint session.
 ## Milestone 2 — Staff can sell, every day
 
 **Plan:** `docs/sprints/milestone-2-plan.md` (living — 8 session-slots:
-Session 1 split 1a done / 1b pending, Session 2 confirmed needed).
-**Status:** Sessions 3, 4, 5 done (all M2 backend); Sessions 1a + 1b done
-(all M2 design). Sessions 2 (kit — `QuantityStepper` tap-to-type), 6
-(screen assembly + owner walkthrough), 7 (QA) pending. S4 on
+Session 1 split 1a / 1b, both done).
+**Status:** Sessions 2, 3, 4, 5 done (S2 = kit verify-and-gate; S3–S5 =
+M2 backend); Sessions 1a + 1b done (all M2 design). Sessions 6 (screen
+assembly + owner walkthrough), 7 (QA) pending. S4 on
 `feat/m2-session-4-orders`, S5 on its own branch; merge order to `main`:
 S3 → {S4, S5} → S1a/S1b/S2 → S6 → S7.
+
+### 2026-08-30 — M2 Session 2: QuantityStepper verify-and-gate (Developer — kit) — DONE
+
+Kit Sprint, re-scoped. The M2 plan and the 1a handoff scoped Session 2 as
+"build the `QuantityStepper` tap-to-type value". **On inspection it already
+existed** — the `<span>` → `<input inputmode="decimal" role="spinbutton">`
+rewrite (− / + unchanged, `↑`/`↓` step, `onValueString` raw-string hatch)
+landed in **M1 Session 10** as an owner-approved kit-audit item (`kit-audit.md`
+§1, ratified ADR-43 / ADR-48), before M2 planning assumed it was still owed. So
+Session 2 became a **verification pass + paper-trail close-out**, not a build.
+No change to `quantity-stepper.tsx`.
+
+**Verified (§2 of the handoff):**
+- **Gate (ADR-42):** `tsc --noEmit` clean; `test:visual` + `test:a11y` on the
+  stepper stories **7/7 play, 7/7 snapshots, 0 axe serious/critical, 0 console**
+  (`--failOnConsole`). `pnpm test` (full vitest) **not run** — no vitest-visible
+  file changed (only `.stories.tsx` + baselines + docs), and the suite is slow
+  by design since S4/S5 (`maxWorkers: 2`, Postgres pool); `tsc` is the type gate
+  here.
+- **§9 contract per state:** REST byte-identical to `6XC-0` / `6CG-0`; §9.2
+  accent border on `.kit-field` focus; §9.7 − / + disabled at bound (opacity
+  0.5, `pointer-events: none`); §9.8 danger border + `--text-caption` helper row
+  via the `error` prop, `aria-invalid` + `aria-describedby` wired; `↑`/`↓` step
+  by `step`; commit on blur / Enter; out-of-range / non-numeric raw does **not**
+  fire `onChange`. All proven by a `play` story.
+- **M2 screen needs:** C2/C3/C4 order-line stepper + A3 correction editor +
+  K1 counted-remaining all covered by the as-built component. K1's larger
+  presentation (40px controls, `--text-h2` value) is reachable via a
+  screen-level `className` / wrapper — **no new size variant needed**, no flag.
+
+**Added:** one story — **`TypeALargeQuantity`** (`quantity-stepper.stories.tsx`):
+a `play` that focuses the spinbutton, `userEvent.clear` + `type(input, "24")`,
+asserts the raw string shows + `onValueString("24")` fired, `userEvent.tab()` to
+blur, then asserts the committed display is `24` and `onChange` was last called
+with `24`. Maps to the `6CG-0` / `DKR-0` "value focused — type a quantity"
+artboard. Baseline committed (committed-state, not mid-type — caret blink makes
+mid-type snapshots flaky; the `play` proves the typing path directly).
+
+**Behaviour sign-off (§2.4):** commit-on-blur / commit-on-Enter + the
+`onValueString` escape hatch + `↑`/`↓` stepping confirmed as-is — the ratified
+ADR-48 "keep the full §9 contract, add the input" pattern (same as
+`Select searchable`). Not judged a wrong commit-trigger → **no owner
+escalation**, nothing BLOCKED.
+
+**Docs closed:** `component-states.md` §9 C10 → **"implemented + gated
+(M2-02)"** (was "Behaviour pending owner review"); `kit-audit.md` — the C10
+BEFORE→AFTER table's `_tbd_` AFTER column filled in, "Remaining gaps" item 4
+marked RATIFIED; story title de-suffixed `Kit/QuantityStepper — NEEDS OWNER
+REVIEW` → `Kit/QuantityStepper` (matches ratified `Kit/Select`), 6 baselines
+re-keyed + 1 new = 7.
+
+**Discipline:** files touched — `components/kit/quantity-stepper.stories.tsx`,
+`tests/visual/__screenshots__/kit-quantitystepper--*.png` (7),
+`docs/design/component-states.md`, `docs/design/kit-audit.md`,
+`docs/sprints/milestone-2-plan.md`, `docs/PROGRESS.md`,
+`docs/sprints/milestone-2-session-2-handoff.md`. Nothing under `app/`, `lib/`,
+no other kit component, no change to `quantity-stepper.tsx`.
+
+**Handoff to next:** Session 6 (screen assembly) — the `QuantityStepper` hard
+dependency for C2/C3/C4 order lines + A3's correction editor is now satisfied
+and gated. Session 7 (QA) will re-check the §9 contract on the stepper as
+composed into the real screens.
 
 ### 2026-08-29 — M2 Session 1a: Cashier screens design (Product Designer) — DONE
 
@@ -160,6 +222,76 @@ held: only `docs/**` and the Paper file were touched (`lib/`,
 Sessions 4 / 5 (Orders + Canteen domain), then Session 6 assembles all
 M2 screens (Cashier from 1a, Admin + Canteen from 1b) into real routes
 from the Paper screenshots.
+
+### 2026-08-30 — M2 Canteen design re-spin: `voidStockCount` (Product Designer) — DONE
+
+A targeted Design touch-up, **not** a full sprint. Triggered by Session
+5's owner decision (2026-08-30): "counted more than expected" is
+**rejected** (`400`) with a **same-day hard-delete undo**
+(`voidStockCount`), overriding the flow doc's earlier "allow a
+negative-sold reconciliation" design. That made 3 M2-01b artboards +
+2 pattern-sheet variants + parts of `canteen-derived-sales-flow.md`
+stale. This session brings design back in sync — **docs + Paper only**.
+
+**Paper — K1 re-spun from 6 → 9 states** (`worldY 20400`):
+- `K1 … correcting re-count, negative sold` → renamed + reworked to
+  **`K1 … counted more than expected (blocked)`** — §9.8 inline error
+  on the count field with the server's exact message ("exceeds expected
+  stock by N pcs"), an `InstructionalBanner` ("a transfer/delivery may
+  not have been recorded — ask the Store Manager, then recount"), a
+  "Delete today's count" link for the redo case, Confirm disabled, **no
+  preview card**.
+- **Added `K1 … delete count confirm`** — `FrictionDeleteDialog` over
+  the dimmed screen, **no type-to-confirm** (ADR-36c
+  `showTypeToConfirm={false}` — same-day, recount-recoverable), body
+  spells out exactly what's deleted incl. the KES figure, Cancel /
+  "Delete count" (destructive).
+- **Added `K1 … delete count success`** — returns to the Canteen hub
+  with a `Toast` ("Count deleted · … sale removed · recount when
+  ready"); the timeline entry for that count is gone.
+- **Added `K1 … count locked, previous day`** — count field read-only,
+  amber lock banner ("from a closed day — ask the Admin to correct
+  it"), sticky bar disabled "Only the Admin can change this" (mirrors
+  C4's "Correct this (Admin)").
+- `K1 … validation error` clarified as blank/non-numeric only — the
+  "over expected" case is now its own artboard.
+
+**Paper — A4** (`GL2-0` + `H4I-0`): the correcting-negative Mandazi row
+→ a normal positive count; **no `--color-danger` on any Units/Revenue
+cell anywhere**.
+
+**Paper — "M2 Sales Patterns" (`DIN-0`):** derived-sale timeline row
+section's "correcting-negative" variant → **"zero sold"** variant (no
+`canteen_sale` money row → muted em-dash where the value would be); new
+**"Stock-count delete confirm"** section pinned.
+
+**Paper — K2:** no change — both artboards already showed a positive
+derived sale.
+
+**Flow doc — `canteen-derived-sales-flow.md` rewritten:** cross-cutting
+rule 5 (was "self-adjusting correction" → now "can't go negative,
+delete + redo"); §"The period-boundary case" (new `> UPDATED
+2026-08-30` box + the "hard stop, not a negative" bullet); walkthroughs
+**C** (blocked), **C2** (delete + redo), **C3** (day-locked) replace
+the old "correcting re-count showing a negative"; **D** narrowed to
+blank/non-numeric; **F** (timeline) drops the negative-revenue mention,
+adds zero-sold; data notes updated with the `voidStockCount` contract +
+`recordStockCount` return shape + "reject if `sold < 0`". Artboards
+list + a re-spin changelog appended.
+
+**Not touched (correctly):** `restaurant-sales-flow.md`,
+`customers-credit-flow.md`, any Cashier/Admin artboard — the override
+is Canteen-only.
+
+**Decisions:** none new — this implements the owner's 2026-08-30 call.
+**Nothing flagged.** **Gate state:** design-only — `docs/**` + Paper
+only; no `lib/`, `app/`, `components/`, tests.
+
+**Handoff to next:** Session 6 can now assemble the **whole** Canteen
+slice (K1's 9 states, K2, A4) against the shipped `voidStockCount` — no
+blocker remains. `FrictionDeleteDialog` needs its
+`showTypeToConfirm` / configurable-copy props confirmed present (they
+are per ADR-36c) when Session 6 composes the delete-confirm.
 
 ### 2026-08-29 — M2 planning + doc/codebase cleanup (Tech Lead) — DONE
 

@@ -249,17 +249,17 @@ backend exists before the frontend session, so there is nothing to mock.
 | # | Session | Role | Scope | Done when |
 |---|---|---|---|---|
 | 1a | Design Sprint | Product Designer | **DONE 2026-08-29 (M2-01).** All **Cashier** screens (C1–C6) in Paper from the approved kit — 22 artboards incl. every structural state; 3 flow docs written (`restaurant-sales-flow.md`, `customers-credit-flow.md`, `canteen-derived-sales-flow.md`); §3.8 resolved (**BLOCK**); new-component verdict (**one kit change** — `QuantityStepper` tap-to-type); C2 redesigned to a tap-to-add product grid + category tabs; C3/C5 drawn as bottom-sheet overlays; "M2 Sales Patterns" component artboard + `6CG-0` stepper states. | Cashier screens approved in Paper; flow docs written; new-component list final; no real logic written. |
-| 1b | Design Sprint | Product Designer | **DONE 2026-08-29 (M2-01b).** Admin (A1–A4) + Canteen (K1–K2) screens in Paper against the 1a flow docs — 32 artboards, desktop **and** mobile per screen, every structural state (rail-drawer open, empty, filtered-empty, error, loading, read-only vs correction-form drawer, linked row-group, first-count / negative-sold preview variants). K1 reuses the C2 category tab row over the new `category` field; K2 is a new entry type in the existing Canteen hub timeline (no new screen). "M2 Sales Patterns" artboard extended with 3 sections (chip filter bar, derived-sale timeline row, correction linked row-group). Both flow docs' Artboards lists + status notes updated. No kit change; nothing flagged. | Admin + Canteen screens approved in Paper; every state artboarded; flow docs updated. |
-| 2 | Kit Sprint | Developer (kit) | Build the **`QuantityStepper` tap-to-type value** in `components/kit/quantity-stepper.tsx`: `<span>` → `<input inputmode="decimal">`, − / + unchanged, §9 contract, Storybook story per state (rest · value-focused · at-bound · error, from the `6CG-0` artboard), visual-regression baselines, `axe` + `postVisit`. **No screens.** | Component merged; `test:visual` + `test:a11y` green; kit gallery updated. |
+| 1b | Design Sprint | Product Designer | **DONE 2026-08-29 (M2-01b); Canteen re-spun 2026-08-30.** Admin (A1–A4) + Canteen (K1–K2) screens in Paper against the 1a flow docs — desktop **and** mobile per screen, every structural state (rail-drawer open, empty, filtered-empty, error, loading, read-only vs correction-form drawer, linked row-group, first-count preview). K1 reuses the C2 category tab row over the new `category` field; K2 is a new entry type in the existing Canteen hub timeline (no new screen). "M2 Sales Patterns" artboard extended (chip filter bar, derived-sale timeline row, correction linked row-group, stock-count delete confirm). **2026-08-30 re-spin:** K1 reworked to `voidStockCount` (6 → 9 states — "counted more than expected (blocked)", delete-count confirm/success, count-locked-previous-day); A4 negative-revenue treatment removed; `canteen-derived-sales-flow.md` rewritten. Both flow docs' Artboards lists + status notes updated. No kit change; nothing flagged. | Admin + Canteen screens approved in Paper; every state artboarded; flow docs updated. |
+| 2 | Kit Sprint | Developer (kit) | **VERIFY-AND-GATE (re-scoped) — DONE 2026-08-30.** The `QuantityStepper` tap-to-type value (`<input inputmode="decimal" role="spinbutton">`, − / + unchanged, §9 contract) **already shipped in M1 Session 10** (`kit-audit.md` §1) — Session 2 verified it against the M2 bar, not a fresh build. Verified: ADR-42 gate green (`tsc` clean; `test:visual` + `test:a11y` 7/7, 0 axe, 0 console); §9 contract per state (rest byte-identical, §9.2 focus border, §9.7 at-bound, §9.8 typed-error, `↑`/`↓` step, commit-on-blur/Enter, out-of-range raw does not fire `onChange`); M2 screen needs (C2/C3/C4 order line, A3 correction editor, K1 larger presentation reachable via screen `className` — no new size variant). Added the **`TypeALargeQuantity`** inline-entry `play` story (focus → clear → type "24" → blur → asserts committed `24` + `onChange(24)` + `onValueString("24")`) + its baseline. Behaviour signed off as the ratified ADR-48 pattern — no owner escalation. `component-states.md` §9 C10 → **"implemented + gated (M2-02)"**; story title de-suffixed `Kit/QuantityStepper`; 7 baselines re-keyed. **No screens, no `app/**`, no `lib/**`.** | Component verified against M2 bar; `test:visual` + `test:a11y` green (7 stories); C10 gate closed; kit gallery de-flagged. |
 | 3 | Development Sprint | Developer | Money ledger (`recordMoneyMovement`, `getAccountBalances`) + `lib/domain/customers` + customer/repayment routes + tests. **DONE 2026-08-29** — `MoneySourceType` migration applied (`db push`); `recordDebt(tx)` helper added for S4; overpayment allowed (flagged); `pnpm test` 268/268. | Balances derive from rows; repayment writes a money movement; tests green; `tsc` + `build` clean. |
 | 4 | Development Sprint | Developer | `lib/domain/sales` orders — create / edit-own / correct / list; order routes; tests (see §4). **DONE 2026-08-30** — all four paths + §3.8 BLOCK + append-only correction (F-1 idempotent) + cross-cashier isolation + no-margin-leak tested; **`Order.occurred_at` column added** (owner-approved; migration `20260829140000_add_order_occurred_at`); `correctDebt(tx)` helper added to `lib/domain/customers`; **M1 `purchases.ts` `TODO(mock)` resolved** (a `purchase_payment` now writes a `−cost` `MoneyMovement`); `vitest.config.ts` `maxWorkers: 4` (Postgres connection ceiling); account derived from `paymentMethod` (flow doc has no picker); correction rows listed separately (not folded); `pnpm test` 350/350. | All order paths + correction reversal + role isolation tested green. |
 | 5 | Development Sprint | Developer | `lib/domain/sales` canteen slice — `recordStockCount` + derivation + revenue movement; routes; tests. **DONE 2026-08-30** — derivation exact across a period boundary; counted-more-than-expected **rejected** (owner override of the flow doc's allow-negative narrative) with a same-day **`voidStockCount`** hard-delete undo (`DELETE /api/canteen/stock-counts/:id`); `pnpm test` 350/350. Shared `lib/domain/sales` files edited additively (S4 rebases them before its own commit). | Derivation matches a hand-worked ledger across a period boundary; tests green. |
 | 6 | Development Sprint | Developer | Assemble **all** M2 screens into their real routes from the Paper screenshots; wire to `lib/domain`; `use-orders.ts` / `use-customers.ts` hooks; per-screen jsdom+RTL specs. **No UI decisions** — flag and stop if one surfaces. Then the **owner walkthrough** of each feature (guardrail 3). Split Cashier / (Admin+Canteen) only if running hot. | Every screen live on real data; screen specs green; owner has walked each feature as every relevant role on `pnpm dev`. |
 | 7 | QA Sprint | QA Engineer | Adversarial pass against every M2 acceptance criterion, the 3 flow docs, the approved screens. Report before fixing. | Findings report delivered; fixes applied with regression tests; full suite + `tsc` + `build` + kit gates green; PROGRESS + ROADMAP updated. |
 
-**Count: 8 session-slots** (Session 1 split into 1a + 1b, both done;
-Session 2 confirmed needed). Sessions 3, 4, 5 done (all M2 backend);
-Sessions 2, 6, 7 pending.
+**Count: 8 session-slots** (Session 1 split into 1a + 1b, both done).
+Sessions 2, 3, 4, 5 done (S2 = kit verify-and-gate; S3–S5 = M2 backend);
+Sessions 6, 7 pending.
 
 ### Allowed concurrency
 
@@ -392,3 +392,25 @@ current reality; this is the history of how it got there.)*
   writes a paired `−cost` `MoneyMovement`. Test infra: `vitest.config.ts`
   `maxWorkers: 4` (S4 + S5 DB-heavy suites vs the local Postgres
   100-connection ceiling). No change to the session count or sequence.
+- 2026-08-30 — **Canteen design re-spin (Product Designer).** The Session
+  5 `voidStockCount` override (above) was reconciled into design: K1
+  re-spun 6 → 9 artboards (the "correcting re-count, negative sold"
+  frame → "counted more than expected (blocked)"; added delete-count
+  confirm, delete-count success, count-locked-previous-day), A4's
+  negative-revenue treatment removed, "M2 Sales Patterns" updated
+  (zero-sold timeline variant + a delete-confirm section),
+  `canteen-derived-sales-flow.md` rewritten (rule 5, §period-boundary,
+  walkthroughs C/C2/C3/D/F, data notes). `docs/**` + Paper only. No
+  change to the session count or sequence. Session 6's Canteen blocker
+  is cleared. See `PROGRESS.md`.
+- 2026-08-30 — **Session 2 re-scoped — verify-and-gate, not build.** The
+  `QuantityStepper` tap-to-type input already shipped in M1 Session 10
+  (`kit-audit.md` §1, ratified ADR-43/ADR-48) before M2 planning assumed
+  it was still owed. Session 2 verified it against the M2 acceptance bar,
+  added the inline-entry `TypeALargeQuantity` `play` story + baseline,
+  signed off the commit-on-blur/Enter behaviour as the ratified ADR-48
+  pattern (no owner escalation), and closed the ADR-42 gate —
+  `component-states.md` §9 C10 is now "implemented + gated (M2-02)". Kit
+  only (`components/kit/quantity-stepper.*` + baselines + `docs/design/*`
+  + this plan + `PROGRESS.md`). No change to the session count. Session 6
+  now has its `QuantityStepper` hard dependency (C2/C3/C4 + A3) satisfied.

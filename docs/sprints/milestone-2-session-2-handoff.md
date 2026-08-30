@@ -9,7 +9,7 @@ page **"Shell+Component kit"**, artboard **`6CG-0` Form Controls**
 (section `DKR-0` — "QuantityStepper — tap-to-type value").
 **Target file:** `components/kit/quantity-stepper.tsx` (+ its story +
 `docs/design/*` kit docs). **No screens, no `app/**`, no `lib/**`.**
-**Status:** ready-to-start
+**Status:** completed (2026-08-30)
 **Estimated size:** SMALL — see §0. This is a verification pass, not a build.
 
 ---
@@ -287,19 +287,17 @@ Enter behaviour is judged wrong on review. If so: stop, flag in
   derived-sales domain. **Session 4 is code-complete** on
   `feat/m2-session-4-orders` (per `PROGRESS.md`), Session 5 is **done**.
   Independent of this session.
-- **⚠️ Canteen design conflict (flagged by Session 5) — not this
-  session's problem, but Session 6 must not build the Canteen screens
-  until it is resolved.** Session 5's `voidStockCount` (hard-delete
-  today's count + its `Sale` + `MoneyMovement`, same-day only, audited)
-  **overrides** the flow doc's "counted more than expected =
-  self-correcting negative sold" design. That makes these M2-01b
-  artboards stale: `K1 Stock Count — correcting re-count, negative sold`,
-  the correcting-negative variants on the "M2 Sales Patterns" sheet and
-  in K2, and A4's negative-revenue column treatment. A Canteen
-  re-design (Design Sprint) owes: the void / "delete this count" flow
-  (confirm, success, day-locked "ask Admin" state), removal of the
-  negative-sold artboards, an A4 rework, and a flow-doc rewrite. See
-  `PROGRESS.md` + `milestone-2-plan.md` §10 + the Session 5 handoff.
+- **Canteen design conflict (flagged by Session 5) — RESOLVED
+  2026-08-30.** Session 5's `voidStockCount` (reject "counted more than
+  expected" + same-day hard-delete undo) overrode the flow doc's
+  "self-correcting negative sold" design. A Design re-spin (2026-08-30)
+  brought the Canteen artboards + `canteen-derived-sales-flow.md` back
+  in sync: K1 is now 9 states ("counted more than expected (blocked)",
+  delete-count confirm/success, count-locked-previous-day), A4's
+  negative-revenue treatment is gone, the "M2 Sales Patterns" sheet has
+  a zero-sold timeline variant + a delete-confirm section. **Session 6
+  is unblocked on the Canteen slice.** See `PROGRESS.md` → "M2 Canteen
+  design re-spin".
 - **Session 6 (Development Sprint — Developer)** — assembles **all** M2
   screens from the Paper screenshots. Needs: 1a + 1b artboards
   (Cashier done; Admin done; **Canteen pending the re-design above**),
@@ -313,10 +311,58 @@ Enter behaviour is judged wrong on review. If so: stop, flag in
 
 ## 8. Session Notes
 
-*(Live notes added during the session.)*
+Completed 2026-08-30. §0 held — the tap-to-type component pre-existed from M1
+Session 10; this was a verify-and-gate pass, **zero changes to
+`quantity-stepper.tsx`**.
 
-- **Verification results (§2):** _record pass/fail per row._
-- **Story added (§3):** _`TypeALargeQuantity` — link / assertions._
-- **Behaviour sign-off (§2.4):** _confirmed as-is / owner raised …_
-- **Baselines re-committed:** _list, with reason._
-- **Flags / escalations:** _none yet._
+**Verification results (§2):**
+
+| Row | Result |
+|---|---|
+| 2.1 `build-storybook` / `storybook` renders stepper stories | **PASS** — dev Storybook served all 7 stepper stories to the runner |
+| 2.1 `test:visual` | **PASS** — 7/7 snapshots (6 re-keyed after the title de-suffix + 1 new), stable on a confirming re-run |
+| 2.1 `test:a11y` (`axe` + `--failOnConsole`) | **PASS** — 0 serious/critical violations, 0 console errors, all 7 stories |
+| 2.1 `tsc --noEmit` | **PASS** — clean |
+| 2.1 `pnpm test` (full vitest) | **SKIPPED** — no vitest-visible file changed (only `.stories.tsx` + baselines + docs); suite is slow by design post-S4/S5 (`maxWorkers: 2`, Postgres pool). `tsc` is the type gate here. |
+| 2.2 Rest — `[ − \| value \| + \| unit ]`, centred mono, byte-identical | **PASS** — REST baseline unchanged (git detected 4 stories as pure renames) |
+| 2.2 Value focused — §9.2 accent border on `.kit-field` + §9.1 ring, `inputmode="decimal"` | **PASS** — `FocusValueField` story (`assertColor` `.kit-field borderColor === --color-accent`) |
+| 2.2 At-bound — `−` disabled at min / `+` at max (§9.7 opacity 0.5, `pointer-events:none`) | **PASS** — `AtMinBound` / `AtMaxBound` stories; verified in the regenerated baseline (dimmed `−`) |
+| 2.2 Error (typed value) — §9.8 danger border + helper row, `aria-invalid` + `aria-describedby` | **PASS** — `ErrorTypedValue` story asserts all three; baseline shows the danger border + "Enter a value between 0 and 50." helper |
+| 2.2 Transitions — `background-color`/`border-color` 120ms, ring not transitioned | **PASS** — inherited from `.kit-field` / `.kit-interactive` shared CSS (`globals.css`); §9.9 allow-list excludes `outline` |
+| 2.2 Disabled (whole control) — global §9.7 | **PASS by inheritance** — no M2 screen passes a disabled stepper; the `.kit-interactive` / `.kit-field` disabled rules apply if one does |
+| 2.2 Keyboard — `↑`/`↓` step; Enter/blur commit; out-of-range raw does not call `onChange` | **PASS** — `ArrowKeysStep` + new `TypeALargeQuantity`; `commit()` guards with `Number.isNaN` |
+| 2.3 C2/C3/C4 order-line row | **PASS** — compact stepper in a flex row, tap-to-type for large qty; no kit change for the layout |
+| 2.3 A3 correction line editor | **PASS** — same stepper, pre-fillable via `value`; no kit change |
+| 2.3 K1 counted-remaining (larger presentation) | **PASS** — 40px controls / `--text-h2` value reachable via a screen-level `className` on the `.kit-field` div; **no new size variant needed, no flag** |
+| 2.4 Behaviour sign-off | **CONFIRMED as-is** — see below |
+
+**Story added (§3):** `TypeALargeQuantity` in `components/kit/quantity-stepper.stories.tsx`
+— `args: { onChange: fn(), onValueString: fn() }`, stateful render wrapper;
+`play`: `click(spinbutton)` → `clear` → `type(input, "24")` → assert
+`toHaveValue("24")` + `onValueString` last-called `"24"` → `tab()` (blur) →
+assert `onChange` last-called `24` + committed `toHaveValue("24")`. Story name
+maps to `6CG-0` / section `DKR-0` "value focused — tap the number, type a
+quantity". Baseline: `kit-quantitystepper--type-a-large-quantity.png` (committed
+post-type state `[ − 24 + kg ]`, not mid-type — caret blink makes a mid-type
+snapshot flaky; the `play` asserts the typing/commit path directly).
+
+**Behaviour sign-off (§2.4):** confirmed as-is. Commit-on-blur / commit-on-Enter,
+the `onValueString` raw-string escape hatch for out-of-range / non-numeric
+validation, and `↑`/`↓` stepping by `step` are the intended UX — a straight
+application of the ratified **ADR-48** ("keep the full §9 contract, add the
+input", the `Select searchable` precedent) and **ADR-43** (Session 10b owner
+review). Not judged a wrong commit-trigger → **no owner escalation, nothing
+BLOCKED**. `component-states.md` §9 C10 flipped "Behaviour pending owner review"
+→ **"implemented + gated (M2-02)"**.
+
+**Baselines re-committed:** all 7, because the story `title` was de-suffixed
+`Kit/QuantityStepper — NEEDS OWNER REVIEW` → `Kit/QuantityStepper` (matches the
+already-ratified `Kit/Select`), which re-keys every story id. Old
+`kit-quantitystepper-needs-owner-review--*` (6) removed; new
+`kit-quantitystepper--*` (7, incl. `type-a-large-quantity`) written and
+verified stable on a second run. 4 of the 6 carried-over baselines are
+byte-identical (git shows them as renames) — REST visual unchanged, as required
+by §4.
+
+**Flags / escalations:** none. No change to `quantity-stepper.tsx`, no new API
+surface, no other kit component touched, nothing under `app/` or `lib/`.

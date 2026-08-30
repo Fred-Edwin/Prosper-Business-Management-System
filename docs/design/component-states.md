@@ -880,7 +880,7 @@ per-component before → after record).
 | C7 ToggleSwitch | on/off/disabled/focus | **implemented** |
 | C8 SearchInput | default/focus/**filled+clear** | **implemented** — + `aria-label`, `role="search"`, Esc-to-clear |
 | C9 DatePicker | closed/focus/**open calendar**/disabled | **implemented** — real calendar (internal month state, grid ARIA, arrow/PageUp-Down/Home-End); legacy `weeks` prop kept. **API pending owner review** |
-| C10 QuantityStepper | default/**at-bound**/**focus (value)**/**error (typed)** | **implemented** — value is now `<input role="spinbutton">`. **Behaviour pending owner review** |
+| C10 QuantityStepper | default/**at-bound**/**focus (value)**/**error (typed)** | **implemented + gated (M2-02)** — value is `<input inputmode="decimal" role="spinbutton">`; − / + native buttons; `↑`/`↓` step; blur / Enter commit; `onValueString` exposes the raw string; out-of-range raw does not fire `onChange`. 7 stories (incl. `TypeALargeQuantity` inline-entry) green under `test:visual` + `test:a11y` + §9 `postVisit`. Behaviour signed off in M2 Session 2 as the ratified ADR-48 "keep the §9 contract, add the input" pattern. |
 | C11 Tabs | active/inactive/hover/disabled/focus | **implemented** — roving tabindex + `←→`/Home/End; `aria-controls` hook |
 | C12 PillFilter | active/inactive/hover/**disabled**/focus | **implemented** — now `role="radiogroup"` (was `aria-pressed`); arrows. **Pattern pending owner review** |
 | C13 StatusChip | 5 semantic variants | **no change needed** (display-only, verified) |

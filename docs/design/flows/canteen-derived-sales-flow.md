@@ -1,15 +1,21 @@
 # Flow — Canteen Derived Sales
 
-**Status:** Design Sprint M2-01 (2026-08-29). Design intent for the
-**Canteen Attendant's stock count → derived sale** (K1) and how that sale
-appears in the existing Canteen hub timeline (K2), plus the Admin's
-per-product derived-sales view (A4).
+**Status:** Design Sprint M2-01 (2026-08-29); **§period-boundary +
+walkthroughs C–D + K1 artboards re-spun 2026-08-30** to match Session
+5's `voidStockCount` (see the box in §The period-boundary case). Design
+intent for the **Canteen Attendant's stock count → derived sale** (K1)
+and how that sale appears in the existing Canteen hub timeline (K2),
+plus the Admin's per-product derived-sales view (A4).
 
-> **Artboard status:** **DONE.** K1, K2 and A4 drawn in Session 1b
-> (M2-01b, 2026-08-29) — K1 as a full staff screen with all six states,
-> K2 as a new entry type in the existing Canteen hub timeline (`9BA-0`)
-> shown interleaved with other movements, A4 desktop + mobile with every
-> structural state. See the "Artboards" list at the bottom of this doc.
+> **Artboard status:** **DONE** (K1/K2/A4 drawn Session 1b 2026-08-29,
+> K1 re-spun 2026-08-30 for `voidStockCount`). K1 is a full staff
+> screen with **9 states** — pick / preview / first-count / **counted
+> more than expected (blocked)** / **delete confirm** / **delete
+> success** / **count locked (previous day)** / validation error /
+> confirm success. K2 is a new entry type in the existing Canteen hub
+> timeline (`9BA-0`), shown interleaved. A4 is desktop + mobile with
+> every structural state, no negative-revenue treatment. See the
+> "Artboards" list at the bottom of this doc.
 >
 > **K1's product picker gets the same category tab row as C2** — the
 > existing kit `Tabs` (underline) over the new product `category` field
@@ -333,20 +339,24 @@ the timeline (K2) gains the entry.
   `GET /api/canteen/derived-sales` for A4 — Session 5 picks).
 - **Composed from:** staff shell + `FlowHeader`, `Select` (searchable),
   `QuantityStepper` / `TextInput`, `CalculatedImpactBanner` (the preview
-  card — exact fit, no new component), `ActivityTimeline` (K2, existing),
-  `PageShell` + `SimpleTable` + `PillFilter` + `EmptyState` (A4),
-  `Toast`. **No kit change.**
+  card — exact fit, no new component), `InstructionalBanner` (count-more-
+  than-expected explainer), `FrictionDeleteDialog`
+  (`showTypeToConfirm={false}` — the delete-count confirm),
+  `ActivityTimeline` (K2, existing), `PageShell` + `SimpleTable` +
+  `PillFilter` + `EmptyState` (A4), `Toast`. **No kit change.**
 
 ---
 
 ## New components
 
 **None.** The derived-sales **preview card** is
-`CalculatedImpactBanner` — the kit component built for exactly this
-("preview the numeric consequence of an action before it's saved",
-`design-principles.md` §7 / `component-states.md` C23). The hub entry is
-an `ActivityTimeline` row. A4 is `SimpleTable` + a mapper. Session 2 not
-needed for this flow.
+`CalculatedImpactBanner`; the count-more-than-expected explainer is
+`InstructionalBanner`; the same-day delete confirm is
+`FrictionDeleteDialog` with the type-to-confirm field off (ADR-36c's
+`showTypeToConfirm={false}` — same-day and recount-recoverable, so no
+name-typing gate). The hub entry is an `ActivityTimeline` row. A4 is
+`SimpleTable` + a mapper. Session 2 (the `QuantityStepper` tap-to-type
+kit change) is used by K1 but is not gated by this flow.
 
 ---
 
@@ -355,7 +365,10 @@ needed for this flow.
 - `K1 Stock Count — product picker [M2-01]`
 - `K1 Stock Count — count entered + preview [M2-01]`
 - `K1 Stock Count — first-ever count (preview copy differs) [M2-01]`
-- `K1 Stock Count — correcting re-count, negative sold [M2-01]`
+- `K1 Stock Count — counted more than expected (blocked) [M2-01]`
+- `K1 Stock Count — delete count confirm (FrictionDeleteDialog) [M2-01]`
+- `K1 Stock Count — delete count success [M2-01]`
+- `K1 Stock Count — count locked, previous day [M2-01]`
 - `K1 Stock Count — validation error [M2-01]`
 - `K1 Stock Count — confirm success [M2-01]`
 - `K2 Canteen Hub — derived-sale entry in timeline [M2-01]`
@@ -366,14 +379,33 @@ needed for this flow.
 - `A4 Canteen Derived Sales — loading [M2-01]`
 - `A4 Canteen Derived Sales — mobile [M2-01]`
 
-All frames created in Session 1b (M2-01b, 2026-08-29), page
-"Shell+Component kit": K1 at `worldY 20400`, K2 at `21400`, A4 at
-`19300`. K1 composed from the staff mobile shell + back-nav `FlowHeader`
-(no direction badge), `Tabs` (the C2 category tab row over the new
-`category` field), `QuantityStepper` tap-to-type, `CalculatedImpactBanner`
-(the preview card — exact fit), `Toast`. K2 is an `ActivityTimeline` row
-added to the existing hub (`9BA-0`) — no new screen, no new component.
-A4 composed from the Admin desktop + mobile shells + `SimpleTable` +
-chip filter row + `EmptyState`. No kit change. The derived-sale timeline
-row and the K1 preview-card copy variants are pinned on the
-"Component Kit — M2 Sales Patterns [M2-01]" artboard.
+Frames created in Session 1b (M2-01b, 2026-08-29) and **re-spun
+2026-08-30** to match the shipped `voidStockCount` (see the
+period-boundary box). Page "Shell+Component kit": K1 at `worldY 20400`,
+K2 at `21400`, A4 at `19300`. K1 composed from the staff mobile shell +
+back-nav `FlowHeader` (no direction badge), `Tabs` (the C2 category tab
+row over the new `category` field), `QuantityStepper` tap-to-type,
+`CalculatedImpactBanner` (the preview card — exact fit),
+`InstructionalBanner` (the "count more than expected" explainer),
+`FrictionDeleteDialog` (`showTypeToConfirm={false}`, ADR-36c) for the
+delete-count confirm, `Toast`. K2 is an `ActivityTimeline` row added to
+the existing hub (`9BA-0`) — no new screen, no new component. A4
+composed from the Admin desktop + mobile shells + `SimpleTable` + chip
+filter row + `EmptyState`. **No kit change.** The chip filter bar, the
+derived-sale timeline row (normal + zero-sold), and the stock-count
+delete-confirm are pinned on the "Component Kit — M2 Sales Patterns
+[M2-01]" artboard.
+
+**Re-spin changelog (2026-08-30):**
+- `K1 … correcting re-count, negative sold` → renamed + reworked to
+  `K1 … counted more than expected (blocked)` (§9.8 inline error +
+  `InstructionalBanner`, Confirm disabled, no preview).
+- Added `K1 … delete count confirm`, `K1 … delete count success`,
+  `K1 … count locked, previous day`.
+- A4 `desktop populated` + `mobile`: the correcting-negative Mandazi row
+  → a normal positive count; no `--color-danger` on any Units/Revenue
+  cell.
+- "M2 Sales Patterns" derived-sale timeline row: correcting-negative
+  variant → zero-sold variant; new "Stock-count delete confirm" section.
+- K2: no change needed (both artboards already showed a positive
+  derived sale).

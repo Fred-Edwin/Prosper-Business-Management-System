@@ -383,15 +383,19 @@ months, Esc closes). It already is a trigger + popover (not a `<div>` around
 Required (`§2 C10`): default (ARTBOARD ✓), −/+ disabled at bound (ARTBOARD ✓),
 focus on value field (GLOBAL), error (ARTBOARD ✓).
 
+**AFTER column completed in M2 Session 2** (kit verify-and-gate — the rewrite
+itself landed in Session 10; ADR-43 / ADR-48). C10 status: **implemented +
+gated (M2-02)**.
+
 | aspect | BEFORE | AFTER |
 |---|---|---|
-| tokens-only? | **NO** — `tracking-[0.04em]` label (X15). | _tbd_ |
-| §9.2 field | `.kit-field` on the wrapper ✓; error → `border-danger` + `data-invalid` ✓. | keep. |
-| value field | **the value is a `<span>`, not an `<input>`** — there is no typeable field, so "focus (value field)", "error (out-of-range typed value)" and keyboard `↑`/`↓` to step are all unimplementable as-is. Spec (`§2 C10`) explicitly lists "focus (value field)" and "error (out-of-range typed value)" as states → the value must become an `<input inputmode="decimal">`. | _tbd_ (owner review — adds a real input; flag) |
-| §9.7 −/+ disabled | `disabled={atMin}` / `disabled={atMax}` + `.kit-interactive:disabled` ✓. | keep. |
-| keyboard | −/+ are native `<button>` ✓ with `aria-label` ✓. No `↑`/`↓` on the group to step. No typed entry. | _tbd_ |
-| ARIA | **missing** — should be `role="spinbutton"` (or `role="group"` + an `<input type="number">`) with `aria-valuenow` / `aria-valuemin` / `aria-valuemax` / `aria-valuetext` (with unit). Label renders a `<div>` — link it. | _tbd_ |
-| notes | Flag the `<span>`→`<input>` change for owner review — it's needed to satisfy the spec'd states but is close to a behaviour change. | |
+| tokens-only? | **NO** — `tracking-[0.04em]` label (X15). | ✓ — label goes through `<FormField>`, which uses `[letter-spacing:var(--tracking-caps)]`. |
+| §9.2 field | `.kit-field` on the wrapper ✓; error → `border-danger` + `data-invalid` ✓. | keep — unchanged; `data-invalid` now driven by `<FormField>`'s `aria-invalid`. |
+| value field | **the value is a `<span>`, not an `<input>`** — there is no typeable field, so "focus (value field)", "error (out-of-range typed value)" and keyboard `↑`/`↓` to step are all unimplementable as-is. Spec (`§2 C10`) explicitly lists "focus (value field)" and "error (out-of-range typed value)" as states → the value must become an `<input inputmode="decimal">`. | ✓ — `<input type="text" inputmode="decimal" role="spinbutton">`, unstyled / centred / mono; REST visual byte-identical to `6XC-0` / `6CG-0`. Focus → §9.2 accent border on `.kit-field` (proven `FocusValueField`); typed-error → §9.8 danger border + helper via `error` prop (proven `ErrorTypedValue`). |
+| §9.7 −/+ disabled | `disabled={atMin}` / `disabled={atMax}` + `.kit-interactive:disabled` ✓. | keep — unchanged; proven `AtMinBound` / `AtMaxBound`. |
+| keyboard | −/+ are native `<button>` ✓ with `aria-label` ✓. No `↑`/`↓` on the group to step. No typed entry. | ✓ — `↑`/`↓` step by `step` (proven `ArrowKeysStep`); type + blur / Enter commits through `onChange` (numeric) + `onValueString` (raw); out-of-range / non-numeric raw does not fire `onChange` (proven `TypeALargeQuantity`). |
+| ARIA | **missing** — should be `role="spinbutton"` (or `role="group"` + an `<input type="number">`) with `aria-valuenow` / `aria-valuemin` / `aria-valuemax` / `aria-valuetext` (with unit). Label renders a `<div>` — link it. | ✓ — `role="spinbutton"` + `aria-valuenow` / `-valuemin` / `-valuemax` / `-valuetext` (`"{value} {unit}"`); label is a real `<label htmlFor>` via `<FormField>`; helper wired `aria-describedby` + `aria-invalid`. `axe` clean on all 7 stories. |
+| notes | Flag the `<span>`→`<input>` change for owner review — it's needed to satisfy the spec'd states but is close to a behaviour change. | Signed off M2 Session 2: commit-on-blur / Enter + `onValueString` escape hatch + `↑`/`↓` stepping = the ratified ADR-48 "keep the §9 contract, add the input" pattern (same as `Select searchable`). No new API surface. Not judged a wrong commit-trigger → no owner escalation. |
 
 ### SimpleTable — `components/kit/simple-table.tsx`
 
@@ -684,7 +688,10 @@ Gate 3; each is a design/behaviour decision surfaced for the owner, not a bug.
    role="spinbutton">`. REST visual unchanged; typing + `↑`/`↓` are new. Owner
    confirms this is wanted (it's required to satisfy `component-states.md §2 C10`
    "focus (value field)" / "error (typed value)" — otherwise those two rows stay
-   permanently `n/a`).
+   permanently `n/a`). **RATIFIED — ADR-43 (Session 10b), and re-verified against
+   the M2 bar + behaviour-signed-off in M2 Session 2** (7 stories incl.
+   `TypeALargeQuantity` inline-entry, ADR-42 gate green). C10 is now
+   "implemented + gated (M2-02)".
 5. **`--color-success-hover` / `--color-info-hover`** — added to `tokens.css` +
    `tokens.ts` this session (the drift test passes). Values
    `oklch(46% 0.121 155)` / `oklch(46.5% 0.146 252.3)` — one lightness step
