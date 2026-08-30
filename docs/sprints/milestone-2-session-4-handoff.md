@@ -1,6 +1,19 @@
 # M2 Session 4 Handoff — Developer: Restaurant Orders (backend)
 
-**Status:** READY once Session 3 is merged to `main` (it is —
+**Status: DONE (2026-08-30).** `lib/domain/sales` Restaurant-order slice +
+`lib/validation/orders` + `app/api/orders` + tests, all green
+(`pnpm test` 350/350 with S5's suites present; `tsc` 0; `build` clean).
+Committed on `feat/m2-session-4-orders` (off the S1a HEAD, which carries
+S3 + the handoffs; `main` does not yet have S3 — merge order S3 → {S4,
+S5}). Ran concurrently with S5, split by file. **See "Session Notes" at
+the bottom for what Session 6 needs.** Full write-up:
+`docs/PROGRESS.md` → "M2 Session 4".
+
+---
+
+**Original brief below.**
+
+**Status (original):** READY once Session 3 is merged to `main` (it is —
 `m2-session-3-financials-customers`). **May run in parallel with Session
 5** (Canteen derived sales); both depend only on S3, not on each other,
 and touch different files inside `lib/domain/sales`. If you and S5 are
@@ -479,15 +492,81 @@ yours on top.
 
 ## Session Notes
 
-*(Live notes added during the session.)*
+- **Account mapping for a cash / M-Pesa order:** **derived from
+  `paymentMethod`** (`cash` → `cash`, `mpesa` → `mpesa_bank`).
+  `restaurant-sales-flow.md` walkthroughs A/B show no explicit account
+  picker on the checkout sheet, so the domain derives it. An optional
+  `account` input is still accepted and validated for consistency
+  (`400`, `field: "account"` on a mismatch) — the Session 6 screen may
+  send it explicitly if the design gains a picker.
+- **`correctDebt` helper added? YES.**
+  `lib/domain/customers/correct-debt.ts`, exported from the customers
+  barrel. Tx-only; appends a **signed** `Debt` row (negative reverses a
+  customer's balance, positive tops it up) — `recordDebt` rejects
+  non-positive amounts by design, so `correctOrder` uses `correctDebt`
+  for the reversal/change legs. No `AuditLog` of its own (the correcting
+  order's audit row covers it). Any later credit-correction work should
+  call this rather than write signed `Debt` rows directly.
+- **`listOrders` correction rows:** **separate rows** (not folded). Each
+  `Order` — original and every correction — is its own row;
+  `correctsOrderId` is exposed so the Session 6 screen can badge a
+  corrected order and link to / from its correction. A read shows the
+  current derived state because the offsetting ledger rows already net
+  out; `Order.total` on each row is that row's own recomputed total.
+- **M1 `purchases.ts` `TODO(mock)`:** **resolved this session.**
+  `recordPurchasePayment` now writes one **`−cost` `MoneyMovement`**
+  (money out) against `purchase_paid_from`
+  (`sourceType: "purchase_payment"`, `sourceId` = the `purchase_payment`
+  `StockMovement` id) inside the same transaction. `flow-4` integration
+  test + the `stock` / `flow-4` cleanup helpers updated.
+  `grep TODO(mock)` in `lib/domain/stock` → none.
+- **Schema addition (owner-approved mid-session):** **`Order.occurred_at`**
+  (`DateTime @default(now())`). The edit-vs-correct gate compares the
+  order's Africa/Nairobi business date to today, and `correctOrder`
+  backdates its correcting row to `original.occurredAt` — the model had
+  no business instant (only `createdAt`), unlike every other ledger
+  table. Applied via `prisma db push` + `generate`; deploy migration
+  `20260829140000_add_order_occurred_at`.
+- **Test infra:** `vitest.config.ts` gained `maxWorkers: 4` (+
+  `testTimeout` / `hookTimeout` bumps). The full suite was exceeding the
+  local Postgres 100-connection ceiling once S4's + S5's DB-heavy suites
+  ran alongside the M1 set. Project-wide change; isolated suites still
+  run sub-second.
+- **Flags / escalations:** none.
 
-- **Account mapping for a cash / M-Pesa order:** _derived from
-  paymentMethod / taken from input — record which, and whether the flow
-  doc drove it._
-- **`correctDebt` helper added?** _yes/no — if yes, S6/QA + any later
-  credit-correction work calls it._
-- **`listOrders` correction rows:** _separate rows / folded — record
-  which._
-- **M1 `purchases.ts` `TODO(mock)`:** _resolved this session / re-scoped
-  to ___ because ___._
-- **Flags / escalations:** _none yet._
+### For Session 6 (screen assembly)
+
+- **`OrderView` shape** (returned by every order domain fn / route):
+  `{ id, locationId, cashierId, orderType, deliveryFee (string|null),
+  paymentMethod, customerId (string|null), total, correctsOrderId
+  (string|null), occurredAt, createdAt, updatedAt,
+  lines: [{ id, productId, quantity, unitPrice, subtotal }] }`. Money +
+  quantities are decimal **strings**. No cost / margin / profit field
+  anywhere — safe to render wholesale for a Cashier.
+- **C4 routing rule the screen must encode:** load the order, then
+  - `order.cashierId === session.user.id` **and**
+    `toBusinessDate(order.occurredAt) === toBusinessDate(now)` →
+    **editable** (PATCH `/api/orders/:id`).
+  - else → **read-only**; the "Correct this" action is **Admin-only**
+    (POST `/api/orders/:id/correct`). From a Cashier's C4 it does not
+    open a form — it surfaces the order reference for the Admin (flow doc
+    walkthrough F). The API enforces this regardless (`403` for a
+    Cashier on `/correct`, `403` "closed" for a Cashier PATCH after the
+    day rolls).
+- **Corrections in the C1 / A3 list:** `listOrders` returns the original
+  **and** the correction as separate rows, `correctsOrderId` set on the
+  correction. Badge the original `CORRECTED` and render the pair linked
+  (A3's "linked row-group" artboard). The figures on each row are
+  already the current derived state — no client-side netting needed.
+- **§3.8 inline errors:** `createOrder` / `editOwnOrder` reject with
+  `code: "VALIDATION_ERROR"`, `field: "lines"`, and a `message` naming
+  every short line and its available quantity. C2's per-line error
+  pattern reads the short-line names out of that message (or the screen
+  re-derives per-line from the product grid's stock counts — the block
+  is a courtesy; the server is the gate).
+- **`account` on checkout:** the C3 sheet does **not** need an account
+  picker — omit `account` and the domain derives it. Only add one if the
+  design later calls for it; the field is already accepted.
+- **Canteen slice (S5)** lives in the same `lib/domain/sales` barrel —
+  `recordStockCount` / `voidStockCount` / `listDerivedSales` /
+  `getDerivedSalesForProduct` — for the K1 / K2 / A4 screens.

@@ -249,16 +249,17 @@ backend exists before the frontend session, so there is nothing to mock.
 | # | Session | Role | Scope | Done when |
 |---|---|---|---|---|
 | 1a | Design Sprint | Product Designer | **DONE 2026-08-29 (M2-01).** All **Cashier** screens (C1–C6) in Paper from the approved kit — 22 artboards incl. every structural state; 3 flow docs written (`restaurant-sales-flow.md`, `customers-credit-flow.md`, `canteen-derived-sales-flow.md`); §3.8 resolved (**BLOCK**); new-component verdict (**one kit change** — `QuantityStepper` tap-to-type); C2 redesigned to a tap-to-add product grid + category tabs; C3/C5 drawn as bottom-sheet overlays; "M2 Sales Patterns" component artboard + `6CG-0` stepper states. | Cashier screens approved in Paper; flow docs written; new-component list final; no real logic written. |
-| 1b | Design Sprint | Product Designer | **Admin + Canteen** screens (A1–A4, K1–K2) in Paper against the flow docs from 1a — desktop **and** mobile per screen, every structural state (drawer/sheet open, empty, filtered-empty, error, loading). K1's product picker reuses the C2 category tab row. No real logic. | A1–A4, K1–K2 approved in Paper; every state artboarded; flow docs' Artboards lists updated. |
+| 1b | Design Sprint | Product Designer | **DONE 2026-08-29 (M2-01b).** Admin (A1–A4) + Canteen (K1–K2) screens in Paper against the 1a flow docs — 32 artboards, desktop **and** mobile per screen, every structural state (rail-drawer open, empty, filtered-empty, error, loading, read-only vs correction-form drawer, linked row-group, first-count / negative-sold preview variants). K1 reuses the C2 category tab row over the new `category` field; K2 is a new entry type in the existing Canteen hub timeline (no new screen). "M2 Sales Patterns" artboard extended with 3 sections (chip filter bar, derived-sale timeline row, correction linked row-group). Both flow docs' Artboards lists + status notes updated. No kit change; nothing flagged. | Admin + Canteen screens approved in Paper; every state artboarded; flow docs updated. |
 | 2 | Kit Sprint | Developer (kit) | Build the **`QuantityStepper` tap-to-type value** in `components/kit/quantity-stepper.tsx`: `<span>` → `<input inputmode="decimal">`, − / + unchanged, §9 contract, Storybook story per state (rest · value-focused · at-bound · error, from the `6CG-0` artboard), visual-regression baselines, `axe` + `postVisit`. **No screens.** | Component merged; `test:visual` + `test:a11y` green; kit gallery updated. |
 | 3 | Development Sprint | Developer | Money ledger (`recordMoneyMovement`, `getAccountBalances`) + `lib/domain/customers` + customer/repayment routes + tests. **DONE 2026-08-29** — `MoneySourceType` migration applied (`db push`); `recordDebt(tx)` helper added for S4; overpayment allowed (flagged); `pnpm test` 268/268. | Balances derive from rows; repayment writes a money movement; tests green; `tsc` + `build` clean. |
-| 4 | Development Sprint | Developer | `lib/domain/sales` orders — create / edit-own / correct / list; order routes; tests (see §4). | All order paths + correction reversal + role isolation tested green. |
-| 5 | Development Sprint | Developer | `lib/domain/sales` canteen slice — `recordStockCount` + derivation + revenue movement; routes; tests. | Derivation matches a hand-worked ledger across a period boundary; tests green. |
+| 4 | Development Sprint | Developer | `lib/domain/sales` orders — create / edit-own / correct / list; order routes; tests (see §4). **DONE 2026-08-30** — all four paths + §3.8 BLOCK + append-only correction (F-1 idempotent) + cross-cashier isolation + no-margin-leak tested; **`Order.occurred_at` column added** (owner-approved; migration `20260829140000_add_order_occurred_at`); `correctDebt(tx)` helper added to `lib/domain/customers`; **M1 `purchases.ts` `TODO(mock)` resolved** (a `purchase_payment` now writes a `−cost` `MoneyMovement`); `vitest.config.ts` `maxWorkers: 4` (Postgres connection ceiling); account derived from `paymentMethod` (flow doc has no picker); correction rows listed separately (not folded); `pnpm test` 350/350. | All order paths + correction reversal + role isolation tested green. |
+| 5 | Development Sprint | Developer | `lib/domain/sales` canteen slice — `recordStockCount` + derivation + revenue movement; routes; tests. **DONE 2026-08-30** — derivation exact across a period boundary; counted-more-than-expected **rejected** (owner override of the flow doc's allow-negative narrative) with a same-day **`voidStockCount`** hard-delete undo (`DELETE /api/canteen/stock-counts/:id`); `pnpm test` 350/350. Shared `lib/domain/sales` files edited additively (S4 rebases them before its own commit). | Derivation matches a hand-worked ledger across a period boundary; tests green. |
 | 6 | Development Sprint | Developer | Assemble **all** M2 screens into their real routes from the Paper screenshots; wire to `lib/domain`; `use-orders.ts` / `use-customers.ts` hooks; per-screen jsdom+RTL specs. **No UI decisions** — flag and stop if one surfaces. Then the **owner walkthrough** of each feature (guardrail 3). Split Cashier / (Admin+Canteen) only if running hot. | Every screen live on real data; screen specs green; owner has walked each feature as every relevant role on `pnpm dev`. |
 | 7 | QA Sprint | QA Engineer | Adversarial pass against every M2 acceptance criterion, the 3 flow docs, the approved screens. Report before fixing. | Findings report delivered; fixes applied with regression tests; full suite + `tsc` + `build` + kit gates green; PROGRESS + ROADMAP updated. |
 
-**Count: 8 session-slots** (Session 1 split into 1a done / 1b pending;
-Session 2 confirmed needed). Sessions 3–7 unchanged.
+**Count: 8 session-slots** (Session 1 split into 1a + 1b, both done;
+Session 2 confirmed needed). Sessions 3, 4, 5 done (all M2 backend);
+Sessions 2, 6, 7 pending.
 
 ### Allowed concurrency
 
@@ -370,3 +371,24 @@ current reality; this is the history of how it got there.)*
   `prisma/schema.prisma` column + Catalog UI + a `PRD.md` §4.1 line —
   folded into Session 3's backend scope and a Catalog follow-up. C3 and
   C5 were also redrawn as bottom-sheet overlays (mobile-POS convention).
+- 2026-08-30 — **Session 5 done.** Canteen "counted more than expected"
+  resolved by the owner: **REJECT** (`VALIDATION_ERROR`, nothing
+  written) — overriding the `canteen-derived-sales-flow.md` walkthrough C
+  narrative, which had leaned toward allowing a negative-sold
+  reconciliation. Recovery is a same-day **`voidStockCount`** hard-delete
+  undo (`DELETE /api/canteen/stock-counts/:id`, attendant + same-day
+  only; after the day rolls it's an Admin correction path — a later
+  session, needs a `corrects_stock_count_id` migration). §3.5 stands as
+  the derivation; the flow doc's negative-sold section is superseded and
+  should be reconciled in a Design touch-up or noted by QA. No change to
+  the session count.
+- 2026-08-30 — **Session 4 done.** One **schema addition** (owner-approved
+  mid-session): `Order.occurred_at` — the edit-vs-correct gate and the
+  "correction lands in the original's business day" rule need a business
+  instant on the order, which the model lacked (every other ledger table
+  has one). Additive column, `db push` + migration file
+  `20260829140000_add_order_occurred_at`. Also: the M1 `purchases.ts`
+  `TODO(mock)` (plan §11) was resolved here — a `purchase_payment` now
+  writes a paired `−cost` `MoneyMovement`. Test infra: `vitest.config.ts`
+  `maxWorkers: 4` (S4 + S5 DB-heavy suites vs the local Postgres
+  100-connection ceiling). No change to the session count or sequence.

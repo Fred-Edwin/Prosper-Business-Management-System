@@ -19,8 +19,11 @@ Running status log, updated at the end of every sprint session.
 
 **Plan:** `docs/sprints/milestone-2-plan.md` (living — 8 session-slots:
 Session 1 split 1a done / 1b pending, Session 2 confirmed needed).
-**Status:** Session 3 done (backend); Session 1a done (Cashier design);
-1b, 2, 4, 5 pending.
+**Status:** Sessions 3, 4, 5 done (all M2 backend); Sessions 1a + 1b done
+(all M2 design). Sessions 2 (kit — `QuantityStepper` tap-to-type), 6
+(screen assembly + owner walkthrough), 7 (QA) pending. S4 on
+`feat/m2-session-4-orders`, S5 on its own branch; merge order to `main`:
+S3 → {S4, S5} → S1a/S1b/S2 → S6 → S7.
 
 ### 2026-08-29 — M2 Session 1a: Cashier screens design (Product Designer) — DONE
 
@@ -82,6 +85,81 @@ only `docs/**` and the Paper file were touched.
 
 **Owed by Session 1b:** A1–A4, K1–K2 — desktop **and** mobile, every
 structural state.
+
+### 2026-08-29 — M2 Session 1b: Admin + Canteen screens design (Product Designer) — DONE
+
+Design Sprint, Phase A — the second half of M2's design. Ran against the
+3 flow docs from 1a; disjoint from the domain sessions (docs + Paper
+only). Delivers the Admin (A1–A4) and Canteen (K1–K2) screens.
+
+**Shipped — Paper ("Prosper Hotel", page "Shell+Component kit"),
+32 new artboards, all `… [M2-01]`:**
+
+- **A1 Customers & Credit register** (7): desktop populated · filtered-empty
+  · empty · error · repayment rail-drawer open · add-customer rail-drawer
+  open · mobile. `SimpleTable` (Name · Phone · Balance mono · Last
+  activity), chip filter bar (Has balance toggle + Search, count +
+  Clear all at ≥2), repayment / add-customer in a right-edge `Drawer`
+  (rail, ADR-37b).
+- **A2 Customer detail** (4): desktop populated · zero history · loading
+  · mobile. Header block with large mono derived balance + Record
+  repayment; body is a `DenseLedger`-style interleaved Debt / Repayment
+  table with a semibold running-balance column (signed colour: red
+  +debt, green −repayment).
+- **A3 Orders list (Admin)** (8): desktop populated · filtered-empty ·
+  empty · error · read-only order-detail drawer open · correction form
+  drawer open · order + correction linked row-group · mobile.
+  **Read-only** — the only mutating action is "Record correction",
+  opening a rail `Drawer` with the original as read context + a
+  corrected line list (M2 Sales Patterns order-line row +
+  `QuantityStepper` tap-to-type) + `CalculatedImpactBanner` + required
+  Reason. **No delete affordance anywhere.** Corrected order + its
+  correction render as a bracketed, indented linked pair.
+- **A4 Canteen Derived Sales** (5): desktop populated · product never
+  counted (Never / — / muted em-dash) · filtered-empty · loading ·
+  mobile. `SimpleTable` (Product · Last counted date+relative · Period
+  covered span · Units sold mono · Revenue mono); correcting-period
+  negative in `--color-danger`.
+- **K1 Stock Count** (6): product picker · count entered + preview ·
+  first-ever count (distinct copy) · correcting re-count negative sold
+  · validation error · confirm success (Toast). Staff mobile shell +
+  back-nav `FlowHeader` (no direction badge); product picker reuses the
+  C2 category tab row over the new `category` field; preview card is
+  `CalculatedImpactBanner` (amber, read-only) with the exact flow-doc
+  derivation copy.
+- **K2** (2): the derived sale as a **new entry type in the existing
+  Canteen hub `ActivityTimeline`** (`9BA-0`) — "Stock count — {product}"
+  / "{n} {unit} sold since {date} · closing {rem}" / "+KES {y}" green
+  mono (correcting negative → "−KES {y}" red). Shown once at the top of
+  the log and once interleaved between a transfer and an opening-stock
+  row (the visual-consistency acceptance point). No new screen, no new
+  component.
+- **`Component Kit — M2 Sales Patterns [M2-01]`** extended with 3 new
+  canonical sections: chip filter bar states, derived-sale timeline row
+  (positive + correcting-negative), correction linked row-group. One
+  canonical artboard; no component has two divergent versions.
+
+**Flow docs:** `customers-credit-flow.md` and
+`canteen-derived-sales-flow.md` — "Artboards" lists filled in with the
+1b frames + a composition note; the top "Artboard status" note flipped
+from "deferred to Session 1b" to **DONE**. No new policy written into
+the flow docs.
+
+**Decisions:** none — §3.8 (BLOCK) and the one-kit-change verdict were
+settled in 1a and stand. Nothing surfaced that the flow docs + kit +
+M2-01 patterns didn't already cover; **nothing flagged for escalation**.
+
+**Changed from plan:** none. §7 table: Session 1b marked done; no
+sequencing change, no §10 changelog line.
+
+**Gate state:** design-only session — no code, no tests. Discipline
+held: only `docs/**` and the Paper file were touched (`lib/`,
+`app/api/`, `components/kit/`, `app/**/*.tsx`, tests all untouched).
+
+**Handoff to next:** Session 2 (kit — `QuantityStepper` tap-to-type),
+Sessions 4 / 5 (Orders + Canteen domain), then Session 6 assembles all
+M2 screens (Cashier from 1a, Admin + Canteen from 1b) into real routes
+from the Paper screenshots.
 
 ### 2026-08-29 — M2 planning + doc/codebase cleanup (Tech Lead) — DONE
 
@@ -198,6 +276,201 @@ intent.
   **268/268** (226 existing + 42 new: financials 7, customers domain 17,
   routes 18), stable across repeated runs.
   `grep TODO(mock)` in the new modules → none.
+
+### 2026-08-30 — M2 Session 4: Restaurant Orders (Developer) — DONE
+
+Backend-only Development Sprint. `lib/domain/sales` Restaurant-order slice
++ `lib/validation/orders` + `app/api/orders` + tests. Ran concurrently
+with Session 5 (Canteen) in the same working tree, split by file per the
+handoff — S4 owns `create-order.ts` / `edit-own-order.ts` /
+`correct-order.ts` / `list-orders.ts` / `order-effects.ts` /
+`restaurant-location.ts` and its share of the barrel + `types.ts` +
+`test-helpers.ts`.
+
+**Shipped:**
+
+- **`createOrder(input, ctx)` → `OrderView`** — one `prisma.$transaction`:
+  validate lines / prices / delivery-fee / payment; **snapshot** each
+  line's Restaurant `sellingPrice` as its `unitPrice` (never re-looked-up,
+  ADR-16); **§3.8 BLOCK** — sum ordered qty per product, compare to the
+  derived Restaurant balance **re-read on the tx client** right before the
+  writes, reject in full (nothing written, balance never negative) naming
+  every short line; then write `Order` + `OrderLine[]` + one negative
+  `sale` `StockMovement` per line + **either** a `MoneyMovement` (cash →
+  `cash`, mpesa → `mpesa_bank`; `sourceType: "order"`) **or** a `Debt`
+  (credit; `customerId` required, no money row — plan §3.2) + an
+  `AuditLog` row.
+- **`editOwnOrder(orderId, input, ctx)` → `OrderView`** — a Cashier's
+  **true edit** of their own, same-day order. `NOT_FOUND` / `FORBIDDEN`
+  (not own) / `FORBIDDEN` "closed" (order's Africa/Nairobi business day ≠
+  today — a business-date equality check; **M3 swaps in the real
+  `DayClose` gate**, comment left in code). Deletes this order's lines /
+  `sale` movements / `MoneyMovement` / `Debt`, re-validates (incl. §3.8),
+  rewrites, recomputes `total`. `AuditLog` `action: "correct"` (no `edit`
+  in the enum) with pre/post summaries. Shared write body factored into
+  `order-effects.writeOrderEffects` (used by create + edit).
+- **`correctOrder(orderId, input, ctx)` → `OrderView`** — Admin-only
+  append-only correction (ADR-15, mirrors `stock/correct-movement.ts`).
+  `NOT_FOUND`; `VALIDATION_ERROR` if the target is itself a correction
+  (no chaining); `FORBIDDEN` for a non-admin. Writes a **new `Order`**
+  (`correctsOrderId` set, `cashierId` = original, `occurredAt` =
+  original's), its lines, and **offsetting** deltas so the net effect
+  across `original + all corrections` = the corrected state: one delta
+  `sale` `StockMovement` per changed product (`correctsMovementId` → the
+  original's `sale` row where singular), one signed delta `MoneyMovement`,
+  and/or one signed `Debt` (payment-method change reverses one kind and
+  writes the other). **F-1 idempotency:** deltas measured against the
+  *current* derived effect; an identical re-submit → `VALIDATION_ERROR`
+  "nothing to correct". §3.8 for the corrected state adds the original's
+  `sale` movements back before comparing.
+- **`listOrders(filter, ctx)` → `OrderView[]`** — role-scoped (mirrors
+  `stock/list-movements.ts`): `admin` → all (`cashierId` narrows);
+  `cashier` → forced to own, a foreign `cashierId` → `[]` (no error, no
+  leak); other role → `FORBIDDEN`. `date` windows the Africa/Nairobi
+  business day on `occurredAt`. Newest first. **No margin / cost /
+  buyingPrice / profit field** in any row (an `OrderView` has none).
+  **Correction rows are returned as separate rows** with `correctsOrderId`
+  exposed — reads are **not folded** (simplest for M2; the Session 6
+  screen badges / links the pair).
+- **Routes** (`app/api/orders/**`), thin handlers per
+  `app/api/products/route.ts`: `POST` (cashier → 201), `GET` (admin +
+  cashier), `PATCH /:id` (cashier, own + same-day), `POST /:id/correct`
+  (admin → 201). Zod shape-only in `lib/validation/orders.ts`; the
+  `credit ⇒ customerId` cross-field rule lives in the domain.
+- **`lib/domain/customers/correct-debt.ts`** — new tx-only helper for
+  `correctOrder`: appends a **signed** `Debt` row (negative reverses,
+  positive tops up) — `recordDebt` rejects non-positive amounts by
+  design. Exported from the customers barrel; tested.
+- **M1 `purchases.ts` `TODO(mock)` resolved** (plan §11): a
+  `purchase_payment` now also writes one **`−cost` `MoneyMovement`**
+  against `purchase_paid_from` (`sourceType: "purchase_payment"`,
+  `sourceId` = the stock-movement id) inside the same transaction. The
+  `flow-4` integration test and the `stock` / `flow-4` cleanup helpers
+  updated to match; `grep TODO(mock)` in `lib/domain/stock` → none.
+
+**Schema change (owner-approved):** added **`Order.occurred_at`**
+(`DateTime @default(now())`) — the edit-vs-correct gate and the
+correction-lands-in-the-original's-day rule need a business instant on the
+order, and every other ledger table already has one. Applied to the dev
+DB via `prisma db push` + `prisma generate`; migration file
+`20260829140000_add_order_occurred_at` committed for a real deploy.
+
+**Account-mapping assumption:** `restaurant-sales-flow.md` shows no
+explicit account picker on the checkout sheet (walkthroughs A/B: Cash →
+Cash account, M-Pesa → M-Pesa/Bank), so `createOrder` **derives** the
+account from `paymentMethod`. An optional `account` input is still
+accepted and validated for consistency — the Session 6 screen may pass it
+explicitly.
+
+**`listOrders` correction rows:** returned as **separate rows** (not
+folded), `correctsOrderId` exposed.
+
+**Test-infra change:** `vitest.config.ts` — `maxWorkers: 4` (+
+`testTimeout`/`hookTimeout` bumps). The full suite was exhausting the
+local Postgres 100-connection ceiling once S4's + S5's DB-heavy suites
+ran alongside the M1 set (8 forks × ~17 Prisma connections); capping
+forks keeps the total ~68. Isolated suites still run sub-second.
+
+- Gates: `pnpm tsc --noEmit` **0**; `pnpm build` **clean**; `pnpm test`
+  **350/350** with S5's suites present (268 M1/S3 baseline untouched +
+  S4 domain 33 + S4 routes 16 + purchases money-effect test + S5's).
+  `grep TODO(mock)` in `lib/domain/sales` → none.
+- Committed on `feat/m2-session-4-orders` (off the S1a HEAD, which
+  carries S3 + the handoffs; `main` does not yet have S3). Merge order to
+  `main`: S3 → {S4, S5} → S1a/S1b/S2 → S6.
+
+### 2026-08-30 — M2 Session 5: Canteen Derived Sales (Developer) — DONE
+
+Backend-only Development Sprint; ran in the same working tree as Session 4
+(Orders), split by file per the handoff (S5 owns `record-stock-count.ts` /
+`derived-sales.ts` / `canteen-guards.ts` and adds to the shared
+`types.ts` / `index.ts` / `test-helpers.ts` — additively; S4 rebases
+those on its final versions before committing).
+
+**Shipped (`lib/domain/sales` canteen slice):**
+
+- **`recordStockCount(input, ctx)` → `{ count, derivedSale }`** — the
+  attendant records what is physically on the shelf; the system derives
+  the sale for the period since that product's previous count at this
+  canteen. `sold = expectedRemaining − countedQuantity`, where
+  `expectedRemaining` is the signed `Σ StockMovement.quantity` for
+  (product, canteen) up to the count's `occurredAt`, **read on the tx
+  client** so two concurrent counts can't both pass a stale read. In one
+  transaction: the `StockCount`; one `sale` `StockMovement`
+  (`quantity = −sold`, `stockCountId` set — ADR-16, uniform with
+  Restaurant sales); a `canteen_sale` `MoneyMovement`
+  (`sold × canteen sellingPrice`, `account: "cash"`, `sourceId` = count
+  id) **skipped when `sold === 0`**; an `AuditLog` `create` row.
+  Validates: product exists & sold at the canteen (active
+  `ProductLocation` + non-null `sellingPrice`, snapshotted);
+  `countedQuantity ≥ 0`; `occurredAt` (default now) strictly after the
+  previous count.
+- **`voidStockCount(countId, ctx)`** — same-day undo. **Hard delete** of
+  the `StockCount` + its `sale` `StockMovement` + its `canteen_sale`
+  `MoneyMovement`, plus a `hard_delete` `AuditLog` row. `FORBIDDEN` for
+  another attendant's count or once the Africa/Nairobi business day has
+  rolled; `NOT_FOUND` for an unknown id.
+- **`getDerivedSalesForProduct(productId, ctx)` /
+  `listDerivedSales({ productId?, date? }, ctx)`** — per product, the
+  most-recent count's `{ lastCountedAt, periodStart, periodEnd,
+  unitsSold, revenue }` (PRD §4.4), joining the latest `StockCount` to
+  its `sale` `StockMovement` and `canteen_sale` `MoneyMovement`.
+  Never-counted canteen products list with `null` figures (shown, not
+  hidden). Role scope: `admin` → every canteen; `canteen_attendant` →
+  own canteen; else `FORBIDDEN`. `date` windows on the count's
+  Africa/Nairobi business day; newest count first, never-counted last.
+- **Routes** (`app/api/canteen/**`, mirror `stock-movements/route.ts`
+  shape, no logic in handler): `POST /api/canteen/stock-counts`
+  (Attendant only, → 201), `DELETE /api/canteen/stock-counts/:id`
+  (Attendant only), `GET /api/canteen/stock-counts` (Admin + Attendant).
+  Zod shape-only in `lib/validation/canteen.ts`.
+- **Closing stock** is never a written row (ADR-11) — after the `sale`
+  row the derived balance at the count's instant equals `countedQuantity`.
+
+**Decisions recorded (owner, 2026-08-30):**
+
+- **Counted more than expected (`sold` < 0): REJECT** —
+  `VALIDATION_ERROR`, nothing written. The approved
+  `canteen-derived-sales-flow.md` (walkthrough C / "the period-boundary
+  case") had described *allowing* a negative-sold reconciliation with a
+  reversing money row; the owner overrode that in favour of reject +
+  **same-day undo** (`voidStockCount`). The flow doc's negative-sold
+  narrative is now superseded — **Session 6 / QA should treat "count
+  more than expected" as a blocked error, and "undo today's count" as
+  the recovery path.** Flow doc not yet edited (design artifact — flag
+  for a Design touch-up or QA note).
+- **Zero-value rows:** the `sale` `StockMovement` is still written for
+  `sold === 0` (uniform audit trail); the `canteen_sale` `MoneyMovement`
+  is **skipped** for `sold === 0` (no zero-value money row).
+- **Explicit `stock_count` closing marker row:** not written — relied on
+  the derived balance (ADR-11).
+- **GET route:** `/api/canteen/stock-counts` only; no `/derived-sales`
+  alias (the flow doc doesn't name one).
+- **`correctStockCount` schema gap:** no `corrects_stock_count_id`
+  column; an Admin post-close correction path needs a migration in a
+  later session. Module is shaped so it can drop in.
+
+**Changed from plan:** the reject-vs-allow decision above (plan §3.5 /
+handoff §3 left it to the owner; the flow doc's lean toward "allow" was
+not taken). Added a `DELETE` route for the same-day undo — not in the
+handoff's route table, follows from the owner decision.
+
+**Shared-file edits (additive — S4 unaffected, still green):**
+`types.ts` (+`RecordStockCountInput`, `DerivedSale*`,
+`ListDerivedSalesFilter`, `ActorContext.locationId?`), `index.ts` (+4
+exports), `test-helpers.ts` (+`setupCanteenTestData`, `seedMovement`,
+canteen cleanup branch — `Staff` + `StockCount` + `canteen_sale` money
+rows).
+
+**Test note:** `getAccountBalances()` and `prisma.debt.count()` are
+global aggregates and race the parallel S4 order suites — S5 domain
+tests assert revenue/debt effects on their **own** `sourceId` /
+location, never a global before/after delta.
+
+- Gates: `pnpm tsc --noEmit` **0**; `pnpm build` **clean**; `pnpm test`
+  **350/350** (318 after S4 + 32 new: `record-stock-count` 16,
+  `derived-sales` 8, canteen route 8). Existing suite untouched.
+  `grep TODO(mock)` in the new canteen files → none.
 
 *(Full per-session entries for M2 Sessions 1–7 go here as they run.)*
 

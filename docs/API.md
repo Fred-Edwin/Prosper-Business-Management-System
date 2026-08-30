@@ -238,38 +238,203 @@ product has no rows.
 
 ## Orders (Restaurant)
 
+> **Implemented M2 Session 4 (2026-08-30).** The contract below reflects
+> what shipped. `camelCase` JSON; money fields are decimal **strings**
+> (`"230.00"`), line quantities decimal **strings** (up to 4dp). The
+> Restaurant is the only order location — there is no `locationId` in the
+> request. Cash / M-Pesa balances stay **derived** (Σ `MoneyMovement`);
+> `Order.total` is a stored convenience value recomputed on every write
+> and correction, never the source of truth. A Cashier never sees any
+> buying price / unit cost / margin — an order payload carries none.
+
 ### `GET /api/orders`
-Roles: Admin (all), Cashier (own only).
+Roles: **Admin** (all orders; `?cashierId=` narrows), **Cashier** (their
+own only — a `?cashierId=` that isn't the caller returns `[]`, never
+another cashier's rows; PRD §4.3). Any other role → `403`.
+
+Query: `?cashierId=`, `?date=YYYY-MM-DD` (Africa/Nairobi business day,
+windowed on `occurredAt`), `?paymentMethod=cash|mpesa|credit`,
+`?orderType=dine_in|takeaway|delivery`.
+
+Returns `{ data: OrderView[] }`, newest first (`occurredAt` desc, then
+`createdAt` desc). An `OrderView` is
+`{ id, locationId, cashierId, orderType, deliveryFee, paymentMethod,
+customerId, total, correctsOrderId, occurredAt, createdAt, updatedAt,
+lines: [{ id, productId, quantity, unitPrice, subtotal }] }`. A
+correction row (`correctsOrderId` set) is returned as its **own row** with
+`correctsOrderId` exposed (the Session 6 screen badges / links it) — reads
+are not folded.
 
 ### `POST /api/orders`
-Roles: Cashier. Body:
+Roles: **Cashier only** (`403` otherwise). Body:
 ```json
 {
-  "order_type": "dine_in|takeaway|delivery",
-  "delivery_fee": 0,
-  "payment_method": "cash|mpesa|credit",
-  "customer_id": null,
-  "lines": [{ "product_id": "...", "quantity": 1 }]
+  "orderType": "dine_in|takeaway|delivery",
+  "deliveryFee": "150.00",
+  "paymentMethod": "cash|mpesa|credit",
+  "customerId": "…",
+  "account": "cash|mpesa_bank",
+  "occurredAt": "2026-08-30T09:00:00.000Z",
+  "lines": [{ "productId": "…", "quantity": "2" }]
 }
 ```
-`customer_id` required if `payment_method = credit` — creates a `Debt`.
-Writes a `StockMovement` (`sale`) per line.
+- `lines` non-empty; each `quantity` > 0.
+- Each product must exist, not be soft-deleted, and have an **active**
+  `ProductLocation` at the Restaurant with a non-null `sellingPrice` —
+  that price is **snapshotted** as the line's `unitPrice` (SCHEMA §4
+  "captured at time of sale"; never re-looked-up). Otherwise `400`,
+  `field: "lines"` ("X is not sold at the Restaurant").
+- `deliveryFee` is allowed **only** when `orderType = "delivery"` (and
+  must be `≥ 0`); on any other order type a non-zero fee → `400`,
+  `field: "deliveryFee"`.
+- `paymentMethod = "credit"` ⇒ `customerId` **required** and must exist
+  (`400`/`404`, `field: "customerId"`); any other payment method ⇒
+  `customerId` must be **absent**.
+- `account` is optional and only meaningful for a cash / M-Pesa order —
+  it is otherwise **derived** from `paymentMethod` (`cash` → `cash`,
+  `mpesa` → `mpesa_bank`); if supplied it must be consistent (`400`,
+  `field: "account"`).
+- `occurredAt` defaults to now; its Africa/Nairobi business day is what
+  the edit-vs-correct gate later compares to "today".
+
+**§3.8 — insufficient Restaurant stock (BLOCK).** For each distinct
+product, the total ordered quantity is compared to the current derived
+Restaurant balance, re-read **inside the write transaction**. If any
+product is short → `400 VALIDATION_ERROR`, `field: "lines"`, naming every
+short line and its available quantity. **No `Order`, `OrderLine`,
+`StockMovement`, `MoneyMovement` or `Debt` row is written**, and the
+balance is never driven negative.
+
+On success `201` with the `OrderView`. In one transaction the order
+writes: the `Order` + one `OrderLine` per line + one **negative** `sale`
+`StockMovement` per line (`quantity = −lineQty`, `orderId` set) + **either**
+one `MoneyMovement` (cash / M-Pesa: matching `account`, `amount = +total`,
+`sourceType: "order"`, `sourceId` = order id) **or** one `Debt`
+(`credit`: `amount = total`, `customerId` required, linked to the order —
+**no `MoneyMovement`**, plan §3.2) + one `AuditLog` row
+(`action: "create"`, `entityType: "order"`).
+
+### `PATCH /api/orders/:id`
+Roles: **Cashier only**, and only for **their own** order whose
+Africa/Nairobi business day **is today**. Body: the same shape as
+`POST` — a true edit fully re-states the order.
+
+- Order missing → `404`. Another cashier's order → `403` ("You can only
+  edit your own orders"). The order's business day has rolled → `403`
+  ("This day is closed — ask an administrator to correct it") — M2 has no
+  `DayClose` UI, so this is a business-date equality check; M3 swaps in
+  the real `DayClose` gate.
+- Re-runs **all** of `POST`'s validation, including §3.8. A true edit
+  leaves **no ledger history** behind — it deletes this order's existing
+  lines / `sale` movements / `MoneyMovement` / `Debt` and rewrites them,
+  recomputing `total`. `AuditLog` `action: "correct"` (there is no `edit`
+  action), `oldValue` / `newValue` = the pre/post summaries.
+
+Returns `200` with the updated `OrderView`.
 
 ### `POST /api/orders/:id/correct`
-Roles: Cashier (own, same-day, before close), Admin (any, after close).
-Body: full corrected line set + order-level fields.
+Roles: **Admin only** (`403` for a Cashier — a cashier's open-day change
+is `PATCH`; a post-close fix is the Admin's). Body: the **corrected final
+state** of the order (same shape as `POST`).
+
+- Original order missing → `404`. Target is itself a correction
+  (`correctsOrderId` set) → `400` ("This order is itself a correction —
+  correct the original"); corrections don't chain.
+- Writes a **new `Order`** row (`correctsOrderId` = original id,
+  `cashierId` = the original cashier — the Admin corrects on their
+  behalf, `occurredAt` = the original's, so the correction lands in the
+  same business day), its `OrderLine`s, plus **offsetting** ledger rows so
+  the **net** effect across `original + all corrections` equals the
+  corrected state: one delta `sale` `StockMovement` per changed product
+  (`correctsMovementId` → the original's `sale` row where there is exactly
+  one), one signed delta `MoneyMovement`, and/or one signed `Debt` — a
+  payment-method change reverses one kind and writes the other. `AuditLog`
+  `action: "correct"`, `entityType: "order"`, on the new row.
+- §3.8 for the corrected state is measured against the balance **with the
+  original order's `sale` movements added back** (replacing its effect,
+  not stacking).
+- **Idempotency:** deltas are computed against the *current* derived
+  effect (original + prior corrections). Re-submitting an identical
+  correction → `400 VALIDATION_ERROR` ("nothing to correct").
+
+Returns `201` with the correcting `OrderView`.
 
 ---
 
 ## Canteen
 
+> **Implemented M2 Session 5 (2026-08-30).** The contract below reflects
+> what shipped. `camelCase` JSON; quantities are decimal **strings**
+> (4dp, e.g. `"96.0000"`), money decimal **strings** (2dp, e.g.
+> `"5760.00"`). The attendant never enters a sale — it is **derived**
+> from a stock count over the period since that product's previous count
+> (ADR-16): `sold = expectedRemaining − countedQuantity`, where
+> `expectedRemaining` is the derived canteen balance for the product at
+> the count's `occurredAt`. On a count the system writes the `StockCount`,
+> one `sale` `StockMovement` (`quantity = −sold`, `stockCountId` set — so
+> canteen sales sum into the same derived-balance / reporting paths as
+> Restaurant sales), and — unless `sold = 0` — a revenue `MoneyMovement`
+> (`sold × canteen sellingPrice`, `account: "cash"`,
+> `sourceType: "canteen_sale"`, `sourceId` = the count id). Closing stock
+> is **not** a stored row (ADR-11): after the `sale` row the derived
+> balance at the count's instant equals `countedQuantity`. **No credit
+> and no M-Pesa at the canteen** (PRD §4.4) — no `Debt`, no
+> `paymentMethod`, `account` is always `cash`.
+
 ### `POST /api/canteen/stock-counts`
-Roles: Canteen Attendant. Body: `{ product_id, counted_quantity }`. Derives
-and writes the `sale` `StockMovement` since the last count.
+Roles: **Canteen Attendant only** (`403` otherwise; `403` too if the
+attendant's `Staff` link has no location). Body:
+`{ "productId": "...", "countedQuantity": "96", "occurredAt"?: ISO }`.
+`countedQuantity` must parse to a decimal `≥ 0` (`400 VALIDATION_ERROR`,
+`field: "countedQuantity"`). `occurredAt` defaults to now and must be
+**after** the product's previous count at this canteen (`400`,
+`field: "occurredAt"` — counts move forward so a period is well-defined).
+The product must have an active canteen `ProductLocation` with a non-null
+`sellingPrice` (`400`, `field: "productId"` — "X is not sold at the
+canteen").
+
+**Counted more than expected** (`sold` would be negative): `400
+VALIDATION_ERROR`, `field: "countedQuantity"` ("Counted quantity exceeds
+expected stock by N — record the missing receipt or transfer first, then
+recount"). **Nothing is written.** (Owner decision 2026-08-30: reject
+rather than allow a negative-sold reconciliation; the attendant undoes
+the count same-day and re-records instead.)
+
+Returns `201` with
+`{ data: { count, derivedSale } }`:
+- `count`: `{ id, productId, locationId, countedById, countedQuantity, occurredAt, createdAt }`.
+- `derivedSale`: `{ unitsSold, revenue, periodStart, periodEnd }` —
+  `unitsSold` a 4dp string (always `≥ 0`), `revenue` a 2dp string,
+  `periodStart` the previous count's `occurredAt` ISO string or `null`
+  for a first-ever count ("since the product's opening"), `periodEnd`
+  this count's `occurredAt`.
+
+Writes an `AuditLog` row (`action: "create"`, `entityType: "stock_count"`,
+`newValue: { countedQuantity, sold, revenue }`).
+
+### `DELETE /api/canteen/stock-counts/:id`
+Roles: **Canteen Attendant only.** Undo a stock count **the caller
+recorded today** (Africa/Nairobi). A count cannot be edited — it is
+**hard-deleted** with its `sale` `StockMovement` and its `canteen_sale`
+`MoneyMovement`, and re-recorded (owner decision 2026-08-30). `403
+FORBIDDEN` for another attendant's count, or once the count's business
+day has rolled ("This day is closed — ask an administrator to correct
+this count" — an Admin correction path is a later session). `404
+NOT_FOUND` for an unknown id. Returns `{ data: { voided: true } }`.
+Writes a `hard_delete` `AuditLog` row.
 
 ### `GET /api/canteen/stock-counts`
-Roles: Admin (all), Attendant (own location). Includes last-counted date
-and the period any derived sale figure covers (PRD §4.4).
+Roles: Admin (every canteen), Canteen Attendant (their own canteen only).
+Query: `?productId=` (one product), `?date=YYYY-MM-DD` (windows on the
+latest count's `occurredAt`, Africa/Nairobi business day). Returns
+`{ data: DerivedSaleView[] }`, newest count first, never-counted products
+last. Each item:
+`{ productId, productName, lastCountedAt, periodStart, periodEnd, unitsSold, revenue }`
+— for the product's **most recent** count: `lastCountedAt` = that count's
+`occurredAt`; `periodStart` = the previous count's `occurredAt` (or `null`
+for a first count); `unitsSold` / `revenue` decimal strings. A canteen
+product never counted comes back with every figure `null` (PRD §4.4 —
+"per product, when it was last counted and what period a figure covers").
 
 ---
 

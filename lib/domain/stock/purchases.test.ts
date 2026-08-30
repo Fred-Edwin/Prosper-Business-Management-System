@@ -58,6 +58,34 @@ describe("recordPurchasePayment — real detail columns (ADR-46 §3)", () => {
     );
   });
 
+  it("writes a paired negative MoneyMovement debiting the paid-from account (M2 S4 — resolves the M1 TODO(mock))", async () => {
+    const { productId, locationIds, recorderId } = ctx;
+
+    const view = await recordPurchasePayment({
+      productId,
+      locationId: locationIds.store,
+      supplier: "Cash Vendor",
+      quantity: "10",
+      cost: "2500",
+      paidFromAccount: "cash",
+      recordedById: recorderId,
+    });
+
+    const mm = await prisma.moneyMovement.findMany({
+      where: { sourceType: "purchase_payment", sourceId: view.id },
+    });
+    expect(mm).toHaveLength(1);
+    expect(mm[0].account).toBe("cash");
+    expect(mm[0].amount.toFixed(2)).toBe("-2500.00"); // money out
+    expect(mm[0].recordedById).toBe(recorderId);
+
+    // recordMoneyMovement writes its own AuditLog row.
+    const audit = await prisma.auditLog.findMany({
+      where: { entityType: "money_movement", entityId: mm[0].id },
+    });
+    expect(audit).toHaveLength(1);
+  });
+
   it("rejects an empty supplier", async () => {
     const { productId, locationIds, recorderId } = ctx;
     await expect(

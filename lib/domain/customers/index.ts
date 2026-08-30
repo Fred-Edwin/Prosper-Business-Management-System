@@ -13,3 +13,4 @@ export { listCustomers } from "./list-customers";
 export { getCustomerLedger } from "./get-customer-ledger";
 export { recordRepayment } from "./record-repayment";
 export { recordDebt } from "./record-debt";
+export { correctDebt } from "./correct-debt";

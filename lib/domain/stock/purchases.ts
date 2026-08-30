@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { recordMoneyMovement } from "@/lib/domain/financials";
 import type {
   RecordPurchasePaymentInput,
   RecordPurchaseReceiptInput,
@@ -45,11 +46,13 @@ function trimQty(dec: Prisma.Decimal): string {
  * display and audit. This keeps the ledger sum honest without a
  * movement-type filter in the hot read path.
  *
- * TODO(mock): F3 Financials owns `MoneyMovement` write logic. This payment
- * must also debit Cash at hand / M-Pesa-Bank by `cost`. Deferred to F3 per
- * the Session 6 handoff (Required-reading §6) and ADR-39 — `paidFromAccount`
- * is captured here so F3 can write the paired `MoneyMovement` without a
- * schema change.
+ * MONEY EFFECT (resolved M2 S4): the payment also debits the paid-from
+ * money account by `cost` — one **negative** `MoneyMovement` (money out),
+ * `sourceType: "purchase_payment"`, `sourceId` = this stock-movement id,
+ * written inside the same transaction via `recordMoneyMovement` (which
+ * also writes its own `AuditLog` row). The money ledger seam did not exist
+ * in M1 (`recordMoneyMovement` is M2 S3); the `paidFromAccount` was
+ * already captured on the row for exactly this.
  */
 export async function recordPurchasePayment(
   input: RecordPurchasePaymentInput,
@@ -72,14 +75,15 @@ export async function recordPurchasePayment(
     const unit = product?.unitLabel ?? "unit";
     const paidFromLabel = PAID_FROM_DISPLAY[input.paidFromAccount];
 
-    return tx.stockMovement.create({
+    const occurredAt = new Date();
+    const movement = await tx.stockMovement.create({
       data: {
         productId: input.productId,
         locationId: input.locationId,
         movementType: "purchase_payment",
         quantity: orderedQty.mul(0), // no stock effect (ADR-39)
         recordedById: input.recordedById,
-        occurredAt: new Date(),
+        occurredAt,
         // Real detail columns (ADR-46 §3).
         purchaseSupplier: supplier,
         purchaseOrderedQty: orderedQty,
@@ -89,6 +93,20 @@ export async function recordPurchasePayment(
         note: `Ordered ${trimQty(orderedQty)} ${unit} from ${supplier}; KES ${fmtMoney(cost)} from ${paidFromLabel}`,
       },
     });
+
+    // Money out of the paid-from account (negative amount).
+    await recordMoneyMovement(
+      {
+        account: input.paidFromAccount,
+        amount: cost.negated(),
+        sourceType: "purchase_payment",
+        sourceId: movement.id,
+        occurredAt,
+      },
+      { actorId: input.recordedById, tx },
+    );
+
+    return movement;
   });
 
   return toMovementView(row);

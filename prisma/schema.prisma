@@ -309,6 +309,14 @@ model Order {
 
   total Decimal @db.Decimal(12, 2)
 
+  // The order's business instant (Africa/Nairobi day boundary, ADR-29).
+  // Defaults to creation time; may be backdated by a correction so the
+  // correcting row lands in the same business day as the original. The
+  // edit-vs-correct gate (M2 soft check; M3 real DayClose) compares this
+  // order's business date to today. Every other ledger table carries the
+  // same `occurred_at` (StockMovement, StockCount, MoneyMovement, Debt…).
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
   correctsOrderId String? @map("corrects_order_id")
   correctsOrder   Order?  @relation("OrderCorrection", fields: [correctsOrderId], references: [id])
   corrections     Order[] @relation("OrderCorrection")

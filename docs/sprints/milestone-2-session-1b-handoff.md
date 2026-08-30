@@ -11,7 +11,7 @@ canonical visual source of truth — do **not** start a new file)
 **Target routes (for later sessions, not this one):**
 `app/admin/customers/**`, `app/admin/orders/**` (or `app/admin/sales/**`),
 `app/admin/canteen/**` (or a "Derived sales" sub-nav), `app/canteen/**`
-**Status:** ready-to-start
+**Status:** completed (2026-08-29)
 
 ---
 
@@ -303,11 +303,43 @@ not pick an answer ad hoc.
 
 ## 8. Session Notes
 
-*(Live notes added during the session.)*
+**Completed 2026-08-29. 32 new artboards** on page "Shell+Component kit",
+all named `… [M2-01]`. Composed entirely from the proven kit — no kit
+change, no new component.
 
-- **Artboard links / frame ids:** _add per-screen as created._
-- **Patterns added to "M2 Sales Patterns" (if any):** _list._
-- **Flags / escalations:** _none yet._
+- **A1 Customers Register** (`worldY 16000`, 7): `desktop populated`
+  (DU2-0) · `filtered-empty` (DZ0-0) · `empty` (E41-0) · `error`
+  (E97-0) · `repayment drawer open` (EJ6-0) · `add customer drawer
+  open` (EEE-0) · `mobile` (EPJ-0).
+- **A2 Customer Detail** (`worldY 17100`, 4): `desktop populated`
+  (ER9-0) · `zero history` (EXK-0) · `loading` (F23-0) · `mobile`
+  (F7F-0).
+- **A3 Orders List** (`worldY 18200`, 8): `desktop populated` (FA1-0) ·
+  `filtered-empty` (FHF-0) · `empty` (FN0-0) · `error` (FSL-0) ·
+  `read-only order-detail drawer open` (FYX-0) · `correction form
+  drawer open` (G4I-0) · `order + correction linked group` (GCP-0) ·
+  `mobile` (GIA-0).
+- **A4 Canteen Derived Sales** (`worldY 19300`, 5): `desktop populated`
+  (GL2-0) · `product never counted` (GRM-0) · `filtered-empty` (GVN-0)
+  · `loading` (GZO-0) · `mobile` (H4I-0).
+- **K1 Stock Count** (`worldY 20400`, 6): `product picker` (H6V-0) ·
+  `count entered + preview` (H8J-0) · `first-ever count` (HA3-0) ·
+  `correcting re-count, negative sold` (HBN-0) · `validation error`
+  (HD7-0) · `confirm success` (HIQ-0, = Canteen hub + Toast).
+- **K2 Canteen Hub** (`worldY 21400`, 2): `derived-sale entry in
+  timeline` (HLH-0) · `derived-sale interleaved with other movements`
+  (HNT-0). New `ActivityTimeline` entry type on `9BA-0` — no new
+  screen.
+
+- **Patterns added to "M2 Sales Patterns [M2-01]" (`DIN-0`):** three new
+  sections — `Section — Chip filter bar` (HQN-0), `Section — Derived-sale
+  timeline row` (HR5-0), `Section — Correction linked row-group` (HRN-0).
+  Note text updated to cover all of M2. One canonical artboard; no
+  divergent second version anywhere.
+
+- **Flags / escalations:** none. §3.8 (BLOCK) and the one-kit-change
+  verdict from 1a stand; nothing surfaced that the flow docs + kit +
+  M2-01 patterns didn't cover.
 
 ---
 

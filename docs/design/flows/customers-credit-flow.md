@@ -5,11 +5,11 @@
 (C6), the Admin's register + ledger (A1, A2), and the Admin orders list
 with its correction path (A3).
 
-> **Artboard status:** **C6 is drawn and approved (M2-01).** The Admin
-> screens **A1, A2, A3 are deferred to Session 1b** (M2-01 was
-> re-scoped to the Cashier screens — see `milestone-2-plan.md` §7/§10).
-> This flow narrative stands as written and is the input to Sessions 3–4
-> (backend); Session 1b produces the A1–A3 artboards against it. See **ADR-15** (corrections are new rows),
+> **Artboard status:** **DONE.** C6 drawn and approved in M2-01; **A1,
+> A2, A3 drawn in Session 1b (M2-01b, 2026-08-29)** — desktop + mobile
+> per screen, every structural state (drawer open, empty, filtered-empty,
+> error, loading, linked row-group) as its own artboard. See the
+> "Artboards" list at the bottom of this doc. See **ADR-15** (corrections are new rows),
 **ADR-17** (money is a derived ledger), **ADR-19** (customers / debt /
 repayment), **ADR-25** (audit), **ADR-30** (Decimal money). Built:
 backend Session 3 (`lib/domain/customers` + money ledger), screens
@@ -326,6 +326,15 @@ existing `Drawer` / `BottomSheet` + existing form controls +
 - `A3 Orders List — filtered-empty [M2-01]`
 - `A3 Orders List — empty [M2-01]`
 - `A3 Orders List — error [M2-01]`
-- `A3 Orders List — correction drawer open [M2-01]`
+- `A3 Orders List — read-only order-detail drawer open [M2-01]`
+- `A3 Orders List — correction form drawer open [M2-01]`
 - `A3 Orders List — order + correction linked group [M2-01]`
 - `A3 Orders List — mobile [M2-01]`
+
+All A1–A3 frames created in Session 1b (M2-01b, 2026-08-29), page
+"Shell+Component kit", `worldY 16000`–`18200`. Composed from the Admin
+desktop shell (`649-0`) + Admin mobile shell (`6B1-0`), `SimpleTable`,
+`DenseLedger`, rail `Drawer` (ADR-37b), `SegmentedControl`,
+`CalculatedImpactBanner`, `EmptyState` / `ErrorState`, chip filter bar,
+and `QuantityStepper` tap-to-type (Session 2's change, in A3's
+correction line editor). No kit change.

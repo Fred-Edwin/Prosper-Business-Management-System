@@ -174,8 +174,9 @@ row.
 | delivery_fee | NUMERIC, nullable — only if `order_type = delivery` |
 | payment_method | enum: `cash`, `mpesa`, `credit` |
 | customer_id | FK → `Customer`, nullable — required if `payment_method = credit` |
-| total | NUMERIC, derived from lines + delivery fee (stored for convenience, recomputed on correction) |
-| corrects_order_id | FK → `Order`, nullable, self-referencing |
+| total | NUMERIC, derived from lines + delivery fee (stored for convenience, recomputed on every write **and** correction) |
+| occurred_at | DateTime, default `now()` — **added M2 Session 4**. The order's business instant (Africa/Nairobi, ADR-29). May be backdated by a correction so the correcting row lands in the original's business day. The edit-vs-correct gate (M2 soft check; M3 real `DayClose`) compares this to today. Migration `20260829140000_add_order_occurred_at`. |
+| corrects_order_id | FK → `Order`, nullable, self-referencing — set on an append-only correction row (ADR-15); the corrected order's own row is never `UPDATE`d. |
 
 ### `OrderLine`
 | Column | Notes |
@@ -186,8 +187,28 @@ row.
 | unit_price | NUMERIC — captured at time of sale, not looked up later |
 | subtotal | NUMERIC |
 
-Each completed `Order` writes a matching `StockMovement` row
-(`movement_type = sale`, `order_id` set).
+**Implemented M2 Session 4 (2026-08-30) — `createOrder` / `editOwnOrder` /
+`correctOrder` (`lib/domain/sales`).** In one transaction a `createOrder`
+writes: the `Order` + one `OrderLine` per line + one **negative** `sale`
+`StockMovement` per line (`movement_type = sale`, `quantity = −lineQty`,
+`order_id` set) + **either** one `MoneyMovement` (`source_type = order`,
+`source_id` = order id, `account` = `cash` | `mpesa_bank`,
+`amount = +total`) **for a cash / M-Pesa order** **or** one `Debt`
+(`credit` order — no `MoneyMovement`, plan §3.2) + an `AuditLog` row.
+
+**§3.8 no-negative-balance rule:** the total quantity ordered for a
+product may not exceed its current derived Restaurant balance (re-read on
+the write transaction). If it would, the write is **rejected in full** —
+no row is written and the balance is never negative.
+
+**Corrections are append-only** (ADR-15): `correctOrder` writes a **new**
+`Order` (`corrects_order_id` set) plus offsetting `sale` `StockMovement`
+(`corrects_movement_id` pointing at the original's row where singular),
+`MoneyMovement` and/or `Debt` delta rows so the net effect equals the
+corrected state. `editOwnOrder` (a Cashier's own, same-day order) is a
+**true edit** — it deletes and rewrites its own lines / movements rather
+than writing a correction row; history-preservation begins only after the
+business day rolls.
 
 ---
 
@@ -202,11 +223,40 @@ Each completed `Order` writes a matching `StockMovement` row
 | counted_quantity | |
 | occurred_at | |
 
-On save: sold quantity since the product's last count is derived as
-`opening + received (transfer/production) − non_sale_consumption −
-counted_quantity`, and written as a `StockMovement` row
-(`movement_type = sale`, `stock_count_id` set). No credit sales at Canteen
-(PRD §4.4).
+**Implemented M2 Session 5 (2026-08-30) — `recordStockCount`
+(`lib/domain/sales`).** On save, sold quantity since the product's last
+count at this canteen is derived as
+`expectedRemaining − counted_quantity`, where `expectedRemaining` is the
+signed sum of every `StockMovement.quantity` for (product, canteen) up to
+the count's `occurred_at` (opening + transfers-in + production −
+non_sale_consumption − prior sales — ADR-11, computed on read, no stored
+column). In one transaction the count writes:
+- this `StockCount` row;
+- one `StockMovement` — `movement_type = sale`, `quantity = −sold`,
+  `stock_count_id` set (so canteen sales sum into the same
+  derived-balance / reporting paths as Restaurant sales — ADR-16);
+- unless `sold = 0`, one `MoneyMovement` — `source_type = canteen_sale`,
+  `source_id` = this count's id, `account = cash`,
+  `amount = +(sold × canteen ProductLocation.selling_price)`;
+- an `AuditLog` row (`action = create`, `entity_type = stock_count`).
+
+**Closing stock** = the counted value, **derived** (no row written): after
+the `sale` row the derived balance at `occurred_at` equals
+`counted_quantity`.
+
+**Counted more than expected** (`sold` < 0) is **rejected**
+(`VALIDATION_ERROR`, nothing written) — owner decision 2026-08-30. The
+attendant instead undoes the count **same-day** via `voidStockCount`
+(`DELETE /api/canteen/stock-counts/:id`), a **hard delete** of the
+`StockCount` + its `sale` `StockMovement` + its `canteen_sale`
+`MoneyMovement` (an `AuditLog` `hard_delete` row is kept). After the
+Africa/Nairobi business day rolls the count is locked — an Admin
+correction path (a new `StockCount` + offsetting rows, ADR-15) is a later
+session. **There is no `corrects_stock_count_id` column today**; adding
+that correction path needs a migration.
+
+**No credit and no M-Pesa at the Canteen** (PRD §4.4) — no `Debt`, no
+`payment_method`; the money row's `account` is always `cash`.
 
 ---
 
@@ -228,11 +278,16 @@ M-Pesa/Bank. Current balance of either account = signed sum of its rows.
 | note | text, nullable |
 
 The write path is `lib/domain/financials.recordMoneyMovement` (internal —
-no route). As of M2 Session 3 it is exercised for `repayment` (a customer
-debt repayment, `+amount`). `order` (Cash/M-Pesa Restaurant order revenue,
-S4) and `canteen_sale` (Canteen derived-sale revenue, S5) are reserved —
-the enum values exist so those sessions add no further migration. The
-`purchase_payment` money row (ADR-39 §4) is still deferred to S4.
+no route). Exercised for: `repayment` (S3 — a customer debt repayment,
+`+amount`); `canteen_sale` (S5 — Canteen derived-sale revenue, `+`,
+`account = cash`, `source_id` = the `StockCount` id, deleted by
+`voidStockCount`); **`order` (S4 — a cash / M-Pesa Restaurant order's
+revenue, `+total`, `account` = the matching account, `source_id` = the
+order id; a `credit` order writes a `Debt`, not a money row)**; and
+**`purchase_payment` (S4 — resolves the M1 `purchases.ts` `TODO(mock)`,
+ADR-39 §4: a supplier payment now also writes one `−cost` `MoneyMovement`
+against `purchase_paid_from`, `source_id` = the `purchase_payment`
+`StockMovement` id, inside the same transaction)**.
 Migration: `20260829130000_add_m2_money_source_types` (`ALTER TYPE …
 ADD VALUE`, no table change; applied to the dev DB via `prisma db push`).
 

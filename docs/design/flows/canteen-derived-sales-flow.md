@@ -5,11 +5,11 @@
 appears in the existing Canteen hub timeline (K2), plus the Admin's
 per-product derived-sales view (A4).
 
-> **Artboard status:** **K1, K2 and A4 are deferred to Session 1b**
-> (M2-01 was re-scoped to the Cashier screens — see
-> `milestone-2-plan.md` §7/§10). This flow narrative stands and is the
-> input to Session 5 (backend); Session 1b produces the K1/K2/A4
-> artboards against it.
+> **Artboard status:** **DONE.** K1, K2 and A4 drawn in Session 1b
+> (M2-01b, 2026-08-29) — K1 as a full staff screen with all six states,
+> K2 as a new entry type in the existing Canteen hub timeline (`9BA-0`)
+> shown interleaved with other movements, A4 desktop + mobile with every
+> structural state. See the "Artboards" list at the bottom of this doc.
 >
 > **K1's product picker gets the same category tab row as C2** — the
 > existing kit `Tabs` (underline) over the new product `category` field
@@ -80,11 +80,24 @@ many units, how much revenue?"*
    period. The preview copy differs — "first count for this product:
    opening {o} + received {r} − non-sale {c} − counted {rem} = sold {n}"
    — and the period runs from the product's opening-stock baseline.
-5. **Corrections (ADR-15).** A wrong count is fixed by recording **a new
-   count** (or an Admin correction) — never by editing the `StockCount`
-   row. K1 has no "edit last count" affordance; the correction is just
-   the next count, whose derivation self-adjusts because the figures are
-   derived (a period-boundary case — see §The period-boundary case).
+5. **A count can't go negative — you delete and redo instead.**
+   *(Owner decision 2026-08-30 — supersedes the earlier "allow a
+   negative-sold reconciliation" design; see the box below.)* If the
+   Attendant counts **more than the derivation expects to be left**
+   (i.e. `sold` would be negative), `recordStockCount` **rejects** it —
+   `400 VALIDATION_ERROR` on the count field, nothing written. The fix
+   is one of:
+   - **Same-day:** `voidStockCount` hard-deletes today's count (the
+     `StockCount` + its `Sale` `StockMovement` + its `canteen_sale`
+     `MoneyMovement`), keeps a `hard_delete` `AuditLog` row, and the
+     Attendant re-counts. `DELETE /api/canteen/stock-counts/:id`,
+     `canteen_attendant` only, own count, business day == today
+     (`Africa/Nairobi`).
+   - **After the day rolls:** locked — `voidStockCount` returns
+     `FORBIDDEN`. Only an Admin can fix it, via a correction path that
+     is **not built in M2** (a later milestone).
+   K1 still has no "edit last count" field — a correct count is fixed
+   by deleting it and counting again, never by editing the row.
 6. **Audit (ADR-25).** `recordStockCount` writes an `AuditLog` row.
 7. **Role scoping.** K1/K2 are the Attendant's — they show canteen
    selling price and revenue (the Attendant needs to see the money the
@@ -96,31 +109,37 @@ many units, how much revenue?"*
 ## The period-boundary case
 
 A derived figure always covers **[previous count of this product →
-this count]**. Two consequences the design must be honest about:
+this count]**. The design has to be honest about two things:
 
 - **A gap with no count is not lost.** If Soda 300ml was last counted
   Monday and is counted again Thursday, Thursday's "sold" covers
   Monday→Thursday in one figure. The Attendant sees the date range in
   the preview ("since last count on Mon 25 Aug") so a 3-day figure never
   looks like a 1-day figure.
-- **A correcting re-count re-bounds the next period.** If Thursday's
-  count was wrong and the Attendant counts again Friday, Friday's
-  derivation covers Thursday→Friday and *starts from Thursday's counted
-  value*. If Thursday's count was too low (overstating "sold"), Friday's
-  opening is correspondingly low and Friday's derivation shows a smaller
-  (or negative) "sold" that nets it out over the two periods. The design
-  does **not** try to retro-edit Thursday — it shows Friday's figure
-  plainly, including a **negative "sold"** if that's what the math says,
-  with preview copy that names it: *"Counted more than expected — this
-  period shows −4 pcs sold, correcting the previous count."* The revenue
-  `MoneyMovement` for a negative "sold" is correspondingly negative
-  (a reversal), keeping Cash reconciled.
-- This is the Canteen analogue of the Restaurant's §3.8, and it is why
-  the Canteen does **not** block on "negative": at the Canteen a
-  negative is a *count reconciliation*, not an oversell. (Restaurant
-  blocks because there a negative means selling stock that was never
-  produced/received — see `restaurant-sales-flow.md` §the §3.8
-  decision.)
+- **Counting more than expected is a hard stop, not a negative.**
+  *(Owner decision 2026-08-30.)* If the shelf holds more than the
+  derivation expects, a receipt or transfer into the Canteen almost
+  certainly wasn't recorded. The count is **rejected** — the Attendant
+  can't save a figure the ledger doesn't back. K1 shows the rejection
+  inline (see walkthrough C) and, if they've already recorded a count
+  today they want to redo, offers **Delete today's count**. Once the
+  missing movement is logged and the count re-run, its period covers
+  the full span since the *previous* count as normal — nothing is lost.
+- **This is the Canteen analogue of the Restaurant's §3.8** — both
+  block rather than let a figure go negative. (Restaurant blocks an
+  oversell; the Canteen blocks a count that outruns recorded stock.
+  Different cause, same "the ledger must back the figure" principle.)
+
+> **UPDATED 2026-08-30 — supersedes the original "allow a negative-sold
+> reconciliation" design.** M2 Session 5 (backend) built `recordStockCount`
+> to **reject** `sold < 0` and added `voidStockCount` (same-day
+> hard-delete). The earlier text here described accepting a negative
+> "sold" with an offsetting negative `canteen_sale` `MoneyMovement`;
+> the owner chose reject + same-day undo instead, for ledger integrity
+> (a negative revenue row is awkward to reconcile against Cash). The
+> M2-01b artboards were re-spun to match (Design, 2026-08-30) — see the
+> Artboards list. No negative-sold or negative-revenue state exists
+> anywhere in M2.
 
 ---
 
@@ -161,31 +180,65 @@ this count]**. Two consequences the design must be honest about:
 4. Confirm → same three writes. The period baseline for Mandazi's *next*
    count is now this count.
 
-### C — a correcting re-count showing a negative (K1)
+### C — the Attendant counts more than expected (K1, blocked)
 
-1. Yesterday Soda 300ml was counted at 96, but the Attendant realises
-   ~20 were miscounted and are actually still on the shelf. Today they
-   count properly: **112** (yesterday's real remaining was higher, so
-   yesterday over-reported "sold").
-2. Preview card:
-   *"Since last count on Thu 28 Aug (1 day): opening 96 + received 0 −
-   non-sale 0 − counted 112 = **sold −16 pcs**. This period corrects the
-   previous count — revenue **−KES 960**. Closing stock will be set to
-   112 pcs."*
-   The `−16` and `−KES 960` render in `--color-danger`; a caption under
-   the card: *"A negative here means the last count was low. Recording
-   this reconciles it."*
-3. Confirm → `StockCount` (112) + `Sale` `StockMovement` (**+16 pcs**,
-   i.e. stock back) + `MoneyMovement` (**−KES 960**, Cash) + closing =
-   112. The two periods now net to the true total.
+1. Soda 300ml's derivation expects ~96 left; the Attendant counts
+   **112** — more than the ledger accounts for.
+2. **No preview card renders.** The **counted** field shows the §9.8
+   error pattern (border `--color-danger`) with the server's message
+   directly below: *"Counted quantity exceeds expected stock by 16
+   pcs."* **Confirm count** stays disabled.
+3. Below it, an **`InstructionalBanner`** (`--color-info-bg`):
+   *"More on the shelf than expected — a transfer or delivery into the
+   Canteen may not have been recorded. Ask the Store Manager to log it,
+   then recount — the count can't be saved until the numbers line up."*
+4. A quiet line under that: *"Counted this product already today?"* →
+   **Delete today's count** (only shown if a same-day count for this
+   product exists — the redo case).
 
-### D — K1 validation error
+### C2 — deleting and redoing a same-day count (K1)
 
-- Counted remaining left blank, or non-numeric, or negative:
-  the field shows the §9.8 error pattern — border `--color-danger`,
-  helper "Enter the counted quantity (0 or more)". The **Confirm count**
-  button is disabled until it's valid. No preview card renders while the
-  input is invalid.
+1. From walkthrough C's **Delete today's count** link (or the same
+   affordance surfaced after a mistaken but *valid* count), a
+   **`FrictionDeleteDialog`** opens over the dimmed screen — **no
+   type-to-confirm field** (same-day, recoverable by recount;
+   `showTypeToConfirm={false}` per ADR-36c):
+   - danger triangle + **"Delete today's count?"** + eyebrow
+     *"SAME-DAY ONLY · REMOVES THE SALE"*
+   - `--color-danger-bg` body: *"Deletes the stock count for Soda 300ml
+     and the sale it created — 96 pcs, KES 5,760.00. Closing stock goes
+     back to before the count. Do a fresh count to replace it."*
+   - **Cancel** / **Delete count** (destructive primary).
+2. Confirm → `voidStockCount` hard-deletes the `StockCount` + its
+   `Sale` `StockMovement` + its `canteen_sale` `MoneyMovement`; writes a
+   `hard_delete` `AuditLog` row. Returns to the hub with a `Toast` —
+   *"Count deleted · Soda 300ml sale removed · recount when ready"*. The
+   timeline entry for that count is **gone**.
+3. The Store Manager logs the missing transfer; the Attendant re-counts
+   from walkthrough A — the new count's period covers the full span
+   since the *previous* count.
+
+### C3 — the count is from a closed day (K1, locked)
+
+1. The Attendant opens a count whose business day (`Africa/Nairobi`)
+   **is not today** (e.g. via History).
+2. The **counted** field renders read-only (dimmed, shows the recorded
+   value). An amber **locked banner**: *"This count is from a closed
+   day — counted Thu 28 Aug at 5:40 pm, 96 pcs. Counts can only be
+   deleted on the same day. Ask the Admin to correct it."*
+3. The sticky bar's primary is disabled: *"Only the Admin can change
+   this."* `voidStockCount` returns `FORBIDDEN` for a past-day count.
+   (The Admin correction path is a later milestone — mirrors C4's
+   "Correct this (Admin)" in `restaurant-sales-flow.md`.)
+
+### D — K1 validation error (blank / non-numeric)
+
+- Counted remaining left blank or non-numeric: the field shows the
+  §9.8 error pattern — border `--color-danger`, helper *"Enter the
+  counted quantity (0 or more)"*. **Confirm count** is disabled until
+  it's valid. No preview card renders while the input is invalid.
+  *(A value that's numerically fine but exceeds expected stock is
+  walkthrough C, not this — the server distinguishes them.)*
 
 ### E — K1 confirm success
 
@@ -202,10 +255,12 @@ the timeline (K2) gains the entry.
    - title: **"Stock count — Soda 300ml"**
    - subtitle: **"96 pcs sold since Mon 25 Aug · closing 96 pcs"**
      (`--text-secondary`)
-   - trailing value: **"+KES 5,760"** in `--color-success`, `--font-mono`
-     (revenue in), matching how other signed values render in the
-     timeline. A correcting negative shows **"−KES 960"** in
-     `--color-danger`.
+   - trailing value: **"+KES 5,760.00"** in `--color-success`,
+     `--font-mono` (revenue in), matching how other signed values
+     render in the timeline. A **zero-sold** count (nothing sold since
+     the last count) writes no `canteen_sale` `MoneyMovement`, so its
+     row shows a muted em-dash where the value would be. *(There is no
+     negative-revenue row — see the period-boundary box.)*
 3. No new screen, no new component — `ActivityTimeline` already handles
    title / subtitle / signed trailing value. K2's artboards just show
    the hub timeline **with** a derived-sale row, and **interleaved**
@@ -221,8 +276,9 @@ the timeline (K2) gains the entry.
    - "Last counted" = date + relative ("Thu 28 Aug · 1 day ago").
    - "Period covered" = the span the latest figure covers ("Mon 25 Aug
      → Thu 28 Aug"). This is the PRD §4.4 requirement made literal.
-   - "Units sold" and "Revenue" — `--font-mono`, right-aligned; a
-     correcting-period negative shows in `--color-danger`.
+   - "Units sold" and "Revenue" — `--font-mono`, right-aligned. Always
+     ≥ 0 (`recordStockCount` rejects a count that would go negative —
+     see the period-boundary box); a **zero** count shows "0" / "—".
 2. **A4 never-counted product**: a row for a canteen product with no
    count yet — "Last counted" = "Never", "Period covered" = "—", "Units
    sold" / "Revenue" = "—" (muted em-dash, not blank — §5 tables). It's
@@ -246,12 +302,25 @@ the timeline (K2) gains the entry.
   that product (or the product's opening baseline if none);
   `nonSale` = Σ `non_sale_consumption` over the same window;
   `opening` = the previous count's `countedRemaining` (or opening-stock
-  baseline). `sold = opening + received − nonSale − countedRemaining` —
-  **may be negative** (period correction). Then write the `StockCount`,
-  a `Sale` `StockMovement` of `−sold` (so +ve sold reduces stock, −ve
-  sold returns it), a `MoneyMovement` of `sold × canteenSellingPrice`
-  (`account = "cash"`, `sourceType = "canteen_sale"`), and set closing
-  to `countedRemaining`.
+  baseline). `sold = opening + received − nonSale − countedRemaining`.
+  **If `sold < 0` → reject** (`400 VALIDATION_ERROR` on the count
+  field, nothing written). Otherwise write the `StockCount`, a `Sale`
+  `StockMovement` of `−sold` (`quantity 0` is still written, for a
+  uniform audit trail), a `MoneyMovement` of `sold × canteenSellingPrice`
+  (`account = "cash"`, `sourceType = "canteen_sale"`) — **skipped when
+  `sold === 0`** (no zero money row) — and set closing to
+  `countedRemaining`.
+- **`voidStockCount(countId, ctx)`** (`DELETE
+  /api/canteen/stock-counts/:id`) → hard-deletes the `StockCount` + its
+  `Sale` `StockMovement` + its `canteen_sale` `MoneyMovement`; writes a
+  `hard_delete` `AuditLog` row. `canteen_attendant` only, own count,
+  business day == today (`Africa/Nairobi`). Past-day → `FORBIDDEN`.
+- **`recordStockCount` return shape** (feeds the K1 preview card):
+  `{ count, derivedSale }` where `derivedSale = { unitsSold, revenue,
+  periodStart, periodEnd }` — `unitsSold` a 4dp string (always ≥ 0),
+  `revenue` 2dp string, `periodStart` the previous count's `occurredAt`
+  ISO or **`null`** for a first-ever count (K1's copy branches on this),
+  `periodEnd` this count's `occurredAt`.
 - **Canteen selling price** is the product's `ProductLocation` selling
   price for the Canteen (each location has its own — PRD §3).
 - **No `Debt` path, no M-Pesa account** on this flow (plan §3.5). If a
@@ -296,3 +365,15 @@ needed for this flow.
 - `A4 Canteen Derived Sales — filtered-empty [M2-01]`
 - `A4 Canteen Derived Sales — loading [M2-01]`
 - `A4 Canteen Derived Sales — mobile [M2-01]`
+
+All frames created in Session 1b (M2-01b, 2026-08-29), page
+"Shell+Component kit": K1 at `worldY 20400`, K2 at `21400`, A4 at
+`19300`. K1 composed from the staff mobile shell + back-nav `FlowHeader`
+(no direction badge), `Tabs` (the C2 category tab row over the new
+`category` field), `QuantityStepper` tap-to-type, `CalculatedImpactBanner`
+(the preview card — exact fit), `Toast`. K2 is an `ActivityTimeline` row
+added to the existing hub (`9BA-0`) — no new screen, no new component.
+A4 composed from the Admin desktop + mobile shells + `SimpleTable` +
+chip filter row + `EmptyState`. No kit change. The derived-sale timeline
+row and the K1 preview-card copy variants are pinned on the
+"Component Kit — M2 Sales Patterns [M2-01]" artboard.

@@ -1,13 +1,17 @@
 # M2 Session 5 Handoff — Developer: Canteen Derived Sales (backend)
 
-**Status:** READY once Session 3 is merged to `main` (it is —
-`m2-session-3-financials-customers`). **May run in parallel with Session
-4** (Restaurant Orders); both depend only on S3, not on each other. Both
-live in `lib/domain/sales` — if you and S4 are truly concurrent, split by
-file (S5 owns `record-stock-count.ts` / `derived-sales.ts`; S4 owns
-`create-order.ts` / `edit-own-order.ts` / `correct-order.ts` /
-`list-orders.ts`) and the second-to-merge rebases the shared `index.ts` /
-`types.ts` / `test-helpers.ts`.
+**Status:** DONE (2026-08-30). Delivered `recordStockCount` +
+`voidStockCount` + `getDerivedSalesForProduct` / `listDerivedSales`, the
+3 routes under `app/api/canteen/**`, `lib/validation/canteen.ts`, and 32
+new tests (`pnpm test` **350/350**; `tsc` 0; `build` clean). Ran in the
+same working tree as Session 4 (Orders) on the `feat/m2-session-4-orders`
+branch, split by file — S5 owns `record-stock-count.ts` /
+`derived-sales.ts` / `canteen-guards.ts` and edited the shared
+`types.ts` / `index.ts` / `test-helpers.ts` **additively**; **S4 rebases
+those three on its final versions before committing** (S4 confirmed
+still green after every S5 edit). See `docs/PROGRESS.md` → "M2 Session 5"
+for the full entry. **What Session 6 needs is in "Session Notes" at the
+bottom.**
 
 **Role:** Developer (Development Sprint — backend only). One role:
 `lib/domain/sales` (canteen slice) + `lib/validation/canteen` +
@@ -392,16 +396,69 @@ merged first). Add yours on top.
 
 ## Session Notes
 
-*(Live notes added during the session.)*
-
-- **"Counted more than expected":** _VALIDATION_ERROR (default) / allowed
-  with sold = 0 — record which, and whether the flow doc drove it._
-- **Zero-value `sale` / `MoneyMovement` rows (sold === 0):** _written /
-  skipped — record which._
-- **Explicit `stock_count` closing marker row:** _written / relied on the
-  derived balance — record which._
-- **`GET` route name:** `/api/canteen/stock-counts` _(+ `/derived-sales`
-  alias? yes/no)_.
+- **"Counted more than expected" (`sold` < 0): REJECT.** `VALIDATION_ERROR`
+  on `countedQuantity` ("Counted quantity exceeds expected stock by N —
+  record the missing receipt or transfer first, then recount"), nothing
+  written. **Owner decision 2026-08-30** — the
+  `canteen-derived-sales-flow.md` walkthrough C / "period-boundary case"
+  had described *allowing* a negative-sold reconciliation (positive `sale`
+  row + negative `canteen_sale` money row); the owner overrode that in
+  favour of reject + a **same-day undo**. The flow doc's negative-sold
+  narrative is now **superseded** — needs a Design touch-up or a QA note.
+- **Same-day undo: `voidStockCount(countId, ctx)` — hard delete.** Owner
+  chose a physical delete over append-only reversing rows. Deletes the
+  `StockCount` + its `sale` `StockMovement` + its `canteen_sale`
+  `MoneyMovement`; keeps a `hard_delete` `AuditLog` row. Route:
+  **`DELETE /api/canteen/stock-counts/:id`**, `canteen_attendant` only,
+  own count + business day == today (Africa/Nairobi). After the day rolls
+  → `FORBIDDEN` (Admin correction path is a later session).
+- **Zero-value rows (`sold === 0`):** the `sale` `StockMovement` **is**
+  written (`quantity 0`, uniform audit trail); the `canteen_sale`
+  `MoneyMovement` is **skipped** (no zero money row).
+- **Explicit `stock_count` closing marker row:** **not written** — relied
+  on the derived balance (ADR-11); `getDerivedStockBalance(asOf =
+  count.occurredAt)` equals `countedQuantity` after the `sale` row.
+- **`GET` route name:** `/api/canteen/stock-counts` only. **No
+  `/derived-sales` alias** (the flow doc doesn't name one).
 - **`correctStockCount` schema gap:** noted — no `corrects_stock_count_id`
-  column; a correction path needs a migration in a later session.
-- **Flags / escalations:** _none yet._
+  column. Module shaped so a `correctStockCount` (new `StockCount` +
+  offsetting `sale` / `MoneyMovement` rows linked via
+  `correctsStockCountId`) drops in; it needs a migration in a later
+  session.
+- **Flags / escalations:**
+  1. **Flow doc vs. owner decision** (above) — `canteen-derived-sales-flow.md`
+     §"The period-boundary case" and walkthrough C describe allow-negative;
+     the shipped behaviour is reject + same-day undo. Reconcile in a
+     Design touch-up; QA should test "counted more than expected" as a
+     **blocked 400**, not an accepted negative.
+
+### For Session 6 (screen assembly)
+
+- **`recordStockCount` return shape (feeds the K1 "sold since last count"
+  preview):** `{ count, derivedSale }` where
+  `derivedSale = { unitsSold, revenue, periodStart, periodEnd }` —
+  `unitsSold` a 4dp string (always ≥ 0), `revenue` 2dp string,
+  `periodStart` the previous count's `occurredAt` ISO or **`null`** for a
+  first-ever count (K1's copy branches on this — "first count for {product}"
+  vs "since last count on {date}"), `periodEnd` this count's `occurredAt`.
+  The preview card (`CalculatedImpactBanner`) can render straight from
+  this — one call, no separate preview endpoint.
+- **`DerivedSaleView` (A4 table + K2 hub timeline):**
+  `{ productId, productName, lastCountedAt, periodStart, periodEnd,
+  unitsSold, revenue }` from `GET /api/canteen/stock-counts`
+  (`?productId=&date=`). A **never-counted** canteen product returns every
+  field except `productId`/`productName` as **`null`** — A4 renders the
+  muted em-dash row (flow doc §G.2), not a blank. Rows come newest-count
+  first, never-counted last.
+- **K1 has no "counted more than expected → allowed" path.** If the
+  attendant counts above expected, the POST returns **400
+  `VALIDATION_ERROR`** with the "exceeds expected stock by N" message on
+  `countedQuantity` — surface it inline on the count field (flow doc §D
+  error pattern), and offer the **undo** affordance if they've *already*
+  recorded a count today they want to redo. Undo = `DELETE
+  /api/canteen/stock-counts/:id`; only valid same-day.
+- **No account picker, no customer attach on K1** — canteen is cash-only,
+  no credit (PRD §4.4). The domain rejects any such input by omission.
+- **Roles:** POST + DELETE are `canteen_attendant` only; GET is `admin` +
+  `canteen_attendant` (attendant scoped to their own canteen). A4 is
+  Admin; K1/K2 are the attendant's.

@@ -1,0 +1,122 @@
+import { afterAll, beforeAll, afterEach, describe, expect, it } from "vitest";
+import { prisma } from "@/lib/db";
+import { createOrder } from "./create-order";
+import { listOrders } from "./list-orders";
+import {
+  cleanupSalesTestData,
+  setupSalesTestData,
+  type SalesTestCtx,
+} from "./test-helpers";
+
+const SCOPE = "list";
+
+describe("listOrders", () => {
+  let ctx: SalesTestCtx;
+
+  beforeAll(async () => {
+    ctx = await setupSalesTestData(SCOPE);
+    const chapati = ctx.products[0];
+    // Cashier A: two orders, one today, one on 2026-08-05.
+    await createOrder(
+      {
+        orderType: "dine_in",
+        paymentMethod: "cash",
+        lines: [{ productId: chapati.id, quantity: "1" }],
+      },
+      { userId: ctx.cashierId, role: "cashier", restaurantId: ctx.restaurantId },
+    );
+    await createOrder(
+      {
+        orderType: "takeaway",
+        paymentMethod: "mpesa",
+        occurredAt: new Date("2026-08-05T09:00:00Z"),
+        lines: [{ productId: chapati.id, quantity: "2" }],
+      },
+      { userId: ctx.cashierId, role: "cashier", restaurantId: ctx.restaurantId },
+    );
+    // Cashier B: one order today.
+    await createOrder(
+      {
+        orderType: "dine_in",
+        paymentMethod: "cash",
+        lines: [{ productId: chapati.id, quantity: "3" }],
+      },
+      { userId: ctx.cashier2Id, role: "cashier", restaurantId: ctx.restaurantId },
+    );
+  });
+
+  afterAll(async () => {
+    await cleanupSalesTestData(SCOPE);
+    await prisma.$disconnect();
+  });
+
+  it("cashier A sees only A's orders", async () => {
+    const rows = await listOrders(
+      {},
+      { userId: ctx.cashierId, role: "cashier" },
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.cashierId === ctx.cashierId)).toBe(true);
+  });
+
+  it("a cashierId=B filter as cashier A returns [] (no error, no leak)", async () => {
+    const rows = await listOrders(
+      { cashierId: ctx.cashier2Id },
+      { userId: ctx.cashierId, role: "cashier" },
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("admin sees every cashier's orders", async () => {
+    const rows = await listOrders(
+      {},
+      { userId: ctx.adminId, role: "admin" },
+    );
+    const mine = rows.filter((r) =>
+      [ctx.cashierId, ctx.cashier2Id].includes(r.cashierId),
+    );
+    expect(mine).toHaveLength(3);
+  });
+
+  it("admin cashierId filter narrows", async () => {
+    const rows = await listOrders(
+      { cashierId: ctx.cashier2Id },
+      { userId: ctx.adminId, role: "admin" },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cashierId).toBe(ctx.cashier2Id);
+  });
+
+  it("date filter windows on the Africa/Nairobi business day", async () => {
+    const rows = await listOrders(
+      { date: "2026-08-05" },
+      { userId: ctx.cashierId, role: "cashier" },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].orderType).toBe("takeaway");
+  });
+
+  it("newest first", async () => {
+    const rows = await listOrders(
+      {},
+      { userId: ctx.cashierId, role: "cashier" },
+    );
+    expect(new Date(rows[0].occurredAt).getTime()).toBeGreaterThanOrEqual(
+      new Date(rows[1].occurredAt).getTime(),
+    );
+  });
+
+  it("no margin / cost / buyingPrice / profit field in any row", async () => {
+    const rows = await listOrders(
+      {},
+      { userId: ctx.adminId, role: "admin" },
+    );
+    expect(JSON.stringify(rows)).not.toMatch(/buyingPrice|margin|unitCost|profit/i);
+  });
+
+  it("a non-order role → FORBIDDEN", async () => {
+    await expect(
+      listOrders({}, { userId: ctx.adminId, role: "store_manager" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});

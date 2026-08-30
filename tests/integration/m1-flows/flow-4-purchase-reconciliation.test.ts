@@ -15,6 +15,28 @@ let awaitingProductId = ""; // payment, no receipt  → "Awaiting delivery"
 let receivedProductId = ""; // receipt, no payment  → "Received, no payment"
 
 async function cleanup() {
+  const movements = await prisma.stockMovement.findMany({
+    where: { product: { name: { startsWith: P } } },
+    select: { id: true },
+  });
+  const movementIds = movements.map((m) => m.id);
+  if (movementIds.length > 0) {
+    // M2 S4: a `purchase_payment` now writes a paired `MoneyMovement`
+    // (+ its own `AuditLog` row). Clear both before the movements.
+    const money = await prisma.moneyMovement.findMany({
+      where: { sourceType: "purchase_payment", sourceId: { in: movementIds } },
+      select: { id: true },
+    });
+    await prisma.auditLog.deleteMany({
+      where: {
+        entityType: "money_movement",
+        entityId: { in: money.map((m) => m.id) },
+      },
+    });
+    await prisma.moneyMovement.deleteMany({
+      where: { sourceType: "purchase_payment", sourceId: { in: movementIds } },
+    });
+  }
   await prisma.stockMovement.deleteMany({
     where: { product: { name: { startsWith: P } } },
   });
@@ -56,8 +78,8 @@ afterAll(async () => {
   await cleanup();
 });
 
-describe("purchase payment writes real columns and no money row", () => {
-  it("a purchase_payment carries zero stock quantity, the 4 purchase_* columns, and writes NO MoneyMovement", async () => {
+describe("purchase payment writes real columns and a paired money-out row", () => {
+  it("a purchase_payment carries zero stock quantity, the 4 purchase_* columns, and debits the paid-from account", async () => {
     actAs({ id: adminId, role: "admin" });
 
     const res = await api.createMovement({
@@ -77,22 +99,19 @@ describe("purchase payment writes real columns and no money row", () => {
     expect(res.body.data.purchaseTotalCost).toBe("4000.00");
     expect(res.body.data.purchasePaidFrom).toBe("cash");
 
-    // `recordPurchasePayment` writes NO money ledger row — that boundary is
-    // S4's to resolve (ADR-39 §4 / M2 plan §2). Scoped to this payment
-    // (by linked stock-movement id and by source), not a global count:
-    // since M2 Session 3 the money ledger is live and other suites
-    // legitimately hold `MoneyMovement` rows concurrently.
-    const linkedMoney = await prisma.moneyMovement.count({
-      where: {
-        OR: [
-          { stockMovementId: res.body.data.id },
-          { sourceType: "purchase_payment", sourceId: res.body.data.id },
-        ],
-      },
+    // M2 S4: `recordPurchasePayment` now writes ONE negative `MoneyMovement`
+    // (money out of the paid-from account), `sourceType: "purchase_payment"`,
+    // `sourceId` = this stock-movement id — resolving the M1 `TODO(mock)`.
+    // Scoped to this payment (not a global count): the money ledger is live
+    // and other suites hold rows concurrently.
+    const linkedMoney = await prisma.moneyMovement.findMany({
+      where: { sourceType: "purchase_payment", sourceId: res.body.data.id },
     });
-    expect(linkedMoney).toBe(0);
+    expect(linkedMoney).toHaveLength(1);
+    expect(linkedMoney[0].account).toBe("cash");
+    expect(linkedMoney[0].amount.toFixed(2)).toBe("-4000.00");
 
-    // The balance over this product/location is unmoved.
+    // The stock balance over this product/location is unmoved (money ≠ stock).
     const bal = await api.balances(`?productIds=${awaitingProductId}&locationId=${storeId}`);
     expect(bal.status).toBe(200);
     const row = bal.body.data.find((r: any) => r.productId === awaitingProductId);

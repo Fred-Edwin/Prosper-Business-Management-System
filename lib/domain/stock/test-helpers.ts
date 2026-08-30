@@ -97,6 +97,12 @@ export async function setupStockTestData(scope: string): Promise<StockTestCtx> {
 export async function cleanupStockTestData(scope: string): Promise<void> {
   const prefix = prefixFor(scope);
 
+  const testUsers = await prisma.user.findMany({
+    where: { name: { startsWith: prefix } },
+    select: { id: true },
+  });
+  const userIds = testUsers.map((u) => u.id);
+
   const testProducts = await prisma.product.findMany({
     where: { name: { startsWith: prefix } },
     select: { id: true },
@@ -104,6 +110,24 @@ export async function cleanupStockTestData(scope: string): Promise<void> {
   const productIds = testProducts.map((p) => p.id);
 
   if (productIds.length > 0) {
+    const movements = await prisma.stockMovement.findMany({
+      where: { productId: { in: productIds } },
+      select: { id: true },
+    });
+    const movementIds = movements.map((m) => m.id);
+    // `recordPurchasePayment` now writes a paired `MoneyMovement`
+    // (`sourceType: "purchase_payment"`, `sourceId` = the movement id) and
+    // that call writes its own `AuditLog` row — clear both before the
+    // movements / users (`MoneyMovement.recordedById` and `AuditLog.userId`
+    // both RESTRICT).
+    if (movementIds.length > 0) {
+      await prisma.moneyMovement.deleteMany({
+        where: {
+          sourceType: "purchase_payment",
+          sourceId: { in: movementIds },
+        },
+      });
+    }
     // Correction rows self-reference; clear the pointer before deleting.
     await prisma.stockMovement.updateMany({
       where: { productId: { in: productIds } },
@@ -122,5 +146,8 @@ export async function cleanupStockTestData(scope: string): Promise<void> {
     where: { closedBy: { startsWith: prefix } },
   });
   await prisma.location.deleteMany({ where: { name: { startsWith: prefix } } });
+  if (userIds.length > 0) {
+    await prisma.auditLog.deleteMany({ where: { userId: { in: userIds } } });
+  }
   await prisma.user.deleteMany({ where: { name: { startsWith: prefix } } });
 }
