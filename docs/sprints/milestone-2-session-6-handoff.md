@@ -616,9 +616,27 @@ Add an M2 dev-data block so `pnpm dev` shows **populated** states:
   M-Pesa / credit-new-customer / edit-same-day / view-past-day on
   `pnpm dev`; also the owed 6b Customers walk._
 
-### 6d
-- **Screen routes chosen (A4/K1):** _…_
-- **Seed block added:** _…_
-- **Flow-doc-vs-behaviour gaps for QA:** _…_
-- **Owner walkthrough (Admin + Canteen):** _date, sign-off / defects._
-- **Lightest-coverage areas for Session 7 (QA):** _…_
+### 6d (done 2026-08-30)
+- **Screen routes chosen (A3/A4/K1/K2):**
+  - A3 = `app/admin/orders/` (`page.tsx` + `admin-orders-client.tsx`) — SimpleTable listing, active/inactive filter chips row, Detail Drawer, Correction Drawer with `QuantityStepper`, `CalculatedImpactBanner`, and Reason `Textarea`.
+  - A4 = `app/admin/canteen/derived-sales/` (`page.tsx` + `derived-sales-client.tsx`) — SimpleTable with Product, Last counted, Period covered, Units sold, Revenue; G5 functional Product select & Date filter pickers.
+  - K1 = `app/canteen/stock-count/` (`page.tsx` + `stock-count-client.tsx`) — Mobile 390px stock count flow: product picker (search + categories) → counting sub-screen with stepper, impact preview banner, and Confirm count button.
+  - K2 = `app/canteen/hub-client.tsx` & `app/store-manager/staff-stock-format.ts` — resolved `TODO(mock)` on Stock Count action tile; G7 `movementsToTimeline` formats canteen derived-sale movements as "Stock count" entries.
+- **Hook added:** `app/canteen/use-stock-count.ts` (`useStockCountActions`, `useDerivedSales`).
+- **Seed block added:** `prisma/seed.ts` expanded with full Canteen products (`Mandazi`, `Groundnuts 50g`, `Soda 300ml`, `Water 500ml`), opening stock movements, purchase receipt, and Stock Counts producing derived sales and money movements.
+- **Screen Specs:**
+  - `tests/screens/admin-orders.screen.test.tsx` (6 tests).
+  - `tests/screens/canteen-derived-sales.screen.test.tsx` (4 tests).
+  - `tests/screens/canteen-stock-count.screen.test.tsx` (3 tests).
+  - `tests/screens/canteen-hub.screen.test.tsx` (7 tests).
+  - All 17 screen test suites (127 tests) pass.
+- **Gates:**
+  - `pnpm tsc --noEmit` — 0 errors.
+  - `pnpm build` — Clean production build (40 routes).
+  - `pnpm test` — **411/411 passed across 63 test files.**
+- **Identified Gaps for Session 6e (Gap-Fix Sprint, agreed with Owner):**
+  - **G1:** Hydrate `cashierName: string` on `OrderView` via join in `toOrderView`.
+  - **G2:** Hydrate `productName: string` on `OrderLineView` via join in `toOrderView`.
+  - **G3 & G4:** Dedicated `/api/canteen/products` and today-count check endpoint.
+  - After 6e completes domain type updates and affected tests, proceed to Session 7 (QA).
+

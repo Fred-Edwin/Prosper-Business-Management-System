@@ -93,9 +93,7 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
       onClick: () => router.push("/canteen/transfer"),
     },
     {
-      // TODO(mock): the Canteen stock count is a sales-derivation flow
-      // (lib/domain/sales), not part of F2 stock movements — this nav
-      // target has no route yet. Milestone-1 §5 sequences it after F2.
+      // M2 6d: Canteen stock count route (app/canteen/stock-count) implements K1.
       icon: <ClipboardList {...TILE_ICON_PROPS} stroke="var(--color-accent)" />,
       label: "Stock Count",
       subLabel: "Derives sales & closing",

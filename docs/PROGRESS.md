@@ -20,14 +20,55 @@ Running status log, updated at the end of every sprint session.
 **Plan:** `docs/sprints/milestone-2-plan.md` (living — Session 6 split
 into 6a / 6b / 6c / 6d).
 **Status:** Sessions 2, 3, 4, 5 done; 1a + 1b done. **Sessions 6a + 6b +
-6c done** (backend gap-fills + Customers feature; responsive Admin shell +
+6c + 6d done** (backend gap-fills + Customers feature; responsive Admin shell +
 nav wiring + `SimpleTable` rowChevron + Catalog `category` field;
-Restaurant Orders C1–C5 + hooks + a minimal M2 sales seed). Session **6d
-pending** (Admin Orders A3 + Canteen A4/K1/K2 + full seed + final gates),
-then Session 7 (QA). S1a + S3 + S4 + S5 sit on
-`feat/m2-session-4-orders`; 6a + 6b + 6c are on `feat/m2-session-6-screens`.
-Merge order to `main`: the whole M2 chain → 6a → 6b → 6c → 6d → S7 (one
+Restaurant Orders C1–C5 + hooks + minimal seed; Admin Orders A3 + Canteen
+Derived Sales A4 + Canteen Stock Count K1 + Canteen Hub K2 + full M2 seed +
+final gates). Next: Session 6e (gap-fix sprint: cashier & product name hydration
+in OrderView domain types + count endpoints), then Session 7 (QA). S1a + S3 + S4 + S5 sit on
+`feat/m2-session-4-orders`; 6a–6d are on `feat/m2-session-6-screens`.
+Merge order to `main`: the whole M2 chain → 6a → 6b → 6c → 6d → 6e → S7 (one
 PR after QA, mirroring how M1 landed).
+
+### 2026-08-30 — M2 Session 6d: Admin Orders A3 + Canteen A4/K1/K2 + Full Seed + Final Gates (Developer) — DONE
+
+Development Sprint (frontend assembly + final M2 gates). Complete frontend coverage for Admin Orders (A3), Canteen Derived Sales (A4), Canteen Mobile Stock Count (K1), and Canteen Mobile Operations Hub timeline extensions (K2).
+
+- **Hooks.**
+  - `app/canteen/use-stock-count.ts` — typed `StockCountRequestError`, `request<T>`, domain-typed hooks for `useStockCountActions` (`recordStockCount`, `voidStockCount`) and `useDerivedSales({ productId, date })`.
+- **A3 Admin Orders** (`app/admin/orders/page.tsx` → `admin-orders-client.tsx`).
+  - SimpleTable listing all orders (Time · Cashier · Type · Total · Payment · Status).
+  - Filter chips row matching Paper FA1-0 (active dismissible chips + inactive picker chips + order counter + "Clear all").
+  - Detail drawer (read-only breakdown of order lines and totals).
+  - Correction drawer with `QuantityStepper` per line, `CalculatedImpactBanner` (live money/stock delta preview), and required Reason `Textarea`.
+  - Linked correction pair handling (`bg-(--surface-subtle)` styling and "Correction of #N" status).
+  - G6: disabled double correction with clear affordance.
+  - Zero delete buttons (§3.3), zero cost/margin columns (§3.6).
+- **A4 Admin Canteen Derived Sales** (`app/admin/canteen/derived-sales/page.tsx` → `derived-sales-client.tsx`).
+  - Read-only table of per-product sales derived from stock counts (Product · Last counted · Period covered · Units sold · Revenue).
+  - G5: functional Product select dropdown and Date filter pickers.
+  - Formatted currency (KES) and relative time labels ("today", "1 day ago").
+- **K1 Canteen Mobile Stock Count** (`app/canteen/stock-count/page.tsx` → `stock-count-client.tsx`).
+  - Two sub-screens in one component: product picker (search + category tabs + select) → counting screen (selected product + `QuantityStepper` + `CalculatedImpactBanner` impact preview).
+  - G3 stopgap: canteen products filtered from `/api/products` by active canteen `ProductLocation`.
+  - Sticky bottom "Confirm count" button triggering `recordStockCount`.
+- **K2 Canteen Operations Hub Extension** (`app/canteen/hub-client.tsx` & `app/store-manager/staff-stock-format.ts`).
+  - Resolved `TODO(mock)` on Stock Count action tile to point to `/canteen/stock-count`.
+  - G7: `movementsToTimeline` recognizes `movementType === "sale"` with `stockCountId` as "Stock count" timeline entries with accurate quantities and timestamps.
+- **Navigation Wiring.**
+  - Connected `/admin/orders` ("Sales") and `/admin/canteen/derived-sales` ("Derived sales") in both desktop `admin-shell.tsx` and `mobile-nav-drawer.tsx`.
+- **Full Database Seed.**
+  - `prisma/seed.ts` expanded with Canteen products (`Mandazi`, `Groundnuts 50g`, `Soda 300ml`, `Water 500ml`), initial stock movements, and Stock Counts producing derived sales and revenue matching Paper GL2-0 walkthroughs.
+- **Screen Tests.**
+  - `tests/screens/admin-orders.screen.test.tsx` (6 tests).
+  - `tests/screens/canteen-derived-sales.screen.test.tsx` (4 tests).
+  - `tests/screens/canteen-stock-count.screen.test.tsx` (3 tests).
+  - `tests/screens/canteen-hub.screen.test.tsx` (expanded to 7 tests).
+  - **All 17 screen test suites passing (127/127 tests).**
+- **Gates.**
+  - `pnpm tsc --noEmit` — 0 errors.
+  - `pnpm build` — Clean production build of all 40 routes.
+  - `pnpm test` — **411/411 unit, integration, and screen tests passing across all 63 test files.**
 
 ### 2026-08-30 — M2 Session 6c: Restaurant Orders C1–C5 (Developer) — DONE (owner walkthrough owed)
 

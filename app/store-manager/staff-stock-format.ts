@@ -57,6 +57,10 @@ export function shortTime(iso: string): string {
  * Map today's movement rows to `<ActivityTimeline>` rows for a hub log.
  * `unitById` supplies the unit label; the subtitle carries the movement
  * kind + time. Newest first (the list arrives newest-first from the API).
+ *
+ * G7: a `sale` movement with `stockCountId` set is a canteen derived-sale;
+ * it renders as "Stock count · HH:MM" so the hub distinguishes it from a
+ * restaurant order sale at a glance.
  */
 export function movementsToTimeline(
   movements: StockMovementView[],
@@ -66,8 +70,12 @@ export function movementsToTimeline(
   return movements.map((m) => {
     const product = byId.get(m.productId);
     const unit = product?.unitLabel ?? "";
-    const kind =
-      m.movementType === "non_sale_consumption" && m.reason
+    // G7: canteen derived-sale — movementType=="sale" with a stockCountId.
+    const isCanteenSale =
+      m.movementType === "sale" && m.stockCountId !== null;
+    const kind = isCanteenSale
+      ? "Stock count"
+      : m.movementType === "non_sale_consumption" && m.reason
         ? NON_SALE_LABEL[m.reason]
         : MOVEMENT_LABEL[m.movementType];
     return {

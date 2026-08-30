@@ -443,3 +443,14 @@ current reality; this is the history of how it got there.)*
   schema, no `lib/domain`, no kit change. `pnpm test` 396/396. Owner
   walkthroughs (6b Customers + 6c Cashier) still owed. No change to the
   session count.
+- 2026-08-30 — **Session 6d done.** Admin Orders A3 + Canteen Derived
+  Sales A4 + Canteen Mobile Stock Count K1 + Canteen Hub K2 built from kit.
+  Full M2 database seed in `prisma/seed.ts` (canteen products, movements,
+  counts, derived sales matching Paper walkthroughs). Screen specs added:
+  `admin-orders.screen.test.tsx`, `canteen-derived-sales.screen.test.tsx`,
+  `canteen-stock-count.screen.test.tsx`, `canteen-hub.screen.test.tsx` (17
+  suites, 127 screen tests). Full gates clean: `pnpm tsc --noEmit` (0 errors),
+  `pnpm build` (all 40 routes), `pnpm test` (411/411 passed). Plan agreed
+  with owner to run Session 6e for backend domain field hydration (G1/G2
+  cashierName/productName in OrderView) before Session 7 QA.
+

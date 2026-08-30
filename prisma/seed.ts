@@ -182,7 +182,11 @@ async function main() {
   // for the Session 6b (Customers) + 6c (Cashier orders) owner
   // walkthroughs. The FULL M2 seed (canteen counts, more breadth) is a
   // Session 6d task. Idempotent via fixed `seed-*` ids.
-  await seedM2Sales({ restaurantId: restaurant.id, adminUserId: adminUser.id });
+  await seedM2Sales({
+    restaurantId: restaurant.id,
+    canteenId: canteen.id,
+    adminUserId: adminUser.id,
+  });
 
   console.log("Seed complete.");
   console.log(`Admin: "Admin" / PIN 1234 (user id ${adminUser.id})`);
@@ -201,9 +205,11 @@ async function main() {
  */
 async function seedM2Sales({
   restaurantId,
+  canteenId,
   adminUserId,
 }: {
   restaurantId: string;
+  canteenId: string;
   adminUserId: string;
 }) {
   const pinHash = await bcrypt.hash("1234", 10);
@@ -518,6 +524,203 @@ async function seedM2Sales({
         recordedById: adminUserId,
         occurredAt: at(r.daysAgo, 9, 30),
       },
+    });
+  }
+
+  // ── M2 6d: Canteen products + Stock Counts (Derived Sales A4 / K1 / K2) ──
+  const canteenAttendantUser = await prisma.user.findFirstOrThrow({
+    where: { role: "canteen_attendant" },
+  });
+  const canteenAttendantId = canteenAttendantUser.id;
+
+  // Additional canteen-only products
+  const extraCanteenProducts = [
+    { key: "mandazi", name: "Mandazi", price: "20.00", category: "Bakery", unit: "pcs", opening: "60", openingDaysAgo: 3 },
+    { key: "groundnuts-50g", name: "Groundnuts 50g", price: "30.00", category: "Snacks", unit: "pcs", opening: "50", openingDaysAgo: 3 }, // Never counted
+  ];
+
+  for (const item of extraCanteenProducts) {
+    const p = await prisma.product.upsert({
+      where: { id: `seed-product-${item.key}` },
+      update: { category: item.category },
+      create: {
+        id: `seed-product-${item.key}`,
+        name: item.name,
+        kind: "dish",
+        buyingPrice: "0",
+        unitLabel: item.unit,
+        category: item.category,
+      },
+    });
+
+    await prisma.productLocation.upsert({
+      where: { productId_locationId: { productId: p.id, locationId: canteenId } },
+      update: { sellingPrice: item.price, active: true },
+      create: {
+        productId: p.id,
+        locationId: canteenId,
+        sellingPrice: item.price,
+        active: true,
+      },
+    });
+
+    await prisma.stockMovement.upsert({
+      where: { id: `seed-sm-canteen-open-${item.key}` },
+      update: {},
+      create: {
+        id: `seed-sm-canteen-open-${item.key}`,
+        productId: p.id,
+        locationId: canteenId,
+        movementType: "opening",
+        quantity: item.opening,
+        recordedById: adminUserId,
+        occurredAt: at(item.openingDaysAgo, 8, 0),
+      },
+    });
+  }
+
+  // Ensure Soda and Water are also active at Canteen
+  const canteenSharedProducts = [
+    { key: "soda-300ml", price: "60.00", opening: "144", openingDaysAgo: 5 },
+    { key: "water-500ml", price: "50.00", opening: "80", openingDaysAgo: 4 },
+  ];
+
+  for (const item of canteenSharedProducts) {
+    const prodId = menuProducts[item.key];
+    await prisma.productLocation.upsert({
+      where: { productId_locationId: { productId: prodId, locationId: canteenId } },
+      update: { sellingPrice: item.price, active: true },
+      create: {
+        productId: prodId,
+        locationId: canteenId,
+        sellingPrice: item.price,
+        active: true,
+      },
+    });
+
+    await prisma.stockMovement.upsert({
+      where: { id: `seed-sm-canteen-open-${item.key}` },
+      update: {},
+      create: {
+        id: `seed-sm-canteen-open-${item.key}`,
+        productId: prodId,
+        locationId: canteenId,
+        movementType: "opening",
+        quantity: item.opening,
+        recordedById: adminUserId,
+        occurredAt: at(item.openingDaysAgo, 8, 0),
+      },
+    });
+  }
+
+  // Receipt of 48 Soda at Canteen (2 days ago)
+  await prisma.stockMovement.upsert({
+    where: { id: "seed-sm-canteen-receipt-soda" },
+    update: {},
+    create: {
+      id: "seed-sm-canteen-receipt-soda",
+      productId: menuProducts["soda-300ml"],
+      locationId: canteenId,
+      movementType: "purchase_receipt",
+      quantity: "48",
+      recordedById: canteenAttendantId,
+      occurredAt: at(2, 10, 0),
+    },
+  });
+
+  // Helper to record a seeded stock count idempotently
+  async function seedStockCount(opts: {
+    id: string;
+    productId: string;
+    countedQuantity: string;
+    soldQuantity: string;
+    unitPrice: string;
+    occurredAt: Date;
+  }) {
+    const exists = await prisma.stockCount.findUnique({ where: { id: opts.id } });
+    if (exists) return;
+
+    await prisma.stockCount.create({
+      data: {
+        id: opts.id,
+        productId: opts.productId,
+        locationId: canteenId,
+        countedById: canteenAttendantId,
+        countedQuantity: opts.countedQuantity,
+        occurredAt: opts.occurredAt,
+      },
+    });
+
+    const sold = Number(opts.soldQuantity);
+    if (sold > 0) {
+      await prisma.stockMovement.create({
+        data: {
+          id: `seed-sm-count-sale-${opts.id}`,
+          productId: opts.productId,
+          locationId: canteenId,
+          movementType: "sale",
+          quantity: `-${opts.soldQuantity}`,
+          stockCountId: opts.id,
+          recordedById: canteenAttendantId,
+          occurredAt: opts.occurredAt,
+        },
+      });
+
+      const revenue = (sold * Number(opts.unitPrice)).toFixed(2);
+      await prisma.moneyMovement.create({
+        data: {
+          account: "cash",
+          amount: revenue,
+          sourceType: "canteen_sale",
+          sourceId: opts.id,
+          recordedById: canteenAttendantId,
+          occurredAt: opts.occurredAt,
+        },
+      });
+    }
+  }
+
+  // Stock Counts matching Paper GL2-0 / Walkthroughs:
+  // 1. Soda (3 days ago: count 96, sold 48)
+  await seedStockCount({
+    id: "seed-count-soda-1",
+    productId: menuProducts["soda-300ml"],
+    countedQuantity: "96",
+    soldQuantity: "48",
+    unitPrice: "60.00",
+    occurredAt: at(3, 17, 0),
+  });
+
+  // 2. Soda (1 day ago: count 96, sold 48; total period Mon-Thu sold 96, revenue 5,760.00)
+  await seedStockCount({
+    id: "seed-count-soda-2",
+    productId: menuProducts["soda-300ml"],
+    countedQuantity: "96",
+    soldQuantity: "48",
+    unitPrice: "60.00",
+    occurredAt: at(1, 17, 0),
+  });
+
+  // 3. Water (1 day ago: count 40, sold 40, revenue 2,000.00)
+  await seedStockCount({
+    id: "seed-count-water-1",
+    productId: menuProducts["water-500ml"],
+    countedQuantity: "40",
+    soldQuantity: "40",
+    unitPrice: "50.00",
+    occurredAt: at(1, 17, 0),
+  });
+
+  // 4. Mandazi (today: count 26, sold 34, revenue 680.00)
+  const mandaziProduct = await prisma.product.findUnique({ where: { id: "seed-product-mandazi" } });
+  if (mandaziProduct) {
+    await seedStockCount({
+      id: "seed-count-mandazi-1",
+      productId: mandaziProduct.id,
+      countedQuantity: "26",
+      soldQuantity: "34",
+      unitPrice: "20.00",
+      occurredAt: at(0, 15, 0),
     });
   }
 }

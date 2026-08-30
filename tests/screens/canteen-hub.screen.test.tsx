@@ -126,4 +126,27 @@ describe("/canteen hub — kit composition", () => {
     await waitFor(() => expect(flagFn).toHaveBeenCalledWith("mv-1", "bag torn"));
     promptSpy.mockRestore();
   });
+
+  it("navigates from the Stock Count tile to /canteen/stock-count", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Stock Count/ }));
+    expect(push).toHaveBeenCalledWith("/canteen/stock-count");
+  });
+
+  it("renders a canteen derived-sale movement as 'Stock count' in timeline (G7)", () => {
+    hook.data.movements = [
+      mv({
+        id: "mv-sale-count",
+        movementType: "sale",
+        quantity: "-48.0000",
+        stockCountId: "count-123",
+        occurredAt: "2026-08-28T14:30:00Z",
+      }),
+    ];
+    renderScreen();
+    expect(screen.getByText("Rice Basmati")).toBeInTheDocument();
+    expect(screen.getByText(/Stock count/)).toBeInTheDocument();
+    expect(screen.getByText("-48 kg")).toBeInTheDocument();
+  });
 });
