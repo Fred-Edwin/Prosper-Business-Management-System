@@ -160,32 +160,6 @@ function Chevron({ size = 14 }: { size?: number }) {
   );
 }
 
-function CalendarGlyph({ size = 14 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      aria-hidden
-      style={{ flexShrink: 0 }}
-    >
-      <rect
-        x="3"
-        y="4"
-        width="18"
-        height="17"
-        rx="2"
-        fill="none"
-        stroke="var(--text-tertiary)"
-        strokeWidth="1.5"
-      />
-      <line x1="3" y1="9" x2="21" y2="9" stroke="var(--text-tertiary)" strokeWidth="1.5" />
-      <line x1="8" y1="2" x2="8" y2="6" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="16" y1="2" x2="16" y2="6" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 // --- desktop control renderers ---------------------------------------------
 //
 // DEVIATIONS from L9O-0 / IEA-0, and why (see the output summary):
@@ -229,9 +203,12 @@ function DesktopControl({
       value: o.value,
       label: `${control.label}: ${o.label}`,
     }));
+    // No `label` prop → `Select` renders no label chrome (the toolbar wants
+    // the label INSIDE the trigger, "<Label>: <value>"). The trigger's
+    // accessible name then comes from its text content ("Cashier: All
+    // cashiers") — a valid ARIA name source for a <button role="combobox">.
     return (
       <Select
-        aria-label={control.label}
         options={opts}
         value={control.value}
         onChange={(v) => onChange(v)}
@@ -241,11 +218,13 @@ function DesktopControl({
   }
 
   if (control.kind === "date") {
+    // No `label` → `DatePicker` renders no label chrome (it would stack a
+    // <div> above the trigger and break the single-line row). The trigger's
+    // accessible name comes from its value text ("Today" / "Aug 23").
     return (
       <DatePicker
-        aria-label={control.label}
         value={triggerText(control)}
-        onSelect={(d) => onChange(control.id === "" ? "" : isoDay(d))}
+        onSelect={(d) => onChange(isoDay(d))}
         className="w-max shrink-0"
       />
     );
@@ -366,6 +345,7 @@ export function FilterToolbar({
         className={cn("flex flex-col w-full", className)}
       >
         <div
+          data-ft-scroll
           className={cn(
             "flex items-center w-full overflow-x-auto",
             "py-(--sp-4) px-(--sp-5) gap-(--sp-3)",
@@ -402,6 +382,7 @@ export function FilterToolbar({
             <Button
               variant="tertiary"
               size="sm"
+              data-ft-reset
               onClick={doReset}
               className="h-auto px-0 [--kit-hover-bg:transparent]"
             >
@@ -423,10 +404,7 @@ export function FilterToolbar({
           <div className="flex flex-col gap-(--sp-6) pb-(--sp-6)">
             {controls.map((c) => (
               <div key={c.id} className="flex flex-col gap-(--sp-3)">
-                <DesktopControl
-                  control={c.kind === "select" ? prefixedSelect(c) : c}
-                  onChange={(v) => onChange(c.id, v)}
-                />
+                <DesktopControl control={c} onChange={(v) => onChange(c.id, v)} />
               </div>
             ))}
             {showReset && (
@@ -455,7 +433,7 @@ export function FilterToolbar({
       {controls.map((c) => (
         <DesktopControl
           key={c.id}
-          control={c.kind === "select" ? prefixedSelect(c) : c}
+          control={c}
           onChange={(v) => onChange(c.id, v)}
         />
       ))}
@@ -475,6 +453,7 @@ export function FilterToolbar({
             <Button
               variant="tertiary"
               size="sm"
+              data-ft-reset
               onClick={doReset}
               className="h-auto px-0 [--kit-hover-bg:transparent]"
             >

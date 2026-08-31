@@ -910,6 +910,7 @@ per-component before → after record).
 | C30 BottomNav | active/inactive/pressed | **implemented** — `<nav aria-label="Primary">` |
 | C31 FlowHeader | default/**no-badge**/back-pressed | **implemented** — `<header>` + `role="heading"` |
 | C32 Toolbar row | (composite) | n/a — its parts carry their states |
+| **C34 FilterToolbar** | default / one-active / multi-active / toggle-style / mobile / filtered-empty | **WIP (M2-3KIT-FILTER)** — `components/kit/filter-toolbar.tsx` composed from Select / DatePicker / ToggleSwitch / Button; `role="search"`, controlled, Reset rendered iff any control ≠ default. 8 stories written (`Kit/FilterToolbar`), all indexed. **ADR-42 gate NOT green yet:** 2/8 visual baselines written (mobile, toggle-style); 6 stories fail a `play`/interaction assertion pre-snapshot; axe flags remain. Deviations from L9O-0 recorded in the component header + stories JSDoc: (a) at-default `select` label stays `--text-primary` (kit `Select` has no tone hook; forking it is out of scope), (b) date chip uses `DatePicker`'s trailing glyph + mono value. A follow-up must fix the 6 story assertions + axe flags, write the remaining 6 baselines, then flip this to "implemented + gated". |
 
 **New primitives (no §2 row — added this session, `kit-audit.md §3`):**
 `Spinner`, `FormField` (mechanical); `Toast` / `ToastProvider` / `useToast()`,
