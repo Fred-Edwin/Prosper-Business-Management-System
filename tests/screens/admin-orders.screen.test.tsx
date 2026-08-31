@@ -54,6 +54,8 @@ const SAMPLE_ORDER: OrderView = {
   customerId: null,
   total: "210.00",
   correctsOrderId: null,
+  correctedAt: null,
+  correctedByName: null,
   occurredAt: NOW_ISO,
   createdAt: NOW_ISO,
   updatedAt: NOW_ISO,
@@ -75,6 +77,8 @@ const CORRECTION_ORDER: OrderView = {
   customerId: null,
   total: "190.00",
   correctsOrderId: "order-1",
+  correctedAt: "2026-08-31T10:00:00.000Z",
+  correctedByName: "Edwin Admin",
   occurredAt: NOW_ISO,
   createdAt: NOW_ISO,
   updatedAt: NOW_ISO,
@@ -180,6 +184,51 @@ describe("A3 Admin Orders Screen", () => {
         paymentMethod: "cash",
       }),
     );
+  });
+
+  it("F7-5: correcting a CREDIT order labels the money delta as a debt change, not the payment channel", async () => {
+    const user = userEvent.setup();
+    const CREDIT_ORDER: OrderView = {
+      ...SAMPLE_ORDER,
+      id: "order-credit",
+      number: 1050,
+      paymentMethod: "credit",
+      customerId: "cust-9",
+      total: "180.00",
+      lines: [
+        { id: "lc", productId: "p-chapati", productName: "Chapati", quantity: "9.0000", unitPrice: "20.00", subtotal: "180.00" },
+      ],
+    };
+    mockOrdersState = { orders: [CREDIT_ORDER], loading: false, error: null };
+    render(
+      <ToastProvider>
+        <AdminOrdersClient />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByText("KES 180.00"));
+    await user.click(screen.getByRole("button", { name: "Record correction" }));
+
+    // Drop the qty 9 → 4 (−100).
+    const dec = screen.getAllByRole("button", { name: /decrement|decrease|−|-/i })[0];
+    for (let i = 0; i < 5; i++) await user.click(dec);
+
+    const banner = screen.getByText(/This replaces order #1050/);
+    expect(banner.textContent).toMatch(/debt/i);
+    expect(banner.textContent).not.toMatch(/Credit: −KES/);
+    expect(banner.textContent).toContain("−KES 100.00");
+  });
+
+  it("F7-6: the correction drawer subtitle shows the cashier's name, not a UUID fragment", async () => {
+    const user = userEvent.setup();
+    render(
+      <ToastProvider>
+        <AdminOrdersClient />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByText("KES 210.00"));
+    await user.click(screen.getByRole("button", { name: "Record correction" }));
+    expect(screen.getByText(/Replaces order #1041 · Grace Cashier/)).toBeDefined();
+    expect(screen.queryByText(/123456/)).toBeNull();
   });
 
   it("contains no delete affordances (§3.3) and no cost/profit/margin columns (§3.6)", () => {

@@ -377,7 +377,9 @@ export function AdminOrdersClient() {
         }
         subtitle={
           drawer?.kind === "correction" && drawerOrder
-            ? `Replaces order #${drawerOrder.number} · ${cashierLabel(drawerOrder.cashierId)}`
+            ? `Replaces order #${drawerOrder.number} · ${
+                drawerOrder.cashierName || cashierLabel(drawerOrder.cashierId)
+              }`
             : undefined
         }
         variant="rail"
@@ -599,10 +601,15 @@ function CorrectionForm({
     );
   }
 
-  const correctedTotal = lines.reduce(
+  // Delivery fee carries over unchanged (the form only edits line qtys),
+  // so it cancels in the delta — but fold it into both totals so the
+  // preview stays right if that ever changes. (F7-5 / QA S7.)
+  const originalFee = Number(original.deliveryFee ?? 0);
+  const correctedLineTotal = lines.reduce(
     (sum, l) => sum + Number(l.unitPrice) * l.qty,
     0,
   );
+  const correctedTotal = correctedLineTotal + originalFee;
   const originalTotal = Number(original.total);
   const delta = correctedTotal - originalTotal;
 
@@ -621,16 +628,23 @@ function CorrectionForm({
       return `${l.productName || l.productId} +${origQty - l.qty} back to Restaurant`;
     });
 
+  // A credit order's correction moves a Debt, not cash — label it as such
+  // (F7-5). Cash / M-Pesa corrections move the matching money account.
+  const isCredit = original.paymentMethod === "credit";
+  const moneyChannel = isCredit
+    ? `${original.customerId ? "Customer debt" : "Debt"}`
+    : PAYMENT_LABEL[original.paymentMethod];
+
   const impactText = [
     `This replaces order #${original.number}.`,
     stockChanges.length > 0
       ? `Stock: ${stockChanges.join(", ")}.`
       : "No stock change.",
     delta < 0
-      ? `Money: ${PAYMENT_LABEL[original.paymentMethod]} −${fmtMoney(String(-delta))}.`
+      ? `${moneyChannel}: −${fmtMoney(String(-delta))}.`
       : delta > 0
-        ? `Money: ${PAYMENT_LABEL[original.paymentMethod]} +${fmtMoney(String(delta))}.`
-        : "No money change.",
+        ? `${moneyChannel}: +${fmtMoney(String(delta))}.`
+        : `No ${isCredit ? "debt" : "money"} change.`,
     `Original #${original.number} is kept and marked Corrected.`,
   ].join(" ");
 

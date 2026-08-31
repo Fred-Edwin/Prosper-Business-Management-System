@@ -4,6 +4,7 @@ import * as React from "react";
 import type {
   RecordStockCountInput,
   RecordStockCountResult,
+  StockCountPreview,
   DerivedSaleView,
   ListDerivedSalesFilter,
 } from "@/lib/domain/sales";
@@ -130,4 +131,80 @@ export function useStockCountActions() {
   );
 
   return { recordStockCount, voidStockCount };
+}
+
+// ── Preview (K1 — sold/revenue before commit) ─────────────────────────
+
+export type { StockCountPreview };
+
+/**
+ * Debounced dry-run of the canteen derived sale for the K1 preview card
+ * (F7-2). Calls `GET /api/canteen/stock-counts/preview` whenever
+ * `productId` / `countedRemaining` change; the result carries the EXACT
+ * `unitsSold` / `revenue` the commit will persist (same `deriveStockCount`
+ * calc), or `blocked: true` when the shelf holds more than the ledger
+ * accounts for.
+ *
+ * `countedRemaining` is a decimal string. A blank / invalid value skips
+ * the call and clears the preview (the screen shows the "enter a
+ * quantity" copy). `error` is set only for an unexpected failure — a
+ * `VALIDATION_ERROR` on a blank field is treated as "no preview yet".
+ */
+export function useStockCountPreview(
+  productId: string | null,
+  countedRemaining: string,
+  { debounceMs = 300 }: { debounceMs?: number } = {},
+) {
+  const [preview, setPreview] = React.useState<StockCountPreview | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const valid =
+    productId != null && /^\d+(\.\d{1,4})?$/.test(countedRemaining.trim());
+
+  React.useEffect(() => {
+    if (!valid) {
+      setPreview(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const handle = setTimeout(() => {
+      const params = new URLSearchParams({
+        productId: productId as string,
+        countedRemaining: countedRemaining.trim(),
+      });
+      request<StockCountPreview>(
+        `/api/canteen/stock-counts/preview?${params.toString()}`,
+      )
+        .then((data) => {
+          if (cancelled) return;
+          setPreview(data);
+          setError(null);
+        })
+        .catch((e: unknown) => {
+          if (cancelled) return;
+          setPreview(null);
+          setError(
+            e instanceof StockCountRequestError
+              ? e.message
+              : e instanceof Error
+                ? e.message
+                : "Couldn't derive the preview.",
+          );
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, debounceMs);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [productId, countedRemaining, valid, debounceMs]);
+
+  return { preview, loading, error };
 }

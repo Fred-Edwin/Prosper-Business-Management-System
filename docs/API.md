@@ -443,6 +443,25 @@ this count" — an Admin correction path is a later session). `404
 NOT_FOUND` for an unknown id. Returns `{ data: { voided: true } }`.
 Writes a `hard_delete` `AuditLog` row.
 
+### `GET /api/canteen/stock-counts/preview`
+Roles: **Canteen Attendant** (their assigned canteen), Admin (only if
+assigned a canteen; otherwise `403`). A **dry-run** of the canteen
+derived sale for a counted-remaining value — **persists nothing** (no
+`StockCount`, `StockMovement`, `MoneyMovement`, or `AuditLog`). Feeds the
+K1 preview card (F7-2 / QA S7). Runs the **same** `deriveStockCount`
+calculation `POST /api/canteen/stock-counts` uses, so the `unitsSold` /
+`revenue` shown are byte-for-byte what the commit will write.
+Query: `?productId=` (required), `?countedRemaining=` (required, decimal
+string ≥ 0), `?occurredAt=` (ISO, optional — defaults to now). Returns
+`{ data: StockCountPreview }`:
+`{ blocked, exceedsExpectedBy, isFirstCount, periodStart, lastCountedAt, daysSincePrevious, countedRemaining, unitsSold, revenue, closingStockWillBe }`.
+When the shelf holds more than the ledger accounts for, `blocked: true`
+with `exceedsExpectedBy` set and `unitsSold` / `revenue` `null` — a **200**,
+not a 4xx (so the screen renders the blocked state); `POST` would reject
+the same input with `400`. `400 VALIDATION_ERROR` for a missing / malformed
+`countedRemaining` (field named). `NOT_FOUND` / `VALIDATION_ERROR` for a
+bad product, exactly as `POST`.
+
 ### `GET /api/canteen/stock-counts`
 Roles: Admin (every canteen), Canteen Attendant (their own canteen only).
 Query: `?productId=` (one product), `?date=YYYY-MM-DD` (windows on the

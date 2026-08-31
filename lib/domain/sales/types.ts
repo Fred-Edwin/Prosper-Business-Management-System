@@ -93,6 +93,43 @@ export type RecordStockCountResult = {
   derivedSale: DerivedSale;
 };
 
+/** Body for the K1 preview (`GET /api/canteen/stock-counts/preview`). */
+export type PreviewStockCountInput = {
+  productId: string;
+  /** Decimal string; must be >= 0. */
+  countedRemaining: string;
+  /** Defaults to now. */
+  occurredAt?: Date;
+};
+
+/**
+ * The dry-run derived-sale for the K1 preview card — the SAME figures
+ * `recordStockCount` will persist, computed without any write.
+ * `blocked: true` (counted more than the ledger expects) mirrors the
+ * rejection `recordStockCount` would throw, so the screen can show the
+ * blocked state without a write; `unitsSold` / `revenue` are `null` then.
+ */
+export type StockCountPreview = {
+  blocked: boolean;
+  /** Decimal string (4dp) — how far the count exceeds expected stock; `null` unless blocked. */
+  exceedsExpectedBy: string | null;
+  isFirstCount: boolean;
+  /** ISO string — the previous count's `occurredAt`; `null` for a first count. */
+  periodStart: string | null;
+  /** Alias of `periodStart` (the "last counted at" for copy). */
+  lastCountedAt: string | null;
+  /** Whole days between the previous count and now; `null` if first. */
+  daysSincePrevious: number | null;
+  /** Decimal string (4dp) — echoes the input. */
+  countedRemaining: string;
+  /** Decimal string (4dp) or `null` when blocked. */
+  unitsSold: string | null;
+  /** Decimal string (2dp) or `null` when blocked. */
+  revenue: string | null;
+  /** Decimal string (4dp) — always the counted value. */
+  closingStockWillBe: string;
+};
+
 /**
  * One product's most recent derived-sales figure (PRD §4.4 — "per
  * product, when it was last counted and what period a figure covers").
@@ -190,6 +227,15 @@ export type OrderView = {
   total: string;
   /** Set when this row is an append-only correction of another order (ADR-15). */
   correctsOrderId: string | null;
+  /**
+   * On a **correction row** (`correctsOrderId` set): when the correction
+   * was recorded (ISO) and the name of the Admin who recorded it (from the
+   * `AuditLog` `correct` entry). `null` on an ordinary order. Lets the C4
+   * "This order was corrected on {date} by {Admin}" banner name a person
+   * (QA S7 — the data-shape gap the 6c PROGRESS entry flagged).
+   */
+  correctedAt: string | null;
+  correctedByName: string | null;
   occurredAt: string;
   createdAt: string;
   updatedAt: string;

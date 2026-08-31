@@ -329,7 +329,7 @@ The 6c PROGRESS entry left three "flow-doc-vs-behaviour deltas for QA":
 
 | Delta | Disposition |
 |---|---|
-| **C4 "corrected" banner omits the correcting Admin's name + timestamp** (`OrderView` has no `correctedByName` / `correctedAt`; `D18-0` shows "by Edwin K. (Admin)") | **Acceptable for M2 as a data-shape gap, but worth a small fix.** The banner *does* show the correction's date (`correction.createdAt`) and links "order #{n}". The Admin's name is not on `OrderView`. Recommend: either add `correctedAt`/`correctedByName` to `OrderView` (small — the correction row already has `cashierId`… but not the acting admin; the `AuditLog` has `userId`), or accept and update the flow doc. **Flag for orchestrator** (touches a domain type). Not fixed here. |
+| **C4 "corrected" banner omits the correcting Admin's name + timestamp** (`OrderView` had no `correctedByName` / `correctedAt`; `D18-0` shows "by Edwin K. (Admin)") | **FIXED this session (FIX-CB).** `OrderView` gained `correctedAt` / `correctedByName`, populated **only on a correction row** by hydrating the acting Admin from the correction's `AuditLog` `correct` entry (`listOrders` batches one lookup; `correctOrder` fills it inline). `toOrderView` takes an optional `correctedBy` arg. C4's banner now reads "on {date} by {Admin}". Domain + screen regression tests added. |
 | **"Correct this (Admin)" on C4 fires a toast, not a modal/alert** | **Acceptable.** The flow doc §F says it "surfaces the order reference … does not open a form". A toast with the order number does exactly that. No finding. |
 | **C2/C4 line-row `QuantityStepper` uses kit size, not the artboard 30px cell** | **Acceptable** — owner ruling 6a (kit wins on sizing). Design-sprint territory, not QA. No finding. |
 
@@ -340,81 +340,162 @@ toast wording) are cosmetic/Design-sprint — **not QA findings**.
 
 ## 4. Fixes applied this session
 
-**None yet** — this report is delivered before fixes per the QA-sprint
-rule. New adversarial tests (`lib/domain/sales/qa-m2-session-7.test.ts`,
-10 tests) are **characterisation tests of correct behaviour**, not
-regression tests for a defect — they are added now because they close real
-attack-list coverage gaps and all pass against `main`'s behaviour.
+The initial report (part 1) was delivered before any fix. Part 2 (this
+section) records what was then fixed once the orchestrator relayed the
+go-ahead — **including an expanded brief for F7-2: build the real K1
+preview, not just delete dead code.**
 
-**Recommended fix order once the go-ahead is relayed** (all safe, in M2
-scope, each with a regression test failing-before / passing-after):
+### FIX-7 — F7-2 · K1 stock-count sold/revenue preview (the expanded item)
 
-1. **F7-1** (C4 credit-edit) — client `save()` conditional `customerId` +
-   Save-disabled parity with C3. Screen test.
-2. **F7-6** (A3 cashier name in drawer) — swap `cashierLabel` →
-   `cashierName`. Screen test.
-3. **F7-5** (A3 impact banner) — label credit deltas "Debt", fold in the
-   fee. Screen test.
-4. **F7-3** (canteen void UI) — *if* the orchestrator rules it in-scope
-   for QA: "Delete today's count" on the hub wired to `voidStockCount`.
-   Otherwise defer.
+**Backend — one shared derivation, two entry points.**
 
-**Leave as findings / escalate (do not fix under QA):** F7-2 (needs a
-preview endpoint — design+backend), F7-4 (A3 full corrected-order form —
-assembly + design call), F7-7 (needs revenue in the hub feed), F7-8 (needs
-a Staff list source), F7-9 (route-purity tech-debt), F7-10 (ADR note),
-and the C4-corrected-banner data-shape gap in §3.
+- **`lib/domain/sales/derive-stock-count.ts`** (new) — `deriveStockCount(client, { productId, locationId, countedQuantity, occurredAt })`
+  is now the **single** canteen derived-sale calculation:
+  `sold = expectedRemaining − countedQuantity`, where `expectedRemaining`
+  is the signed `Σ StockMovement` for `(product, canteen)` up to the count
+  instant. It validates (product exists & sold at the canteen; canteen
+  `Location` real; no later count) and throws the same `DomainError`s as
+  before, but **does not throw** on `sold < 0` — it returns
+  `exceedsExpectedBy` and lets the caller decide. `client` is a
+  `Prisma.TransactionClient` (record path — read on the tx) or the bare
+  `prisma` client (preview read). Also exports `parseCountedQuantity` and
+  `overCountError`.
+- **`recordStockCount`** rewritten to call `deriveStockCount(tx, …)` — the
+  math is no longer inline, so preview and commit **cannot diverge**. It
+  still throws `overCountError` on `exceedsExpectedBy`, still skips the
+  zero-value money row, still writes the `sale` `StockMovement` +
+  `canteen_sale` `MoneyMovement` + `AuditLog`. Behaviour unchanged — the
+  existing 18 `record-stock-count.test.ts` tests pass untouched.
+- **`previewStockCount(input, ctx)`** (new, same file) — dry-run: calls
+  `deriveStockCount(prisma, …)` and returns `StockCountPreview`
+  `{ blocked, exceedsExpectedBy, isFirstCount, periodStart, lastCountedAt,
+  daysSincePrevious, countedRemaining, unitsSold, revenue,
+  closingStockWillBe }`. **Persists nothing.** `blocked: true` (with
+  `unitsSold` / `revenue` `null`) mirrors the rejection `recordStockCount`
+  would throw.
+- **`GET /api/canteen/stock-counts/preview`** (new route, thin handler) —
+  `?productId=&countedRemaining=&occurredAt=`. Roles: `canteen_attendant`
+  (own canteen) + `admin` (if assigned a canteen). Zod
+  `previewStockCountQuerySchema`. A blocked count returns **200** (so the
+  screen renders the blocked state), not a 4xx; a malformed
+  `countedRemaining` is `400 VALIDATION_ERROR` naming the field.
+- **`docs/API.md`** — new endpoint documented.
+
+**Backend tests (new).**
+- `lib/domain/sales/preview-stock-count.test.ts` (5): preview == subsequent
+  `recordStockCount` result **to the cent** across a period boundary
+  (transfers-in + production + non-sale between two counts), and the four
+  row counts (`StockCount` / sale `StockMovement` / `canteen_sale`
+  `MoneyMovement` / `AuditLog`) are unchanged after the preview call;
+  first-count path (`isFirstCount: true`, `periodStart` / `daysSincePrevious`
+  `null`); counted-more-than-expected → `blocked: true` + `exceedsExpectedBy`
+  with no write, and `recordStockCount` rejects the same input; validation
+  parity (unknown product → `NOT_FOUND`, not-sold-at-canteen →
+  `VALIDATION_ERROR`, blank → `VALIDATION_ERROR`); no-canteen attendant →
+  `FORBIDDEN`.
+- `app/api/canteen/stock-counts/preview/route.test.ts` (6): role access
+  (401 / 403 store-manager / 200 attendant / 403 no-location), blocked
+  → 200 `blocked:true`, blank → 400 field-named, nothing written.
+
+**Screen — K1 consumes the real figures.**
+- `app/canteen/use-stock-count.ts` — new `useStockCountPreview(productId,
+  countedRemaining, { debounceMs })` hook: debounced `GET …/preview` on
+  every counted-value change; a blank/invalid value skips the call and
+  clears the preview; a `VALIDATION_ERROR` on the field is treated as "no
+  preview yet", not a hard error.
+- `app/canteen/stock-count/stock-count-client.tsx` — the counting screen's
+  `CalculatedImpactBanner` now renders the derived figures:
+  *"Since last count on {date} ({n} days): sold {unitsSold} {unit}. Revenue
+  KES {revenue}. Closing stock will be set to {counted} {unit}."*, with a
+  **first-count** copy variant and a **blocked** variant ("Counted more
+  than expected — … ask the Store Manager … then recount"). **Confirm is
+  disabled while `preview.blocked`** (server rejects it anyway). The dead
+  `previousCount` / `previousQty` / `unitsSold` code and the
+  `useDerivedSales({ date: today })` call that fed it are **deleted** —
+  the endpoint is the source of truth. The full 9-state K1 visual rebuild
+  (inline §9.8 error + `InstructionalBanner` + `FrictionDeleteDialog`
+  against the re-spin artboards) stays with Batch 3d.
+- `tests/screens/canteen-stock-count.screen.test.tsx` — 4 new tests: the
+  preview card shows the real sold + revenue; first-count copy variant; a
+  blocked preview disables Confirm and explains why; the preview updates
+  when the counted value changes (stepper +).
+
+### Other fixes applied
+
+| ID | Fix | Tests |
+|---|---|---|
+| **F7-1** (M) | C4 `EditableOrder.save()` now sends `customerId` **only when the selected method is credit** (was always sending the original's, so credit→cash was server-rejected with no path). Switching a non-credit order **to** credit disables Save with a caption (C4 has no attach UI — that's C5 on the create flow). | `cashier-orders.screen.test.tsx` +3 (credit→cash sends no customerId; credit kept sends it; cash→credit disables Save) |
+| **F7-3** (M) | New **"Today's stock counts"** section on the Canteen hub — each of today's counts with a **"Delete today's count"** action wired to the existing `voidStockCount` (via `useStockCountActions` + `useDerivedSales({ date: today })`, gated on `stockCountId`). A `window.confirm` step (consistent with the hub's existing `window.prompt` Flag flow); toast + double refresh on success. The full `FrictionDeleteDialog` treatment is Batch 3d — the kit dialog currently *always* requires retype (no `showTypeToConfirm={false}` prop despite ADR-36c), so wiring it needs a kit change out of QA scope. | `canteen-hub.screen.test.tsx` +3 (no section when nothing counted; delete → confirm → `voidStockCount` + toast + refresh; cancel → no call) |
+| **F7-5** (L) | A3 correction impact banner: credit-order deltas now labelled **"Customer debt: −KES …"** / "No debt change." (was "Money: Credit −KES …"); delivery fee folded into both totals so the delta stays right. | `admin-orders.screen.test.tsx` +1 (credit correction banner says "debt", not "Credit: −KES") |
+| **F7-6** (L) | A3 detail/correction drawer subtitle uses `order.cashierName` (was `cashierLabel(cashierId)` = a UUID fragment). | `admin-orders.screen.test.tsx` +1 |
+| **F7-10** (L) | `docs/DECISIONS.md` ADR-25 — added a note that `editOwnOrder` pruning the `money_movement` `AuditLog` rows of the movements it replaces is deliberate (the rows describe movements that no longer exist; the edit stays audited on the order row; M3's `DayClose` lock removes the true-edit window entirely). No code change. |
+| **FIX-CB** (was §3 flag) | C4 corrected-banner data gap — `OrderView` gained `correctedAt` / `correctedByName` (correction rows only), hydrated from the correction's `AuditLog` `correct` entry. C4 banner now names the Admin. | `qa-m2-session-7.test.ts` +1 (correction row carries them via `correctOrder` return **and** `listOrders`; original does not); `cashier-orders.screen.test.tsx` corrected-order test asserts "by Edwin K." |
+
+### Deferred / escalated (not fixed under QA)
+
+- **F7-4** (M) — A3 correction form is quantity-only (no payment / type /
+  fee / add-line). `correctOrder`'s payment-method-change path stays
+  UI-unreachable. **Orchestrator decision:** acceptable M2 cut, or
+  assembly + design work before Submission 1?
+- **F7-7** (L) — K2 hub timeline row shows "−96 pcs" not "+KES revenue";
+  needs the `canteen_sale` figure in the hub feed. Design/assembly
+  follow-up.
+- **F7-8** (L) — A3 Cashier / Payment filter chips inert; needs a Staff
+  list source (none in M2). Assembly follow-up.
+- **F7-9** (L) — `GET /api/canteen/products` handler holds query logic;
+  fold into a domain read in a follow-up.
 
 ---
 
-## 5. Gate status (this session)
+## 5. Gate status (after part-2 fixes)
 
 | Gate | Status |
 |---|---|
-| `pnpm test` | **426/426** (416 baseline + 10 new in `qa-m2-session-7.test.ts`); 65 files. Full run green. |
+| `pnpm test` | **450/450** across **67 files** (426 after part 1 + 24 net new in part 2: 5 `preview-stock-count.test.ts`, 6 `…/preview/route.test.ts`, 1 banner adversarial, 3 F7-1, 3 F7-3, 2 F7-5/F7-6, 4 K1-preview screen). Full run green. |
 | `pnpm tsc --noEmit` | **0 errors** |
-| `pnpm build` | not re-run since no `app/**` or `lib/**` non-test file changed this session — **to run before any fix lands** |
-| kit `test:visual` / `test:a11y` | **not run** — no `components/kit/**` change (and none expected; no finding requires a kit change) |
+| `pnpm build` | **clean** — 42 routes (was 41; `+/api/canteen/stock-counts/preview`). |
+| kit `test:visual` / `test:a11y` | **not run** — no `components/kit/**` change. (F7-3's delete-confirm deliberately did **not** touch `FrictionDeleteDialog` — see the note in §4.) |
 
 ---
 
 ## 6. Summary for the orchestrator
 
-- **Findings:** 10. **0 High**, **4 Medium** (F7-1, F7-2, F7-3, F7-4),
-  **6 Low** (F7-5…F7-10).
+- **Findings:** 10 + the C4-banner gap. **0 High**, **4 Medium**
+  (F7-1, F7-2, F7-3, F7-4), **6 Low** (F7-5…F7-10).
 - **Data integrity: clean.** Every §7 attack-list target on money, stock,
   credit, canteen math, isolation, day-boundary, audit **passes**, backed
-  by 10 new adversarial tests. Submission 1 is not blocked on ledger
+  by 11 new adversarial tests. Submission 1 is not blocked on ledger
   correctness.
-- **Where the risk actually is:** the Session 6 screen assembly does not
-  yet meet several flow-doc contracts — most importantly the K1 preview
-  (F7-2), the unreachable canteen-count undo (F7-3), and the
-  quantity-only A3 correction form (F7-4), which between them mean an
-  Admin can't correct a wrong payment method and an Attendant can't undo a
-  wrong count through the UI, even though both domain paths are built and
-  tested.
-- **Decisions needed from you:**
-  1. **F7-2 / F7-4** — are "K1 without a money preview" and "A3
-     quantity-only corrections" acceptable M2 cuts for Submission 1, or do
-     they need backend/assembly work first?
-  2. **F7-3** — is wiring "Delete today's count" to the existing
-     `voidStockCount` in-scope for this QA session, or a Session-6
-     follow-up?
-  3. **C4 corrected-banner** (§3) — add `correctedAt` / `correctedByName`
-     to `OrderView`, or accept the gap and amend the flow doc?
-- **New tests:** +10 (`lib/domain/sales/qa-m2-session-7.test.ts`).
-  Suite 416 → 426.
-- **Fixes applied:** 0 (report-first). Recommended safe fix set: F7-1,
-  F7-6, F7-5, and F7-3-if-approved.
+- **Fixes applied this session (part 2):** **F7-1**, **F7-3**, **F7-5**,
+  **F7-6**, **F7-10**, the **C4-corrected-banner** data gap, and — under
+  an expanded brief — **F7-2 in full**: a shared `deriveStockCount`
+  extracted so preview and commit use one calculation, a
+  non-persisting `previewStockCount` + `GET
+  /api/canteen/stock-counts/preview`, and the K1 counting screen now
+  showing the real derived sold / revenue (+ first-count + blocked
+  variants, Confirm disabled while blocked). Dead K1 preview code
+  deleted. See §4.
+- **Still deferred / needs a decision:**
+  1. **F7-4** — A3 correction form is quantity-only;
+     `correctOrder`'s payment-method-change path is UI-unreachable.
+     Acceptable M2 cut, or assembly + design work before Submission 1?
+  2. **F7-7 / F7-8 / F7-9** — Low, assembly/tech-debt follow-ups
+     (K2 revenue in the hub feed; A3 filter pickers need a Staff list;
+     `/api/canteen/products` route purity).
+- **New tests:** +~38 net (11 domain adversarial incl. the banner test,
+  5 preview domain, 6 preview route, 3 F7-1, 3 F7-3, 2 F7-5/F7-6,
+  4 K1-preview screen). Suite **416 (QA baseline) → 450**.
+- **Not merged.** One commit on `qa/m2-session-7`; the orchestrator
+  sequences the final PR.
 
 ---
 
 ## 7. PROGRESS entry (for the orchestrator to paste)
 
-### 2026-08-31 — M2 Session 7: QA Sprint — adversarial pass (QA Engineer) — REPORT DELIVERED
+### 2026-08-31 — M2 Session 7: QA Sprint — adversarial pass + fixes (QA Engineer) — DONE
 
-First adversarial QA pass on Milestone 2. Report:
-`docs/sprints/milestone-2-session-7-qa-report.md`.
+First adversarial QA pass on Milestone 2. Full findings +
+attack-list dispositions: `docs/sprints/milestone-2-session-7-qa-report.md`.
 
 - **Attack list (plan §7) — all targets PASS.** Money-ledger integrity,
   order-correction idempotency across a chain (incl. correcting the same
@@ -423,32 +504,54 @@ First adversarial QA pass on Milestone 2. Report:
   period boundary (transfers-in + production + non-sale consumption),
   cross-cashier isolation (domain + route), Africa/Nairobi edit-window
   boundary, audit coverage, route-handler purity, and the standard error
-  shape / §3.8 rejection — each verified, most with a new adversarial
-  test. **No High-severity data-integrity defect.**
-- **New tests:** `lib/domain/sales/qa-m2-session-7.test.ts` — 10 tests,
-  all green. Suite **416 → 426** (65 files). `tsc` 0.
-- **10 findings, 0 High / 4 Medium / 6 Low**, concentrated in the Session 6
-  screen layer:
-  - **F7-1 (M)** C4 edit form can't change a credit order's payment method
-    (server rejects, client offers no path).
-  - **F7-2 (M)** K1 shows no sold/revenue preview before commit (flow-doc
-    rule 2) — needs a dry-run derivation endpoint (escalated).
-  - **F7-3 (M)** K1's "counted more than expected" state + the
-    `voidStockCount` undo have **no UI entry point** anywhere — a mistaken
-    same-day canteen count can't be undone through the app, though the
-    domain + `DELETE` route are built & tested.
-  - **F7-4 (M)** A3 correction drawer is quantity-only — no payment /
-    type / fee / add-line, so `correctOrder`'s payment-method-change path
-    is UI-unreachable (escalated — design/scope call).
-  - **F7-5…F7-10 (L)** A3 impact-banner mis-labels credit deltas + ignores
-    the fee; A3 drawer/chip shows a UUID fragment instead of `cashierName`
-    (G1); K2 hub row shows "−96 pcs" not "+KES revenue"; A3 Cashier /
-    Payment filter chips inert; `GET /api/canteen/products` handler holds
-    query logic; `editOwnOrder` deletes stale money-movement `AuditLog`
-    rows.
-- **Fixes:** none yet (report-first per the QA-sprint rule). Recommended
-  safe set once cleared: F7-1, F7-6, F7-5, and F7-3 if ruled in-scope.
-  F7-2 / F7-4 / the C4-corrected-banner data gap need orchestrator
-  decisions (see report §6).
-- **Gates:** `pnpm test` 426/426, `tsc` 0. `build` + kit visual/a11y not
-  re-run (no non-test source changed).
+  shape / §3.8 rejection — each verified with a new adversarial test.
+  **No High-severity data-integrity defect.**
+- **11 findings — 0 High / 4 Medium / 6 Low** + the C4-corrected-banner
+  data gap, all in the Session 6 **screen** layer (the domain holds).
+- **Fixed this session:**
+  - **F7-2 (M) — K1 sold/revenue preview, built for real** (expanded
+    brief). New `lib/domain/sales/derive-stock-count.ts` — the single
+    canteen derived-sale calculation; `recordStockCount` refactored to
+    call it (behaviour unchanged, existing tests pass), so preview and
+    commit can't diverge. New non-persisting `previewStockCount` +
+    `GET /api/canteen/stock-counts/preview` (thin handler, attendant +
+    admin, blocked count → 200 with `blocked:true`). New
+    `useStockCountPreview` hook (debounced); K1 counting screen renders
+    the real *"Since last count … sold {n}. Revenue KES {y}."* with
+    first-count and blocked copy variants, Confirm disabled while
+    blocked. Dead preview code deleted. `docs/API.md` updated. Full
+    9-state K1 visual rebuild stays Batch 3d.
+  - **F7-1 (M)** — C4 edit form now sends `customerId` only when the
+    selected method is credit (credit→cash was server-rejected with no
+    path); switching a non-credit order to credit disables Save with a
+    caption.
+  - **F7-3 (M)** — "Today's stock counts" section on the Canteen hub with
+    a **Delete today's count** action wired to the existing
+    `voidStockCount` (confirm step + toast + refresh). The kit
+    `FrictionDeleteDialog` was **not** touched (it currently always
+    requires retype — no `showTypeToConfirm={false}` — so wiring it needs
+    a kit change out of QA scope; the full treatment is Batch 3d).
+  - **F7-5 (L)** — A3 correction impact banner labels credit deltas
+    "Customer debt: …" and folds in the delivery fee.
+  - **F7-6 (L)** — A3 drawer subtitle uses `cashierName`, not a UUID
+    fragment.
+  - **F7-10 (L)** — ADR-25 note that `editOwnOrder` pruning the
+    `money_movement` audit rows of the movements it replaces is
+    deliberate.
+  - **C4 corrected-banner gap** — `OrderView` gained `correctedAt` /
+    `correctedByName` (correction rows only), hydrated from the
+    correction's `AuditLog` `correct` entry (`listOrders` batches the
+    lookup; `correctOrder` fills it inline). C4 banner now reads "on
+    {date} by {Admin}".
+- **Deferred (orchestrator decision / follow-up):** **F7-4 (M)** — A3
+  correction form is quantity-only; `correctOrder`'s payment-method-change
+  path stays UI-unreachable. **F7-7 / F7-8 / F7-9 (L)** — K2 revenue in
+  the hub feed; A3 filter pickers need a Staff list; `/api/canteen/products`
+  route-purity — all small assembly/tech-debt follow-ups.
+- **Tests:** +~38 net. `qa-m2-session-7.test.ts` (11 adversarial),
+  `preview-stock-count.test.ts` (5), `…/preview/route.test.ts` (6), plus
+  regression tests in the four touched screen suites.
+  **`pnpm test` 450/450** (67 files), **`tsc` 0**, **`build` clean**
+  (42 routes). Kit visual/a11y not re-run (no `components/kit/**` change).
+- **Not merged** — one commit on `qa/m2-session-7`; the orchestrator
+  sequences the final M2 PR.

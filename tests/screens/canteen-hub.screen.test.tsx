@@ -35,6 +35,22 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
   };
 });
 
+// F7-3 — the hub's "Today's stock counts" undo section.
+const derivedHook = vi.hoisted(() => ({
+  rows: [] as unknown[],
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
+const voidCountFn = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock("@/app/canteen/use-stock-count", () => ({
+  useDerivedSales: () => derivedHook,
+  useStockCountActions: () => ({
+    recordStockCount: vi.fn(),
+    voidStockCount: voidCountFn,
+  }),
+}));
+
 import { CanteenHubClient } from "@/app/canteen/hub-client";
 
 function mv(over: Partial<StockMovementView>): StockMovementView {
@@ -80,6 +96,9 @@ beforeEach(() => {
   hook.data.products = [
     { id: "prod-rice", name: "Rice Basmati", unitLabel: "kg" },
   ];
+  derivedHook.rows = [];
+  derivedHook.error = null;
+  voidCountFn.mockResolvedValue(undefined);
 });
 
 describe("/canteen hub — kit composition", () => {
@@ -132,6 +151,64 @@ describe("/canteen hub — kit composition", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Stock Count/ }));
     expect(push).toHaveBeenCalledWith("/canteen/stock-count");
+  });
+
+  it("F7-3: no 'Today's stock counts' section when nothing was counted today", () => {
+    renderScreen();
+    expect(screen.queryByText(/Today.s stock counts/)).not.toBeInTheDocument();
+  });
+
+  it("F7-3: today's count lists with 'Delete today's count' → confirm → voidStockCount + toast + refresh", async () => {
+    derivedHook.rows = [
+      {
+        productId: "prod-rice",
+        productName: "Rice Basmati",
+        lastCountedAt: "2026-08-31T09:00:00Z",
+        periodStart: null,
+        periodEnd: "2026-08-31T09:00:00Z",
+        unitsSold: "48.0000",
+        revenue: "2880.00",
+        stockCountId: "count-abc",
+      },
+    ];
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderScreen();
+    const user = userEvent.setup();
+
+    expect(screen.getByText(/Today.s stock counts/)).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /Delete today.s count/ }),
+    );
+    await waitFor(() => expect(voidCountFn).toHaveBeenCalledWith("count-abc"));
+    expect(derivedHook.refresh).toHaveBeenCalled();
+    expect(hook.refresh).toHaveBeenCalled();
+    expect(
+      await screen.findByText(/Count deleted · Rice Basmati/),
+    ).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  it("F7-3: cancelling the confirm does not call voidStockCount", async () => {
+    derivedHook.rows = [
+      {
+        productId: "prod-rice",
+        productName: "Rice Basmati",
+        lastCountedAt: "2026-08-31T09:00:00Z",
+        periodStart: null,
+        periodEnd: "2026-08-31T09:00:00Z",
+        unitsSold: "48.0000",
+        revenue: "2880.00",
+        stockCountId: "count-abc",
+      },
+    ];
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /Delete today.s count/ }),
+    );
+    expect(voidCountFn).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
   it("renders a canteen derived-sale movement as 'Stock count' in timeline (G7)", () => {

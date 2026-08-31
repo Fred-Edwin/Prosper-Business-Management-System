@@ -136,11 +136,12 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
   it("A — cash / M-Pesa / credit orders + a repayment reconcile exactly against Σ MoneyMovement per account", async () => {
     const [chapati, samosa] = ctx.products;
 
-    const cash0 = await acctSum("cash");
-    const mpesa0 = await acctSum("mpesa_bank");
+    // Money assertions are scoped to THIS suite's own rows (by order id /
+    // repayment id) — a global `Σ cash` races the parallel canteen /
+    // order suites. The scoped Σ is the same integrity property.
 
-    // 1. cash order — KES 200 into cash, nothing into mpesa_bank.
-    await createOrder(
+    // 1. cash order — KES 200, one MoneyMovement in `cash`, none in `mpesa_bank`.
+    const cashOrder = await createOrder(
       {
         orderType: "dine_in",
         paymentMethod: "cash",
@@ -149,13 +150,15 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
       },
       cashier,
     );
-    expect(await acctSum("cash")).toBe(
-      new Prisma.Decimal(cash0).add(200).toFixed(2),
-    );
-    expect(await acctSum("mpesa_bank")).toBe(mpesa0);
+    const cashRows = await prisma.moneyMovement.findMany({
+      where: { sourceType: "order", sourceId: cashOrder.id },
+    });
+    expect(cashRows).toHaveLength(1);
+    expect(cashRows[0].account).toBe("cash");
+    expect(cashRows[0].amount.toFixed(2)).toBe("200.00");
 
-    // 2. M-Pesa order — KES 500 into mpesa_bank only.
-    await createOrder(
+    // 2. M-Pesa order — KES 500, one MoneyMovement in `mpesa_bank` only.
+    const mpesaOrder = await createOrder(
       {
         orderType: "takeaway",
         paymentMethod: "mpesa",
@@ -164,12 +167,12 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
       },
       cashier,
     );
-    expect(await acctSum("cash")).toBe(
-      new Prisma.Decimal(cash0).add(200).toFixed(2),
-    );
-    expect(await acctSum("mpesa_bank")).toBe(
-      new Prisma.Decimal(mpesa0).add(500).toFixed(2),
-    );
+    const mpesaRows = await prisma.moneyMovement.findMany({
+      where: { sourceType: "order", sourceId: mpesaOrder.id },
+    });
+    expect(mpesaRows).toHaveLength(1);
+    expect(mpesaRows[0].account).toBe("mpesa_bank");
+    expect(mpesaRows[0].amount.toFixed(2)).toBe("500.00");
 
     // 3. credit order — NO money movement, a Debt instead.
     const custId = await makeCustomer(ctx, "Grace");
@@ -187,31 +190,46 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
     expect(credit.total).toBe("150.00");
     expect(await orderMoneyNet([credit.id])).toBe("0.00");
     expect(await orderDebtNet([credit.id])).toBe("150.00");
-    // account balances unchanged by the credit order
-    expect(await acctSum("cash")).toBe(
-      new Prisma.Decimal(cash0).add(200).toFixed(2),
-    );
 
-    // 4. repayment — KES 100 into mpesa_bank.
-    await recordRepayment(
+    // 4. repayment — KES 100 into mpesa_bank; exactly one paired MoneyMovement.
+    const repayment = await recordRepayment(
       { customerId: custId, amount: "100.00", account: "mpesa_bank" },
       { actorId: ctx.adminId },
     );
-    expect(await acctSum("mpesa_bank")).toBe(
-      new Prisma.Decimal(mpesa0).add(500).add(100).toFixed(2),
-    );
+    const repayRows = await prisma.moneyMovement.findMany({
+      where: { sourceType: "repayment", sourceId: repayment.id },
+    });
+    expect(repayRows).toHaveLength(1);
+    expect(repayRows[0].account).toBe("mpesa_bank");
+    expect(repayRows[0].amount.toFixed(2)).toBe("100.00");
 
-    // Final reconciliation: getAccountBalances (the derived read) matches
-    // the raw Σ, and reflects exactly (cash +200) / (mpesa +600).
+    // This suite's own net effect, by account:
+    //   cash      = +200 (the cash order only)
+    //   mpesa_bank= +500 (M-Pesa order) +100 (repayment) = +600
+    const ourIds = [cashOrder.id, mpesaOrder.id, credit.id, repayment.id];
+    const ourByAccount = await prisma.moneyMovement.groupBy({
+      by: ["account"],
+      _sum: { amount: true },
+      where: {
+        OR: [
+          { sourceType: "order", sourceId: { in: ourIds } },
+          { sourceType: "repayment", sourceId: { in: ourIds } },
+        ],
+      },
+    });
+    const m = new Map(
+      ourByAccount.map((g) => [g.account, (g._sum.amount ?? ZERO).toFixed(2)]),
+    );
+    expect(m.get("cash")).toBe("200.00");
+    expect(m.get("mpesa_bank")).toBe("600.00");
+
+    // The derived read (`getAccountBalances`) is a plain grouped SUM with
+    // no stored total — it equals the raw Σ over the whole ledger at the
+    // same instant (global, but this is an equality of two global reads,
+    // not a delta, so it can't race).
     const derived = await getAccountBalances();
     expect(derived.cash.toFixed(2)).toBe(await acctSum("cash"));
     expect(derived.mpesaBank.toFixed(2)).toBe(await acctSum("mpesa_bank"));
-    expect(
-      derived.cash.sub(new Prisma.Decimal(cash0)).toFixed(2),
-    ).toBe("200.00");
-    expect(
-      derived.mpesaBank.sub(new Prisma.Decimal(mpesa0)).toFixed(2),
-    ).toBe("600.00");
 
     // Customer's derived balance: 150 debt − 100 repaid = 50.
     const ledger = await getCustomerLedger(custId);
@@ -230,7 +248,6 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
       },
       cashier,
     );
-    const cashAfterCreate = await acctSum("cash");
     expect(await getDerivedStockBalance({ productId: chapati.id, locationId: ctx.restaurantId }).then((b) => b.quantity)).toBe("990.0000");
 
     // First correction: 10 → 6 (total 120).
@@ -248,12 +265,16 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
     expect(corr2.correctsOrderId).toBe(order.id); // corrections don't chain
 
     const chain = await chainIds(order.id);
-    // net money across the whole chain = the final corrected total only
+    // net money across the whole chain = the final corrected total only —
+    // the two corrections did not stack (would be 200−80+60 handled as
+    // deltas summing to 180, never 200 or 0). Scoped to this order's rows
+    // (a global `Σ cash` races the parallel suites).
     expect(await orderMoneyNet(chain)).toBe("180.00");
-    // cash moved by exactly (180 − 200) = −20 relative to just-after-create
-    expect(await acctSum("cash")).toBe(
-      new Prisma.Decimal(cashAfterCreate).sub(20).toFixed(2),
-    );
+    // exactly ONE delta MoneyMovement per correction, never a stacked pair
+    const orderMoneyRows = await prisma.moneyMovement.count({
+      where: { sourceType: "order", sourceId: { in: chain } },
+    });
+    expect(orderMoneyRows).toBe(3); // create + 2 correction deltas
     // net stock effect = final corrected: 1000 − 9 = 991
     expect(
       await getDerivedStockBalance({ productId: chapati.id, locationId: ctx.restaurantId }).then((b) => b.quantity),
@@ -263,6 +284,33 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
     const orig = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { lines: true } });
     expect(orig.total.toFixed(2)).toBe("200.00");
     expect(orig.lines[0].quantity.toFixed(4)).toBe("10.0000");
+  });
+
+  it("F7-2 (C4 banner) — a correction row carries correctedByName (the acting Admin) + correctedAt; the original does not", async () => {
+    const [chapati] = ctx.products;
+    const order = await createOrder(
+      { orderType: "dine_in", paymentMethod: "cash", lines: [{ productId: chapati.id, quantity: "5" }] },
+      cashier,
+    );
+    const correction = await correctOrder(
+      order.id,
+      { orderType: "dine_in", paymentMethod: "cash", lines: [{ productId: chapati.id, quantity: "3" }] },
+      admin,
+    );
+
+    // the value returned straight from correctOrder
+    expect(correction.correctsOrderId).toBe(order.id);
+    expect(correction.correctedByName).toBe(`${ctx.prefix} Admin`);
+    expect(correction.correctedAt).not.toBeNull();
+
+    // and via the read path C4 uses (listOrders)
+    const list = await listOrders({}, admin);
+    const origRow = list.find((o) => o.id === order.id)!;
+    const corrRow = list.find((o) => o.id === correction.id)!;
+    expect(origRow.correctedByName).toBeNull();
+    expect(origRow.correctedAt).toBeNull();
+    expect(corrRow.correctedByName).toBe(`${ctx.prefix} Admin`);
+    expect(corrRow.correctedAt).not.toBeNull();
   });
 
   it("B — correcting a correction row is rejected (must correct the original)", async () => {

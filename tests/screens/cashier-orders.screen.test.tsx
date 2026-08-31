@@ -43,6 +43,8 @@ const ORDER_TODAY: OrderView = {
   customerId: null,
   total: "230.00",
   correctsOrderId: null,
+  correctedAt: null,
+  correctedByName: null,
   occurredAt: NOW_ISO,
   createdAt: NOW_ISO,
   updatedAt: NOW_ISO,
@@ -580,9 +582,13 @@ describe("C4 — Order detail", () => {
       id: "o-corr",
       number: 1099,
       correctsOrderId: "o-today",
+      correctedAt: "2026-08-31T12:00:00.000Z",
+      correctedByName: "Edwin K.",
     };
     renderC4({ userId: "me" });
     expect(screen.getByText("Corrected")).toBeInTheDocument();
+    // C4 banner now names the Admin + the correction date (QA S7 data-gap fix).
+    expect(screen.getByText(/by Edwin K\./)).toBeInTheDocument();
     expect(
       screen.getByText(/View correction entry — order #1099/),
     ).toBeInTheDocument();
@@ -599,6 +605,54 @@ describe("C4 — Order detail", () => {
     expect(screen.queryByText(/margin/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/profit/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/buying price/i)).not.toBeInTheDocument();
+  });
+
+  it("F7-1: editing a credit order to Cash sends NO customerId (server rejects a cash order with one)", async () => {
+    const user = userEvent.setup();
+    orderState.order = {
+      ...ORDER_TODAY,
+      cashierId: "me",
+      paymentMethod: "credit",
+      customerId: "cust-7",
+    };
+    renderC4({ userId: "me" });
+    await user.click(screen.getByRole("radio", { name: "Cash" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(orderState.editOwnOrder).toHaveBeenCalled());
+    const arg = orderState.editOwnOrder.mock.calls[0][0];
+    expect(arg.paymentMethod).toBe("cash");
+    expect(arg).not.toHaveProperty("customerId");
+  });
+
+  it("F7-1: editing a credit order and keeping Credit still sends its customerId", async () => {
+    const user = userEvent.setup();
+    orderState.order = {
+      ...ORDER_TODAY,
+      cashierId: "me",
+      paymentMethod: "credit",
+      customerId: "cust-7",
+    };
+    renderC4({ userId: "me" });
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(orderState.editOwnOrder).toHaveBeenCalled());
+    const arg = orderState.editOwnOrder.mock.calls[0][0];
+    expect(arg.paymentMethod).toBe("credit");
+    expect(arg.customerId).toBe("cust-7");
+  });
+
+  it("F7-1: switching a cash order TO Credit disables Save with a caption (no attach UI in C4 edit)", async () => {
+    const user = userEvent.setup();
+    orderState.order = { ...ORDER_TODAY, cashierId: "me", paymentMethod: "cash", customerId: null };
+    renderC4({ userId: "me" });
+    await user.click(screen.getByRole("radio", { name: "Credit" }));
+    expect(
+      screen.getByText(/This order has no customer/),
+    ).toBeInTheDocument();
+    expect(
+      (screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(orderState.editOwnOrder).not.toHaveBeenCalled();
   });
 
   it("loading — skeletons", () => {

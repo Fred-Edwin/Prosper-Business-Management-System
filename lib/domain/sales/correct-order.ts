@@ -295,14 +295,22 @@ export async function correctOrder(
       },
     });
 
-    return tx.order.findUniqueOrThrow({
+    const created = await tx.order.findUniqueOrThrow({
       where: { id: correction.id },
       include: {
         cashier: { select: { name: true } },
         lines: { include: { product: { select: { name: true } } } },
       },
     });
+    const admin = await tx.user.findUnique({
+      where: { id: ctx.userId },
+      select: { name: true },
+    });
+    return {
+      created,
+      correctedBy: { at: created.createdAt, name: admin?.name ?? "an administrator" },
+    };
   });
 
-  return toOrderView(row);
+  return toOrderView(row.created, row.correctedBy);
 }

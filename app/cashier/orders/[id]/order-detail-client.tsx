@@ -221,7 +221,10 @@ function ReadOnlyOrder({
           <div className="flex items-center gap-(--sp-4)">
             <StatusChip variant="neutral">Corrected</StatusChip>
             <span className="font-ui [color:var(--text-secondary)] text-caption/micro">
-              on {nairobiDateTime(correction.createdAt)}
+              on {nairobiDateTime(correction.correctedAt ?? correction.createdAt)}
+              {correction.correctedByName
+                ? ` by ${correction.correctedByName}`
+                : ""}
             </span>
           </div>
           <button
@@ -386,6 +389,17 @@ function EditableOrder({
     return s;
   }, [lines, productById]);
 
+  const selectedPayment = PAYMENT_METHODS[paymentIdx]?.value ?? "cash";
+  const isCredit = selectedPayment === "credit";
+  // C4's editable form has no customer-attach control (that's C5, on the
+  // create flow). A credit order keeps whatever customer it already had;
+  // switching a non-credit order TO credit here is not supported — Save is
+  // blocked with a caption and the Cashier changes it on a new order or
+  // the Admin corrects it. (F7-1 / QA S7 — the previous code always sent
+  // the original `customerId`, so switching a credit order to cash was
+  // rejected by the server with no path for the Cashier.)
+  const creditNeedsCustomer = isCredit && !order.customerId;
+
   const feeNum = deliveryFee.trim() === "" ? 0 : Number(deliveryFee);
   const feeValid =
     deliveryFee.trim() === "" || /^\d+(\.\d{1,2})?$/.test(deliveryFee.trim());
@@ -399,6 +413,7 @@ function EditableOrder({
     lines.length > 0 &&
     overStockIds.size === 0 &&
     (!isDelivery || feeValid) &&
+    !creditNeedsCustomer &&
     !submitting;
 
   async function save() {
@@ -407,11 +422,16 @@ function EditableOrder({
     try {
       const input: EditOwnOrderInput = {
         orderType,
-        paymentMethod: PAYMENT_METHODS[paymentIdx]?.value ?? "cash",
+        paymentMethod: selectedPayment,
         ...(isDelivery && deliveryFee.trim() !== ""
           ? { deliveryFee: deliveryFee.trim() }
           : {}),
-        ...(order.customerId ? { customerId: order.customerId } : {}),
+        // Only attach a customer when the (new) method is credit — a
+        // cash / M-Pesa order must carry no `customerId` (the domain
+        // rejects one otherwise).
+        ...(isCredit && order.customerId
+          ? { customerId: order.customerId }
+          : {}),
         lines: lines.map((l) => ({
           productId: l.productId,
           quantity: String(l.qty),
@@ -569,6 +589,12 @@ function EditableOrder({
               {overStockIds.size}{" "}
               {overStockIds.size === 1 ? "line is" : "lines are"} over available
               stock.
+            </span>
+          )}
+          {creditNeedsCustomer && (
+            <span className="font-ui text-danger text-caption/micro">
+              This order has no customer — start a new credit order to attach
+              one, or ask the Admin to correct it.
             </span>
           )}
           <span className="font-ui [color:var(--text-secondary)] text-caption/micro">
