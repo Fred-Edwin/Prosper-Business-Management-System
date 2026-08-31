@@ -509,6 +509,34 @@ info treatment, distinct from C23's amber — §6 D6.)
 Composite of C8 + C12 + avatar. **No states of its own** — its parts
 carry their states. No artboards. ✅
 
+### C33 — SelectableProductRow  *(M2-3KIT — added 2026-08-31)*
+
+`JL7-0` ("Component Kit — Selectable Product Row [M2-3D]"). The multi-row
+product-picker row for the 6 Store-Manager / Canteen movement flows
+(ADR-44 body reversal — owner, Option A). **implemented + gated
+(M2-3KIT)** — 9 Storybook stories under `test:visual` + `test:a11y` + §9
+`postVisit`; `title: "Kit/SelectableProductRow"`.
+
+| State | Trigger | artboard? |
+|---|---|---|
+| not selected | `!selected && available > 0` | ARTBOARD ✅ (`JL7-0` §1) — plain row; name, `{prefix} {available} {unit}` readout (`--font-mono` `--text-caption` `--text-secondary`), `+ Select` (`<Button size="sm">` secondary) right |
+| selected (in batch) | `selected && quantity <= available` | ARTBOARD ✅ (`JL7-0` §2) — `--surface-selected` fill + `--color-accent` 1px border; inline compact `− [n] +` stepper right |
+| at available | `selected && quantity >= ceiling` (`ceiling = max ?? available`) | ARTBOARD ✅ (`JL7-0` §3) — as selected, stepper `+` disabled via §9.7 (`--text-disabled` + `opacity 0.5`); **not** an error |
+| over available — BLOCKED | `selected && quantity > available` | ARTBOARD ✅ (`JL7-0` §4) — §9.8: `--color-danger` border + `--color-danger-bg` fill, stepper border + typed value `--color-danger`, inline helper *"Only N unit on hand — reduce or remove this line."* `aria-invalid` on the value. Fires `onBlockedChange(productId, true)` so the parent flow disables its sticky submit. |
+| zero available | `available === 0` | ARTBOARD ✅ (`JL7-0` §5) — row `opacity 0.5`, readout `None on hand`, `+ Select` `disabled` + `tabIndex=-1`; `onSelect` cannot fire |
+| hard-disabled | `disabled` prop | GLOBAL — same visual as zero-available (row muted, control inert); distinct trigger, for a parent that needs to freeze the whole row |
+| `+ Select` focus-visible | — | GLOBAL (§9.1 — `.kit-focus-ring` 2px accent ring) |
+| stepper `−`/`+` focus-visible / hover / disabled | — | GLOBAL (§9.1 / §9.5 / §9.7 via `.kit-interactive` + `.kit-focus-ring`) |
+| value field focus | — | GLOBAL (`role="spinbutton"` `<input>`, ADR-43/48 tap-to-type contract re-used inline — see kit-audit §1) |
+
+**Deviation from `JL7-0` (documented, kit-audit §1):** the embedded
+stepper is authored inline, not composed from `<QuantityStepper>` (C10),
+because C10's `<FormField>` chrome / `w-[220px]` / `--control-md` height
+are not prop-overridable and would break the fixed-width trailing-slot
+alignment across a row list. The ADR-43/48 `role="spinbutton"` +
+tap-to-type + `↑`/`↓` step + `onValueString`(→`onQuantityString`)
+contract is re-used verbatim. C10 itself is unchanged.
+
 ---
 
 ## 3. Global interaction rules (NOT per-component artboards)
@@ -910,6 +938,7 @@ per-component before → after record).
 | C30 BottomNav | active/inactive/pressed | **implemented** — `<nav aria-label="Primary">` |
 | C31 FlowHeader | default/**no-badge**/back-pressed | **implemented** — `<header>` + `role="heading"` |
 | C32 Toolbar row | (composite) | n/a — its parts carry their states |
+| C33 SelectableProductRow | not-selected / selected / at-available / **over-available BLOCKED** / zero-available / hard-disabled / focus (+ Select, stepper, value) | **implemented + gated (M2-3KIT, 2026-08-31)** — `JL7-0`. Composes `<Button size="sm">` + tokens + the shared `.kit-interactive` / `.kit-focus-ring` / §9.7 rules. Blocked state = §9.8 (`--color-danger` border + `--color-danger-bg` + helper line + `aria-invalid`) and raises `onBlockedChange(id, true)` for the parent's sticky-submit gate. Embedded compact stepper authored inline (not C10 — slot-alignment constraint, kit-audit §1) but re-uses the ADR-43/48 `role="spinbutton"` tap-to-type contract verbatim; C10 unchanged. 9 stories green under `test:visual` + `test:a11y` + §9 `postVisit` (`interaction.assertColor` on the selected accent border/tint + the blocked danger border/bg; `assertFocusRing` on `+ Select`). 9 visual baselines committed. |
 
 **New primitives (no §2 row — added this session, `kit-audit.md §3`):**
 `Spinner`, `FormField` (mechanical); `Toast` / `ToastProvider` / `useToast()`,
