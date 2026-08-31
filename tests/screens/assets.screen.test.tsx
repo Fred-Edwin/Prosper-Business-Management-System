@@ -228,3 +228,62 @@ describe("/admin/assets — kit composition", () => {
     expect(await screen.findByText("Asset restored")).toBeInTheDocument();
   });
 });
+
+// ── Mobile branch (Session 3b — artboards J6D-0 … JFQ-0) ──────────────────
+function mobile(): HTMLElement {
+  const node = document.querySelector<HTMLElement>(".md\\:hidden.flex-col");
+  if (!node) throw new Error("mobile branch not found");
+  return node;
+}
+
+describe("/admin/assets — mobile branch", () => {
+  beforeEach(() => {
+    state.assets = [ASSET];
+    state.loading = false;
+    state.error = null;
+  });
+
+  it("renders a stacked row (name + cost / meta / • condition + Edit)", () => {
+    renderScreen();
+    const m = within(mobile());
+    expect(m.getByText("Commercial Deep Fryer Double")).toBeInTheDocument();
+    expect(m.getAllByText("KES 45,000.00").length).toBeGreaterThan(0);
+    expect(m.getByText(/Restaurant Kitchen · /)).toBeInTheDocument();
+    expect(m.getByText("• Good")).toBeInTheDocument();
+    expect(m.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+
+  it("shows the dark total-register strip with a condition breakdown + cost basis", () => {
+    renderScreen();
+    const m = within(mobile());
+    expect(m.getByText(/Total active register/)).toBeInTheDocument();
+    expect(m.getByText("Good 1")).toBeInTheDocument();
+    expect(m.getByText("Needs Repair 0")).toBeInTheDocument();
+    expect(m.getByText("Total cost basis")).toBeInTheDocument();
+  });
+
+  it("shows skeleton rows while loading, not a bare 'Loading…'", () => {
+    state.assets = [];
+    state.loading = true;
+    renderScreen();
+    const m = mobile();
+    expect(m.querySelectorAll(".kit-skeleton").length).toBeGreaterThanOrEqual(3);
+    expect(within(m).queryByText("Loading…")).not.toBeInTheDocument();
+  });
+
+  it("shows an <EmptyState> (not a bare text line) when there are no assets", () => {
+    state.assets = [];
+    renderScreen();
+    expect(within(mobile()).getByText("No assets registered")).toBeInTheDocument();
+  });
+
+  it("'Edit' on a mobile row opens the asset drawer", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(within(mobile()).getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByDisplayValue("Commercial Deep Fryer Double"),
+    ).toBeInTheDocument();
+  });
+});
