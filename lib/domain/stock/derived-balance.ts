@@ -40,6 +40,12 @@ export async function getDerivedStockBalance(
  * Batched variant so the Sessions 7–8 stock-levels screens don't N+1:
  * one grouped query for many products at a single location.
  * `asOf` defaults to now. Products with no rows come back as `"0.0000"`.
+ *
+ * Each row also carries `lastMovementAt` — the ISO timestamp of the most
+ * recent `StockMovement.occurredAt` for that (product, location) at or
+ * before `asOf`, or `null` if the product has no rows. The `986-0` /
+ * `9GW-0` stock-levels screens render a "last movement Nh ago" meta line
+ * from it (3-DOMAIN handoff §3.4).
  */
 export async function getDerivedStockBalances(
   productIds: string[],
@@ -52,6 +58,7 @@ export async function getDerivedStockBalances(
   const grouped = await prisma.stockMovement.groupBy({
     by: ["productId"],
     _sum: { quantity: true },
+    _max: { occurredAt: true },
     where: {
       productId: { in: productIds },
       locationId,
@@ -60,12 +67,24 @@ export async function getDerivedStockBalances(
   });
 
   const byProduct = new Map(
-    grouped.map((g) => [g.productId, g._sum.quantity ?? new Prisma.Decimal(0)]),
+    grouped.map((g) => [
+      g.productId,
+      {
+        quantity: g._sum.quantity ?? new Prisma.Decimal(0),
+        lastMovementAt: g._max.occurredAt ?? null,
+      },
+    ]),
   );
 
-  return productIds.map((productId) => ({
-    productId,
-    locationId,
-    quantity: quantityString(byProduct.get(productId) ?? new Prisma.Decimal(0)),
-  }));
+  return productIds.map((productId) => {
+    const entry = byProduct.get(productId);
+    return {
+      productId,
+      locationId,
+      quantity: quantityString(entry?.quantity ?? new Prisma.Decimal(0)),
+      lastMovementAt: entry?.lastMovementAt
+        ? entry.lastMovementAt.toISOString()
+        : null,
+    };
+  });
 }

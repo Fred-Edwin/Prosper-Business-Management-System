@@ -39,6 +39,14 @@ export type DerivedBalance = {
   locationId: string;
   /** Signed sum of every `StockMovement.quantity` for the pair, as a decimal string. */
   quantity: string;
+  /**
+   * ISO 8601 timestamp of the most recent `StockMovement.occurredAt` for
+   * this (product, location) at or before the read's `asOf`, or `null`
+   * when the product has no rows. Populated by `getDerivedStockBalances`
+   * (the batched read behind `GET /api/stock-movements/balances`); the
+   * single `getDerivedStockBalance` does not compute it (`undefined`).
+   */
+  lastMovementAt?: string | null;
 };
 
 export type StockMovementView = {
@@ -71,6 +79,16 @@ export type StockMovementView = {
   purchasePaidFrom: "cash" | "mpesa_bank" | null;
   correctsMovementId: string | null;
   note: string | null;
+  /**
+   * For a canteen derived `sale` row (`movementType === "sale"` with a
+   * `stockCountId`): the revenue of that derived sale — the amount of the
+   * matching `canteen_sale` `MoneyMovement` (`sourceType: "canteen_sale"`,
+   * `sourceId` = the `stockCountId`), a 2dp decimal string. `null` for
+   * every non-canteen-sale movement, and `null` for a zero-sold count
+   * (which writes no `MoneyMovement`). Populated by `listMovements`; the
+   * single-write functions return `null` here.
+   */
+  derivedRevenue: string | null;
   createdAt: string;
   updatedAt: string;
 };

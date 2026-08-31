@@ -2,6 +2,7 @@ import { afterAll, beforeEach, afterEach, describe, expect, it } from "vitest";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getDerivedStockBalance } from "@/lib/domain/stock/derived-balance";
+import { listMovements } from "@/lib/domain/stock/list-movements";
 import { recordStockCount, voidStockCount } from "./record-stock-count";
 import {
   cleanupSalesTestData,
@@ -505,5 +506,57 @@ describe("voidStockCount", () => {
     await expect(
       voidStockCount("00000000-0000-0000-0000-000000000000", attendantCtx),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  // F7-7: the Canteen hub timeline feed (`listMovements`) must carry the
+  // derived-sale revenue so a later frontend session can render the row
+  // as revenue-in instead of stock-out.
+  it("listMovements exposes derivedRevenue on a canteen sale row; null elsewhere", async () => {
+    const [soda] = ctx.products; // sellingPrice 60.00
+    await seedMovement(ctx, {
+      productId: soda.id,
+      movementType: "opening",
+      quantity: "100",
+      occurredAt: T0,
+    });
+    const { count } = await recordStockCount(
+      { productId: soda.id, countedQuantity: "70", occurredAt: T3 },
+      attendantCtx,
+    );
+
+    const rows = await listMovements(
+      { locationId: ctx.canteenId },
+      { userId: ctx.adminId, role: "admin", locationId: null },
+    );
+
+    const saleRow = rows.find(
+      (r) => r.movementType === "sale" && r.stockCountId === count.id,
+    );
+    expect(saleRow?.derivedRevenue).toBe("1800.00"); // 30 sold × 60.00
+
+    const openingRow = rows.find((r) => r.movementType === "opening");
+    expect(openingRow?.derivedRevenue).toBeNull();
+  });
+
+  it("listMovements: a zero-sold count (no MoneyMovement) reports derivedRevenue null", async () => {
+    const [soda] = ctx.products;
+    await seedMovement(ctx, {
+      productId: soda.id,
+      movementType: "opening",
+      quantity: "40",
+      occurredAt: T0,
+    });
+    const { count } = await recordStockCount(
+      { productId: soda.id, countedQuantity: "40", occurredAt: T3 },
+      attendantCtx,
+    );
+    const rows = await listMovements(
+      { locationId: ctx.canteenId },
+      { userId: ctx.adminId, role: "admin", locationId: null },
+    );
+    const saleRow = rows.find(
+      (r) => r.movementType === "sale" && r.stockCountId === count.id,
+    );
+    expect(saleRow?.derivedRevenue).toBeNull();
   });
 });

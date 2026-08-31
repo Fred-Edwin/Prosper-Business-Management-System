@@ -156,9 +156,18 @@ describe("reconciliation vocabulary — the four terms", () => {
     expect(unmatched.some((r) => r.productId === awaitingProductId)).toBe(false);
   });
 
-  it("the outstanding endpoint is Admin-only (a store manager gets 403)", async () => {
+  it("the outstanding endpoint is location-scoped for a store manager (M2 §3.4: 200, own location only)", async () => {
+    // Widened in M2 batch-movements: a Store Manager sees deliveries
+    // awaiting receipt AT THEIR OWN location for the Receive "match a
+    // paid delivery" picker. Admin still sees every location.
     actAs({ id: smId, role: "store_manager" });
     const out = await api.outstanding();
-    expect(out.status).toBe(403);
+    expect(out.status).toBe(200);
+    for (const r of out.body.data.awaitingReceipt) {
+      expect(r.locationId).toBe(storeId);
+    }
+    for (const r of out.body.data.unmatchedReceipts) {
+      expect(r.locationId).toBe(storeId);
+    }
   });
 });

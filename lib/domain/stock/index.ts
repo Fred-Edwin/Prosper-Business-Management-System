@@ -10,9 +10,35 @@ export {
   getDerivedStockBalances,
 } from "./derived-balance";
 export { setOpeningStock } from "./opening-stock";
-export { recordPurchasePayment, recordPurchaseReceipt } from "./purchases";
-export { recordKitchenIssue, recordProduction } from "./issue-production";
-export { recordNonSaleConsumption } from "./consumption";
-export { recordTransfer, acceptTransfer, flagTransfer } from "./transfer";
+export {
+  recordPurchasePayment,
+  recordPurchaseReceipt,
+  recordPurchaseReceiptBatch,
+  type RecordPurchaseReceiptBatchInput,
+} from "./purchases";
+export {
+  recordKitchenIssue,
+  recordProduction,
+  recordKitchenIssueBatch,
+  recordProductionBatch,
+  type RecordKitchenIssueBatchInput,
+  type RecordProductionBatchInput,
+} from "./issue-production";
+export {
+  recordNonSaleConsumption,
+  recordNonSaleConsumptionBatch,
+  type RecordNonSaleConsumptionBatchInput,
+} from "./consumption";
+export {
+  recordTransfer,
+  acceptTransfer,
+  flagTransfer,
+  recordTransferBatch,
+  type RecordTransferBatchInput,
+} from "./transfer";
 export { correctMovement } from "./correct-movement";
-export { listMovements, listOutstandingPurchases } from "./list-movements";
+export {
+  listMovements,
+  listOutstandingPurchases,
+  listOutstandingPurchasesForLocation,
+} from "./list-movements";

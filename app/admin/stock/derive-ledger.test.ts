@@ -49,6 +49,7 @@ function mv(partial: Partial<StockMovementView>): StockMovementView {
     purchasePaidFrom: null,
     correctsMovementId: null,
     note: null,
+    derivedRevenue: null,
     createdAt: "",
     updatedAt: "",
     ...partial,
