@@ -1,5 +1,28 @@
 # FilterToolbar — component spec
 
+**Built + gated: M2-3KIT-FILTER (commit on `feat/m2-3kit-filter-toolbar`).**
+`components/kit/filter-toolbar.tsx` + `filter-toolbar.stories.tsx` (8
+stories / 8 visual baselines / axe clean / tsc 0 / jsdom 416).
+- **Search-slot API (§3):** a `search?: React.ReactNode` prop, rendered as a
+  sibling at the START of the toolbar row (it keeps its own state; the
+  screen clears it on reset). Chosen over a `children` slot so the toolbar
+  owns the row layout around it.
+- **Mobile "More" reveal (§4):** a kit `BottomSheet` listing *all* controls
+  as full-width rows (not just the overflow). `IKW-0` doesn't draw the
+  reveal; `BottomSheet` is the staff-shell's proven overflow affordance.
+- **Layout split:** `matchMedia("(max-width: --bp-md - 1)")` via an in-file
+  hook, plus a `layout?: "auto" | "desktop" | "mobile"` escape hatch so the
+  Storybook visual snapshot is deterministic.
+- **Two deviations from L9O-0** (composition limits of the kit primitives,
+  documented in the component header for 3e): (a) an at-default `select`
+  label stays `--text-primary` — the kit `Select` trigger has no
+  recessive-tone hook and forking it was out of scope; date + toggle
+  controls DO honour the tone rule. (b) the date chip uses `DatePicker`'s
+  trailing calendar glyph + mono value where L9O-0 shows a leading glyph +
+  ui-font value.
+- **Kit touch:** `Select` + `DatePicker` gained an additive, a11y-only
+  `aria-label` prop (names a label-less trigger; ignored when `label` set).
+
 **Status:** Approved for build (Design Sprint 3-DESIGN-FILTERS, Product
 Designer, 2026-08-31). Consumed by **3-KIT-FILTER** (builds + ADR-42-gates
 the kit component) and **3e** (retrofits every screen onto it).

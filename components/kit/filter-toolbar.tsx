@@ -204,11 +204,11 @@ function DesktopControl({
       label: `${control.label}: ${o.label}`,
     }));
     // No `label` prop → `Select` renders no label chrome (the toolbar wants
-    // the label INSIDE the trigger, "<Label>: <value>"). The trigger's
-    // accessible name then comes from its text content ("Cashier: All
-    // cashiers") — a valid ARIA name source for a <button role="combobox">.
+    // the label INSIDE the trigger, "<Label>: <value>"). `aria-label` names
+    // the trigger for AT / axe (`select-name`) without adding chrome.
     return (
       <Select
+        aria-label={control.label}
         options={opts}
         value={control.value}
         onChange={(v) => onChange(v)}
@@ -219,10 +219,11 @@ function DesktopControl({
 
   if (control.kind === "date") {
     // No `label` → `DatePicker` renders no label chrome (it would stack a
-    // <div> above the trigger and break the single-line row). The trigger's
-    // accessible name comes from its value text ("Today" / "Aug 23").
+    // <div> above the trigger and break the single-line row). `aria-label`
+    // names the trigger for AT / axe without adding chrome.
     return (
       <DatePicker
+        aria-label={`${control.label}: ${triggerText(control)}`}
         value={triggerText(control)}
         onSelect={(d) => onChange(isoDay(d))}
         className="w-max shrink-0"

@@ -189,7 +189,7 @@ export const OneFilterActive: Story = {
     await expect(c.getByText("·")).toBeInTheDocument();
     await expect(c.getByText("2 orders")).toBeInTheDocument();
     // the off-default Payment select shows its concrete value
-    await expect(c.getByRole("combobox", { name: /^Payment:/ })).toHaveTextContent(
+    await expect(c.getByRole("combobox", { name: "Payment" })).toHaveTextContent(
       "Payment: M-Pesa",
     );
   },
@@ -218,7 +218,7 @@ export const MultipleActive: Story = {
     // three off-default controls → Reset present
     const reset = c.getByRole("button", { name: "Reset" });
     await expect(reset).toBeInTheDocument();
-    await expect(c.getByRole("combobox", { name: /^Cashier:/ })).toHaveTextContent(
+    await expect(c.getByRole("combobox", { name: "Cashier" })).toHaveTextContent(
       "Cashier: Mary Njeri",
     );
 
@@ -235,10 +235,10 @@ export const MultipleActive: Story = {
     await expect(
       c.queryByRole("button", { name: "Reset" }),
     ).not.toBeInTheDocument();
-    await expect(c.getByRole("combobox", { name: /^Cashier:/ })).toHaveTextContent(
+    await expect(c.getByRole("combobox", { name: "Cashier" })).toHaveTextContent(
       "Cashier: All cashiers",
     );
-    await expect(c.getByRole("combobox", { name: /^Payment:/ })).toHaveTextContent(
+    await expect(c.getByRole("combobox", { name: "Payment" })).toHaveTextContent(
       "Payment: All",
     );
   },
