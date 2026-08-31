@@ -908,13 +908,11 @@ function MobileFinancials({
                 <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
                   {c.meta}
                 </div>
-                <div className="flex items-center gap-(--sp-4)">
-                  <div className={`font-ui grow ${c.statusTone} text-caption/micro`}>
-                    {c.statusText}
-                  </div>
-                  <span className="font-ui font-(--weight-medium) [color:var(--text-tertiary)] text-sm/micro">
-                    Edit
-                  </span>
+                {/* Artboard shows an "Edit" link here, but there is no
+                    edit-a-payment flow (the desktop table is read-only too —
+                    corrections go through Reconciliation). Status only. */}
+                <div className={`font-ui ${c.statusTone} text-caption/micro`}>
+                  {c.statusText}
                 </div>
               </div>
             ))}
