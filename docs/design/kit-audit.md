@@ -397,6 +397,35 @@ gated (M2-02)**.
 | ARIA | **missing** — should be `role="spinbutton"` (or `role="group"` + an `<input type="number">`) with `aria-valuenow` / `aria-valuemin` / `aria-valuemax` / `aria-valuetext` (with unit). Label renders a `<div>` — link it. | ✓ — `role="spinbutton"` + `aria-valuenow` / `-valuemin` / `-valuemax` / `-valuetext` (`"{value} {unit}"`); label is a real `<label htmlFor>` via `<FormField>`; helper wired `aria-describedby` + `aria-invalid`. `axe` clean on all 7 stories. |
 | notes | Flag the `<span>`→`<input>` change for owner review — it's needed to satisfy the spec'd states but is close to a behaviour change. | Signed off M2 Session 2: commit-on-blur / Enter + `onValueString` escape hatch + `↑`/`↓` stepping = the ratified ADR-48 "keep the §9 contract, add the input" pattern (same as `Select searchable`). No new API surface. Not judged a wrong commit-trigger → no owner escalation. |
 
+### SelectableProductRow — `components/kit/selectable-product-row.tsx`  *(NEW — M2-3KIT, 2026-08-31)*
+
+Required (`§2 C33`): not-selected (ARTBOARD ✓ `JL7-0` §1), selected /
+in-batch (ARTBOARD ✓ §2), at-available / `+` disabled (ARTBOARD ✓ §3),
+over-available BLOCKED (ARTBOARD ✓ §4, §9.8), zero-available / inert
+(ARTBOARD ✓ §5), hard-disabled (GLOBAL), `+ Select` + stepper focus /
+hover / disabled (GLOBAL §9.1 / §9.5 / §9.7).
+
+The multi-row product-picker row for the 6 Store-Manager / Canteen
+movement flows (Receive, Issue, Production, Transfer, Non-sale, Canteen
+Dispatch), after the owner reversed ADR-44's one-line-form body (Option
+A, 2026-08-31). 3-DESIGN drew `JL7-0`; this session (M2-3KIT) built and
+ADR-42-gated it. C33 status: **implemented + gated (M2-3KIT)**.
+
+| aspect | BEFORE | AFTER |
+|---|---|---|
+| existed? | **n/a** — composed ad hoc in the M1 one-line flow screens (bespoke value box + ±32px steppers, `bg-accent` pill tabs — ADR-44 §context); no shared row, no `Avail:` readout, no over-stock block. The SM/Canteen screens could issue a quantity blind. | new file `components/kit/selectable-product-row.tsx`. One row = product name (ellipsis, `min-w-0`) · fixed 96px `Avail: N unit` readout (`--font-mono` `--text-caption`/`--text-micro` `--text-secondary`, `whitespace-nowrap`) · fixed 108px trailing control (`+ Select` / compact stepper). Fixed-width slots so columns line up down a list. |
+| tokens-only? | — | ✓ — `--surface-selected` / `--color-accent` (selected), `--color-danger` / `--color-danger-bg` (§9.8 blocked), `--text-*`, `--border-subtle` / `--border-strong`; `.kit-interactive` + `.kit-focus-ring` on the stepper `−`/`+`; `<Button size="sm">` for `+ Select`. One inline `opacity-[0.5]` for the zero-available / disabled mute (same convention as `SegmentedControl` / `ToggleSwitch`). |
+| §9.1 focus ring | — | ✓ — `+ Select` (`.kit-focus-ring` via `<Button>`), stepper `−`/`+` (`.kit-focus-ring`), value `<input>` (native). Proven `FocusSelectButton` (`assertFocusRing`). |
+| §9.4 selected tint | — | ✓ — `data-selected` row: `--surface-selected` fill + `--color-accent` 1px border. Proven `Selected` (`assertColor` on `borderColor` = `--color-accent` and `backgroundColor` = `--surface-selected`). |
+| §9.7 disabled | — | ✓ — at-ceiling `+` is a native `<button disabled>` under `.kit-interactive:disabled`; zero-available / `disabled` prop mute the whole row + `+ Select` `disabled` + `tabIndex=-1`; `onSelect` cannot fire (proven `ZeroAvailable`). |
+| §9.8 blocked | — | ✓ — `quantity > available` ⇒ `data-blocked` row: `--color-danger` border + `--color-danger-bg` fill, stepper border + typed value `--color-danger`, `aria-invalid` on the value, inline helper *"Only N unit on hand — reduce or remove this line."* Proven `OverAvailableBlocked` (`assertColor` danger border + bg; helper text present; `aria-invalid="true"`). |
+| embedded stepper | — | **DEVIATION** — authored **inline**, not composed from `<QuantityStepper>` (C10). C10 always renders inside `<FormField>` with a hard-coded `w-[220px]` wrapper, `--control-md` (36px) height and `--radius-sm`, plus an optional unit slot — **none prop-overridable** — which overflows `JL7-0`'s 108px trailing slot and breaks the cross-row column alignment that is a stated core contract. The compact `− [n] +` box (108px / 32px / `--radius-md` / no unit) is written inline but **re-uses the ADR-43/48 contract verbatim**: value = `<input inputmode="decimal" role="spinbutton">` with `aria-valuenow`/`-valuemin`/`-valuemax`/`-valuetext`; tap-to-type, commit on blur / Enter; `↑`/`↓` step; `−`/`+` native `<button>` disabled at bound; `onQuantityString` mirrors `QuantityStepper.onValueString`. **`QuantityStepper` (C10) is not touched.** Proven `TapToTypeQuantity` (type "30" → `onQuantityString("p-beef","30")` then blur → `onQuantityChange("p-beef",30)`). |
+| blocked-signal API | — | **`onBlockedChange?(productId, blocked)`** — a per-row callback fired on transition (with an unmount cleanup that clears a stale `true`). Chosen over a derived flag so the parent flow owns the aggregate ("disable the sticky submit while ANY row is blocked") without prop-drilling state back down. 3c/3d wire it into their sticky-submit `disabled`. |
+| deselect | — | Stepping `−` (or typing) to `<= min` (default `0`) fires `onDeselect(productId)` — the row returns to `+ Select`. Proven `DeselectBySteppingToZero`. |
+| ARIA | — | Each row is `role="group"` with an accessible name = product + readout (+ quantity + "exceeds available stock" when blocked). The embedded value keeps its own `role="spinbutton"`. `axe` clean on all 9 stories (no rule opt-out needed — the `--text-secondary` readout clears AA at `--text-micro`). |
+| stories / baselines | — | 9 stories (`Kit/SelectableProductRow`): `NotSelected`, `Selected`, `AtAvailable`, `OverAvailableBlocked`, `ZeroAvailable`, `TapToTypeQuantity`, `DeselectBySteppingToZero`, `FocusSelectButton`, `LongName`. 9 visual baselines committed under `tests/visual/__screenshots__/kit-selectableproductrow--*.png` (first run — eyeballed against `JL7-0`). `test:visual` + `test:a11y` + §9 `postVisit` green; `tsc` 0. |
+| minor deviations from `JL7-0` | — | (1) `+ Select` is `<Button size="sm">` (32px / `--radius-sm` / `--sp-5` pad) where the artboard drew a bespoke 28px / `--radius-md` / 10px-pad chip — handover §3.1 mandates the kit Button. (2) `Avail:` slot widened 88→96px + `whitespace-nowrap` so `Avail: 46.5 kg` never wraps at `--text-caption` in a 390px row (artboard's `w-max` + `flex-wrap` relied on more effective width). Both cosmetic, no contract impact. |
+
 ### SimpleTable — `components/kit/simple-table.tsx`
 
 Required (`§2 C15`): header, body row (ARTBOARD ✓), body row hover (ARTBOARD ✓
