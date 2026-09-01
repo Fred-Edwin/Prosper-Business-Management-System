@@ -397,6 +397,21 @@ ledger entries (ADR-14, ADR-15, ADR-17), `AuditLog` primarily captures
 things not otherwise self-evident from the ledgers: logins, non-ledger edits
 (e.g., product name changes), and deletes.
 
+**Note (M2 QA S7, F7-10) — `editOwnOrder` prunes the audit rows of the
+movements it replaces.** A Cashier's *same-day true edit* of their own
+order (`lib/domain/sales/edit-own-order.ts`) deletes the order's prior
+`MoneyMovement` / `Debt` / `sale` `StockMovement` rows and rewrites them
+(a true edit, not an append-only correction — ADR-15 kicks in only after
+the day rolls). It first deletes the `AuditLog` rows of type
+`money_movement` for those now-gone movements, then writes one fresh
+`action: "correct"` `AuditLog` row on the **order** carrying the pre/post
+summary. This is the single place in the system where `AuditLog` rows are
+deleted rather than appended, and it is deliberate: the deleted rows
+describe ledger movements that no longer exist, and the edit event itself
+stays audited on the order row. A hard `DayClose` lock (M3) removes the
+"true edit" window entirely — after it, every change is an append-only
+correction and nothing is pruned.
+
 ---
 
 ## ADR-26: User & Role

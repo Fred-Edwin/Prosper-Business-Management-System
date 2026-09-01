@@ -23,6 +23,17 @@ export const recordStockCountSchema = z.object({
   occurredAt: z.string().datetime().optional(),
 });
 
+/**
+ * Query for `GET /api/canteen/stock-counts/preview` — a dry-run of the
+ * derived sale for a counted-remaining value. Same fields as
+ * `recordStockCountSchema` minus the persistence.
+ */
+export const previewStockCountQuerySchema = z.object({
+  productId: z.string().trim().min(1, "Product is required"),
+  countedRemaining: quantityString,
+  occurredAt: z.string().datetime().optional(),
+});
+
 export const listDerivedSalesQuerySchema = z.object({
   productId: z.string().trim().min(1).optional(),
   // A business date (YYYY-MM-DD) — windows on the count's occurredAt.
@@ -33,4 +44,5 @@ export const listDerivedSalesQuerySchema = z.object({
 });
 
 export type RecordStockCountBody = z.infer<typeof recordStockCountSchema>;
+export type PreviewStockCountQuery = z.infer<typeof previewStockCountQuerySchema>;
 export type ListDerivedSalesQuery = z.infer<typeof listDerivedSalesQuerySchema>;

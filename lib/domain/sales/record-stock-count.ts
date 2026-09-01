@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { toBusinessDate } from "@/lib/time";
 import { recordMoneyMovement } from "@/lib/domain/financials";
@@ -6,13 +5,16 @@ import type {
   ActorContext,
   RecordStockCountInput,
   RecordStockCountResult,
+  PreviewStockCountInput,
+  StockCountPreview,
 } from "./types";
 import { DomainError } from "./errors";
-import { ZERO, moneyString, quantityString } from "./internal";
+import { moneyString, quantityString } from "./internal";
 import {
-  assertCanteenLocation,
-  resolveCanteenSellingPrice,
-} from "./canteen-guards";
+  deriveStockCount,
+  overCountError,
+  parseCountedQuantity,
+} from "./derive-stock-count";
 
 /**
  * Record a canteen stock count and derive the sale for the period since
@@ -61,97 +63,28 @@ export async function recordStockCount(
   }
   const locationId = ctx.locationId;
 
-  let counted: Prisma.Decimal;
-  try {
-    counted = new Prisma.Decimal(input.countedQuantity);
-  } catch {
-    throw new DomainError(
-      "VALIDATION_ERROR",
-      "Counted quantity must be a number.",
-      "countedQuantity",
-    );
-  }
-  if (!counted.isFinite() || counted.isNegative()) {
-    throw new DomainError(
-      "VALIDATION_ERROR",
-      "Counted quantity must be zero or more.",
-      "countedQuantity",
-    );
-  }
-
+  const counted = parseCountedQuantity(input.countedQuantity);
   const occurredAt = input.occurredAt ?? new Date();
 
   const result = await prisma.$transaction(async (tx) => {
-    const product = await tx.product.findUnique({
-      where: { id: input.productId },
-      select: { id: true, name: true, deletedAt: true },
-    });
-    if (!product || product.deletedAt) {
-      throw new DomainError("NOT_FOUND", "Product not found.", "productId");
-    }
-    await assertCanteenLocation(tx, locationId);
-
-    const sellingPrice = await resolveCanteenSellingPrice(
-      tx,
-      input.productId,
+    // The ONE derivation — read on `tx` so two concurrent counts can't
+    // both pass a stale balance read.
+    const d = await deriveStockCount(tx, {
+      productId: input.productId,
       locationId,
-      product.name,
-    );
-
-    // Previous count for this product at this canteen bounds the period.
-    const prev = await tx.stockCount.findFirst({
-      where: {
-        productId: input.productId,
-        locationId,
-        occurredAt: { lt: occurredAt },
-      },
-      orderBy: { occurredAt: "desc" },
-      select: { occurredAt: true },
+      countedQuantity: counted,
+      occurredAt,
     });
 
-    // A later (or same-instant) count already exists → the new count
-    // can't define a forward period.
-    const laterCount = await tx.stockCount.findFirst({
-      where: {
-        productId: input.productId,
-        locationId,
-        occurredAt: { gte: occurredAt },
-      },
-      select: { id: true },
-    });
-    if (laterCount) {
-      throw new DomainError(
-        "VALIDATION_ERROR",
-        "A later count already exists for this product — counts must move forward in time.",
-        "occurredAt",
-      );
+    // The shelf holds more than the ledger accounts for → reject, nothing
+    // written (owner decision 2026-08-30; the preview surfaces the same
+    // block without a write, `voidStockCount` is the same-day recovery).
+    if (d.exceedsExpectedBy) {
+      throw overCountError(d.exceedsExpectedBy);
     }
 
-    // expectedRemaining = signed Σ of every StockMovement for
-    // (product, canteen) up to this count, read on `tx` so two
-    // concurrent counts can't both pass a stale read.
-    const agg = await tx.stockMovement.aggregate({
-      _sum: { quantity: true },
-      where: {
-        productId: input.productId,
-        locationId,
-        occurredAt: { lte: occurredAt },
-      },
-    });
-    const expectedRemaining = agg._sum.quantity ?? ZERO;
-    const sold = expectedRemaining.sub(counted);
-
-    if (sold.isNegative()) {
-      throw new DomainError(
-        "VALIDATION_ERROR",
-        `Counted quantity exceeds expected stock by ${quantityString(
-          sold.abs(),
-        )} — record the missing receipt or transfer first, then recount.`,
-        "countedQuantity",
-      );
-    }
-
-    const revenue = sold.mul(sellingPrice).toDecimalPlaces(2);
+    const sold = d.unitsSold;
+    const revenue = d.revenue;
 
     const count = await tx.stockCount.create({
       data: {
@@ -219,7 +152,7 @@ export async function recordStockCount(
       derivedSale: {
         unitsSold: quantityString(sold),
         revenue: moneyString(revenue),
-        periodStart: prev ? prev.occurredAt.toISOString() : null,
+        periodStart: d.periodStart ? d.periodStart.toISOString() : null,
         periodEnd: occurredAt.toISOString(),
       },
     };
@@ -294,4 +227,72 @@ export async function voidStockCount(
   });
 
   return { voided: true };
+}
+
+/**
+ * Dry-run the canteen derived-sale for a counted-remaining value **without
+ * persisting anything** — no `StockCount`, no `sale` `StockMovement`, no
+ * `MoneyMovement`, no `AuditLog`. Feeds the K1 preview card
+ * (`canteen-derived-sales-flow.md` rule 2) so the attendant sees the
+ * exact `sold` / `revenue` the commit will produce.
+ *
+ * Runs the SAME `deriveStockCount` calculation as `recordStockCount`, on
+ * the bare `prisma` client (a plain read). Role scoping is identical —
+ * enforced at the route (`canteen_attendant` own canteen + `admin`);
+ * `ctx.locationId` must be set for an attendant.
+ *
+ *   - product / canteen / later-count validation → the same `DomainError`
+ *     as `recordStockCount` (so a bad `productId` fails the same way).
+ *   - counted MORE than expected → `blocked: true` + `exceedsExpectedBy`
+ *     (NOT thrown) so the screen can render the blocked state without a
+ *     write. `recordStockCount` would reject the same input.
+ */
+export async function previewStockCount(
+  input: PreviewStockCountInput,
+  ctx: ActorContext,
+): Promise<StockCountPreview> {
+  if (!ctx.locationId) {
+    throw new DomainError(
+      "FORBIDDEN",
+      "Your account is not assigned to a canteen.",
+    );
+  }
+
+  const counted = parseCountedQuantity(input.countedRemaining);
+  const occurredAt = input.occurredAt ?? new Date();
+
+  const d = await deriveStockCount(prisma, {
+    productId: input.productId,
+    locationId: ctx.locationId,
+    countedQuantity: counted,
+    occurredAt,
+  });
+
+  if (d.exceedsExpectedBy) {
+    return {
+      blocked: true,
+      exceedsExpectedBy: quantityString(d.exceedsExpectedBy),
+      isFirstCount: d.isFirstCount,
+      periodStart: d.periodStart ? d.periodStart.toISOString() : null,
+      lastCountedAt: d.lastCountedAt ? d.lastCountedAt.toISOString() : null,
+      daysSincePrevious: d.daysSincePrevious,
+      countedRemaining: quantityString(counted),
+      unitsSold: null,
+      revenue: null,
+      closingStockWillBe: quantityString(d.closingStockWillBe),
+    };
+  }
+
+  return {
+    blocked: false,
+    exceedsExpectedBy: null,
+    isFirstCount: d.isFirstCount,
+    periodStart: d.periodStart ? d.periodStart.toISOString() : null,
+    lastCountedAt: d.lastCountedAt ? d.lastCountedAt.toISOString() : null,
+    daysSincePrevious: d.daysSincePrevious,
+    countedRemaining: quantityString(counted),
+    unitsSold: quantityString(d.unitsSold),
+    revenue: moneyString(d.revenue),
+    closingStockWillBe: quantityString(d.closingStockWillBe),
+  };
 }
