@@ -39,12 +39,31 @@ const PRODUCTS = [
     updatedAt: NOW,
     locations: [],
   },
+  {
+    id: "prod-chicken",
+    name: "Grilled Chicken",
+    kind: "dish",
+    unitLabel: "pcs",
+    buyingPrice: null,
+    deletedAt: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    locations: [],
+  },
 ];
 const LOCATIONS = [
   {
     id: "loc-store",
     name: "Store",
     type: "store",
+    active: true,
+    createdAt: new Date(NOW),
+    updatedAt: new Date(NOW),
+  },
+  {
+    id: "loc-rest",
+    name: "Restaurant",
+    type: "restaurant",
     active: true,
     createdAt: new Date(NOW),
     updatedAt: new Date(NOW),
@@ -83,9 +102,10 @@ describe("/admin/stock/opening — kit composition", () => {
 
   it("renders the numbered InstructionalBanner and the BulkEntryGrid", async () => {
     renderScreen();
+    // The banner title renders in both responsive branches (jsdom keeps both).
     expect(
-      await screen.findByText("Day 1 Opening Stock Count"),
-    ).toBeInTheDocument();
+      (await screen.findAllByText("Day 1 Opening Stock Count")).length,
+    ).toBeGreaterThan(0);
     expect(await screen.findByRole("grid")).toBeInTheDocument();
   });
 
@@ -97,9 +117,10 @@ describe("/admin/stock/opening — kit composition", () => {
     const cell = within(grid).getByLabelText("Beef Fillet — Store");
     await user.type(cell, "25");
 
-    const save = await screen.findByRole("button", {
-      name: /Save 1 Opening Count/,
-    });
+    // The desktop toolbar Save button (the mobile branch has its own).
+    const save = (
+      await screen.findAllByRole("button", { name: /Save 1 Opening Count/ })
+    )[0];
     await user.click(save);
 
     await waitFor(() => expect(api.setOpeningStock).toHaveBeenCalledOnce());
@@ -112,8 +133,122 @@ describe("/admin/stock/opening — kit composition", () => {
     renderScreen();
     const user = userEvent.setup();
     await screen.findByRole("grid");
-    await user.click(screen.getByRole("tab", { name: "Dishes" }));
-    // Beef Fillet is an ingredient — gone from the Dishes tab.
-    expect(screen.queryByText("Beef Fillet")).not.toBeInTheDocument();
+    await user.click(screen.getAllByRole("tab", { name: /^Kitchen Ingredients/ })[0]);
+    // Grilled Chicken is a dish — gone from the Ingredients tab.
+    expect(screen.queryByText("Grilled Chicken")).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase C2 — the `< --bp-md` stacked-card branch (artboards LIS-0 / LN4-0,
+// component-states.md §C26 "Mobile composition"). jsdom renders both responsive
+// branches into the DOM (CSS `display` is not computed), so mobile assertions
+// scope to the `data-testid="opening-mobile"` container.
+describe("/admin/stock/opening — mobile stacked-card branch", () => {
+  const mobile = () => screen.getByTestId("opening-mobile");
+
+  it("typing in a card input updates the row state and the live KES readout", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    const input = await within(mobile()).findByLabelText("Beef Fillet — Store");
+    await user.type(input, "25");
+    expect(input).toHaveValue("25");
+    // 25 × 580.00 = 14,500.00 — shown both in the 76px right-lane readout and,
+    // summed, in the consolidated valuation strip.
+    expect(
+      within(mobile()).getAllByText(/KES\s*14,500\.00/).length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("a rejected save shows the §9.8 helper row and marks the input invalid (aria-describedby)", async () => {
+    const { StockRequestError } = await vi.importActual<
+      typeof import("@/app/admin/stock/use-stock")
+    >("@/app/admin/stock/use-stock");
+    api.setOpeningStock.mockRejectedValueOnce(
+      new StockRequestError(400, {
+        code: "VALIDATION_ERROR",
+        message: "Enter a quantity of zero or more.",
+      }),
+    );
+
+    renderScreen();
+    const user = userEvent.setup();
+    const input = await within(mobile()).findByLabelText("Beef Fillet — Store");
+    await user.type(input, "25");
+    await user.click(
+      await within(mobile()).findByRole("button", {
+        name: "Save 1 Opening Count",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(input).toHaveAttribute("aria-invalid", "true"),
+    );
+    const describedBy = input.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(
+      /zero or more/i,
+    );
+  });
+
+  it("the sticky Save is disabled with 0 dirty and enabled + relabelled with N dirty", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    await within(mobile()).findByLabelText("Beef Fillet — Store");
+
+    const save = within(mobile()).getByRole("button", {
+      name: "Save Baseline & Initialize Day 1",
+    });
+    expect(save).toBeDisabled();
+
+    await user.type(
+      within(mobile()).getByLabelText("Beef Fillet — Store"),
+      "25",
+    );
+    const relabelled = await within(mobile()).findByRole("button", {
+      name: "Save 1 Opening Count",
+    });
+    expect(relabelled).toBeEnabled();
+  });
+
+  it("renders the kit EmptyState when the active category has no products", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    await within(mobile()).findByLabelText("Beef Fillet — Store");
+    // "Goods" tab — neither fixture product is a goods item.
+    await user.click(
+      within(mobile()).getByRole("tab", { name: "Goods" }),
+    );
+    expect(
+      within(mobile()).getByText("No items in this category"),
+    ).toBeInTheDocument();
+  });
+
+  it("renders 3 skeleton cards while the catalog is loading", async () => {
+    let resolveProducts: (v: unknown) => void = () => {};
+    api.listProducts.mockReturnValue(
+      new Promise((r) => {
+        resolveProducts = r;
+      }),
+    );
+    renderScreen();
+    // Before the fetch resolves: skeleton blocks, no card inputs.
+    await waitFor(() =>
+      expect(
+        mobile().querySelectorAll(".kit-skeleton").length,
+      ).toBeGreaterThanOrEqual(3),
+    );
+    expect(
+      within(mobile()).queryByLabelText("Beef Fillet — Store"),
+    ).not.toBeInTheDocument();
+    resolveProducts(PRODUCTS);
+    await within(mobile()).findByLabelText("Beef Fillet — Store");
+  });
+
+  it("shows Dish in the readout lane for a dish row and — before any count", async () => {
+    renderScreen();
+    await within(mobile()).findByLabelText("Beef Fillet — Store");
+    expect(within(mobile()).getByText("Dish")).toBeInTheDocument();
+    expect(within(mobile()).getAllByText("—").length).toBeGreaterThan(0);
   });
 });
