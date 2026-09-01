@@ -450,6 +450,47 @@ info treatment, distinct from C23's amber — §6 D6.)
 
 **Add:** one error-cell artboard.
 
+**Mobile composition (`Opening Stock — Mobile [M2-3DF]`, `LIS-0` + states
+`LN4-0`, added 2026-09-01).** `<BulkEntryGrid>` is desktop-only — its
+multi-column-per-location grid does not fit 390px. Below `--bp-md` the
+Opening Stock screen (`app/admin/stock/opening/opening-client.tsx`)
+**does not render `<BulkEntryGrid>`**; it composes a **stacked card list**
+from existing primitives — no kit change:
+
+- one **card per product**: name (`--text-body`/`--weight-medium`) +
+  right-aligned category label (`--color-info` ingredient /
+  `--color-warning` dish·goods, `--text-caption`); meta line
+  `{home location} · per {unit}` (`--text-sm`/`--text-secondary`).
+- one **input row** per card — only the product's **home-location**
+  column is editable on mobile (the desktop's other-location greyed
+  `0.0` cells are dropped): a `--text-tertiary` uppercase micro-label
+  `COUNT AT {LOCATION}`, then a 44px `.kit-field` (`inputmode="decimal"`,
+  mono value, trailing unit) that fills the row, then a fixed **76px
+  right-lane readout**: live `KES {value}` when the count parses and the
+  product has a buying price · `Dish` for a dish · `—` otherwise ·
+  `✓ Saved` (`--color-success`) / `↻ Corrected` (`--color-warning`)
+  after a save batch.
+- **cell states** map 1:1 to C26: default (placeholder `--text-disabled`),
+  editing (`.kit-field` `--color-accent` border + live readout), error
+  (§9.8 — `--color-danger` border + `--color-danger-bg` + a helper line
+  **below** the field, which a grid cell can't show — the mobile card
+  *gains* the §9.8 helper row that `6TT-0` documents as an exception),
+  saved, corrected.
+- **InstructionalBanner** (step 1) stacked; **category tabs** = the
+  `8Q4-0` horizontally-scrollable chip strip (`overflow-x:auto`,
+  `flex-shrink:0` per chip) — not kit `<Tabs>`; **consolidated
+  valuation** = the dark `--color-gray-900` strip stacked
+  (`CONSOLIDATED DAY 1 VALUATION` micro-label → wrapping `Raw stock … ·
+  Dishes …` → `Consolidated` in `--color-success`; muted until a count
+  is entered); **sticky bottom bar** (`8Q4-0` pattern): `Discard`
+  tertiary + full-width primary `Save {n} Opening Counts`, label →
+  `Save Baseline & Initialize Day 1` + `disabled` (§9.7) when nothing is
+  dirty.
+- states drawn: default / editing / live-value / saved / corrected /
+  error on `LIS-0`; **loading** (3 skeleton cards, §9.10) + **empty tab**
+  (kit `EmptyState`) on `LN4-0`. No Physical-Assets tab — matches the
+  shipped screen, not the desktop `7UD-0` artboard.
+
 ### C27 — Action-tile grid
 
 `6WD-0` + hubs. Tap target.
