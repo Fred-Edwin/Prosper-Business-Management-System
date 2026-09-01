@@ -48,6 +48,7 @@ import {
   type BatchLine,
 } from "../use-staff-stock";
 import { trimQty } from "../staff-stock-format";
+import { useCanteenProducts } from "@/app/canteen/use-canteen-products";
 import { FlowScaffold } from "./flow-scaffold";
 
 export type MovementMode =
@@ -81,8 +82,15 @@ type FlowConfig = {
   title: string;
   direction: string;
   tone: "success" | "danger" | "info" | "warning";
-  /** Which products the picker lists. */
-  productKinds: "non-dish" | "dish" | "all";
+  /** Which products the picker lists.
+   *  - "non-dish"      → ingredients + goods (into-the-kitchen / delivery flows)
+   *  - "dish"          → dishes only (production)
+   *  - "dish-or-goods" → sellable output: dishes + goods, never raw ingredients
+   *                       (SM → Canteen transfer)
+   *  - "all"           → the whole catalogue (write-offs)
+   *  - "canteen"       → the canteen-sellable set, fetched from
+   *                       GET /api/canteen/products (Canteen dispatch) */
+  productKinds: "non-dish" | "dish" | "dish-or-goods" | "all" | "canteen";
   searchPlaceholder: string;
   sectionLabel: string;
   /** `SelectableProductRow.availableLabelPrefix`. The kit only supports a
@@ -151,7 +159,9 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     title: "Transfer Stock",
     direction: "Store → …",
     tone: "info",
-    productKinds: "non-dish",
+    // The SM sends cooked dishes + sellable goods (sodas, snacks, packaged
+    // items) to the Canteen — never raw ingredients. FIX-1 FIX A.
+    productKinds: "dish-or-goods",
     searchPlaceholder: "Search sodas, goods, stock…",
     sectionLabel: "Select items to transfer",
     availPrefix: "Avail:",
@@ -165,6 +175,8 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     title: "Log Non-Sale",
     direction: "Staff meals & spoilage",
     tone: "warning",
+    // Anything at the Store can be written off — ingredients, dishes, goods
+    // (staff meals, spoilage, damage). FIX-1 FIX A (already "all"; kept).
     productKinds: "all",
     searchPlaceholder: "Search items to log…",
     sectionLabel: "Select items to log",
@@ -179,9 +191,10 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     title: "Transfer Stock",
     direction: "Canteen → …",
     tone: "info",
-    // A Canteen carries sodas / goods / snacks — in this data set some
-    // are modelled as `dish`. List everything the Canteen holds.
-    productKinds: "all",
+    // The Canteen Attendant can only dispatch what the Canteen actually
+    // sells — the canteen-sellable set (active ProductLocation at the
+    // canteen), from GET /api/canteen/products. FIX-1 FIX C.
+    productKinds: "canteen",
     searchPlaceholder: "Search sodas, goods, stock…",
     sectionLabel: "Select items to transfer",
     availPrefix: "Avail:",
@@ -212,7 +225,12 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   const cfg = FLOW_CONFIG[mode];
   const router = useRouter();
   const { toast } = useToast();
-  const { data, loading, error, refresh } = useStaffStock();
+  const {
+    data,
+    loading: stockLoading,
+    error: stockError,
+    refresh,
+  } = useStaffStock();
 
   // The staff member's own location, resolved from the flow's scope.
   const storeLocationId =
@@ -233,6 +251,21 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   // reads the Canteen; every other flow reads the Store.
   const balanceLocationId =
     mode === "production" ? restaurantLocationId : sourceLocationId;
+
+  // Canteen dispatch scopes its picker to the canteen-sellable set
+  // (GET /api/canteen/products); every other mode lists off `data.products`.
+  const isCanteenScoped = cfg.productKinds === "canteen";
+  const canteen = useCanteenProducts();
+  const canteenProductIds = React.useMemo(
+    () => new Set(canteen.products.map((p) => p.id)),
+    [canteen.products],
+  );
+  // The dispatch picker also waits on the canteen-products fetch: fold its
+  // loading / error into the screen's so it shows skeletons / <ErrorState>
+  // the same way, and never flashes an "empty" state mid-fetch.
+  const canteenLoading = isCanteenScoped && canteen.loading;
+  const loading = stockLoading || canteenLoading;
+  const error = stockError ?? (isCanteenScoped ? canteen.error : null);
 
   const { rows: levelRows } = useStockLevels(balanceLocationId || undefined);
   const availableById = React.useMemo(() => {
@@ -260,14 +293,24 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   // Products in scope for this flow.
   const flowProducts = React.useMemo(
     () =>
-      data.products.filter((p) =>
-        cfg.productKinds === "dish"
-          ? p.kind === "dish"
-          : cfg.productKinds === "non-dish"
-            ? p.kind !== "dish"
-            : true,
-      ),
-    [data.products, cfg.productKinds],
+      data.products.filter((p) => {
+        switch (cfg.productKinds) {
+          case "dish":
+            return p.kind === "dish";
+          case "non-dish":
+            return p.kind !== "dish";
+          case "dish-or-goods":
+            // Sellable output only — cooked dishes + shop goods, never raw
+            // ingredients (SM → Canteen transfer). FIX-1 FIX A.
+            return p.kind === "dish" || p.kind === "goods";
+          case "canteen":
+            // The canteen-sellable set, from GET /api/canteen/products.
+            return canteenProductIds.has(p.id);
+          default:
+            return true;
+        }
+      }),
+    [data.products, cfg.productKinds, canteenProductIds],
   );
 
   // Filtered / searched set that the row list renders.

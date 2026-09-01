@@ -86,6 +86,14 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
   };
 });
 
+// The shared picker calls useCanteenProducts() (GET /api/canteen/products)
+// for its dispatch mode only; SM modes ignore the result. Stub fetch so the
+// hook resolves cleanly in jsdom.
+vi.stubGlobal(
+  "fetch",
+  vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) }),
+);
+
 import { MovementPickerFlow } from "@/app/store-manager/flows/movement-picker-flow";
 
 function renderFlow(node: React.ReactNode) {
@@ -353,6 +361,24 @@ describe("SM — Record Batch Production", () => {
 
 // ── Transfer ────────────────────────────────────────────────────────
 describe("SM — Transfer Stock", () => {
+  // FIX-1 FIX A — the SM transfers sellable output to the Canteen: cooked
+  // dishes + shop goods, never raw ingredients.
+  it("product list includes goods + dishes and excludes raw ingredients", () => {
+    renderFlow(<MovementPickerFlow mode="transfer" />);
+    expect(
+      screen.getByRole("group", { name: /^Soda 300ml,/ }),
+    ).toBeInTheDocument(); // goods
+    expect(
+      screen.getByRole("group", { name: /^Grilled Chicken,/ }),
+    ).toBeInTheDocument(); // dish
+    expect(
+      screen.queryByRole("group", { name: /^Beef Fillet,/ }),
+    ).not.toBeInTheDocument(); // ingredient
+    expect(
+      screen.queryByRole("group", { name: /^Cooking Oil,/ }),
+    ).not.toBeInTheDocument(); // ingredient
+  });
+
   it("category tabs filter; destination Select feeds the batch + badge", async () => {
     renderFlow(<MovementPickerFlow mode="transfer" />);
     const user = userEvent.setup();

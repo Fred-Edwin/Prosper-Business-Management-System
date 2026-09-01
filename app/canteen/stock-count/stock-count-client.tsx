@@ -39,51 +39,7 @@ import {
   StockCountRequestError,
   type StockCountPreview,
 } from "../use-stock-count";
-
-// ── Canteen products hook ─────────────────────────────────────────────
-// Calls dedicated GET /api/canteen/products endpoint.
-
-type CanteenProduct = {
-  id: string;
-  name: string;
-  unitLabel: string;
-  category: string | null;
-  kind?: string;
-  sellingPrice?: string | null;
-  locationId?: string;
-};
-
-function useCanteenProducts() {
-  const [products, setProducts] = React.useState<CanteenProduct[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch("/api/canteen/products", {
-          headers: { "Content-Type": "application/json" },
-        });
-        const json = (await res.json()) as
-          | { data: CanteenProduct[] }
-          | { error: { message: string } };
-        if (!res.ok || "error" in json) {
-          setError(
-            "error" in json ? json.error.message : "Failed to load products.",
-          );
-          return;
-        }
-        setProducts(json.data);
-      } catch {
-        setError("Failed to load canteen products.");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  return { products, loading, error };
-}
+import { useCanteenProducts, type CanteenProduct } from "../use-canteen-products";
 
 // ── Display helpers ────────────────────────────────────────────────────
 

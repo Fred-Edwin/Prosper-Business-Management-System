@@ -455,4 +455,33 @@ describe("Canteen Derived tab", () => {
     await user.click(screen.getByRole("option", { name: "Product: Soda 300ml" }));
     expect(await screen.findByRole("button", { name: "Reset" })).toBeDefined();
   });
+
+  // FIX-1 FIX B — the Admin Sales product list carries NO product-kind cut:
+  // whatever has derived sales shows, ingredient-kind rows included. (The
+  // owner's "partial set" report couldn't be reproduced in the Sales files;
+  // this pins the no-filter behaviour so a regression can't sneak one in.)
+  it("Product filter lists every derived-sale product with no kind restriction (goods + ingredient)", async () => {
+    mockDerivedState = {
+      rows: [
+        DERIVED_SALE, // "Soda 300ml" — goods
+        {
+          ...DERIVED_SALE,
+          productId: "p-cooking-oil",
+          productName: "Cooking Oil 1L",
+          stockCountId: "count-oil",
+        },
+      ],
+      loading: false,
+      error: null,
+    };
+    const user = userEvent.setup();
+    renderSales("derived");
+    await user.click(screen.getByRole("combobox", { name: "Product" }));
+    expect(
+      screen.getByRole("option", { name: "Product: Soda 300ml" }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("option", { name: "Product: Cooking Oil 1L" }),
+    ).toBeDefined();
+  });
 });
