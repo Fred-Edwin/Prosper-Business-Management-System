@@ -14,20 +14,23 @@ async function main() {
   // `update` re-asserts `active: true` so a row a prior test flipped
   // inactive is healed on re-seed (`resolveRestaurantId` needs an ACTIVE
   // restaurant, else `POST /api/orders` fails "No active Restaurant …").
+  // `name` is re-asserted on `update` too: an early seed created these rows
+  // with the id string in `name` ("seed-location-restaurant"), which then
+  // rendered raw on /admin/stock. Re-seeding heals it.
   const [restaurant, canteen, store] = await Promise.all([
     prisma.location.upsert({
       where: { id: "seed-location-restaurant" },
-      update: { active: true },
+      update: { active: true, name: "Restaurant" },
       create: { id: "seed-location-restaurant", name: "Restaurant", type: "restaurant" },
     }),
     prisma.location.upsert({
       where: { id: "seed-location-canteen" },
-      update: { active: true },
+      update: { active: true, name: "Canteen" },
       create: { id: "seed-location-canteen", name: "Canteen", type: "canteen" },
     }),
     prisma.location.upsert({
       where: { id: "seed-location-store" },
-      update: { active: true },
+      update: { active: true, name: "Store" },
       create: { id: "seed-location-store", name: "Store", type: "store" },
     }),
   ]);
@@ -340,7 +343,30 @@ async function seedM2Sales({
     correctsOrderId?: string;
   }) {
     const existing = await prisma.order.findUnique({ where: { id: opts.id } });
-    if (existing) return existing;
+    if (existing) {
+      // Re-date on re-seed so the Admin Sales "Today" default and the
+      // Cashier same-day edit gate keep working on any later `pnpm dev`
+      // day — the order dates are relative to `now`, not fixed.
+      if (existing.occurredAt.getTime() !== opts.occurredAt.getTime()) {
+        await prisma.order.update({
+          where: { id: opts.id },
+          data: { occurredAt: opts.occurredAt },
+        });
+        await prisma.stockMovement.updateMany({
+          where: { orderId: opts.id },
+          data: { occurredAt: opts.occurredAt },
+        });
+        await prisma.moneyMovement.updateMany({
+          where: { sourceType: "order", sourceId: opts.id },
+          data: { occurredAt: opts.occurredAt },
+        });
+        await prisma.debt.updateMany({
+          where: { orderId: opts.id },
+          data: { occurredAt: opts.occurredAt },
+        });
+      }
+      return existing;
+    }
 
     const lineData = opts.lines.map((l) => {
       const spec = menu.find((m) => m.key === l.key)!;
