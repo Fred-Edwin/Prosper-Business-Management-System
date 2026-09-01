@@ -185,8 +185,14 @@ function SelectChip({
     label: `${control.label}: ${o.label}`,
   }));
 
+  // The kit <Select> (no visible label) leaves its combobox button unnamed —
+  // `role="combobox"` doesn't take its name from child text. Wrap it in a
+  // labelled group so the control is still announced ("Cashier", "Payment")
+  // without adding the visible label the IEA-0 toolbar doesn't have.
   return (
     <div
+      role="group"
+      aria-label={control.label}
       className={
         off
           ? "shrink-0 [&_button[role=combobox]]:font-(--weight-medium) [&_button[role=combobox]_span]:[color:var(--text-primary)]"
@@ -194,7 +200,6 @@ function SelectChip({
       }
     >
       <Select
-        aria-label={control.label}
         options={prefixed}
         value={control.value}
         onChange={onChange}

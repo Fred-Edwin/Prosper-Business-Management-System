@@ -7,9 +7,9 @@ import { AdminShell, ADMIN_NAV_ITEMS } from "@/components/shells/admin-shell";
 import { MobileShellAdmin } from "@/components/shells/mobile-shell-admin";
 import { ToastProvider } from "@/components/kit/toast";
 
-// Resolve the active nav key by longest matching href prefix — most items sit
-// at /admin/<key>, but a few (e.g. Derived sales → /admin/canteen/derived-sales)
-// don't, so a bare first-segment match isn't enough. "/admin" itself → dashboard.
+// Resolve the active nav key by longest matching href prefix — items sit at
+// /admin/<key> and a nested route still lights its top-level item, so a bare
+// first-segment match isn't enough. "/admin" itself → dashboard.
 function activeNavKeyFromPathname(pathname: string): string {
   let best = "dashboard";
   let bestLen = -1;

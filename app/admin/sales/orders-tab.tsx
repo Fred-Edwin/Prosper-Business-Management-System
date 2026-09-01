@@ -363,13 +363,15 @@ export function OrdersTab() {
             : {})}
         />
       ) : (
+        // NOTE (QA delta): Paper GCP-0 tints the correction row
+        // (bg-(--surface-subtle) + left accent bar) as a linked pair with its
+        // original. `SimpleTable` has no per-row styling hook and the kit is
+        // frozen this session, so the tint is deferred — the "Corrected" /
+        // "Correction of #N" status text still ties the pair. Flagged for QA.
         <SimpleTable
           columns={columns}
           rows={visibleOrders}
           rowKey={(o) => o.id}
-          rowClassName={(o) =>
-            o.correctsOrderId !== null ? "bg-(--surface-subtle)" : undefined
-          }
           onRowClick={(o) => setDrawer({ kind: "detail", order: o })}
           rowChevron
           className="w-full"

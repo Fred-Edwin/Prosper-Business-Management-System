@@ -29,6 +29,78 @@ Domain Gap-Fixes G1–G4 + final gates). Ready for Session 7 (QA). S1a + S3 + S4
 Merge order to `main`: the whole M2 chain → 6a → 6b → 6c → 6d → 6e → S7 (one
 PR after QA, mirroring how M1 landed).
 
+### 2026-09-01 — M2 Session 3a: Admin merged "Sales" screen + F7-4 + F7-8 (Developer) — DONE
+
+Post-QA batch-3 session (orchestrator-tracked, `feat/m2-3a-sales` off
+`qa/m2-session-7`). Merged the Admin's two separate screens —
+`/admin/orders` (A3) and `/admin/canteen/derived-sales` (A4) — into one
+tabbed **`/admin/sales`** screen.
+
+- **Route + nav.** New `app/admin/sales/` — `page.tsx` (server, resolves
+  `?tab=`) + `sales-client.tsx` (kit `<Tabs>` underline; deep-link via
+  `router.replace`; initial tab from `?tab=derived`). `orders-tab.tsx`
+  (A3 content) + `derived-tab.tsx` (A4 content). Old route dirs deleted;
+  `next.config.ts` `redirects()` 308s `/admin/orders` → `/admin/sales`
+  and `/admin/canteen/derived-sales` → `/admin/sales?tab=derived`. The
+  separate "Derived sales" nav link removed from `admin-shell.tsx` +
+  `mobile-nav-drawer.tsx`; one "Sales" → `/admin/sales`.
+- **Filter toolbar** (`filter-toolbar.tsx`, screen-level, Paper `IEA-0`).
+  Composed from proven primitives (kit `<Select>` in a labelled `role=
+  group` wrapper, a native `<input type=date>` popover, a native
+  checkbox). Orders tab: Cashier · Date · Payment · Corrected-only.
+  Derived tab: Product · Date. Right-aligned result count + a **Reset**
+  link shown only when a control is off its default. Value display
+  load-bearing (default = `--text-secondary`/regular; off-default =
+  `--text-primary`/medium). Mobile: controls scroll horizontally, count
+  + Reset drop to their own row. **Session 3e** retrofits this onto the
+  shared `FilterToolbar` kit component (now on a separate branch).
+- **F7-8 — Cashier / Payment pickers wired.** Payment → sets
+  `filter.paymentMethod`, re-queries. **Cashier list source decision:**
+  no `/api/staff` in M2, so the Cashier options are **derived from the
+  loaded orders** (distinct `cashierId` + `cashierName`, kept in a
+  sticky map so a narrowed result set doesn't drop the active option) —
+  zero new API, per the orchestrator's pre-approved choice.
+- **F7-4 — full corrected-order form** (`correction-form.tsx`). The
+  Admin now restates the whole order: line list with `QuantityStepper`
+  + remove + a searchable **add-product** row (kit `<Select searchable>`
+  over the Restaurant menu via `useRestaurantProducts`), order-type +
+  payment-method `<SegmentedControl>`s, a delivery-fee `<TextInput>`
+  (Delivery only), a customer-attach `<Select searchable>` when payment
+  = Credit (submit blocked until a customer is attached, parity with
+  C3), required Reason `<Textarea>`. `CalculatedImpactBanner` recomputed
+  against the exact request inputs; credit deltas labelled **"Customer
+  debt"** (extends the F7-5 fix); payment-method changes show both the
+  reversed original channel and the new one. Wired to `correctOrder`
+  via the shared `use-orders` hook. The domain `validateOrder` stays
+  the gate (delivery-fee-only-on-delivery, credit⇒customerId, §3.8 stock
+  BLOCK); server errors surface inline.
+- **Gate.** `tests/screens/admin-sales.screen.test.tsx` (22 tests) —
+  folds in the old `admin-orders` + `canteen-derived-sales` specs and
+  adds tab switch + deep-link, the working Payment/Cashier/Product
+  filters, F7-4 (credit→cash saves + banner says "Customer debt";
+  credit-no-customer disables submit; add-a-line), no-margin assertions.
+  Old two specs deleted. `pnpm test` **460/460**, `pnpm tsc --noEmit`
+  **0**, `pnpm build` clean (`/admin/sales` registers; old routes 308).
+  `grep TODO(mock) app/admin/sales` clean.
+- **Screenshot-diff deltas logged for QA:**
+  1. **Correction form vs `G4I-0`** — the artboard still draws the
+     pre-3a quantity-only drawer; 3a builds the fuller F7-4 form the
+     flow docs specify (`customers-credit-flow.md` §G step 3 /
+     `restaurant-sales-flow.md` §E). Expected per the 3a brief §3.4.
+  2. **Linked correction row-group tint (`GCP-0`)** — the correction
+     row's `bg-(--surface-subtle)` + left accent bar is **not** applied;
+     `SimpleTable` has no per-row style hook and the kit is frozen this
+     session. The "Corrected" / "Correction of #N" status text still
+     ties the pair. (This tint was dead code in the shipped A3 too — the
+     const was defined but never passed.)
+  3. **Mobile toolbar** — the controls scroll horizontally rather than
+     collapsing secondary ones into a **"More"** chip (`IJ1-0`).
+     Functionally equivalent; all controls reachable.
+  4. **Date control** — a native `<input type=date>` in a small popover
+     (the shipped A4 pattern), not the kit `DatePicker` calendar. The
+     "Today" default already worked (F7-8); kept working.
+- **Owner walkthrough:** owed (Admin).
+
 ### 2026-08-30 — M2 Session 6e: Gap-Fix Sprint — Domain & API Hydration (Developer) — DONE
 
 Development Sprint (Gap-Fixes before QA). Resolved all 4 domain/API gaps (G1–G4) identified during design review:
