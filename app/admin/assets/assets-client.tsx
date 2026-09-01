@@ -24,6 +24,7 @@ import {
 } from "@/components/kit/simple-table";
 import { ConditionChip } from "@/components/kit/condition-chip";
 import { StatusChip } from "@/components/kit/status-chip";
+import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
 import { Button } from "@/components/kit/button";
 import { useToast } from "@/components/kit/toast";
@@ -59,6 +60,15 @@ const CONDITION_FILTERS: { key: string; label: string; value?: AssetCondition }[
   { key: "all", label: "All conditions", value: undefined },
   ...ASSET_CONDITIONS.map((c) => ({ key: c, label: c, value: c })),
 ];
+
+// Semantic tone per condition — for the mobile stacked-row status line and the
+// dark total-register strip (artboard J6D-0: Good=success, Needs Repair=warning,
+// Decommissioned=danger).
+const CONDITION_TONE: Record<AssetCondition, string> = {
+  Good: "text-success",
+  "Needs Repair": "text-warning",
+  Decommissioned: "text-danger",
+};
 
 const ASSET_TABS = [
   { key: "active", label: "All", archived: false },
@@ -128,6 +138,29 @@ export function AssetsClient() {
     visibleAssets.length === 1 ? "" : "s"
   }`;
   const filtered = search.trim() !== "" || activeConditionFilter.value != null;
+
+  // Dark total-register strip on mobile (artboard J6D-0) — a derived summary
+  // over the currently-visible rows: condition breakdown + total cost basis.
+  const register = React.useMemo(() => {
+    const byCondition: Record<AssetCondition, number> = {
+      Good: 0,
+      "Needs Repair": 0,
+      Decommissioned: 0,
+    };
+    let costTotal = 0;
+    for (const a of visibleAssets) {
+      byCondition[a.condition] += 1;
+      const n = Number(a.purchaseCost);
+      if (Number.isFinite(n)) costTotal += n;
+    }
+    return {
+      byCondition,
+      costTotal: costTotal.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }),
+    };
+  }, [visibleAssets]);
 
   function clearFilters() {
     setSearch("");
@@ -296,40 +329,85 @@ export function AssetsClient() {
               />
             </div>
 
-            {/* Mobile card list */}
+            {/* ── Mobile stacked-row list (artboard J6D-0) ── */}
+            {/* Table → stacked rows: name + cost / meta line ({location} ·
+                {date}) / `• {condition}` status + Edit. Then a dark
+                total-register strip. NOTE: the artboard also draws a
+                category tab strip — Asset has no `category` in the schema
+                (ADR-44 rejected it for desktop for the same reason), so the
+                existing Active/Archived + Condition + Search filter model
+                stands. Divergence logged for QA. */}
             <div className="flex md:hidden flex-col [width:100%]">
               {loading && visibleAssets.length === 0 ? (
-                <div className="font-ui [color:var(--text-tertiary)] text-body/sm py-(--sp-4)">
-                  Loading…
+                <div className="flex flex-col [width:100%]">
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="flex flex-col p-(--sp-5) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
+                    >
+                      <div className="kit-skeleton h-[14px] w-2/3 rounded-sm" />
+                      <div className="kit-skeleton h-[12px] w-3/4 rounded-sm" />
+                      <div className="kit-skeleton h-[12px] w-1/3 rounded-sm" />
+                    </div>
+                  ))}
                 </div>
               ) : visibleAssets.length === 0 ? (
-                <div className="font-ui [color:var(--text-tertiary)] text-body/sm py-(--sp-4)">
-                  {filtered
-                    ? "No assets match these filters."
-                    : "No assets registered yet."}
-                </div>
+                <EmptyState
+                  variant={filtered ? "filtered" : "default"}
+                  title={
+                    filtered
+                      ? "No assets match these filters"
+                      : activeTab.archived
+                        ? "No archived assets"
+                        : "No assets registered"
+                  }
+                  description={
+                    filtered
+                      ? "Try a different search term or condition, or clear the filters."
+                      : activeTab.archived
+                        ? "Assets you archive will appear here."
+                        : "Register the business's physical equipment to track its cost basis and condition."
+                  }
+                  actionLabel={
+                    filtered
+                      ? "Clear filters"
+                      : activeTab.archived
+                        ? undefined
+                        : "Register new asset"
+                  }
+                  onAction={
+                    filtered
+                      ? clearFilters
+                      : activeTab.archived
+                        ? undefined
+                        : openCreate
+                  }
+                />
               ) : (
-                visibleAssets.map((card) => (
-                  <div
-                    key={card.id}
-                    className="flex flex-col [width:100%] py-(--sp-4) gap-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
-                  >
-                    <div className="flex items-start justify-between [width:100%]">
-                      <div className="flex flex-col gap-[2px]">
-                        <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h2/h2">
+                <>
+                  {visibleAssets.map((card) => (
+                    <div
+                      key={card.id}
+                      className="flex flex-col p-(--sp-5) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
+                    >
+                      <div className="flex items-baseline gap-(--sp-4)">
+                        <div className="font-ui font-(--weight-medium) grow [color:var(--text-primary)] text-body/body">
                           {card.name}
                         </div>
-                        <div className="flex items-center gap-[4px]">
-                          <div className="font-ui [color:var(--text-secondary)] text-sm/micro">
-                            {card.locationName}
-                          </div>
-                          <ConditionChip condition={card.condition} />
-                          {card.deletedAt && (
-                            <StatusChip variant="neutral">Archived</StatusChip>
-                          )}
+                        <div className="font-mono font-(--weight-semibold) shrink-0 [color:var(--text-primary)] text-body/body">
+                          KES {groupThousands(card.purchaseCost)}
                         </div>
                       </div>
-                      <div className="flex items-center gap-(--sp-3)">
+                      <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
+                        {card.locationName} · {displayDate(card.purchaseDate)}
+                        {card.deletedAt ? " · Archived" : ""}
+                      </div>
+                      <div className="flex items-center gap-(--sp-4)">
+                        <div
+                          className={`font-ui grow ${CONDITION_TONE[card.condition]} text-caption/micro`}
+                        >
+                          • {card.condition}
+                        </div>
                         {activeTab.archived ? (
                           <button
                             type="button"
@@ -349,27 +427,35 @@ export function AssetsClient() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center [width:100%] rounded-sm [background-color:var(--surface-subtle)]">
-                      <div className="flex flex-col grow p-(--sp-4) gap-[2px]">
-                        <div className="font-ui text-micro uppercase leading-[14px] [color:var(--text-tertiary)]">
-                          Purchased
-                        </div>
-                        <div className="font-mono font-(--weight-medium) w-max text-sm/micro [color:var(--text-primary)]">
-                          {displayDate(card.purchaseDate)}
-                        </div>
+                  ))}
+
+                  {/* Dark total-register strip (J6D-0) */}
+                  <div className="flex flex-col p-(--sp-5) gap-(--sp-2) mt-(--sp-4) [background-color:var(--nav-bg)]">
+                    <div className="font-ui uppercase [letter-spacing:var(--tracking-caps)] text-(--nav-text-label) text-micro/micro">
+                      {activeTab.archived ? "Archived register" : "Total active register"}{" "}
+                      ({count})
+                    </div>
+                    <div className="flex items-baseline flex-wrap gap-(--sp-4)">
+                      <div className="font-ui text-success text-caption/micro">
+                        Good {register.byCondition.Good}
                       </div>
-                      <div className="w-px self-stretch shrink-0 [background-color:var(--border-subtle)]" />
-                      <div className="flex flex-col grow p-(--sp-4) gap-[2px]">
-                        <div className="font-ui text-micro uppercase leading-[14px] [color:var(--text-tertiary)]">
-                          Cost Basis (KES)
-                        </div>
-                        <div className="font-mono font-(--weight-medium) w-max text-sm/micro [color:var(--text-primary)]">
-                          {groupThousands(card.purchaseCost)}
-                        </div>
+                      <div className="font-ui text-warning text-caption/micro">
+                        Needs Repair {register.byCondition["Needs Repair"]}
+                      </div>
+                      <div className="font-ui text-danger text-caption/micro">
+                        Decommissioned {register.byCondition.Decommissioned}
+                      </div>
+                    </div>
+                    <div className="flex items-baseline gap-(--sp-3)">
+                      <div className="font-ui text-(--nav-text-subtle) text-sm/micro">
+                        Total cost basis
+                      </div>
+                      <div className="font-mono font-(--weight-semibold) text-success text-body/sm">
+                        KES {register.costTotal}
                       </div>
                     </div>
                   </div>
-                ))
+                </>
               )}
             </div>
           </>

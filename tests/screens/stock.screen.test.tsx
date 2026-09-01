@@ -177,3 +177,93 @@ describe("/admin/stock — kit composition", () => {
     expect(await screen.findByText("Correction saved")).toBeInTheDocument();
   });
 });
+
+// ── Mobile branch (Session 3b — artboard 8Q4-0) ───────────────────────────
+// jsdom applies no media queries, so both `hidden md:flex` (desktop) and
+// `flex md:hidden` (mobile) render. `mobile()` scopes to the mobile branch.
+function mobile(): HTMLElement {
+  const node = document.querySelector<HTMLElement>(".md\\:hidden.flex-col.grow");
+  if (!node) throw new Error("mobile branch not found");
+  return node;
+}
+
+describe("/admin/stock — mobile branch", () => {
+  it("shows the dark KPI strip, unwired (— / M3)", () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    const m = within(mobile());
+    expect(m.getByText("Stock on Hand (Total)")).toBeInTheDocument();
+    expect(m.getByText("Today's Sold Value")).toBeInTheDocument();
+    expect(m.getAllByText("M3").length).toBe(2);
+  });
+
+  it("shows a 'KES —' sub-line under each row's closing quantity (M3-unwired)", () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    expect(within(mobile()).getAllByText("KES —").length).toBeGreaterThan(0);
+  });
+
+  it("shows skeleton rows while loading (not a bare 'Loading…' line)", () => {
+    hook.loading = true;
+    rowsBox.rows = [];
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    const m = mobile();
+    expect(m.querySelectorAll(".kit-skeleton").length).toBeGreaterThanOrEqual(3);
+    expect(within(m).queryByText("Loading…")).not.toBeInTheDocument();
+  });
+
+  it("shows a plain <EmptyState> (not a bare text line) when the day has no movements", () => {
+    hook.loading = false;
+    rowsBox.rows = [];
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    expect(within(mobile()).getByText("No movements this day")).toBeInTheDocument();
+  });
+
+  it("renders a stacked row with short chip labels and an 'Adjust' button", () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    const m = within(mobile());
+    expect(m.getByText("Beef Fillet (kg)")).toBeInTheDocument();
+    expect(m.getByText("+50.0 Purch")).toBeInTheDocument();
+    expect(m.getByRole("button", { name: "Adjust" })).toBeInTheDocument();
+  });
+
+  it("'Adjust' on a single-movement row opens the correction Drawer", async () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(within(mobile()).getByRole("button", { name: "Adjust" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Adjust Row Movements")).toBeInTheDocument();
+  });
+
+  it("has a sticky bottom bar with an 'Opening Stock' link", () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    const link = within(mobile()).getByRole("link", { name: "Opening Stock" });
+    expect(link).toHaveAttribute("href", "/admin/stock/opening");
+  });
+});
