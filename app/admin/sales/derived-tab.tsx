@@ -4,7 +4,8 @@
 // app/admin/canteen/derived-sales/derived-sales-client.tsx).
 //
 // COMPOSED from the proven kit — no kit change:
-//   • <SalesFilterToolbar> — Product · Date (its existing two filters)
+//   • <FilterToolbar> (shared kit component) — Product · Date
+//     — 3e retrofit off 3a's inline toolbar onto the proven component.
 //   • <SimpleTable> — Product · Last counted · Period covered · Units sold
 //     (right) · Revenue (right). No row chevron — read-only, no drawer.
 //   • <EmptyState> / <ErrorState>
@@ -18,7 +19,7 @@ import { ErrorState } from "@/components/kit/error-state";
 import { useDerivedSales } from "@/app/canteen/use-stock-count";
 import type { DerivedSaleView } from "@/lib/domain/sales";
 import { nairobiBusinessDate } from "@/app/cashier/use-orders";
-import { SalesFilterToolbar, type FilterControl } from "./filter-toolbar";
+import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
 
 // ── Display helpers ────────────────────────────────────────────────────
 
@@ -26,6 +27,16 @@ function fmtMoney(amount: string): string {
   const n = Number(amount);
   if (!Number.isFinite(n)) return amount;
   return `KES ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+}
+
+/** `YYYY-MM-DD` → "Aug 26" for the date-control label. */
+function fmtDayMon(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
 /** ISO → "Thu 28 Aug" in Africa/Nairobi */
@@ -92,17 +103,20 @@ export function DerivedTab() {
     {
       id: "date",
       kind: "date",
+      // Display string; null → "All dates" is the default. The screen owns
+      // the string↔YYYY-MM-DD map (kit kind:"date" carries a label only).
       label: "Date",
-      value: dateFilter,
-      default: null,
-      defaultLabel: "All dates",
-      today: nairobiBusinessDate(),
+      value: dateFilter === null ? "All dates" : fmtDayMon(dateFilter),
+      default: "All dates",
     },
   ];
 
-  function onControlChange(id: string, value: string | null) {
-    if (id === "product") setProductFilter(value ?? ALL);
-    else if (id === "date") setDateFilter(value);
+  function onControlChange(id: string, value: string | boolean | null) {
+    if (id === "product") setProductFilter(value == null ? ALL : String(value));
+    else if (id === "date")
+      setDateFilter(
+        value === "All dates" || value == null ? null : String(value),
+      );
   }
 
   function resetFilters() {
@@ -173,12 +187,13 @@ export function DerivedTab() {
 
   return (
     <div className="flex flex-col w-full pt-(--sp-6)">
-      <SalesFilterToolbar
+      <FilterToolbar
+        aria-label="Filter derived sales"
         controls={controls}
         onChange={onControlChange}
         onReset={resetFilters}
         resultCount={rows.length}
-        resultNoun="products"
+        resultNoun="sales"
       />
 
       {error ? (

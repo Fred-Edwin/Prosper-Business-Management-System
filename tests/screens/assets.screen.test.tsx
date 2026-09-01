@@ -112,6 +112,35 @@ describe("/admin/assets — kit composition", () => {
     ).toBeInTheDocument();
   });
 
+  it("filter row: the shared <FilterToolbar> carries the search slot + Location/Condition selects at their defaults; a select change re-queries and shows Reset which clears it", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    const toolbar = within(
+      screen.getAllByRole("search", { name: "Filter assets" })[0],
+    );
+    expect(
+      toolbar.getByRole("searchbox", { name: "Search assets" }),
+    ).toBeInTheDocument();
+    expect(
+      toolbar.getByRole("combobox", { name: "Location" }),
+    ).toBeInTheDocument();
+    expect(
+      toolbar.queryByRole("button", { name: "Reset" }),
+    ).not.toBeInTheDocument();
+
+    // Change Condition off its default → Reset appears.
+    await user.click(toolbar.getByRole("combobox", { name: "Condition" }));
+    await user.click(
+      screen.getByRole("option", { name: "Condition: Needs Repair" }),
+    );
+    const reset = await toolbar.findByRole("button", { name: "Reset" });
+
+    await user.click(reset);
+    expect(
+      toolbar.queryByRole("button", { name: "Reset" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens the create Drawer, traps focus, and restores focus to the opener on Esc", async () => {
     renderScreen();
     const user = userEvent.setup();

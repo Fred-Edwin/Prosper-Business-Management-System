@@ -1,20 +1,22 @@
 // Session 11 rebuild — COMPOSED from the kit, no longer a transcription of Paper
 // artboards 798-0 (desktop ledger) / 7LJ-0 (correction drawer) / 8Q4-0 (mobile).
-// Assembled from <PageShell wide> + <PillFilter> + <DatePicker> (real-calendar
-// selected/onSelect) + <DenseLedger showLocation horizontalScroll onCellClick
-// loading> + <EmptyState variant="filtered"> / <ErrorState> + the rail <Drawer>
+// Assembled from <PageShell wide> + <FilterToolbar> (Location · Category · Date
+// — 3e retrofit off the old <PillFilter> location switch, per LDZ-0) +
+// <DenseLedger showLocation horizontalScroll onCellClick loading> +
+// <EmptyState variant="filtered"> / <ErrorState> + the rail <Drawer>
 // correction flow + <Toast>.
 //
-// The data path is unchanged: date + location-tab state, useLedger, the derived
+// The data path is unchanged: date + location state, useLedger, the derived
 // 11 columns via deriveLedgerRows, the >1-movement-per-cell FLAG, and the
-// correction-drawer orchestration are verbatim. The shell "Maximize" collapse is
-// AdminShell's `collapsed` prop (admin-shell-client.tsx, ADR-36b), not this file.
+// correction-drawer orchestration are verbatim. Category is a client-side
+// filter over the derived rows (product.category), no new API. The shell
+// "Maximize" collapse is AdminShell's `collapsed` prop (admin-shell-client.tsx,
+// ADR-36b), not this file.
 "use client";
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
-import { PillFilter } from "@/components/kit/pill-filter";
-import { DatePicker } from "@/components/kit/date-picker";
+import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
 import { DenseLedger } from "@/components/kit/dense-ledger";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
@@ -60,25 +62,21 @@ function shortDate(businessDate: string): string {
   });
 }
 
-function longDate(businessDate: string): string {
-  const d = new Date(`${businessDate}T00:00:00Z`);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
 function unitOf(productLabel: string): string {
   const m = productLabel.match(/\(([^)]+)\)\s*$/);
   return m ? m[1] : "units";
 }
 
+const ALL = "__all__";
+
 export function StockClient() {
   const today = toBusinessDate(new Date());
   const [date, setDate] = React.useState(today);
-  const [activeTab, setActiveTab] = React.useState<string>("all");
+  // Location scope — re-fetched server-side by useLedger. "__all__" = every
+  // location. (Was a <PillFilter>; now a FilterToolbar select, LDZ-0.)
+  const [locationId, setLocationId] = React.useState<string>(ALL);
+  // Category — a client-side cut over the derived rows (product.category).
+  const [category, setCategory] = React.useState<string>(ALL);
   const [drawerTarget, setDrawerTarget] = React.useState<CorrectionTarget | null>(
     null,
   );
@@ -86,29 +84,95 @@ export function StockClient() {
 
   const { data, loading, error, refresh } = useLedger(
     date,
-    activeTab === "all" ? undefined : activeTab,
+    locationId === ALL ? undefined : locationId,
   );
 
-  // Location pill-tabs: "All (n)" + one per location, keyed by location id.
-  const locationTabs = React.useMemo(
-    () => [
-      { key: "all", label: `All (${data.locations.length})` },
-      ...data.locations.map((l) => ({ key: l.id, label: l.name })),
-    ],
-    [data.locations],
-  );
-
-  const { rows, totals, cellMovements } = React.useMemo(
+  const { rows: allRows, totals, cellMovements } = React.useMemo(
     () =>
       deriveLedgerRows({
         movements: data.movements,
         priorClosing: data.priorClosing,
         products: data.products,
         locations: data.locations,
-        locationId: activeTab === "all" ? undefined : activeTab,
+        locationId: locationId === ALL ? undefined : locationId,
       }),
-    [data, activeTab],
+    [data, locationId],
   );
+
+  // productId → category, for the client-side Category filter + its options.
+  const categoryByProduct = React.useMemo(() => {
+    const m = new Map<string, string | null>();
+    for (const p of data.products) m.set(p.id, p.category);
+    return m;
+  }, [data.products]);
+
+  const categoryOptions = React.useMemo(() => {
+    const seen = new Set<string>();
+    for (const r of allRows) {
+      const cat = categoryByProduct.get(r.id.split("@")[0]) ?? null;
+      if (cat) seen.add(cat);
+    }
+    return [
+      { value: ALL, label: "All" },
+      ...[...seen].sort((a, b) => a.localeCompare(b)).map((c) => ({ value: c, label: c })),
+    ];
+  }, [allRows, categoryByProduct]);
+
+  const rows = React.useMemo(() => {
+    if (category === ALL) return allRows;
+    return allRows.filter(
+      (r) => (categoryByProduct.get(r.id.split("@")[0]) ?? null) === category,
+    );
+  }, [allRows, category, categoryByProduct]);
+
+  // Date-control display label ("Aug 24"), per LDZ-0.
+  const dateLabel = shortDate(date);
+
+  const filterControls: FilterControl[] = [
+    {
+      id: "location",
+      kind: "select",
+      label: "Location",
+      options: [
+        { value: ALL, label: "All" },
+        ...data.locations.map((l) => ({ value: l.id, label: l.name })),
+      ],
+      value: locationId,
+      default: ALL,
+    },
+    {
+      id: "category",
+      kind: "select",
+      label: "Category",
+      options: categoryOptions,
+      value: category,
+      default: ALL,
+    },
+    {
+      id: "date",
+      kind: "date",
+      label: "Date",
+      value: dateLabel,
+      // Default = the business day; off-default once another day is picked.
+      default: shortDate(today),
+    },
+  ];
+
+  function onFilterChange(id: string, value: string | boolean | null) {
+    if (id === "location") setLocationId(value == null ? ALL : String(value));
+    else if (id === "category") setCategory(value == null ? ALL : String(value));
+    else if (id === "date" && typeof value === "string") {
+      // The kit reports a picked day as "YYYY-MM-DD"; Reset reports the
+      // default label. Anything that isn't a YYYY-MM-DD resets to today.
+      setDate(/^\d{4}-\d{2}-\d{2}$/.test(value) ? value : today);
+    }
+  }
+
+  function resetFilters() {
+    setLocationId(ALL);
+    setCategory(ALL);
+    setDate(today);
+  }
 
   function onCellClick(rowId: string, columnKey: string) {
     setCellNote(null);
@@ -128,16 +192,16 @@ export function StockClient() {
     const movement = data.movements.find((m) => m.id === ids[0]);
     if (!movement) return;
 
-    const [productId, locationId] = rowId.split("@");
+    const [productId, rowLocationId] = rowId.split("@");
     const product = data.products.find((p) => p.id === productId);
-    const location = data.locations.find((l) => l.id === locationId);
+    const location = data.locations.find((l) => l.id === rowLocationId);
     const productLabel = product
       ? `${product.name} (${product.unitLabel})`
       : productId;
 
     setDrawerTarget({
       movement,
-      subtitle: `${location?.name ?? locationId} · ${productLabel} · ${shortDate(
+      subtitle: `${location?.name ?? rowLocationId} · ${productLabel} · ${shortDate(
         date,
       )}`,
       fieldLabel: COLUMN_LABEL[columnKey] ?? columnKey,
@@ -168,7 +232,8 @@ export function StockClient() {
     );
   }
 
-  const filtered = activeTab !== "all";
+  const filtered =
+    locationId !== ALL || category !== ALL || date !== today;
   const noRows = !loading && !error && rows.length === 0;
 
   return (
@@ -180,33 +245,29 @@ export function StockClient() {
             Stock &amp; Reconciliation
           </div>
           <div className="grow" />
-          <div className="flex items-center shrink-0 gap-(--sp-4)">
-            <DatePicker
-              value={longDate(date)}
-              selected={new Date(`${date}T00:00:00`)}
-              onSelect={(d) => setDate(toBusinessDate(d))}
-              maxDate={new Date()}
-            />
-            <a
-              href="/admin/stock/opening"
-              className="flex items-center h-(--control-md) px-(--sp-6) rounded-sm bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-interactive kit-focus-ring"
-            >
-              <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-primary)] text-body/body">
-                Opening Stock
-              </span>
-            </a>
-          </div>
+          {/* Date moved into the FilterToolbar below (LDZ-0). "Opening Stock"
+              stays here — it's an action, not a filter. */}
+          <a
+            href="/admin/stock/opening"
+            className="flex items-center h-(--control-md) shrink-0 px-(--sp-6) rounded-sm bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-interactive kit-focus-ring"
+          >
+            <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-primary)] text-body/body">
+              Opening Stock
+            </span>
+          </a>
         </>
       }
     >
       {/* ───────── Desktop ledger ───────── */}
       <div className="hidden md:flex flex-col grow gap-(--sp-8) min-w-0">
-        <div className="flex items-center justify-between [width:100%] shrink-0">
-          <PillFilter
-            options={locationTabs}
-            activeKey={activeTab}
-            onChange={setActiveTab}
-            aria-label="Filter by location"
+        <div className="[width:100%] shrink-0">
+          <FilterToolbar
+            aria-label="Filter the stock ledger"
+            controls={filterControls}
+            onChange={onFilterChange}
+            onReset={resetFilters}
+            resultCount={rows.length}
+            resultNoun="rows"
           />
         </div>
 
@@ -226,9 +287,9 @@ export function StockClient() {
           <EmptyState
             variant="filtered"
             title="No stock movements for this filter"
-            description="No movements at this location for the selected day. Try another location or clear the filter."
-            actionLabel="Clear filter"
-            onAction={() => setActiveTab("all")}
+            description="No movements match the current filters for the selected day. Try another location or category, or reset."
+            actionLabel="Reset filters"
+            onAction={resetFilters}
           />
         ) : (
           <div className="[width:100%] max-w-full overflow-x-auto">
@@ -284,12 +345,16 @@ export function StockClient() {
           </div>
         </div>
 
-        <div className="flex items-center [width:100%] overflow-x-auto shrink-0 mb-(--sp-5)">
-          <PillFilter
-            options={locationTabs}
-            activeKey={activeTab}
-            onChange={setActiveTab}
-            aria-label="Filter by location"
+        {/* The kit FilterToolbar renders its own < --bp-md chip-scroller +
+            count/Reset row (LDZ-0 mobile). */}
+        <div className="[width:100%] shrink-0 mb-(--sp-5)">
+          <FilterToolbar
+            aria-label="Filter the stock ledger"
+            controls={filterControls}
+            onChange={onFilterChange}
+            onReset={resetFilters}
+            resultCount={rows.length}
+            resultNoun="rows"
           />
         </div>
 
@@ -327,9 +392,9 @@ export function StockClient() {
               <EmptyState
                 variant="filtered"
                 title="No stock movements for this filter"
-                description="No movements at this location for the selected day. Try another location or clear the filter."
-                actionLabel="Clear filter"
-                onAction={() => setActiveTab("all")}
+                description="No movements match the current filters for the selected day. Try another location or category, or reset."
+                actionLabel="Reset filters"
+                onAction={resetFilters}
               />
             ) : (
               <EmptyState

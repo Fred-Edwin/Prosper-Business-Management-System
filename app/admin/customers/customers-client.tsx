@@ -1,17 +1,20 @@
 // A1 — Customers & Credit register (Admin). COMPOSED from the proven kit
-// only: <PageShell> + <Breadcrumb> + <SimpleTable> + <SearchInput> +
-// <PillFilter> + rail <Drawer>. Visual target: `A1 Customers Register —
-// … [M2-01]` (Paper artboards DU2-0 / DZ0-0 / E41-0 / E97-0 / EJ6-0 /
-// EEE-0 / EPJ-0).
+// only: <PageShell> + <Breadcrumb> + <SimpleTable> + the shared kit
+// <FilterToolbar> (search slot + a "Has balance" kind:"toggle" — 3e
+// retrofit off the old <PillFilter>) + rail <Drawer>. Visual target:
+// `A1 Customers Register — … [M2-01]` (Paper artboards DU2-0 / DZ0-0 /
+// E41-0 / E97-0 / EJ6-0 / EEE-0 / EPJ-0).
 //
 // Paper→code notes: the artboard draws fixed row heights / grow-ratio
 // columns / a trailing chevron; the codebase kit <SimpleTable> is the
 // design-system source of truth for row height + header + hairlines, so
 // those come from the kit (responsive, token-based), not the artboard's
-// pixels. The "Has balance" filter is modelled with the kit <PillFilter>
-// ("All customers" / "Owing"). The trailing-chevron affordance has no
-// kit equivalent — flagged for a Kit Sprint; the clickable row uses the
-// kit's hover/focus affordance meanwhile (as Catalog/Stock rows do).
+// pixels. The "Has balance" filter is a `kind:"toggle"` control inside the
+// shared kit <FilterToolbar> (A2's toggle-in-toolbar idiom, filter-toolbar.md
+// §7); the free-text search rides the toolbar's `search?` slot and keeps its
+// own state. The trailing-chevron affordance has no kit equivalent — flagged
+// for a Kit Sprint; the clickable row uses the kit's hover/focus affordance
+// meanwhile (as Catalog/Stock rows do).
 "use client";
 
 import * as React from "react";
@@ -20,7 +23,7 @@ import { PageShell } from "@/components/kit/page-shell";
 import { Breadcrumb } from "@/components/kit/breadcrumb";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
 import { SearchInput } from "@/components/kit/search-input";
-import { PillFilter } from "@/components/kit/pill-filter";
+import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
 import { Drawer } from "@/components/kit/drawer";
 import { Button } from "@/components/kit/button";
 import { TextInput } from "@/components/kit/text-input";
@@ -56,17 +59,11 @@ function BalanceCell({ balance }: { balance: string }) {
   return <span className="text-danger">KES {fmtMoney(balance)}</span>;
 }
 
-const FILTER_OPTIONS = [
-  { key: "all", label: "All customers" },
-  { key: "owing", label: "Owing" },
-];
-
 type DrawerMode = "repayment" | "add-customer" | null;
 
 export function CustomersClient() {
   const [search, setSearch] = React.useState("");
-  const [filterKey, setFilterKey] = React.useState("all");
-  const hasBalance = filterKey === "owing";
+  const [hasBalance, setHasBalance] = React.useState(false);
 
   const { customers, loading, error, refresh, createCustomer, recordRepayment } =
     useCustomers({ search, hasBalance });
@@ -111,8 +108,18 @@ export function CustomersClient() {
   const filtered = search.trim() !== "" || hasBalance;
   function clearFilters() {
     setSearch("");
-    setFilterKey("all");
+    setHasBalance(false);
   }
+
+  const filterControls: FilterControl[] = [
+    {
+      id: "hasBalance",
+      label: "Has balance",
+      kind: "toggle",
+      value: hasBalance,
+      default: false,
+    },
+  ];
 
   const columns: SimpleTableColumn<CustomerListRow>[] = [
     {
@@ -192,31 +199,24 @@ export function CustomersClient() {
       }
     >
       <div className="flex flex-col grow gap-(--sp-6)">
-        <div className="flex items-center justify-between gap-(--sp-4) flex-wrap">
-          <div className="flex items-center gap-(--sp-4)">
+        <FilterToolbar
+          aria-label="Filter customers"
+          search={
             <SearchInput
               value={search}
               onChange={setSearch}
               placeholder="Search name or phone…"
               aria-label="Search customers"
             />
-            <PillFilter
-              options={FILTER_OPTIONS}
-              activeKey={filterKey}
-              onChange={setFilterKey}
-              aria-label="Filter customers by balance"
-            />
-          </div>
-          {filtered && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="font-ui font-(--weight-medium) text-accent text-caption/micro kit-focus-ring rounded-sm"
-            >
-              Clear all
-            </button>
-          )}
-        </div>
+          }
+          controls={filterControls}
+          onChange={(id, value) => {
+            if (id === "hasBalance") setHasBalance(Boolean(value));
+          }}
+          onReset={clearFilters}
+          resultCount={customers.length}
+          resultNoun="customers"
+        />
 
         {error ? (
           <ErrorState

@@ -10,14 +10,19 @@
 // <EmptyState>/<ErrorState>), not the stale artboard. See ADR-45 / PROGRESS.
 //
 // Structure mirrors app/admin/catalog/catalog-client.tsx: <PageShell> +
-// <SearchInput> + <SimpleTable> (desktop) / a card list (< --bp-md) +
-// <EmptyState> / <ErrorState> + a rail <Drawer> + <FrictionDeleteDialog>.
+// the shared kit <FilterToolbar> (search slot + Location + Condition selects
+// — 3e retrofit off the bespoke filled-pill Condition radiogroup, per LGF-0)
+// + <SimpleTable> (desktop) / a card list (< --bp-md) + <EmptyState> /
+// <ErrorState> + a rail <Drawer> + <FrictionDeleteDialog>. The Active /
+// Archived <Tabs> strip stays above the toolbar (the primary cut, not a
+// filter). ADR-44 stands — no "category" field/strip.
 "use client";
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
 import { Tabs } from "@/components/kit/tabs";
 import { SearchInput } from "@/components/kit/search-input";
+import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
 import {
   SimpleTable,
   type SimpleTableColumn,
@@ -75,9 +80,12 @@ const ASSET_TABS = [
   { key: "archived", label: "Archived", archived: true },
 ];
 
+const ALL = "__all__";
+
 export function AssetsClient() {
   const [search, setSearch] = React.useState("");
   const [conditionKey, setConditionKey] = React.useState("all");
+  const [locationId, setLocationId] = React.useState<string>(ALL);
   const [tabKey, setTabKey] = React.useState("active");
 
   const activeTab = ASSET_TABS.find((t) => t.key === tabKey) ?? ASSET_TABS[0];
@@ -86,6 +94,7 @@ export function AssetsClient() {
 
   const filter: AssetsListFilter = {
     search,
+    locationId: locationId === ALL ? undefined : locationId,
     condition: activeConditionFilter.value,
     includeDeleted: activeTab.archived,
   };
@@ -137,7 +146,10 @@ export function AssetsClient() {
   const count = `${visibleAssets.length} asset${
     visibleAssets.length === 1 ? "" : "s"
   }`;
-  const filtered = search.trim() !== "" || activeConditionFilter.value != null;
+  const filtered =
+    search.trim() !== "" ||
+    activeConditionFilter.value != null ||
+    locationId !== ALL;
 
   // Dark total-register strip on mobile (artboard J6D-0) — a derived summary
   // over the currently-visible rows: condition breakdown + total cost basis.
@@ -165,6 +177,38 @@ export function AssetsClient() {
   function clearFilters() {
     setSearch("");
     setConditionKey("all");
+    setLocationId(ALL);
+  }
+
+  const filterControls: FilterControl[] = [
+    {
+      id: "location",
+      kind: "select",
+      label: "Location",
+      options: [
+        { value: ALL, label: "All" },
+        ...locations.map((l) => ({ value: l.id, label: l.name })),
+      ],
+      value: locationId,
+      default: ALL,
+    },
+    {
+      id: "condition",
+      kind: "select",
+      label: "Condition",
+      options: CONDITION_FILTERS.map((c) => ({
+        value: c.key,
+        label: c.key === "all" ? "All" : c.label,
+      })),
+      value: conditionKey,
+      default: "all",
+    },
+  ];
+
+  function onFilterChange(id: string, value: string | boolean | null) {
+    if (id === "location") setLocationId(value == null ? ALL : String(value));
+    else if (id === "condition")
+      setConditionKey(value == null ? "all" : String(value));
   }
 
   const columns: SimpleTableColumn<AssetView>[] = [
@@ -265,40 +309,25 @@ export function AssetsClient() {
           onChange={setTabKey}
         />
 
-        {/* Filters */}
-        <div className="flex items-center justify-between gap-(--sp-4)">
-          <div
-            role="radiogroup"
-            aria-label="Filter by condition"
-            className="flex items-center gap-(--sp-3)"
-          >
-            {CONDITION_FILTERS.map((c) => {
-              const active = c.key === conditionKey;
-              return (
-                <button
-                  key={c.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setConditionKey(c.key)}
-                  className={`font-ui font-(--weight-medium) h-(--control-sm) px-(--sp-5) rounded-sm text-sm/micro kit-focus-ring ${
-                    active
-                      ? "bg-accent text-white"
-                      : "[background-color:var(--surface-hover)] [color:var(--text-secondary)]"
-                  }`}
-                >
-                  {c.label}
-                </button>
-              );
-            })}
-          </div>
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search assets…"
-            aria-label="Search assets"
-          />
-        </div>
+        {/* Filters — shared kit <FilterToolbar> (LGF-0): search slot +
+            Location + Condition selects. The Category tab strip on LGF-0 is
+            ignored per ADR-44 (Asset has no category field). */}
+        <FilterToolbar
+          aria-label="Filter assets"
+          search={
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search assets…"
+              aria-label="Search assets"
+            />
+          }
+          controls={filterControls}
+          onChange={onFilterChange}
+          onReset={clearFilters}
+          resultCount={visibleAssets.length}
+          resultNoun="assets"
+        />
 
         {error ? (
           <ErrorState

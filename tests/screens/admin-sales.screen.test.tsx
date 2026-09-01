@@ -248,8 +248,8 @@ describe("Restaurant Orders tab", () => {
     const user = userEvent.setup();
     mockOrdersState = { orders: [], loading: false, error: null };
     renderSales();
-    // toggle "Corrected only" → a filter is active → filtered-empty
-    await user.click(screen.getByRole("checkbox", { name: /Corrected only/i }));
+    // turn on "Corrected only" (kit kind:"toggle") → a filter is active → filtered-empty
+    await user.click(screen.getByRole("switch", { name: "Corrected only" }));
     expect(screen.getByText("No orders match")).toBeDefined();
     expect(screen.getByRole("button", { name: "Reset filters" })).toBeDefined();
   });
@@ -260,33 +260,36 @@ describe("Restaurant Orders tab", () => {
     expect(screen.getByText("Couldn't load orders")).toBeDefined();
   });
 
-  it("date chip: quick rows re-query, and paging the calendar month does NOT dismiss the panel", async () => {
+  it("date control: picking a day in the kit DatePicker re-queries with that YYYY-MM-DD; Reset restores the 'Today' default", async () => {
     const user = userEvent.setup();
     renderSales();
-    // Open the date chip panel.
-    await user.click(screen.getByRole("button", { name: /Today/ }));
 
-    // "Yesterday" quick row → re-queries with yesterday's date, panel closes.
-    await user.click(screen.getByRole("button", { name: "Yesterday" }));
-    await waitFor(() => {
-      expect(lastOrdersFilter.date).toBeDefined?.();
-    });
-    expect(typeof lastOrdersFilter.date).toBe("string");
+    // The kit kind:"date" control is a plain DatePicker trigger labelled with
+    // the current value ("Today" at default). Open it and page a month back —
+    // the calendar dialog stays open (only picking a day commits).
+    await user.click(screen.getByRole("button", { name: /Date: Today/i }));
+    const grid = await screen.findByRole("grid");
+    const prevMonth = screen.getByRole("button", { name: /previous month/i });
+    await user.click(prevMonth);
+    expect(screen.getByRole("grid")).toBeDefined();
+
+    // Pick the first selectable day cell → re-queries with a YYYY-MM-DD string
+    // that is not today.
+    const dayCell = within(grid)
+      .getAllByRole("gridcell")
+      .map((c) => c.querySelector("button"))
+      .find((b) => b && !(b as HTMLButtonElement).disabled) as HTMLButtonElement;
+    await user.click(dayCell);
+    await waitFor(() => expect(typeof lastOrdersFilter.date).toBe("string"));
     expect(lastOrdersFilter.date).not.toBe(
       new Date().toISOString().slice(0, 10),
     );
 
-    // Re-open, open the kit calendar, page a month back — the panel + calendar
-    // must stay open (the old native-input bug closed on every month change).
-    await user.click(screen.getByRole("button", { name: /Yesterday/ }));
-    await user.click(screen.getByRole("button", { name: /choose|choose…/i }));
-    const prevMonth = await screen.findByRole("button", {
-      name: /previous month/i,
-    });
-    await user.click(prevMonth);
-    // Calendar grid still present → not dismissed.
-    expect(screen.getByRole("grid")).toBeDefined();
-    expect(prevMonth).toBeDefined();
+    // Reset (now shown — date is off its default) restores date=today.
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+    await waitFor(() =>
+      expect(lastOrdersFilter.date).toBe(new Date().toISOString().slice(0, 10)),
+    );
   });
 
   it("loading state shows skeleton rows", () => {
@@ -298,8 +301,8 @@ describe("Restaurant Orders tab", () => {
   it("F7-8: the Payment filter re-queries with the chosen method", async () => {
     const user = userEvent.setup();
     renderSales();
-    const payment = within(screen.getByRole("group", { name: "Payment" }));
-    await user.click(payment.getByRole("combobox"));
+    // kit FilterToolbar names the select's combobox with the control label.
+    await user.click(screen.getByRole("combobox", { name: "Payment" }));
     await user.click(screen.getByRole("option", { name: "Payment: M-Pesa" }));
     await waitFor(() => expect(lastOrdersFilter.paymentMethod).toBe("mpesa"));
   });
@@ -307,8 +310,7 @@ describe("Restaurant Orders tab", () => {
   it("F7-8: the Cashier filter lists cashiers seen in the loaded orders and re-queries", async () => {
     const user = userEvent.setup();
     renderSales();
-    const cashier = within(screen.getByRole("group", { name: "Cashier" }));
-    await user.click(cashier.getByRole("combobox"));
+    await user.click(screen.getByRole("combobox", { name: "Cashier" }));
     // Derived from the loaded orders (Mary Njeri + John Otieno).
     expect(screen.getByRole("option", { name: "Cashier: John Otieno" })).toBeDefined();
     await user.click(screen.getByRole("option", { name: "Cashier: Mary Njeri" }));
@@ -449,8 +451,7 @@ describe("Canteen Derived tab", () => {
   it("Product filter re-queries and offers a Reset", async () => {
     const user = userEvent.setup();
     renderSales("derived");
-    const product = within(screen.getByRole("group", { name: "Product" }));
-    await user.click(product.getByRole("combobox"));
+    await user.click(screen.getByRole("combobox", { name: "Product" }));
     await user.click(screen.getByRole("option", { name: "Product: Soda 300ml" }));
     expect(await screen.findByRole("button", { name: "Reset" })).toBeDefined();
   });

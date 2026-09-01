@@ -6,8 +6,9 @@
 // correction-form drawer + linked correction row-group.
 //
 // COMPOSED from the proven kit — no kit change:
-//   • <SalesFilterToolbar> (screen-level, Paper IEA-0) — Cashier · Date ·
-//     Payment · Corrected only (F7-8: Cashier + Payment now wired)
+//   • <FilterToolbar> (shared kit component, Paper IEA-0) — Cashier ·
+//     Payment · Date · Corrected only (F7-8: Cashier + Payment wired)
+//     — 3e retrofit off 3a's inline toolbar onto the proven component.
 //   • <SimpleTable rowChevron> — Time · Cashier · Type · Total · Payment · Status
 //   • <Drawer variant="rail"> — read-only detail (FYX-0) + correction form
 //   • F7-4 correction form: line list + add-product, order-type + payment
@@ -32,7 +33,7 @@ import type {
   CorrectOrderInput,
 } from "@/lib/domain/sales";
 import { useOrders, nairobiBusinessDate } from "@/app/cashier/use-orders";
-import { SalesFilterToolbar, type FilterControl } from "./filter-toolbar";
+import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
 import { CorrectionForm } from "./correction-form";
 
 // ── Display helpers ────────────────────────────────────────────────────
@@ -65,6 +66,16 @@ function fmtDateShort(iso: string): string {
     month: "short",
     year: "numeric",
   }).format(new Date(iso));
+}
+
+/** `YYYY-MM-DD` → "Aug 26" (Africa/Nairobi), for the date-control label. */
+function fmtDayMon(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
 export function fmtMoney(amount: string | number): string {
@@ -173,6 +184,16 @@ export function OrdersTab() {
 
   // ── Toolbar wiring ──────────────────────────────────────────────────
 
+  // Date-control display label: "Today" for the default business day, "All
+  // dates" for null, otherwise "Aug 26". The kit's kind:"date" carries a
+  // display string as `value`; the screen owns the string↔YYYY-MM-DD map.
+  const dateLabel =
+    filter.date === null
+      ? "All dates"
+      : filter.date === today
+        ? "Today"
+        : fmtDayMon(filter.date);
+
   const controls: FilterControl[] = [
     {
       id: "cashier",
@@ -199,18 +220,29 @@ export function OrdersTab() {
       id: "date",
       kind: "date",
       label: "Date",
-      // filter.date: `today` = default, null = "all dates", else a specific day.
-      value: filter.date,
-      default: today,
-      defaultLabel: "Today",
-      nullLabel: "All dates",
-      today,
+      // Display string; "Today" is the default business day. Off-default
+      // when the Admin has picked another day OR widened to "All dates".
+      value: dateLabel,
+      default: "Today",
+    },
+    {
+      // IEA-0 draws this as a checkbox; the proven kit exposes a boolean only
+      // as kind:"toggle" (ToggleSwitch). Composed as the kit offers it — a
+      // checkbox `kind` would be a kit change. Flagged in the 3e summary.
+      id: "correctedOnly",
+      kind: "toggle",
+      label: "Corrected only",
+      value: filter.correctedOnly,
+      default: false,
     },
   ];
 
-  function onControlChange(id: string, value: string | null) {
+  function onControlChange(id: string, value: string | boolean | null) {
     if (id === "cashier") {
-      setFilter((f) => ({ ...f, cashierId: value === ALL ? null : value }));
+      setFilter((f) => ({
+        ...f,
+        cashierId: value === ALL || value == null ? null : String(value),
+      }));
     } else if (id === "payment") {
       setFilter((f) => ({
         ...f,
@@ -218,9 +250,15 @@ export function OrdersTab() {
           value === ALL || value == null ? null : (value as PaymentMethod),
       }));
     } else if (id === "date") {
-      // value: a "YYYY-MM-DD" pick, or `today` from the chip's reset button.
-      // The empty-state "Show all dates" path sets null directly (below).
-      setFilter((f) => ({ ...f, date: value }));
+      // The kit reports a picked day as a "YYYY-MM-DD" string; Reset reports
+      // the default display label "Today". The empty-state "Show all dates"
+      // path sets null directly (below).
+      setFilter((f) => ({
+        ...f,
+        date: value === "Today" || value == null ? today : String(value),
+      }));
+    } else if (id === "correctedOnly") {
+      setFilter((f) => ({ ...f, correctedOnly: Boolean(value) }));
     }
   }
 
@@ -336,16 +374,13 @@ export function OrdersTab() {
 
   return (
     <div className="flex flex-col w-full pt-(--sp-6)">
-      <SalesFilterToolbar
+      <FilterToolbar
+        aria-label="Filter orders"
         controls={controls}
         onChange={onControlChange}
         onReset={resetFilters}
         resultCount={visibleOrders.length}
         resultNoun="orders"
-        correctedOnly={filter.correctedOnly}
-        onCorrectedOnlyChange={(next) =>
-          setFilter((f) => ({ ...f, correctedOnly: next }))
-        }
       />
 
       {error ? (
