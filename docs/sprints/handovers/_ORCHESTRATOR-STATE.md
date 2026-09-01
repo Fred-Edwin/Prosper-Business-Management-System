@@ -31,8 +31,8 @@ per session.
 | opening-stock-mobile | Developer | (unplanned) | **DONE** — `feat/opening-stock-mobile` @ `8a9dc03`. Owner hit `/admin/stock/opening` with no mobile layout during a walkthrough; a session built the `< --bp-md` stacked-card branch + `component-states.md` C26 note. 422 tests. Folds into the FINAL merge chain. |
 | 3c | Developer | `SESSION-3C.md` | **DONE** — `feat/m2-3c-sm-flows` @ `50316f7` (off `feat/m2-batch-movements` + cherry-pick `aef9fb3`). 5 SM movement screens rebuilt on the Option-A picker via one shared `MovementPickerFlow` + `FLOW_CONFIG`. 472 tests. Also **fixed `FlowScaffold` scroll/sticky-footer** (`50316f7`) — 3d inherits it. KIT GAP interim accepted (see 3-KIT row). QA deltas: additive "blocked-at-0" artboards not reproducible (covered by disabled-submit); Production readout `In Rest.: N` prefix not suffix; MatchCard "Flag variance" not wired. Owner walkthrough owed. |
 | 3d | Developer | `SESSION-3D.md` | **DONE** — `feat/m2-3d-canteen` @ `670266d` (off 3c). Canteen Dispatch via a `dispatch` mode in the shared `MovementPickerFlow`/`FLOW_CONFIG`; Stock Levels pill-set-as-prop (Canteen `All·Beverages·Goods`, each pill carries its own `match(product)` predicate since Beverages isn't a `ProductKind`); F7-7 hub `+KES` row (branch-guarded, SM hub byte-identical + guard test). 484 tests. QA deltas: F7-7 subtitle drops `since {date} · closing {rem}` (those live on `DerivedSaleView` not the hub feed row); zero-sold em-dash renders in success tone (no neutral tone in `ActivityTimeline`); Stock Levels has no search input (9GW-0 draws one, out of scope); `lastMovementAt` meta not added (needs balances payload field). Owner walkthrough owed. |
-| 3e | Developer | `SESSION-3E.md` | **READY TO DISPATCH** — branch off `feat/m2-3kit-filter-toolbar`, merge in 3a + 3b first. Convert Sales / Customers / Ledger / Assets filter rows to `<FilterToolbar>`. Per `filter-toolbar.md` §7. Deps all met. |
-| FINAL | Tech Lead | `SESSION-FINAL.md` _(to draft)_ | **After 3d + 3e + walkthroughs.** Merge chain; resolve `stash@{0}` (3-DESIGN docs); **remove dead hamburger from `staff-shell.tsx`** (owner-approved); relocate/keep handovers (now on `main` @ `e28bdce`); correct A2 Assets artboards (drop category); seed fixes (relative-dated orders; `Location.name` holding an ID); ADR notes (ADR-44 reversal, F7-10 audit-prune, `Select`/`DatePicker` aria-label); reconcile `milestone-2-plan.md` §7 + `PROGRESS.md` + `ROADMAP.md`; full gate sweep. |
+| 3e | Developer | `SESSION-3E.md` | **DONE** — `feat/m2-3e-filter-retrofit-v2` @ `ccd26b8` (off `integration/m2-submission-1`, no merges needed). Sales/Customers/Ledger/Assets filter rows → `<FilterToolbar>` (kit unchanged). `app/admin/sales/filter-toolbar.tsx` deleted. 556 tests. Deferred: 3a date quick-rows didn't survive (kit `kind:"date"` = plain DatePicker) → Kit follow-up; "Corrected only" renders as toggle not checkbox. |
+| FINAL | Tech Lead | `SESSION-FINAL.md` | **READY TO DISPATCH.** Base = `integration/m2-submission-1` @ `76c4d8f` (all 10 sessions merged + 3-DESIGN docs, gated **556/0/clean**). Merge chain; resolve `stash@{0}` (3-DESIGN docs); **remove dead hamburger from `staff-shell.tsx`** (owner-approved); relocate/keep handovers (now on `main` @ `e28bdce`); correct A2 Assets artboards (drop category); seed fixes (relative-dated orders; `Location.name` holding an ID); ADR notes (ADR-44 reversal, F7-10 audit-prune, `Select`/`DatePicker` aria-label); reconcile `milestone-2-plan.md` §7 + `PROGRESS.md` + `ROADMAP.md`; full gate sweep. |
 | Owner walkthroughs | Owner, on `pnpm dev` | — | Ongoing in parallel |
 
 ---
@@ -302,3 +302,31 @@ written: empty `lines`, duplicate `productId`, any over-stock line
 - Canteen Dispatch: `KW0-0`/`KY1-0`/`KZX-0`/`L0Y-0`/`L2V-0`
 - Canteen Stock Levels states: `L4Y-0` (empty), `L72-0` (error)
 - Flow doc: `docs/design/flows/staff-stock-movements-flow.md`
+
+
+---
+
+## INTEGRATION BRANCH — `integration/m2-submission-1` @ `76c4d8f` (2026-09-01)
+
+The orchestrator merged all 10 sessions here (order: qa/m2-session-7 →
+batch-movements → 3kit-selectable-row → 3kit-filter-toolbar → 3a → 3b →
+opening-stock-mobile → 3c → 3d → 3e), resolved 3 trivial conflicts
+(2× component-states.md C33/C34 "keep both"; 1× canteen-hub test where 3d
+intentionally swapped the old G7 stock-out assertion for F7-7 revenue),
+then applied the parked 3-DESIGN flow-doc stash (`76c4d8f`) and dropped
+the stash. Stash stack now empty.
+
+**Gates on the integration branch:** `pnpm tsc --noEmit` 0 · `pnpm test`
+**556/556** (69 files) · `pnpm build` clean.
+
+**FINAL's job** is now one merge onto `main` + docs reconciliation + the
+staff-hamburger removal + seed fixes + ADR notes + walkthrough
+confirmation + branch cleanup. See `SESSION-FINAL.md`.
+
+### Submission-1 follow-ups (recorded, NOT for FINAL to fix)
+- KIT: `SelectableProductRow` `neverBlocks` mode (removes 3c/3d interim; 0-stock dish reads `In Rest.: 1`)
+- KIT: fold `DatePicker` quick-rows into the kit control (restores 3a's date UX post-3e)
+- KIT: `Drawer variant="sheet"` for mobile Payment/Asset drawers
+- DESIGN: correct A2 Assets artboards — drop phantom `CATEGORY *` field
+- DOMAIN: `/api/canteen/products` route-purity (F7-9)
+- Various 3c/3d QA deltas (Production readout prefix; MatchCard Flag-variance; Canteen Stock Levels search; `lastMovementAt` meta)
