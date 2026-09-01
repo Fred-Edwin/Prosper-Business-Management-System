@@ -547,20 +547,20 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
                 // additive mode. The two additive flows (Receive,
                 // Production — flow doc §"Cross-cutting" rule 3) must NOT
                 // block on over-on-hand, and Production must allow
-                // selecting a 0-stock (never-produced) dish. Interim
-                // (no kit change): additive flows pass the REAL on-hand
-                // as `available` when it is > 0 (so the readout is
-                // correct), and `Infinity` when it is 0 (so a fresh dish
-                // is still selectable). `handleBlockedChange` then
-                // ignores non-spend flows, so an over-on-hand additive
-                // line never disables submit. Spend flows use the real
-                // balance and the kit's §9.8 block exactly as drawn.
-                // A kit `additive` / `neverBlocks` prop would remove this.
+                // selecting a 0-stock (never-produced) dish.
+                //
+                // Interim (no kit change): additive flows pass
+                // `max(onHand, thisLineQty)` as `available`, so the kit
+                // never paints the §9.8 block and never treats the row as
+                // inert, while the readout still shows the true on-hand
+                // for every realistic entry (qty ≤ on-hand). Spend flows
+                // pass the real balance and use the kit block as drawn.
+                // `handleBlockedChange` also no-ops for additive flows.
+                // A kit `additive` / `neverBlocks` prop removes all of it.
+                const lineQty = line?.quantity ?? 0;
                 const rowAvailable = cfg.spend
                   ? onHand
-                  : onHand > 0
-                    ? onHand
-                    : Infinity;
+                  : Math.max(onHand, lineQty, 1);
                 return (
                   <SelectableProductRow
                     key={p.id}
@@ -569,7 +569,7 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
                     unit={p.unitLabel}
                     available={rowAvailable}
                     selected={line != null}
-                    quantity={line?.quantity ?? 0}
+                    quantity={lineQty}
                     onSelect={select}
                     onDeselect={deselect}
                     onQuantityChange={setQuantity}
