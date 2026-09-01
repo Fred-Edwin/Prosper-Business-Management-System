@@ -61,7 +61,13 @@ merge** — mirroring how M1 landed. No feature branch was re-merged.
 - **Branch cleanup:** the 13 merged feature/integration/QA branches
   deleted (local + origin where pushed); only `main` remains.
 
-**Milestone 2 is done.** M3 starts from a fresh milestone-plan doc.
+**Milestone 2 code + docs are done and on `main` (pushed 2026-09-01).**
+The one remaining gate is the **owner walkthrough pass** (plan guardrail
+3) — the owner walks M1 + M2 end-to-end as every role using
+`docs/sprints/m1-m2-walkthrough-guide.md`. Any failure lands as a small
+fix + regression test this cycle, or a `m2-followups.md` entry. Once the
+walkthroughs sign off, M2 Submission 1 is fully done and M3 starts from a
+fresh milestone-plan doc.
 
 ### 2026-08-31 — M2 Session 7: QA Sprint — adversarial pass + fixes (QA Engineer) — DONE
 
