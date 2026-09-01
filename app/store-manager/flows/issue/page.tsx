@@ -1,6 +1,7 @@
-// Store Manager — Issue Ingredients flow (Store → Kitchen). Session 12:
-// composed from the kit + wired to POST /api/stock-movements
-// { movementType: "issue" }. ADR-44 — artboard 8XH-0 (left panel) superseded.
+// Store Manager — Issue Ingredients flow (Store → Kitchen). M2-3c (ADR-44
+// body reversal → Option A): the multi-row <SelectableProductRow> picker,
+// wired to POST /api/stock-movements/issues/batch. See
+// ../movement-picker-flow.tsx.
 import { IssueProductionFlow } from "../issue-production-flow";
 
 export default function IssueFlowPage() {

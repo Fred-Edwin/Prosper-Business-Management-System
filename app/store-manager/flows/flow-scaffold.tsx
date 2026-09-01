@@ -36,18 +36,23 @@ export function FlowScaffold({
 }) {
   const router = useRouter();
   return (
+    // Full-height column that fills the staff shell's scroll region. The
+    // body is the only scroll area; the submit bar is a non-scrolling
+    // shrink-0 footer pinned to the bottom of the viewport (a bare
+    // `position: sticky` on the footer landed mid-list once the product
+    // picker made the body taller than one screen — M2-3c).
     <div className="flex flex-col grow min-h-0">
       <FlowHeader
         title={title}
         direction={direction}
         directionTone={directionTone}
         onBack={() => router.back()}
-        className="w-full"
+        className="w-full shrink-0"
       />
-      <div className="flex flex-col grow min-h-0 gap-(--sp-5) p-(--sp-6)">
+      <div className="flex flex-col grow min-h-0 overflow-y-auto gap-(--sp-5) p-(--sp-6)">
         {children}
       </div>
-      <div className="sticky bottom-0 flex items-center shrink-0 px-(--sp-6) py-(--sp-4) bg-(--surface-page) border-t border-t-solid [border-top-color:var(--border-subtle)]">
+      <div className="flex items-center shrink-0 px-(--sp-6) py-(--sp-4) bg-(--surface-page) border-t border-t-solid [border-top-color:var(--border-subtle)]">
         <Button
           variant="primary"
           size="lg"
