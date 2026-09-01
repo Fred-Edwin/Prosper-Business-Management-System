@@ -188,6 +188,27 @@ function mobile(): HTMLElement {
 }
 
 describe("/admin/stock — mobile branch", () => {
+  it("shows the dark KPI strip, unwired (— / M3)", () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    const m = within(mobile());
+    expect(m.getByText("Stock on Hand (Total)")).toBeInTheDocument();
+    expect(m.getByText("Today's Sold Value")).toBeInTheDocument();
+    expect(m.getAllByText("M3").length).toBe(2);
+  });
+
+  it("shows a 'KES —' sub-line under each row's closing quantity (M3-unwired)", () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    expect(within(mobile()).getAllByText("KES —").length).toBeGreaterThan(0);
+  });
+
   it("shows skeleton rows while loading (not a bare 'Loading…' line)", () => {
     hook.loading = true;
     rowsBox.rows = [];

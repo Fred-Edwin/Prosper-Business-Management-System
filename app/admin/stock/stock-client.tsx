@@ -251,6 +251,39 @@ export function StockClient() {
           a wrapping row of tappable movement-delta chips (each opens the
           correction drawer), then Open: N + an "Adjust" button. */}
       <div className="flex md:hidden flex-col grow min-h-0">
+        {/* Dark KPI strip (8Q4-0). Both figures are money the stock ledger
+            doesn't convert until the M3 MoneyMovement ledger — kept as "—" /
+            "M3" markup, same treatment as the Financials KPI strip (ADR-36). */}
+        <div className="flex items-stretch [width:100%] shrink-0 py-(--sp-5) px-(--sp-6) mb-(--sp-5) [background-color:var(--nav-bg)]">
+          <div className="flex flex-col grow gap-[2px]">
+            <div className="font-ui uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-micro/micro">
+              Stock on Hand (Total)
+            </div>
+            <div className="flex items-baseline gap-(--sp-3)">
+              <div className="font-mono font-(--weight-semibold) text-success text-h1/h2">
+                —
+              </div>
+              <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
+                M3
+              </div>
+            </div>
+          </div>
+          <div className="w-px self-stretch my-[2px] shrink-0 [background-color:var(--nav-border)]" />
+          <div className="flex flex-col grow pl-(--sp-6) gap-[2px]">
+            <div className="font-ui uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-micro/micro">
+              Today&apos;s Sold Value
+            </div>
+            <div className="flex items-baseline gap-(--sp-3)">
+              <div className="font-mono font-(--weight-semibold) text-info text-h1/h2">
+                —
+              </div>
+              <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
+                M3
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="flex items-center [width:100%] overflow-x-auto shrink-0 mb-(--sp-5)">
           <PillFilter
             options={locationTabs}
@@ -340,8 +373,15 @@ export function StockClient() {
                         </div>
                       </div>
                     </div>
-                    <div className="font-mono font-(--weight-semibold) w-max [color:var(--text-primary)] text-h2/body">
-                      {row.closing.value}
+                    <div className="flex flex-col items-end gap-[2px]">
+                      <div className="font-mono font-(--weight-semibold) w-max [color:var(--text-primary)] text-h2/body">
+                        {row.closing.value}
+                      </div>
+                      {/* KES value of closing stock — unwired until the M3
+                          money ledger (deriveLedgerRows returns DASH). */}
+                      <div className="font-mono w-max [color:var(--text-tertiary)] text-caption/micro">
+                        KES —
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center flex-wrap gap-(--sp-4)">
