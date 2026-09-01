@@ -29,6 +29,133 @@ Domain Gap-Fixes G1–G4 + final gates). Ready for Session 7 (QA). S1a + S3 + S4
 Merge order to `main`: the whole M2 chain → 6a → 6b → 6c → 6d → 6e → S7 (one
 PR after QA, mirroring how M1 landed).
 
+### 2026-09-01 — M2 Session 3a: Admin merged "Sales" screen + F7-4 + F7-8 (Developer) — DONE
+
+Post-QA batch-3 session (orchestrator-tracked, `feat/m2-3a-sales` off
+`qa/m2-session-7`). Merged the Admin's two separate screens —
+`/admin/orders` (A3) and `/admin/canteen/derived-sales` (A4) — into one
+tabbed **`/admin/sales`** screen.
+
+- **Route + nav.** New `app/admin/sales/` — `page.tsx` (server, resolves
+  `?tab=`) + `sales-client.tsx` (kit `<Tabs>` underline; deep-link via
+  `router.replace`; initial tab from `?tab=derived`). `orders-tab.tsx`
+  (A3 content) + `derived-tab.tsx` (A4 content). Old route dirs deleted;
+  `next.config.ts` `redirects()` 308s `/admin/orders` → `/admin/sales`
+  and `/admin/canteen/derived-sales` → `/admin/sales?tab=derived`. The
+  separate "Derived sales" nav link removed from `admin-shell.tsx` +
+  `mobile-nav-drawer.tsx`; one "Sales" → `/admin/sales`.
+- **Filter toolbar** (`filter-toolbar.tsx`, screen-level, Paper `IEA-0`).
+  Composed from proven primitives (kit `<Select>` in a labelled `role=
+  group` wrapper, a native `<input type=date>` popover, a native
+  checkbox). Orders tab: Cashier · Date · Payment · Corrected-only.
+  Derived tab: Product · Date. Right-aligned result count + a **Reset**
+  link shown only when a control is off its default. Value display
+  load-bearing (default = `--text-secondary`/regular; off-default =
+  `--text-primary`/medium). Mobile: controls scroll horizontally, count
+  + Reset drop to their own row. **Session 3e** retrofits this onto the
+  shared `FilterToolbar` kit component (now on a separate branch).
+- **F7-8 — Cashier / Payment pickers wired.** Payment → sets
+  `filter.paymentMethod`, re-queries. **Cashier list source decision:**
+  no `/api/staff` in M2, so the Cashier options are **derived from the
+  loaded orders** (distinct `cashierId` + `cashierName`, kept in a
+  sticky map so a narrowed result set doesn't drop the active option) —
+  zero new API, per the orchestrator's pre-approved choice.
+- **F7-4 — full corrected-order form** (`correction-form.tsx`). The
+  Admin now restates the whole order: line list with `QuantityStepper`
+  + remove + a searchable **add-product** row (kit `<Select searchable>`
+  over the Restaurant menu via `useRestaurantProducts`), order-type +
+  payment-method `<SegmentedControl>`s, a delivery-fee `<TextInput>`
+  (Delivery only), a customer-attach `<Select searchable>` when payment
+  = Credit (submit blocked until a customer is attached, parity with
+  C3), required Reason `<Textarea>`. `CalculatedImpactBanner` recomputed
+  against the exact request inputs; credit deltas labelled **"Customer
+  debt"** (extends the F7-5 fix); payment-method changes show both the
+  reversed original channel and the new one. Wired to `correctOrder`
+  via the shared `use-orders` hook. The domain `validateOrder` stays
+  the gate (delivery-fee-only-on-delivery, credit⇒customerId, §3.8 stock
+  BLOCK); server errors surface inline.
+- **Gate.** `tests/screens/admin-sales.screen.test.tsx` (22 tests) —
+  folds in the old `admin-orders` + `canteen-derived-sales` specs and
+  adds tab switch + deep-link, the working Payment/Cashier/Product
+  filters, F7-4 (credit→cash saves + banner says "Customer debt";
+  credit-no-customer disables submit; add-a-line), no-margin assertions.
+  Old two specs deleted. `pnpm test` **460/460**, `pnpm tsc --noEmit`
+  **0**, `pnpm build` clean (`/admin/sales` registers; old routes 308).
+  `grep TODO(mock) app/admin/sales` clean.
+- **Screenshot-diff deltas logged for QA:**
+  1. **Correction form vs `G4I-0`** — the artboard still draws the
+     pre-3a quantity-only drawer; 3a builds the fuller F7-4 form the
+     flow docs specify (`customers-credit-flow.md` §G step 3 /
+     `restaurant-sales-flow.md` §E). Expected per the 3a brief §3.4.
+  2. **Linked correction row-group tint (`GCP-0`)** — the correction
+     row's `bg-(--surface-subtle)` + left accent bar is **not** applied;
+     `SimpleTable` has no per-row style hook and the kit is frozen this
+     session. The "Corrected" / "Correction of #N" status text still
+     ties the pair. (This tint was dead code in the shipped A3 too — the
+     const was defined but never passed.)
+  3. **Mobile toolbar** — the controls **wrap onto rows** rather than
+     collapsing secondary ones into a **"More"** chip (`IJ1-0`).
+     Functionally equivalent; all controls reachable. (Was briefly
+     `overflow-x-auto`, which clipped the dropdown popovers — fixed to
+     `flex-wrap` in the follow-up below.)
+  4. **Date control** — **resolved in the follow-up below.** Now a quick-
+     rows panel (Today / Yesterday / All dates) + the proven kit
+     `<DatePicker>` calendar for any other day.
+  5. **Linked row-group tint on mobile** — the mobile Orders card list
+     *does* tint the correction card (`bg-(--surface-subtle)`); only the
+     desktop `SimpleTable` can't (delta 2).
+
+**Follow-up fixes (2026-09-01, same session, after owner spotted issues
+on `pnpm dev` mobile):**
+- **Canteen Derived tab had no mobile layout** — it was the desktop
+  `<SimpleTable>` (5 cols) crushed into 440px, text overlapping. Added
+  the `hidden md:block` table / `flex md:hidden` **stacked-card list**
+  per artboard `ILC-0` (name + KES on one row; "Last counted …" /
+  "Covers … · N sold" sub-lines; `—` for never-counted). Did the same
+  for the Restaurant Orders tab per `IJ1-0` (time + "cashier · type ·
+  payment" left; total + status right; correction card tinted).
+- **Filter dropdowns unreachable on mobile** — the toolbar row had
+  `overflow-x-auto`, which (CSS: one axis non-visible ⇒ the other
+  becomes `auto`) clipped the `Select` / date popovers that open
+  downward. Changed to `flex-wrap` (the `[M2-SA]` mobile artboards show
+  ≤4 chips, they wrap cleanly). Verified: dropdowns now open fully.
+- **Restaurant Orders looked "broken" (0 orders)** — not a wiring bug
+  (the `/api/orders` filter params work; verified `?paymentMethod=mpesa`
+  returns only mpesa rows). The tab defaults to a **`date=today`** filter
+  (flow doc §G) and the dev seed's orders are all dated Aug 27–30 vs a
+  Sep 1 "today", so everything is filtered out. Made that empty state
+  actionable: **"No orders today"** + a **"Show all dates"** button
+  (sets `date=null` → omits the param → all orders). The date chip now
+  reads **"All dates"** (bold, off-default) in that mode, with a
+  visible result count + Reset. Reworked the `DateControl` model so
+  `today` / `null` (all dates) / a specific day are all distinct. **The
+  stale seed itself is a `prisma/seed.ts` concern for another session**
+  — some orders should be dated relative-to-today.
+- **Date control refined (2026-09-01, owner-directed).** The old chip
+  opened a popover holding a raw browser `<input type="date">` — its
+  month-navigation arrows fired `onChange` (jumping to the 1st) and my
+  handler closed the popover on every `onChange`, so you could never
+  page months to reach an earlier day. Replaced with: a chip that opens
+  a small panel of **quick rows — Today / Yesterday / All dates** (one
+  tap, covers the common cases), then **"OR PICK A DAY" → the proven kit
+  `<DatePicker>`** calendar for anything else. The kit calendar's `‹ ›`
+  month paging only calls its internal `setView` — it never commits or
+  closes; only clicking a day does. Today ringed, future days disabled
+  (`maxDate`), arrow-key nav — all from the kit. Screen-level composition
+  only, **no kit change**. New spec case: quick rows re-query + paging
+  the calendar month does not dismiss. This is a UX refinement to an
+  approved screen taken as owner direction — **flag for the designer /
+  3e to ratify** the quick-rows + calendar pattern for the shared
+  `<FilterToolbar>`. (A first draft of the `component-states.md` matrix
+  row for this was started but belongs to the designer.)
+
+- **Out of scope but flagged for the orchestrator:** `/admin/stock/opening`
+  (the bulk opening-stock grid) has **no mobile layout** — the owner hit
+  it during the walkthrough. Not a 3a file (brief §5 forbids touching
+  Ledger/Stock screens); needs its own session.
+
+- **Owner walkthrough:** owed (Admin).
+
 ### 2026-08-30 — M2 Session 6e: Gap-Fix Sprint — Domain & API Hydration (Developer) — DONE
 
 Development Sprint (Gap-Fixes before QA). Resolved all 4 domain/API gaps (G1–G4) identified during design review:

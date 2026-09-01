@@ -126,11 +126,11 @@ const NAV_GROUPS: AdminNavGroupDef[] = [
     items: [
       { key: "catalog", label: "Catalog", href: "/admin/catalog", icon: ICON_CATALOG },
       { key: "stock", label: "Ledger", href: "/admin/stock", icon: ICON_STOCK },
-      // M2 6b: "Sales" routes to the Admin Orders list (A3, app/admin/orders).
-      { key: "orders", label: "Sales", href: "/admin/orders", icon: ICON_SALES },
-      // M2 6b: Canteen Derived Sales (A4). `canteen-derived-sales-flow.md §G`
-      // allows a top-level "Derived sales" item — kept in Operations next to Sales.
-      { key: "derived-sales", label: "Derived sales", href: "/admin/canteen/derived-sales", icon: ICON_SALES },
+      // M2 3a: one merged "Sales" screen — Restaurant Orders (A3) + Canteen
+      // Derived (A4) as two tabs under /admin/sales. The old separate
+      // "Derived sales" nav link is gone; /admin/orders and
+      // /admin/canteen/derived-sales redirect to /admin/sales.
+      { key: "sales", label: "Sales", href: "/admin/sales", icon: ICON_SALES },
       { key: "handovers", label: "Handovers", href: "/admin/handovers", icon: ICON_HANDOVERS },
     ],
   },
@@ -160,8 +160,8 @@ const NAV_GROUPS: AdminNavGroupDef[] = [
 const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 
 // Flat {key, href} list — the shell client resolves the active nav key against
-// this (longest matching href prefix) so multi-segment routes like
-// /admin/canteen/derived-sales light the right item. Shared with the mobile shell.
+// this (longest matching href prefix) so a nested route (e.g. a future
+// /admin/sales/<sub>) still lights its top-level item. Shared with the mobile shell.
 export const ADMIN_NAV_ITEMS: { key: string; href: string }[] = ALL_ITEMS.map(
   ({ key, href }) => ({ key, href }),
 );
