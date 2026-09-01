@@ -9,6 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:unit": "vitest run --config vitest.unit.config.ts",
+    "test:db": "vitest run --config vitest.db.config.ts",
     "test:watch": "vitest",
     "test:e2e": "vitest run tests/integration/m1-flows",
     "prisma:migrate": "prisma migrate dev",
