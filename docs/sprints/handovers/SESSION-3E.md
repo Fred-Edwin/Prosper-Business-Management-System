@@ -1,10 +1,13 @@
 # HANDOVER — Session 3e · Developer · FilterToolbar retrofit (all screens)
 
 **Paste this whole file as your first message in a fresh session.**
-Branch: `feat/m2-3e-filter-retrofit` **off `feat/m2-3kit-filter-toolbar`**
-(`f45b7d9` — you need the proven `FilterToolbar` component). You will
-also need 3a's Sales screen and 3b's mobile screens — cherry-pick or
-merge them in (see §0.1).
+Branch: `feat/m2-3e-filter-retrofit` **off `integration/m2-submission-1`**
+(`666ac8d`). **§0.1 no longer applies — the orchestrator already merged
+all 9 feature branches onto that integration branch and gated it green
+(`pnpm test` 553/553, `tsc` 0, `build` clean).** It already has the
+proven `FilterToolbar`, 3a's `/admin/sales`, 3b's mobile branches,
+3c/3d, opening-stock — everything. You do NOT merge anything; just
+branch off it and do the filter retrofit.
 
 **ONE SESSION AT A TIME. You are the only active code session. Do NOT run
 `git checkout` / `git stash` / `git branch` against anything but your own
@@ -24,7 +27,13 @@ ad-hoc filter row with the single proven **`FilterToolbar`** kit
 component (built + ADR-42-gated by 3-KIT-FILTER). This is the last screen
 session before FINAL.
 
-### 0.1 Branch setup
+### 0.1 Branch setup — DONE BY ORCHESTRATOR, SKIP
+
+> The merge described below was completed on `integration/m2-submission-1`
+> (@ `666ac8d`). Branch off that, run `pnpm test` once (expect **553**),
+> then start §3. Ignore the rest of this section.
+
+<details><summary>original (historical)</summary>
 
 `FilterToolbar` is on your base (`feat/m2-3kit-filter-toolbar`). You also
 need:
@@ -39,9 +48,8 @@ branch first (they touch disjoint files from each other and from the kit
 branch — expect at most trivial doc conflicts in `component-states.md` /
 `kit-audit.md`; resolve by keeping **both** sets of additions). Run
 `pnpm test` + `pnpm tsc --noEmit` once to get a green baseline before you
-change anything. **If a merge conflict is more than append-style doc
-lines, STOP and report** — the orchestrator resolves cross-session
-conflicts in FINAL, not you.
+change anything. (historical) ...
+</details>
 
 ## 1. Mandatory reading (in this order — CLAUDE.md hard requirement)
 
