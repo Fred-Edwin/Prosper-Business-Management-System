@@ -1,27 +1,58 @@
 // @vitest-environment jsdom
-// Session 12 per-screen gate — Canteen transfer-dispatch flow composed
-// from the kit. useStaffStock + stockApi mocked; no server / DB.
+// M2-3d per-screen gate — the Canteen Transfer Dispatch flow after the
+// Option-A rebuild: it now composes the shared <MovementPickerFlow>
+// (mode="dispatch") — the same multi-row <SelectableProductRow> picker +
+// category <Tabs> + Destination <Select> + <CalculatedImpactBanner> + one
+// batch submit that the SM flows use, but Canteen-sourced. useStaffStock /
+// useStockLevels / useOutstandingDeliveries + stockApi mocked; no server.
+//
+// States: populated / empty / loading / error / over-stock blocked, plus
+// the batch-submit interaction, the two-phase-transfer toast copy, and
+// the "no money / cost / margin" assertion.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "@/components/kit/toast";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ back: vi.fn(), push: vi.fn() }) }));
+const push = vi.hoisted(() => vi.fn());
+const back = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push, back }) }));
 
-const hook = vi.hoisted(() => ({
-  data: {
-    movements: [] as unknown[],
-    products: [{ id: "prod-soda", name: "Soda 300ml", unitLabel: "pcs", kind: "goods" }],
-    locations: [
-      { id: "loc-canteen", name: "Canteen", type: "canteen" },
-      { id: "loc-store", name: "Store", type: "store" },
-    ],
-  },
+const PRODUCTS = [
+  { id: "p-soda", name: "Soda 300ml", unitLabel: "pcs", kind: "dish", category: "Beverages & Soda" },
+  { id: "p-water", name: "Mineral Water 500ml", unitLabel: "pcs", kind: "dish", category: "Beverages & Soda" },
+  { id: "p-bread", name: "Bread 400g", unitLabel: "pcs", kind: "goods", category: "Shop Goods" },
+];
+const LOCATIONS = [
+  { id: "loc-canteen", name: "Canteen", type: "canteen" },
+  { id: "loc-store", name: "Store", type: "store" },
+];
+// Derived balances AT THE CANTEEN that the rows read for `available`.
+const LEVELS = [
+  { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", quantity: "92.0000" },
+  { productId: "p-water", name: "Mineral Water 500ml", unitLabel: "pcs", quantity: "96.0000" },
+  { productId: "p-bread", name: "Bread 400g", unitLabel: "pcs", quantity: "8.0000" },
+];
+
+const staff = vi.hoisted(() => ({
+  data: { movements: [] as unknown[], products: [] as unknown[], locations: [] as unknown[] },
   loading: false,
   error: null as string | null,
   refresh: vi.fn(),
 }));
-const dispatchFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+const levels = vi.hoisted(() => ({
+  rows: [] as unknown[],
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
+const outstanding = vi.hoisted(() => ({
+  rows: [] as unknown[],
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
+const transferBatch = vi.hoisted(() => vi.fn().mockResolvedValue([{}, {}]));
 
 vi.mock("@/app/store-manager/use-staff-stock", async () => {
   const actual = await vi.importActual<
@@ -29,8 +60,10 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
   >("@/app/store-manager/use-staff-stock");
   return {
     ...actual,
-    useStaffStock: () => hook,
-    stockApi: { ...actual.stockApi, dispatchTransfer: dispatchFn },
+    useStaffStock: () => staff,
+    useStockLevels: () => levels,
+    useOutstandingDeliveries: () => outstanding,
+    stockApi: { ...actual.stockApi, transferBatch },
   };
 });
 
@@ -46,63 +79,147 @@ function renderScreen() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  hook.loading = false;
-  hook.error = null;
+  staff.data = { movements: [], products: PRODUCTS, locations: LOCATIONS };
+  staff.loading = false;
+  staff.error = null;
+  levels.rows = LEVELS;
+  levels.loading = false;
+  levels.error = null;
+  outstanding.rows = [];
+  outstanding.loading = false;
+  outstanding.error = null;
 });
 
-async function pick(user: ReturnType<typeof userEvent.setup>, name: RegExp, option: string) {
-  await user.click(screen.getByRole("combobox", { name }));
-  await user.click(await screen.findByRole("option", { name: option }));
+/** Select a product row by name and set its stepper value. */
+async function pickRow(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+  qty: string,
+) {
+  const row = screen.getByRole("group", { name: new RegExp(`^${name},`) });
+  await user.click(within(row).getByRole("button", { name: "+ Select" }));
+  const field = within(
+    screen.getByRole("group", { name: new RegExp(`^${name},`) }),
+  ).getByRole("spinbutton");
+  await user.clear(field);
+  await user.type(field, qty);
+  await user.tab();
 }
 
-describe("Canteen — Transfer Dispatch flow", () => {
-  it("dispatch POSTs { fromLocationId: canteen, toLocationId, unsigned quantity } and toasts", async () => {
+describe("Canteen — Transfer Dispatch flow (Option-A picker)", () => {
+  it("no money / cost / margin string anywhere on the screen", () => {
+    const { container } = renderScreen();
+    expect(container.textContent).not.toMatch(/KES|margin|cost|buying price/i);
+  });
+
+  it("FlowHeader badge is 'Canteen → …' in the info tone; row Avail comes from the Canteen balance", () => {
+    renderScreen();
+    // badge tracks the (unset) destination
+    expect(screen.getByText(/Canteen →/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: /^Soda 300ml, Avail: 92 pcs/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("populated: 2 rows → impact banner sums → ONE transferBatch POST { fromLocationId: canteen, toLocationId: store }", async () => {
     renderScreen();
     const user = userEvent.setup();
 
-    await pick(user, /^Product/, "Soda 300ml");
-    const qty = screen.getByRole("spinbutton", { name: /Transfer quantity/ });
-    await user.clear(qty);
-    await user.type(qty, "24");
-    await user.tab();
-    await pick(user, /Destination/, "Store");
+    // category tab narrows to the two beverages
+    await user.click(screen.getByRole("tab", { name: "Beverages & Soda" }));
+    expect(
+      screen.queryByRole("group", { name: /^Bread 400g,/ }),
+    ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /Dispatch \(−24 pcs\)/ }));
+    await pickRow(user, "Mineral Water 500ml", "24");
+    await pickRow(user, "Soda 300ml", "12");
+    await user.click(screen.getByRole("combobox", { name: /Destination/ }));
+    await user.click(await screen.findByRole("option", { name: "Store" }));
 
-    await waitFor(() =>
-      expect(dispatchFn).toHaveBeenCalledWith({
-        productId: "prod-soda",
-        fromLocationId: "loc-canteen",
-        toLocationId: "loc-store",
-        quantity: "24",
+    expect(
+      screen.getByText(
+        /Removes 36 pcs from Canteen now; lands at Store once they accept\./,
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /Dispatch Transfer to Store \(−36 pcs\)/,
       }),
     );
-    expect(await screen.findByText(/Dispatched 24 pcs Soda 300ml to Store/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(transferBatch).toHaveBeenCalledWith({
+        fromLocationId: "loc-canteen",
+        toLocationId: "loc-store",
+        lines: [
+          { productId: "p-water", quantity: "24" },
+          { productId: "p-soda", quantity: "12" },
+        ],
+      }),
+    );
+    // two-phase toast + return to the Canteen hub
+    expect(
+      await screen.findByText(/Dispatched · 2 products · awaiting Store accept/),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/canteen"));
   });
 
-  it("clicking submit while incomplete surfaces the §9.8 field errors", async () => {
+  it("blocked: a row over the Canteen balance disables submit + shows the danger banner, nothing POSTs", async () => {
     renderScreen();
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Transfer Stock" }));
-    expect(await screen.findByText("Pick a product.")).toBeInTheDocument();
-    expect(screen.getByText("Pick a destination.")).toBeInTheDocument();
-    expect(dispatchFn).not.toHaveBeenCalled();
+    await pickRow(user, "Bread 400g", "9999"); // only 8 on hand
+    await user.click(screen.getByRole("combobox", { name: /Destination/ }));
+    await user.click(await screen.findByRole("option", { name: "Store" }));
+
+    expect(
+      screen.getByText(/1 line is over available stock\. Fix it to continue\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Only 8 pcs on hand — reduce or remove this line\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Dispatch Transfer/ }),
+    ).toBeDisabled();
+    expect(transferBatch).not.toHaveBeenCalled();
   });
 
-  it("<QuantityStepper> Decrease disabled at min (0)", async () => {
+  it("submit stays disabled until a destination is chosen", async () => {
     renderScreen();
     const user = userEvent.setup();
-    const qty = screen.getByRole("spinbutton", { name: /Transfer quantity/ });
-    await user.clear(qty);
-    await user.type(qty, "0");
-    await user.tab();
-    expect(screen.getByRole("button", { name: "Decrease" })).toBeDisabled();
+    await pickRow(user, "Soda 300ml", "10");
+    expect(
+      screen.getByRole("button", { name: /^Dispatch Transfer/ }),
+    ).toBeDisabled();
   });
 
-  it("<ErrorState> with Retry on a fetch failure", () => {
-    hook.error = "Failed to load stock.";
+  it("empty: the Canteen has no products → EmptyState, submit disabled", () => {
+    staff.data = { movements: [], products: [], locations: LOCATIONS };
     renderScreen();
-    expect(within(screen.getByRole("alert")).getByText("Failed to load stock.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing to transfer")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Dispatch Transfer/ }),
+    ).toBeDisabled();
+  });
+
+  it("loading: 3 skeleton rows, submit disabled", () => {
+    staff.loading = true;
+    const { container } = renderScreen();
+    expect(container.querySelectorAll(".kit-skeleton")).toHaveLength(3);
+    expect(
+      screen.getByRole("button", { name: /^Dispatch Transfer/ }),
+    ).toBeDisabled();
+  });
+
+  it("error: <ErrorState> 'Couldn't load Canteen stock' + Retry; body hidden", () => {
+    staff.error = "Failed to load stock.";
+    renderScreen();
+    const alert = screen.getByRole("alert");
+    expect(
+      within(alert).getByText("Couldn't load Canteen stock"),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: /Destination/ }),
+    ).not.toBeInTheDocument();
   });
 });

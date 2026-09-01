@@ -1,6 +1,8 @@
 // Canteen — Transfer Dispatch flow (Canteen → Store/Restaurant, phase 1).
-// Session 12: composed from the kit + wired to POST /api/stock-movements
-// { movementType: "transfer" }. ADR-44 — artboard 9FE-0 superseded.
+// M2-3d (ADR-44 body reversal → Option A): the multi-row
+// <SelectableProductRow> picker + category Tabs + a Destination Select,
+// wired to POST /api/stock-movements/transfers/batch. Shares
+// <MovementPickerFlow> with the SM flows — see ./transfer-dispatch-flow.tsx.
 import { TransferDispatchFlow } from "./transfer-dispatch-flow";
 
 export default function CanteenTransferPage() {

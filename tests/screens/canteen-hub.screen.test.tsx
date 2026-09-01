@@ -135,19 +135,59 @@ describe("/canteen hub — kit composition", () => {
     expect(push).toHaveBeenCalledWith("/canteen/stock-count");
   });
 
-  it("renders a canteen derived-sale movement as 'Stock count' in timeline (G7)", () => {
+  // ── F7-7: the derived-sale row is revenue-in, not stock-out ──────────
+  it("F7-7: a derived-sale row shows +KES revenue in the success tone + 'sold' subtitle", () => {
     hook.data.movements = [
       mv({
         id: "mv-sale-count",
         movementType: "sale",
-        quantity: "-48.0000",
+        quantity: "-96.0000",
         stockCountId: "count-123",
+        derivedRevenue: "5760.00",
         occurredAt: "2026-08-28T14:30:00Z",
       }),
     ];
     renderScreen();
     expect(screen.getByText("Rice Basmati")).toBeInTheDocument();
-    expect(screen.getByText(/Stock count/)).toBeInTheDocument();
-    expect(screen.getByText("-48 kg")).toBeInTheDocument();
+    // subtitle: units sold + time (no red stock-out figure).
+    expect(screen.getByText(/96 kg sold ·/)).toBeInTheDocument();
+    const value = screen.getByText("+KES 5,760.00");
+    expect(value).toBeInTheDocument();
+    expect(value.className).toMatch(/text-success/);
+    // the old "-96 kg" stock-out treatment must NOT appear.
+    expect(screen.queryByText(/-96 kg/)).not.toBeInTheDocument();
+  });
+
+  it("F7-7: a zero-sold count shows a muted em-dash, not a red figure", () => {
+    hook.data.movements = [
+      mv({
+        id: "mv-sale-zero",
+        movementType: "sale",
+        quantity: "0.0000",
+        stockCountId: "count-999",
+        derivedRevenue: null,
+        occurredAt: "2026-08-28T15:00:00Z",
+      }),
+    ];
+    renderScreen();
+    const value = screen.getByText("—");
+    expect(value).toBeInTheDocument();
+    // never the danger tone for a derived sale.
+    expect(value.className).not.toMatch(/text-danger/);
+  });
+
+  it("F7-7: a non-canteen-sale movement still renders unchanged (signed qty, its own tone)", () => {
+    hook.data.movements = [
+      mv({
+        id: "mv-accept",
+        movementType: "transfer",
+        quantity: "48.0000",
+        stockCountId: null,
+        occurredAt: "2026-08-28T11:32:00Z",
+      }),
+    ];
+    renderScreen();
+    expect(screen.getByText("+48 kg")).toBeInTheDocument();
+    expect(screen.getByText(/Transfer ·/)).toBeInTheDocument();
   });
 });
