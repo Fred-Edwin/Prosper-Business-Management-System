@@ -2,24 +2,30 @@
 
 // M2 3a — the merged-Sales filter toolbar.
 //
-// Composed from proven primitives (kit <Select>, a native <input type="date">
-// in a popover, a native checkbox) into the labelled-dropdown row from Paper
-// IEA-0 (the [M2-SA] merged-Sales toolbar). This is the inline build the
-// orchestrator asked 3a for; session 3e later folds every screen onto the
-// shared <FilterToolbar> kit component (docs/design/filter-toolbar.md).
+// Composed from proven primitives (kit <Select>, kit <DatePicker>, a native
+// checkbox) into the labelled-dropdown row from Paper IEA-0 (the [M2-SA]
+// merged-Sales toolbar). This is the inline build the orchestrator asked 3a
+// for; session 3e later folds every screen onto the shared <FilterToolbar>
+// kit component (docs/design/filter-toolbar.md).
 //
 // Anatomy (IEA-0):
-//   [ Cashier: All ▾ ] [ Payment: All ▾ ] [ 📅 Today ] [ ☐ Corrected only ]
+//   [ Cashier: All ▾ ] [ Payment: All ▾ ] [ 📅 Today ▾ ] [ ☐ Corrected only ]
 //   ……spacer……  6 orders  ·  Reset
 //
 // Value display is load-bearing: a control AT its default renders its label
 // --text-secondary / regular; OFF its default renders --text-primary / medium.
 // Reset shows iff at least one control is off its default.
-// Mobile (< --bp-md): the row scrolls horizontally (overflow-x-auto); the
-// count + Reset drop to their own row below.
+// Mobile (< --bp-md): the controls wrap onto rows; the count + Reset drop to
+// their own row below.
+//
+// The date control is a chip that opens a small panel: quick "Today" /
+// "Yesterday" / "All dates" rows, then the proven kit <DatePicker> calendar
+// for any other day. Month paging in that calendar does NOT close the panel
+// or commit a date — only clicking a day does.
 
 import * as React from "react";
 import { Select, type SelectOption } from "@/components/kit/select";
+import { DatePicker } from "@/components/kit/date-picker";
 
 // ── Control model ────────────────────────────────────────────────────
 
@@ -51,6 +57,10 @@ export type DateControl = {
    * the default.
    */
   nullLabel?: string;
+  /** Today's business date (`YYYY-MM-DD`) — powers the Today/Yesterday quick rows. */
+  today: string;
+  /** Disable days after this in the calendar. Defaults to today. */
+  maxDate?: string;
 };
 
 export type FilterControl = SelectControl | DateControl;
@@ -61,7 +71,34 @@ function isOffDefault(c: FilterControl): boolean {
     : (c.value ?? null) !== (c.default ?? null);
 }
 
-// ── Date chip (native input in a small popover) ──────────────────────
+// ── Date helpers (business-date strings — no timezone maths here; the
+// screen passes an already-Nairobi `today`) ─────────────────────────────
+
+/** `YYYY-MM-DD` → a local Date at noon (noon avoids DST edge flips). */
+function parseYmd(s: string): Date {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0);
+}
+/** Date → `YYYY-MM-DD` (local parts). */
+function toYmd(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+/** `YYYY-MM-DD` → "26 Aug 2026". */
+function fmtYmd(s: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(parseYmd(s));
+}
+function addDays(s: string, n: number): string {
+  const d = parseYmd(s);
+  d.setDate(d.getDate() + n);
+  return toYmd(d);
+}
+
+// ── Date chip — quick rows + the proven kit <DatePicker> calendar ──────
 
 function DateChip({
   control,
@@ -72,14 +109,23 @@ function DateChip({
 }) {
   const [open, setOpen] = React.useState(false);
   const rootRef = React.useRef<HTMLDivElement>(null);
-  const inputId = `filter-${control.id}-input`;
   const off = isOffDefault(control);
-  const shownLabel = !off
-    ? control.defaultLabel
-    : control.value
-      ? control.value
-      : (control.nullLabel ?? control.defaultLabel);
 
+  const yesterday = addDays(control.today, -1);
+  const maxYmd = control.maxDate ?? control.today;
+
+  // Chip label: default label, "All dates", "Today", "Yesterday", or the date.
+  let chipLabel: string;
+  if (!off) chipLabel = control.defaultLabel;
+  else if (control.value === null)
+    chipLabel = control.nullLabel ?? control.defaultLabel;
+  else if (control.value === control.today) chipLabel = "Today";
+  else if (control.value === yesterday) chipLabel = "Yesterday";
+  else chipLabel = fmtYmd(control.value);
+
+  // Close the panel on an outside click / Esc. (The kit <DatePicker> below
+  // handles its OWN calendar popover's outside-click; this only governs the
+  // quick-rows panel wrapper.)
   React.useEffect(() => {
     if (!open) return;
     function onDocClick(e: MouseEvent) {
@@ -87,9 +133,29 @@ function DateChip({
         setOpen(false);
       }
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
+
+  function choose(next: string | null) {
+    onChange(next);
+    setOpen(false);
+  }
+
+  const QUICK: { label: string; value: string | null }[] = [
+    { label: "Today", value: control.today },
+    { label: "Yesterday", value: yesterday },
+    { label: "All dates", value: null },
+  ];
+  const currentQuick =
+    !off ? control.default : control.value;
 
   return (
     <div ref={rootRef} className="relative shrink-0">
@@ -113,43 +179,65 @@ function DateChip({
               : "font-ui [color:var(--text-secondary)] text-sm/sm"
           }
         >
-          {shownLabel}
+          {chipLabel}
         </span>
+        <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
+          <polyline points="6 9 12 15 18 9" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
+
       {open && (
         <div
           role="dialog"
           aria-label={`Choose ${control.label}`}
-          className="absolute top-[calc(100%+4px)] left-0 [z-index:var(--z-dropdown)] flex flex-col gap-(--sp-3) p-(--sp-4) rounded-md border border-solid [border-color:var(--border-strong)] bg-(--surface-page) [box-shadow:var(--shadow-md)]"
+          className="absolute top-[calc(100%+4px)] left-0 [z-index:var(--z-dropdown)] flex flex-col rounded-md border border-solid [border-color:var(--border-strong)] bg-(--surface-page) [box-shadow:var(--shadow-md)] min-w-[184px] p-[4px]"
         >
-          <label
-            htmlFor={inputId}
-            className="font-ui [color:var(--text-secondary)] text-caption/micro"
-          >
-            {control.label}
-          </label>
-          <input
-            id={inputId}
-            type="date"
-            defaultValue={control.value ?? ""}
-            className="font-ui [color:var(--text-primary)] text-sm/sm border border-solid [border-color:var(--border-strong)] rounded-sm px-(--sp-3) py-(--sp-2) bg-(--surface-page) kit-focus-ring"
-            onChange={(e) => {
-              onChange(e.target.value || null);
-              setOpen(false);
-            }}
-          />
-          {isOffDefault(control) && (
-            <button
-              type="button"
-              onClick={() => {
-                onChange(control.default);
-                setOpen(false);
-              }}
-              className="self-start font-ui font-(--weight-medium) text-accent text-caption/micro kit-focus-ring rounded-sm"
-            >
-              {control.defaultLabel}
-            </button>
-          )}
+          {QUICK.map((q) => {
+            const selected = currentQuick === q.value;
+            return (
+              <button
+                key={q.label}
+                type="button"
+                onClick={() => choose(q.value)}
+                aria-pressed={selected}
+                className="flex items-center justify-between h-(--control-md) px-(--sp-4) rounded-sm font-ui text-sm/sm [color:var(--text-primary)] text-left kit-interactive kit-focus-ring data-[sel=true]:bg-(--surface-selected)"
+                data-sel={selected}
+              >
+                {q.label}
+                {selected && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden>
+                    <polyline points="20 6 9 17 4 12" fill="none" stroke="var(--color-accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+
+          <div className="my-[4px] h-px [background:var(--border-subtle)]" />
+
+          {/* Any other day — the proven kit <DatePicker>. Its ‹ › month paging
+              does NOT close this panel or commit anything; only clicking a day
+              fires onSelect. Future days are disabled (maxDate). */}
+          <div className="px-(--sp-4) py-(--sp-3)">
+            <span className="font-ui [color:var(--text-tertiary)] text-micro/micro uppercase [letter-spacing:var(--tracking-caps)]">
+              Or pick a day
+            </span>
+            <div className="mt-(--sp-2)">
+              <DatePicker
+                value={
+                  control.value &&
+                  control.value !== control.today &&
+                  control.value !== yesterday
+                    ? fmtYmd(control.value)
+                    : "Choose…"
+                }
+                selected={control.value ? parseYmd(control.value) : undefined}
+                maxDate={parseYmd(maxYmd)}
+                onSelect={(d) => choose(toYmd(d))}
+                className="w-auto"
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

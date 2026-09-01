@@ -98,9 +98,9 @@ tabbed **`/admin/sales`** screen.
      Functionally equivalent; all controls reachable. (Was briefly
      `overflow-x-auto`, which clipped the dropdown popovers — fixed to
      `flex-wrap` in the follow-up below.)
-  4. **Date control** — a native `<input type=date>` in a small popover
-     (the shipped A4 pattern), not the kit `DatePicker` calendar. The
-     "Today" default already worked (F7-8); kept working.
+  4. **Date control** — **resolved in the follow-up below.** Now a quick-
+     rows panel (Today / Yesterday / All dates) + the proven kit
+     `<DatePicker>` calendar for any other day.
   5. **Linked row-group tint on mobile** — the mobile Orders card list
      *does* tint the correction card (`bg-(--surface-subtle)`); only the
      desktop `SimpleTable` can't (delta 2).
@@ -131,6 +131,23 @@ on `pnpm dev` mobile):**
   `today` / `null` (all dates) / a specific day are all distinct. **The
   stale seed itself is a `prisma/seed.ts` concern for another session**
   — some orders should be dated relative-to-today.
+- **Date control refined (2026-09-01, owner-directed).** The old chip
+  opened a popover holding a raw browser `<input type="date">` — its
+  month-navigation arrows fired `onChange` (jumping to the 1st) and my
+  handler closed the popover on every `onChange`, so you could never
+  page months to reach an earlier day. Replaced with: a chip that opens
+  a small panel of **quick rows — Today / Yesterday / All dates** (one
+  tap, covers the common cases), then **"OR PICK A DAY" → the proven kit
+  `<DatePicker>`** calendar for anything else. The kit calendar's `‹ ›`
+  month paging only calls its internal `setView` — it never commits or
+  closes; only clicking a day does. Today ringed, future days disabled
+  (`maxDate`), arrow-key nav — all from the kit. Screen-level composition
+  only, **no kit change**. New spec case: quick rows re-query + paging
+  the calendar month does not dismiss. This is a UX refinement to an
+  approved screen taken as owner direction — **flag for the designer /
+  3e to ratify** the quick-rows + calendar pattern for the shared
+  `<FilterToolbar>`. (A first draft of the `component-states.md` matrix
+  row for this was started but belongs to the designer.)
 
 - **Out of scope but flagged for the orchestrator:** `/admin/stock/opening`
   (the bulk opening-stock grid) has **no mobile layout** — the owner hit

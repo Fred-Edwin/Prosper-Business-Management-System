@@ -204,6 +204,7 @@ export function OrdersTab() {
       default: today,
       defaultLabel: "Today",
       nullLabel: "All dates",
+      today,
     },
   ];
 

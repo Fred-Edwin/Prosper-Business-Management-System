@@ -260,6 +260,35 @@ describe("Restaurant Orders tab", () => {
     expect(screen.getByText("Couldn't load orders")).toBeDefined();
   });
 
+  it("date chip: quick rows re-query, and paging the calendar month does NOT dismiss the panel", async () => {
+    const user = userEvent.setup();
+    renderSales();
+    // Open the date chip panel.
+    await user.click(screen.getByRole("button", { name: /Today/ }));
+
+    // "Yesterday" quick row → re-queries with yesterday's date, panel closes.
+    await user.click(screen.getByRole("button", { name: "Yesterday" }));
+    await waitFor(() => {
+      expect(lastOrdersFilter.date).toBeDefined?.();
+    });
+    expect(typeof lastOrdersFilter.date).toBe("string");
+    expect(lastOrdersFilter.date).not.toBe(
+      new Date().toISOString().slice(0, 10),
+    );
+
+    // Re-open, open the kit calendar, page a month back — the panel + calendar
+    // must stay open (the old native-input bug closed on every month change).
+    await user.click(screen.getByRole("button", { name: /Yesterday/ }));
+    await user.click(screen.getByRole("button", { name: /choose|choose…/i }));
+    const prevMonth = await screen.findByRole("button", {
+      name: /previous month/i,
+    });
+    await user.click(prevMonth);
+    // Calendar grid still present → not dismissed.
+    expect(screen.getByRole("grid")).toBeDefined();
+    expect(prevMonth).toBeDefined();
+  });
+
   it("loading state shows skeleton rows", () => {
     mockOrdersState = { orders: [], loading: true, error: null };
     const { container } = renderSales();

@@ -96,6 +96,7 @@ export function DerivedTab() {
       value: dateFilter,
       default: null,
       defaultLabel: "All dates",
+      today: nairobiBusinessDate(),
     },
   ];
 
