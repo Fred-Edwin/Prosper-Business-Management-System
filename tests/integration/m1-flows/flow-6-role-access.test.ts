@@ -10,9 +10,12 @@ const P = "__m1_flow6__";
 let adminId = "";
 let smId = "";
 let cashierId = "";
+let caId = "";
 let storeId = "";
 let canteenId = "";
+let restaurantId = "";
 let productId = "";
+let dishId = "";
 let assetId = "";
 
 async function cleanup() {
@@ -32,8 +35,10 @@ beforeAll(async () => {
   adminId = u.admin;
   smId = u.storeManager;
   cashierId = u.cashier;
+  caId = u.canteenAttendant;
   storeId = SEED_LOCATIONS.store;
   canteenId = SEED_LOCATIONS.canteen;
+  restaurantId = SEED_LOCATIONS.restaurant;
 
   const p = await prisma.product.create({
     data: {
@@ -45,6 +50,40 @@ beforeAll(async () => {
     },
   });
   productId = p.id;
+
+  // A dish with stock at the Restaurant, then a pending transfer dispatch
+  // Restaurant → Canteen — the sender-side `-q` row the Canteen Attendant
+  // must see for the ADR-39 Accept banner.
+  const dish = await prisma.product.create({
+    data: {
+      name: `${P} Chapati`,
+      kind: "dish",
+      unitLabel: "pcs",
+      buyingPrice: "0",
+    },
+  });
+  dishId = dish.id;
+  await prisma.stockMovement.create({
+    data: {
+      productId: dishId,
+      locationId: restaurantId,
+      movementType: "production",
+      quantity: "30",
+      recordedById: adminId,
+      occurredAt: new Date(),
+    },
+  });
+  await prisma.stockMovement.create({
+    data: {
+      productId: dishId,
+      locationId: restaurantId,
+      movementType: "transfer",
+      quantity: "-30",
+      transferCounterpartLocationId: canteenId,
+      recordedById: adminId,
+      occurredAt: new Date(),
+    },
+  });
   const a = await prisma.asset.create({
     data: {
       name: `${P} Rig`,
@@ -81,11 +120,37 @@ describe("admin-only endpoints reject a store manager", () => {
 });
 
 describe("stock reads are scoped to the actor's location", () => {
-  it("a store manager's movement list only ever returns their own location", async () => {
+  it("a store manager's movement list returns own-location rows, plus pending inbound transfers addressed here", async () => {
     actAs({ id: smId, role: "store_manager" });
     const list = await api.listMovements("");
     expect(list.status).toBe(200);
-    for (const m of list.body.data) expect(m.locationId).toBe(storeId);
+    // Every row is either at the SM's own location, or a pending inbound
+    // transfer dispatch (-q `transfer`, not yet accepted) addressed to it
+    // — the sender's row that powers the ADR-39 Accept banner.
+    for (const m of list.body.data) {
+      const ownLocation = m.locationId === storeId;
+      const inboundTransfer =
+        m.movementType === "transfer" &&
+        m.transferCounterpartLocationId === storeId &&
+        Number.parseFloat(m.quantity) < 0 &&
+        m.correctsMovementId === null;
+      expect(ownLocation || inboundTransfer).toBe(true);
+    }
+  });
+
+  it("a receiver sees the pending inbound transfer dispatch addressed to their location (ADR-39 Accept banner)", async () => {
+    actAs({ id: caId, role: "canteen_attendant" });
+    const list = await api.listMovements("");
+    expect(list.status).toBe(200);
+    const inbound = list.body.data.find(
+      (m: any) =>
+        m.movementType === "transfer" &&
+        m.transferCounterpartLocationId === canteenId &&
+        Number.parseFloat(m.quantity) < 0 &&
+        m.productId === dishId,
+    );
+    expect(inbound).toBeDefined();
+    expect(inbound.locationId).toBe(restaurantId); // the SENDER's location
   });
 
   it("balances at a foreign location short-circuit to []", async () => {

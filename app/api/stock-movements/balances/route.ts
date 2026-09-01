@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
 import { z } from "zod";
+import { prisma } from "@/lib/db";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
 import { ok, fail } from "@/lib/api/response";
@@ -75,6 +76,13 @@ export async function GET(req: NextRequest) {
 
   // Location scoping (mirrors listMovements): a location-bound role may
   // only read its own location; a foreign locationId short-circuits to [].
+  //
+  // The Store Manager is the exception among the bound roles: they run
+  // flows that legitimately read a Restaurant's derived balance — Batch
+  // Production (Kitchen → Restaurant) and the SM → Canteen Transfer
+  // (sourced from the Restaurant). So the SM may also read any location
+  // of type `restaurant`; every other foreign location still
+  // short-circuits to []. The Canteen Attendant stays strictly bound.
   const actorLocationId = await resolveActorLocationId(auth.user.id);
   const isLocationBound =
     auth.user.role === "store_manager" ||
@@ -83,7 +91,15 @@ export async function GET(req: NextRequest) {
     if (!actorLocationId) {
       return fail("FORBIDDEN", "Your account is not assigned to a location.");
     }
-    if (locationId !== actorLocationId) {
+    let permitted = locationId === actorLocationId;
+    if (!permitted && auth.user.role === "store_manager") {
+      const target = await prisma.location.findUnique({
+        where: { id: locationId },
+        select: { type: true },
+      });
+      permitted = target?.type === "restaurant";
+    }
+    if (!permitted) {
       return ok([]);
     }
   }

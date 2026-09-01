@@ -26,6 +26,76 @@ fidelity pass (3-DOMAIN, 3-KIT, 3-KIT-FILTER, 3-DESIGN, 3-DESIGN-FILTERS,
 `pnpm test` 556/556 (69 files), `tsc` 0, `build` clean (41 routes).
 Deferrals recorded in `docs/sprints/m2-followups.md`.
 
+### 2026-09-01 — QA fix: SM↔Canteen transfer scoping + Canteen receive-transfer flow (Developer — branch `qa/sm-canteen-routine`) — DONE (owner walkthrough owed)
+
+Owner walked the SM → Canteen routine and hit a chain of transfer bugs.
+Two commits on `qa/sm-canteen-routine` (not merged — hand back for the
+walkthrough):
+
+- **§0 (commit 1) — transfer scoping.** `GET …/balances` lets a
+  `store_manager` read a `type:"restaurant"` balance; `POST
+  …/transfers/batch` own-location guard carves out the SM dispatching
+  from the Restaurant; `listMovements` returns pending inbound `-q`
+  transfer rows addressed to a location-bound actor (so
+  `deriveIncomingTransfers` can render the banner); production readout
+  prefix `"In Rest.:"` → `"Available:"`.
+- **§1 (commit 2) — Canteen "Review & Receive".** New route
+  `/canteen/transfer/receive` (+ `receive-transfer-flow.tsx`), composed
+  from the SM movement-picker kit (`FlowScaffold` + `SelectableProductRow`
+  + sticky submit). The Canteen hub banner is now one **"N items incoming
+  — Review & Receive"** prompt (`InstructionalBanner` + `Button`, not the
+  kit `TransferBanner` — its hard-wired "Flag Variance" button can't be
+  hidden without a kit change) that **navigates** to the screen instead
+  of a one-tap inline accept. The screen lists every pending inbound line
+  with a stepper pre-filled to the dispatched qty; adjust + one **Receive**
+  → `POST …/:id/accept` per line (`{ receivedQuantity }` only for changed
+  lines; per-line loop via `stockApi.acceptTransferBatch`, noted as
+  non-atomic).
+  - **"Flagged banner, no buttons" diagnosis: real bug, not stale data.**
+    `transferDispatchLineCore` always writes `note: "Transfer dispatched
+    — awaiting receipt"` on phase-1 rows, and `deriveIncomingTransfers`
+    set `flagged = note != ""` → *every* incoming transfer rendered
+    flagged. Fixed: `flagged` now matches the real flag-note prefix
+    (`"Discrepancy flagged:"`) that `flagTransfer` writes. No bad DB rows
+    to reset — the note is written by design, not by a stray flag press.
+  - **Variance accounting: option (b).** `acceptTransfer` gained an
+    optional `receivedQuantity`; the `+q` lands at the received amount
+    with a `"Received N, dispatched M"` note. No second correction row —
+    the source ledger already dropped by the full dispatched amount at
+    phase 1, so a shortfall is just stock lost in transit and each
+    location's derived balance stays correct. `deriveIncomingTransfers`
+    keys "accepted" off `correctsMovementId`, not quantity equality, so a
+    variance `+q` clears the pending banner. `flagTransfer` domain fn +
+    the route's `{ flag, note }` branch left in place (unused by the UI).
+- **Changed from the two-phase design:** no admin-flag path for the
+  Canteen receive routine — a variance is a note on the `+q` row, no
+  escalation.
+- **In-scope regression fix.** §0 had made the *whole* SM Transfer flow
+  Restaurant-sourced, which zeroed every soda/goods row (goods live at
+  the Store, not the Restaurant — matches the approved flow doc §D).
+  Reverted to **multi-source**: `useTransferSourceLevels` reads both
+  balances and tags each product by kind (dish → Restaurant, else →
+  Store); the row `available` and the phase-1 dispatch resolve per
+  product; submit fires one `transferBatch` per source. Badge: "Store /
+  Restaurant → {dest}".
+- **Console-noise fix.** `useCanteenProducts()` fired
+  `GET /api/canteen/products` (admin + canteen_attendant only) on *every*
+  `MovementPickerFlow` mode → a harmless `403` on every SM stock screen.
+  Now gated to `dispatch` mode via a `useCanteenProducts(enabled)` param.
+- **Also on this branch:** a vitest test-split (`vitest.shared.ts` +
+  `test:unit` / `test:db` lanes) authored by a concurrent session —
+  bundled in via a `git stash` (recovered), tsc error in
+  `vitest.shared.ts` fixed (`UserConfig` → `ViteUserConfig`), kept as its
+  own commit.
+- **Gate:** `pnpm tsc --noEmit` 0 · `pnpm test` 576/576 (71 files) ·
+  `pnpm build` clean (`/canteen/transfer/receive` registered).
+  New tests: `transfer.test.ts` (+2, receivedQuantity variance + plain),
+  `app/api/stock-movements/[id]/accept/route.test.ts` (new, 4),
+  `canteen-receive-transfer.screen.test.tsx` (new, 5),
+  `canteen-hub.screen.test.tsx` (banner navigates, not inline accept),
+  `store-manager-hub.screen.test.tsx` (flag fixture → real flag note),
+  `store-manager-flows.screen.test.tsx` (multi-source split).
+
 ### 2026-09-01 — M2 Submission 1 landed on `main` (Tech Lead — Session FINAL) — DONE
 
 `integration/m2-submission-1` (the orchestrator's green superset of the

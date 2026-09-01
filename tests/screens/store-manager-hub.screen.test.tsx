@@ -152,7 +152,10 @@ describe("/store-manager hub — kit composition", () => {
   });
 
   it("a flagged incoming transfer shows the muted awaiting-admin line, no actions", () => {
-    hook.data.movements = [mv({ note: "short by 8" })];
+    // FIX-2: `flagged` now keys off the real flag-note prefix that
+    // `flagTransfer` writes, not merely "note is non-empty" (every pending
+    // dispatch carries a plain status note). Use a genuine flag note here.
+    hook.data.movements = [mv({ note: "Discrepancy flagged: short by 8" })];
     renderScreen();
     const region = screen.getByRole("region", {
       name: /Incoming transfer · Soda 300ml/,

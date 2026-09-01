@@ -286,12 +286,42 @@ export const stockApi = {
     );
   },
 
-  /** Phase 2 of a 2-phase transfer — accept: writes the `+q` counterpart. */
-  acceptTransfer(movementId: string): Promise<StockMovementView> {
+  /**
+   * Phase 2 of a 2-phase transfer — accept: writes the `+q` counterpart.
+   * `receivedQuantity` (unsigned magnitude string) records an adjusted
+   * amount when what arrived differs from what was dispatched; omit it to
+   * accept the dispatched amount as-is.
+   */
+  acceptTransfer(
+    movementId: string,
+    receivedQuantity?: string,
+  ): Promise<StockMovementView> {
     return request<StockMovementView>(
       `/api/stock-movements/${movementId}/accept`,
-      { method: "POST", body: "{}" },
+      {
+        method: "POST",
+        body:
+          receivedQuantity != null
+            ? JSON.stringify({ receivedQuantity })
+            : "{}",
+      },
     );
+  },
+
+  /**
+   * Accept several pending inbound transfers in one go (the Canteen
+   * receive-transfer screen). Per-line loop — not one DB transaction; a
+   * mid-batch failure leaves the earlier lines accepted, and the screen
+   * re-reads to show what's left. Acceptable for this low-volume routine.
+   */
+  async acceptTransferBatch(
+    lines: Array<{ movementId: string; receivedQuantity?: string }>,
+  ): Promise<StockMovementView[]> {
+    const out: StockMovementView[] = [];
+    for (const l of lines) {
+      out.push(await this.acceptTransfer(l.movementId, l.receivedQuantity));
+    }
+    return out;
   },
 
   /** Phase 2 — flag a discrepancy: records `note`, releases no stock. */
@@ -321,11 +351,20 @@ export const stockApi = {
  * own location, so a negative dispatch row visible here whose
  * `transferCounterpartLocationId` is *this* location is an inbound one.
  *
- * `pending` = not yet accepted and not yet flagged. `flagged` rows keep a
- * `note`. The `+q` counterpart, once written, has `correctsMovementId` set
- * to the dispatch id — so a dispatch id present in any row's
- * `correctsMovementId` means it is already accepted.
+ * `pending` = not yet accepted. The `+q` counterpart, once written, has
+ * `correctsMovementId` set to the dispatch id — so a dispatch id present
+ * in any row's `correctsMovementId` means it is already accepted.
+ *
+ * `flagged` is the LEGACY flag-to-admin state — a dispatch row whose note
+ * was set by `flagTransfer` (prefixed `"Discrepancy flagged:"`). Every
+ * pending dispatch also carries a plain status note
+ * (`"Transfer dispatched — awaiting receipt"`), so `flagged` must match
+ * that prefix, NOT merely "note is non-empty". The Canteen receive flow
+ * no longer sets a flag; this stays only so an older flagged row still
+ * renders distinctly on the SM hub.
  */
+const FLAG_NOTE_PREFIX = "Discrepancy flagged:";
+
 export type IncomingTransfer = {
   movement: StockMovementView;
   flagged: boolean;
@@ -352,7 +391,10 @@ export function deriveIncomingTransfers(
           ? m.transferCounterpartLocationId === myLocationId
           : true),
     )
-    .map((m) => ({ movement: m, flagged: m.note != null && m.note !== "" }));
+    .map((m) => ({
+      movement: m,
+      flagged: m.note != null && m.note.startsWith(FLAG_NOTE_PREFIX),
+    }));
 }
 
 // ── Hook: the staff stock data path ────────────────────────────────────
@@ -479,6 +521,86 @@ export function useStockLevels(locationId: string | undefined) {
   }, [refresh]);
 
   return { rows, loading, error, refresh };
+}
+
+// ── Hook: per-product source balance for the SM → Canteen Transfer ─────
+
+export type TransferSourceLevel = {
+  /** Derived on-hand at this product's true source location, decimal string. */
+  quantity: string;
+  /** Where this product actually lives: dishes at the Restaurant (where
+   *  Batch Production lands them), everything else at the Store (where
+   *  deliveries land). */
+  sourceLocationId: string;
+  sourceLabel: "Restaurant" | "Store";
+};
+
+/**
+ * The SM → Canteen transfer moves cooked **dishes** (which live at the
+ * Restaurant) *and* sodas / shop goods (which live at the Store). A single
+ * source location can't serve both, so this hook reads the derived balance
+ * at BOTH locations and returns, per product, the balance at its own true
+ * source. Feeds the row `available` readout and the per-source dispatch
+ * batching. `store_manager` may read a `restaurant` balance (balances
+ * route carve-out); the Store is their own location.
+ */
+export function useTransferSourceLevels(
+  storeLocationId: string | undefined,
+  restaurantLocationId: string | undefined,
+) {
+  const [byProduct, setByProduct] = React.useState<
+    Map<string, TransferSourceLevel>
+  >(new Map());
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const refresh = React.useCallback(async () => {
+    if (!storeLocationId || !restaurantLocationId) {
+      setByProduct(new Map());
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const products = await stockApi.listProducts();
+      const ids = products.map((p) => p.id);
+      const [storeBal, restBal] = await Promise.all([
+        stockApi.balances(ids, storeLocationId),
+        stockApi.balances(ids, restaurantLocationId),
+      ]);
+      const store = new Map(storeBal.map((b) => [b.productId, b.quantity]));
+      const rest = new Map(restBal.map((b) => [b.productId, b.quantity]));
+      const next = new Map<string, TransferSourceLevel>();
+      for (const p of products) {
+        const fromRestaurant = p.kind === "dish";
+        next.set(p.id, {
+          quantity:
+            (fromRestaurant ? rest.get(p.id) : store.get(p.id)) ?? "0.0000",
+          sourceLocationId: fromRestaurant
+            ? restaurantLocationId
+            : storeLocationId,
+          sourceLabel: fromRestaurant ? "Restaurant" : "Store",
+        });
+      }
+      setByProduct(next);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Failed to load stock levels. Check your connection and try again.",
+      );
+      setByProduct(new Map());
+    } finally {
+      setLoading(false);
+    }
+  }, [storeLocationId, restaurantLocationId]);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { byProduct, loading, error, refresh };
 }
 
 // ── Hook: deliveries awaiting receipt (Receive flow — §3.1) ────────────

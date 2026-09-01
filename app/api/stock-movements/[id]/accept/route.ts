@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth/config";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
 import { ok, fail } from "@/lib/api/response";
-import { flagTransferSchema } from "@/lib/validation/stock";
+import { acceptTransferSchema, flagTransferSchema } from "@/lib/validation/stock";
 import { DomainError, acceptTransfer, flagTransfer } from "@/lib/domain/stock";
 import { prisma } from "@/lib/db";
 
@@ -14,10 +14,16 @@ type Ctx = { params: Promise<{ id: string }> };
  * POST /api/stock-movements/:id/accept  — phase 2 of a 2-phase transfer
  * (ADR-39). `:id` is the pending dispatch (`-q`) row.
  *
- *   - No body / `{}`         → accept: writes the `+q` counterpart at the
- *                              destination.
- *   - `{ flag: true, note }` → flag a discrepancy: records the note on the
- *                              pending row, releases no stock.
+ *   - No body / `{}`              → accept: writes the `+q` counterpart at
+ *                                   the destination at the dispatched
+ *                                   magnitude.
+ *   - `{ receivedQuantity }`      → accept an adjusted amount: the `+q`
+ *                                   lands at what actually arrived, with a
+ *                                   variance note (Canteen receive flow).
+ *   - `{ flag: true, note }`      → LEGACY. Flag a discrepancy: records the
+ *                                   note on the pending row, releases no
+ *                                   stock. Retained for callers that still
+ *                                   use it; the current UI does not.
  *
  * Roles: `store_manager` / `canteen_attendant` (the receiver), scoped to
  * the transfer's destination location; `admin` may act on any.
@@ -80,8 +86,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return ok(r);
     }
 
+    const parsed = acceptTransferSchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      return fail("VALIDATION_ERROR", issue.message, issue.path.join("."));
+    }
     const r = await acceptTransfer({
       movementId: id,
+      receivedQuantity: parsed.data?.receivedQuantity,
       recordedById: auth.user.id,
     });
     return ok(r, { status: 201 });

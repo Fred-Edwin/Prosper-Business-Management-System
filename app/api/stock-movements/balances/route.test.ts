@@ -23,6 +23,7 @@ const PREFIX = "__balances_route_test__";
 
 let storeId: string;
 let canteenId: string;
+let restaurantId: string;
 let smId: string;
 let adminId: string;
 let productId: string;
@@ -43,8 +44,12 @@ beforeAll(async () => {
   const canteen = await prisma.location.create({
     data: { name: `${PREFIX} Canteen`, type: "canteen", active: true },
   });
+  const restaurant = await prisma.location.create({
+    data: { name: `${PREFIX} Restaurant`, type: "restaurant", active: true },
+  });
   storeId = store.id;
   canteenId = canteen.id;
+  restaurantId = restaurant.id;
 
   const smStaff = await prisma.staff.create({
     data: {
@@ -114,6 +119,16 @@ beforeAll(async () => {
       occurredAt: new Date("2026-08-01T06:00:00Z"),
     },
   });
+  await prisma.stockMovement.create({
+    data: {
+      productId,
+      locationId: restaurantId,
+      movementType: "production",
+      quantity: new Prisma.Decimal("42"),
+      recordedById: adminId,
+      occurredAt: new Date("2026-08-01T06:00:00Z"),
+    },
+  });
 });
 
 afterAll(async () => {
@@ -156,5 +171,44 @@ describe("GET /api/stock-movements/balances", () => {
     mockSession.current = sessionFor("store_manager", smId);
     const { body } = await get(`?productIds=${productId}&locationId=${storeId}`);
     expect(body.data[0].quantity).toBe("125.0000");
+  });
+
+  it("the Store Manager may also read the Restaurant balance (Batch Production / SM→Canteen Transfer)", async () => {
+    mockSession.current = sessionFor("store_manager", smId);
+    const { status, body } = await get(
+      `?productIds=${productId}&locationId=${restaurantId}`,
+    );
+    expect(status).toBe(200);
+    expect(body.data[0].quantity).toBe("42.0000");
+    expect(body.data[0].locationId).toBe(restaurantId);
+  });
+
+  it("the Canteen Attendant stays strictly bound — no Restaurant read", async () => {
+    const caStaff = await prisma.staff.create({
+      data: {
+        name: `${PREFIX} CA`,
+        role: "canteen_attendant",
+        locationId: canteenId,
+        dailyRate: new Prisma.Decimal("0"),
+        active: true,
+      },
+    });
+    const caId = (
+      await prisma.user.create({
+        data: {
+          name: `${PREFIX} CA`,
+          pinHash: "x",
+          role: "canteen_attendant",
+          active: true,
+          staffId: caStaff.id,
+        },
+      })
+    ).id;
+    mockSession.current = sessionFor("canteen_attendant", caId);
+    const { status, body } = await get(
+      `?productIds=${productId}&locationId=${restaurantId}`,
+    );
+    expect(status).toBe(200);
+    expect(body.data).toEqual([]);
   });
 });

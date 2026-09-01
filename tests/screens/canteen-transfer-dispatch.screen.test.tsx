@@ -22,6 +22,17 @@ const PRODUCTS = [
   { id: "p-soda", name: "Soda 300ml", unitLabel: "pcs", kind: "dish", category: "Beverages & Soda" },
   { id: "p-water", name: "Mineral Water 500ml", unitLabel: "pcs", kind: "dish", category: "Beverages & Soda" },
   { id: "p-bread", name: "Bread 400g", unitLabel: "pcs", kind: "goods", category: "Shop Goods" },
+  // Stocked at the Store only — NOT canteen-sellable, must never appear.
+  { id: "p-flour", name: "Flour 2kg", unitLabel: "pcs", kind: "ingredient", category: "Shop Goods" },
+];
+
+// FIX-1 FIX C — the dispatch picker scopes to the canteen-sellable set via
+// GET /api/canteen/products (useCanteenProducts). Return the 3 canteen
+// items; Flour (Store-only) is absent from this payload.
+const CANTEEN_PRODUCTS = [
+  { id: "p-soda", name: "Soda 300ml", unitLabel: "pcs", category: "Beverages & Soda", kind: "dish", sellingPrice: "60.00" },
+  { id: "p-water", name: "Mineral Water 500ml", unitLabel: "pcs", category: "Beverages & Soda", kind: "dish", sellingPrice: "50.00" },
+  { id: "p-bread", name: "Bread 400g", unitLabel: "pcs", category: "Shop Goods", kind: "goods", sellingPrice: "40.00" },
 ];
 const LOCATIONS = [
   { id: "loc-canteen", name: "Canteen", type: "canteen" },
@@ -88,6 +99,13 @@ beforeEach(() => {
   outstanding.rows = [];
   outstanding.loading = false;
   outstanding.error = null;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: CANTEEN_PRODUCTS }),
+    }),
+  );
 });
 
 /** Select a product row by name and set its stepper value. */
@@ -96,7 +114,11 @@ async function pickRow(
   name: string,
   qty: string,
 ) {
-  const row = screen.getByRole("group", { name: new RegExp(`^${name},`) });
+  // The picker sources from GET /api/canteen/products (FIX-1 FIX C) — rows
+  // land after that fetch resolves, so wait for the first one.
+  const row = await screen.findByRole("group", {
+    name: new RegExp(`^${name},`),
+  });
   await user.click(within(row).getByRole("button", { name: "+ Select" }));
   const field = within(
     screen.getByRole("group", { name: new RegExp(`^${name},`) }),
@@ -112,13 +134,32 @@ describe("Canteen — Transfer Dispatch flow (Option-A picker)", () => {
     expect(container.textContent).not.toMatch(/KES|margin|cost|buying price/i);
   });
 
-  it("FlowHeader badge is 'Canteen → …' in the info tone; row Avail comes from the Canteen balance", () => {
+  it("FlowHeader badge is 'Canteen → …' in the info tone; row Avail comes from the Canteen balance", async () => {
     renderScreen();
     // badge tracks the (unset) destination
     expect(screen.getByText(/Canteen →/)).toBeInTheDocument();
     expect(
-      screen.getByRole("group", { name: /^Soda 300ml, Avail: 92 pcs/ }),
+      await screen.findByRole("group", { name: /^Soda 300ml, Avail: 92 pcs/ }),
     ).toBeInTheDocument();
+  });
+
+  // FIX-1 FIX C — the dispatch picker lists exactly the canteen-sellable set
+  // from GET /api/canteen/products; a Store-only product never appears.
+  it("product list = the canteen-sellable set (GET /api/canteen/products), not the raw catalogue", async () => {
+    renderScreen();
+    expect(
+      await screen.findByRole("group", { name: /^Soda 300ml,/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: /^Mineral Water 500ml,/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: /^Bread 400g,/ }),
+    ).toBeInTheDocument();
+    // Flour is in staff.data.products but NOT in the canteen payload.
+    expect(
+      screen.queryByRole("group", { name: /^Flour 2kg,/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("populated: 2 rows → impact banner sums → ONE transferBatch POST { fromLocationId: canteen, toLocationId: store }", async () => {
@@ -192,10 +233,15 @@ describe("Canteen — Transfer Dispatch flow (Option-A picker)", () => {
     ).toBeDisabled();
   });
 
-  it("empty: the Canteen has no products → EmptyState, submit disabled", () => {
-    staff.data = { movements: [], products: [], locations: LOCATIONS };
+  it("empty: the Canteen has no sellable products → EmptyState, submit disabled", async () => {
+    // FIX-1 FIX C: the picker now sources from GET /api/canteen/products,
+    // so "empty" is an empty canteen payload (not empty staff.data.products).
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [] }),
+    });
     renderScreen();
-    expect(screen.getByText("Nothing to transfer")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing to transfer")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /^Dispatch Transfer/ }),
     ).toBeDisabled();

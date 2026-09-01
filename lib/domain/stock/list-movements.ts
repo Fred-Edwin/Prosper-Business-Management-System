@@ -13,9 +13,13 @@ import { DomainError } from "./errors";
 /**
  * List stock movements, role-scoped:
  *   - `admin` -> every location.
- *   - `store_manager` / `canteen_attendant` -> only their own location's
- *     rows (`actor.locationId`). An actor with a location-bound role but no
- *     `locationId` set is a misconfiguration -> `FORBIDDEN`.
+ *   - `store_manager` / `canteen_attendant` -> their own location's rows
+ *     (`actor.locationId`), PLUS pending inbound transfer dispatch rows
+ *     addressed to their location (a `-q` `transfer` row whose
+ *     `transferCounterpartLocationId` is their location) — the sender's
+ *     row that `deriveIncomingTransfers` turns into the "Accept" banner
+ *     (ADR-39). An actor with a location-bound role but no `locationId`
+ *     set is a misconfiguration -> `FORBIDDEN`.
  *   - `cashier` -> no stock-movement access -> `FORBIDDEN`.
  *
  * Filters: `productId`, `locationId` (further narrows within the role
@@ -47,7 +51,22 @@ export async function listMovements(
     if (filter.locationId && filter.locationId !== actor.locationId) {
       return [];
     }
-    where.locationId = actor.locationId;
+    if (filter.locationId) {
+      // An explicit own-location filter: exact scope, no inbound widening.
+      where.locationId = actor.locationId;
+    } else {
+      // Own-location rows, plus pending inbound transfer dispatch rows
+      // addressed here (the sender's `-q` row — ADR-39 Accept banner).
+      where.OR = [
+        { locationId: actor.locationId },
+        {
+          movementType: "transfer",
+          transferCounterpartLocationId: actor.locationId,
+          quantity: { lt: 0 },
+          correctsMovementId: null,
+        },
+      ];
+    }
   } else {
     throw new DomainError(
       "FORBIDDEN",

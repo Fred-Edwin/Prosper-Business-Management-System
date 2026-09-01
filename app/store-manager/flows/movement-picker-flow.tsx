@@ -42,12 +42,14 @@ import { useToast } from "@/components/kit/toast";
 import {
   useStaffStock,
   useStockLevels,
+  useTransferSourceLevels,
   useOutstandingDeliveries,
   stockApi,
   StockRequestError,
   type BatchLine,
 } from "../use-staff-stock";
 import { trimQty } from "../staff-stock-format";
+import { useCanteenProducts } from "@/app/canteen/use-canteen-products";
 import { FlowScaffold } from "./flow-scaffold";
 
 export type MovementMode =
@@ -66,6 +68,17 @@ export type MovementMode =
 
 /** Modes whose source location is the Canteen (not the Store). */
 const CANTEEN_SOURCED = new Set<MovementMode>(["dispatch"]);
+/**
+ * `transfer` (SM → Canteen) is **per-product multi-source**: cooked dishes
+ * dispatch from the Restaurant (where Batch Production lands them), sodas /
+ * shop goods dispatch from the Store (where deliveries land). There is no
+ * single source location — the row `available` and the phase-1 dispatch
+ * are both resolved per product by `useTransferSourceLevels` (a dish reads
+ * / leaves the Restaurant; everything else the Store). The badge shows
+ * "Store / Restaurant → {dest}". (An earlier fix made the whole flow
+ * Restaurant-sourced, which zeroed every goods row — reverted here.)
+ */
+const MULTI_SOURCED = new Set<MovementMode>(["transfer"]);
 
 // ── Per-flow configuration ─────────────────────────────────────────────
 
@@ -81,13 +94,20 @@ type FlowConfig = {
   title: string;
   direction: string;
   tone: "success" | "danger" | "info" | "warning";
-  /** Which products the picker lists. */
-  productKinds: "non-dish" | "dish" | "all";
+  /** Which products the picker lists.
+   *  - "non-dish"      → ingredients + goods (into-the-kitchen / delivery flows)
+   *  - "dish"          → dishes only (production)
+   *  - "dish-or-goods" → sellable output: dishes + goods, never raw ingredients
+   *                       (SM → Canteen transfer)
+   *  - "all"           → the whole catalogue (write-offs)
+   *  - "canteen"       → the canteen-sellable set, fetched from
+   *                       GET /api/canteen/products (Canteen dispatch) */
+  productKinds: "non-dish" | "dish" | "dish-or-goods" | "all" | "canteen";
   searchPlaceholder: string;
   sectionLabel: string;
   /** `SelectableProductRow.availableLabelPrefix`. The kit only supports a
-   * prefix, so Production's flow-doc suffix ("N in Rest.") ships as the
-   * prefix "In Rest.:" — cosmetic delta, logged for QA. */
+   * prefix, so a flow-doc suffix ("N in Rest.") ships as a prefix
+   * ("Available:") — cosmetic delta, logged for QA. */
   availPrefix: string;
   /** `true` ⇒ spend flow: the row stepper is bounded by `available` and an
    * over-available quantity BLOCKS. `false` ⇒ additive: unbounded, only a
@@ -140,7 +160,7 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     productKinds: "dish",
     searchPlaceholder: "Search dishes…",
     sectionLabel: "Select dishes produced",
-    availPrefix: "In Rest.:",
+    availPrefix: "Available:",
     spend: false,
     categoryTabs: false,
     emptyTitle: "No dishes set up",
@@ -149,22 +169,29 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
   },
   transfer: {
     title: "Transfer Stock",
-    direction: "Store → …",
+    direction: "Store / Restaurant → …",
     tone: "info",
-    productKinds: "non-dish",
+    // The SM sends sellable output to the Canteen — cooked dishes + shop
+    // goods (sodas, snacks, packaged items), never raw ingredients. Each
+    // line dispatches from its own true source: dishes from the Restaurant
+    // (Batch Production's landing spot), goods from the Store (deliveries).
+    // See MULTI_SOURCED / useTransferSourceLevels.
+    productKinds: "dish-or-goods",
     searchPlaceholder: "Search sodas, goods, stock…",
     sectionLabel: "Select items to transfer",
     availPrefix: "Avail:",
     spend: true,
     categoryTabs: true,
     emptyTitle: "Nothing to transfer",
-    emptyDescription: "The Store has no stock to send right now.",
-    errorTitle: "Couldn't load Store stock",
+    emptyDescription: "There's no sellable stock to send right now.",
+    errorTitle: "Couldn't load stock",
   },
   "non-sale": {
     title: "Log Non-Sale",
     direction: "Staff meals & spoilage",
     tone: "warning",
+    // Anything at the Store can be written off — ingredients, dishes, goods
+    // (staff meals, spoilage, damage). FIX-1 FIX A (already "all"; kept).
     productKinds: "all",
     searchPlaceholder: "Search items to log…",
     sectionLabel: "Select items to log",
@@ -179,9 +206,10 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     title: "Transfer Stock",
     direction: "Canteen → …",
     tone: "info",
-    // A Canteen carries sodas / goods / snacks — in this data set some
-    // are modelled as `dish`. List everything the Canteen holds.
-    productKinds: "all",
+    // The Canteen Attendant can only dispatch what the Canteen actually
+    // sells — the canteen-sellable set (active ProductLocation at the
+    // canteen), from GET /api/canteen/products. FIX-1 FIX C.
+    productKinds: "canteen",
     searchPlaceholder: "Search sodas, goods, stock…",
     sectionLabel: "Select items to transfer",
     availPrefix: "Avail:",
@@ -212,7 +240,12 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   const cfg = FLOW_CONFIG[mode];
   const router = useRouter();
   const { toast } = useToast();
-  const { data, loading, error, refresh } = useStaffStock();
+  const {
+    data,
+    loading: stockLoading,
+    error: stockError,
+    refresh,
+  } = useStaffStock();
 
   // The staff member's own location, resolved from the flow's scope.
   const storeLocationId =
@@ -221,25 +254,71 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
     data.locations.find((l) => l.type === "restaurant")?.id ?? "";
   const canteenLocationId =
     data.locations.find((l) => l.type === "canteen")?.id ?? "";
-  // The SOURCE location for this flow: the Canteen for Dispatch, the
-  // Store for every SM flow. Feeds the batch `locationId` /
-  // `fromLocationId`, the destination-picker exclusion, and the badge.
+  const isMultiSource = MULTI_SOURCED.has(mode);
+  // The SOURCE location for the single-source flows: the Canteen for
+  // Dispatch, the Store for every other SM flow. Feeds the batch
+  // `locationId` / `fromLocationId`, the destination-picker exclusion, and
+  // the badge. `transfer` is multi-source — see MULTI_SOURCED — and does
+  // not use this (its per-product source comes from `transferLevels`).
   const sourceLocationId = CANTEEN_SOURCED.has(mode)
     ? canteenLocationId
     : storeLocationId;
-  const sourceLabel = CANTEEN_SOURCED.has(mode) ? "Canteen" : "Store";
-  // The location whose derived balances feed the row `available` readouts:
-  // Production reads the Restaurant (the dish's landing stock); Dispatch
-  // reads the Canteen; every other flow reads the Store.
+  const sourceLabel = CANTEEN_SOURCED.has(mode)
+    ? "Canteen"
+    : isMultiSource
+      ? "Store / Restaurant"
+      : "Store";
+  // The location whose derived balances feed the row `available` readouts
+  // for the SINGLE-source flows: Production reads the Restaurant (the
+  // dish's landing stock); Dispatch reads the Canteen; every other reads
+  // the Store. `transfer` resolves `available` per product instead.
   const balanceLocationId =
     mode === "production" ? restaurantLocationId : sourceLocationId;
 
-  const { rows: levelRows } = useStockLevels(balanceLocationId || undefined);
+  // `transfer` only: per-product source balance (dish → Restaurant, else
+  // → Store). Empty map for every other mode.
+  const transferLevels = useTransferSourceLevels(
+    isMultiSource ? storeLocationId || undefined : undefined,
+    isMultiSource ? restaurantLocationId || undefined : undefined,
+  );
+
+  // Canteen dispatch scopes its picker to the canteen-sellable set
+  // (GET /api/canteen/products); every other mode lists off `data.products`.
+  const isCanteenScoped = cfg.productKinds === "canteen";
+  // Only the Canteen dispatch mode may call GET /api/canteen/products
+  // (admin + canteen_attendant only) — gate it so the SM modes don't 403.
+  const canteen = useCanteenProducts(isCanteenScoped);
+  const canteenProductIds = React.useMemo(
+    () => new Set(canteen.products.map((p) => p.id)),
+    [canteen.products],
+  );
+  // The dispatch picker also waits on the canteen-products fetch: fold its
+  // loading / error into the screen's so it shows skeletons / <ErrorState>
+  // the same way, and never flashes an "empty" state mid-fetch.
+  const canteenLoading = isCanteenScoped && canteen.loading;
+  const loading =
+    stockLoading || canteenLoading || (isMultiSource && transferLevels.loading);
+  const error =
+    stockError ??
+    (isCanteenScoped ? canteen.error : null) ??
+    (isMultiSource ? transferLevels.error : null);
+
+  const { rows: levelRows } = useStockLevels(
+    isMultiSource ? undefined : balanceLocationId || undefined,
+  );
   const availableById = React.useMemo(() => {
     const m = new Map<string, number>();
-    for (const r of levelRows) m.set(r.productId, Number.parseFloat(r.quantity));
+    if (isMultiSource) {
+      for (const [pid, lvl] of transferLevels.byProduct) {
+        m.set(pid, Number.parseFloat(lvl.quantity));
+      }
+    } else {
+      for (const r of levelRows) {
+        m.set(r.productId, Number.parseFloat(r.quantity));
+      }
+    }
     return m;
-  }, [levelRows]);
+  }, [isMultiSource, transferLevels.byProduct, levelRows]);
 
   // Receive only — deliveries awaiting receipt (non-fatal on failure).
   const outstanding = useOutstandingDeliveries();
@@ -260,14 +339,24 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   // Products in scope for this flow.
   const flowProducts = React.useMemo(
     () =>
-      data.products.filter((p) =>
-        cfg.productKinds === "dish"
-          ? p.kind === "dish"
-          : cfg.productKinds === "non-dish"
-            ? p.kind !== "dish"
-            : true,
-      ),
-    [data.products, cfg.productKinds],
+      data.products.filter((p) => {
+        switch (cfg.productKinds) {
+          case "dish":
+            return p.kind === "dish";
+          case "non-dish":
+            return p.kind !== "dish";
+          case "dish-or-goods":
+            // Sellable output only — cooked dishes + shop goods, never raw
+            // ingredients (SM → Canteen transfer). FIX-1 FIX A.
+            return p.kind === "dish" || p.kind === "goods";
+          case "canteen":
+            // The canteen-sellable set, from GET /api/canteen/products.
+            return canteenProductIds.has(p.id);
+          default:
+            return true;
+        }
+      }),
+    [data.products, cfg.productKinds, canteenProductIds],
   );
 
   // Filtered / searched set that the row list renders.
@@ -429,9 +518,27 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
           locationId: restaurantLocationId,
           lines: plain,
         });
+      } else if (isMultiSource) {
+        // SM → Canteen transfer: dishes leave the Restaurant, goods leave
+        // the Store. Split the batch by each line's true source and fire
+        // one phase-1 dispatch per source that has lines.
+        const bySource = new Map<string, BatchLine[]>();
+        for (const l of plain) {
+          const src =
+            transferLevels.byProduct.get(l.productId)?.sourceLocationId ??
+            storeLocationId;
+          const arr = bySource.get(src) ?? [];
+          arr.push(l);
+          bySource.set(src, arr);
+        }
+        const batches = await Promise.all(
+          [...bySource.entries()].map(([fromLocationId, lines]) =>
+            stockApi.transferBatch({ fromLocationId, toLocationId: destId, lines }),
+          ),
+        );
+        written = batches.flat();
       } else if (isTransferLike) {
-        // Transfer (Store → …) and Canteen Dispatch (Canteen → …) share
-        // the phase-1 batch endpoint; only the source location differs.
+        // Canteen Dispatch (Canteen → …): single source.
         written = await stockApi.transferBatch({
           fromLocationId: sourceLocationId,
           toLocationId: destId,

@@ -59,6 +59,17 @@ const levels = vi.hoisted(() => ({
   error: null as string | null,
   refresh: vi.fn(),
 }));
+// `transfer` mode: per-product source balance (dish → Restaurant, else →
+// Store). Built from LEVELS in beforeEach.
+const transferLevels = vi.hoisted(() => ({
+  byProduct: new Map<
+    string,
+    { quantity: string; sourceLocationId: string; sourceLabel: string }
+  >(),
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
 const outstanding = vi.hoisted(() => ({
   rows: [] as unknown[],
   loading: false,
@@ -81,10 +92,19 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
     ...actual,
     useStaffStock: () => staff,
     useStockLevels: () => levels,
+    useTransferSourceLevels: () => transferLevels,
     useOutstandingDeliveries: () => outstanding,
     stockApi: { ...actual.stockApi, ...api },
   };
 });
+
+// The shared picker calls useCanteenProducts() (GET /api/canteen/products)
+// for its dispatch mode only; SM modes ignore the result. Stub fetch so the
+// hook resolves cleanly in jsdom.
+vi.stubGlobal(
+  "fetch",
+  vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) }),
+);
 
 import { MovementPickerFlow } from "@/app/store-manager/flows/movement-picker-flow";
 
@@ -100,6 +120,24 @@ beforeEach(() => {
   levels.rows = LEVELS;
   levels.loading = false;
   levels.error = null;
+  // Same figures as LEVELS, tagged by each product's true source: dishes
+  // at the Restaurant, everything else at the Store.
+  transferLevels.byProduct = new Map(
+    LEVELS.map((l) => {
+      const p = PRODUCTS.find((x) => x.id === l.productId);
+      const fromRestaurant = p?.kind === "dish";
+      return [
+        l.productId,
+        {
+          quantity: l.quantity,
+          sourceLocationId: fromRestaurant ? "loc-rest" : "loc-store",
+          sourceLabel: fromRestaurant ? "Restaurant" : "Store",
+        },
+      ];
+    }),
+  );
+  transferLevels.loading = false;
+  transferLevels.error = null;
   outstanding.rows = [];
   outstanding.loading = false;
   outstanding.error = null;
@@ -349,10 +387,42 @@ describe("SM — Record Batch Production", () => {
     renderFlow(<MovementPickerFlow mode="production" />);
     expect(screen.getByText("No dishes set up")).toBeInTheDocument();
   });
+
+  // FIX-1 — the readout is the real Restaurant balance under an
+  // "Available:" prefix (was the cryptic "In Rest.:", and when the
+  // balances read was cross-location-blocked for the SM it fell back to a
+  // floor of 1). Grilled Chicken = 6 in LEVELS, not 1.
+  it("row readout shows Available: N from the derived Restaurant balance", () => {
+    renderFlow(<MovementPickerFlow mode="production" />);
+    expect(
+      screen.getByRole("group", { name: /^Grilled Chicken, Available: 6 pcs/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: /In Rest\./ }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 // ── Transfer ────────────────────────────────────────────────────────
 describe("SM — Transfer Stock", () => {
+  // FIX-1 FIX A — the SM transfers sellable output to the Canteen: cooked
+  // dishes + shop goods, never raw ingredients.
+  it("product list includes goods + dishes and excludes raw ingredients", () => {
+    renderFlow(<MovementPickerFlow mode="transfer" />);
+    expect(
+      screen.getByRole("group", { name: /^Soda 300ml,/ }),
+    ).toBeInTheDocument(); // goods
+    expect(
+      screen.getByRole("group", { name: /^Grilled Chicken,/ }),
+    ).toBeInTheDocument(); // dish
+    expect(
+      screen.queryByRole("group", { name: /^Beef Fillet,/ }),
+    ).not.toBeInTheDocument(); // ingredient
+    expect(
+      screen.queryByRole("group", { name: /^Cooking Oil,/ }),
+    ).not.toBeInTheDocument(); // ingredient
+  });
+
   it("category tabs filter; destination Select feeds the batch + badge", async () => {
     renderFlow(<MovementPickerFlow mode="transfer" />);
     const user = userEvent.setup();
@@ -369,7 +439,7 @@ describe("SM — Transfer Stock", () => {
 
     expect(
       screen.getByText(
-        /Removes 72 pcs from Store now; lands at Canteen once they accept\./,
+        /Removes 72 pcs from Store \/ Restaurant now; lands at Canteen once they accept\./,
       ),
     ).toBeInTheDocument();
 
@@ -378,6 +448,8 @@ describe("SM — Transfer Stock", () => {
         name: /Dispatch Transfer to Canteen \(−72 pcs\)/,
       }),
     );
+    // Goods dispatch FROM the Store (where deliveries land) — one batch,
+    // since both selected lines are goods.
     await waitFor(() =>
       expect(api.transferBatch).toHaveBeenCalledWith({
         fromLocationId: "loc-store",
@@ -388,6 +460,32 @@ describe("SM — Transfer Stock", () => {
         ],
       }),
     );
+  });
+
+  it("splits the dispatch by source: dishes leave the Restaurant, goods the Store", async () => {
+    renderFlow(<MovementPickerFlow mode="transfer" />);
+    const user = userEvent.setup();
+
+    await pickRow(user, "Soda 300ml", "10"); // goods → Store
+    await pickRow(user, "Grilled Chicken", "4"); // dish → Restaurant
+    await user.click(screen.getByRole("combobox", { name: /Destination/ }));
+    await user.click(await screen.findByRole("option", { name: "Canteen" }));
+
+    await user.click(
+      screen.getByRole("button", { name: /^Dispatch Transfer to Canteen/ }),
+    );
+
+    await waitFor(() => expect(api.transferBatch).toHaveBeenCalledTimes(2));
+    expect(api.transferBatch).toHaveBeenCalledWith({
+      fromLocationId: "loc-store",
+      toLocationId: "loc-canteen",
+      lines: [{ productId: "p-soda", quantity: "10" }],
+    });
+    expect(api.transferBatch).toHaveBeenCalledWith({
+      fromLocationId: "loc-rest",
+      toLocationId: "loc-canteen",
+      lines: [{ productId: "p-chicken", quantity: "4" }],
+    });
   });
 
   it("blocked over-stock disables submit", async () => {

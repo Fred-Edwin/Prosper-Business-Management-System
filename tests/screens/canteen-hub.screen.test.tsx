@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-// Session 12 per-screen gate — /canteen hub composed from the kit. Same
-// shape as the Store Manager hub: pinned <TransferBanner> Accept/Flag,
-// <ActionTileGrid> nav, <ErrorState>, empty <ActivityTimeline>.
+// Session 12 per-screen gate — /canteen hub composed from the kit.
+// FIX-2: the incoming-transfer banner is now a single "N items incoming —
+// Review & Receive" prompt that NAVIGATES to /canteen/transfer/receive
+// (no inline one-tap Accept, no Flag Variance). Plus <ActionTileGrid>
+// nav, <ErrorState>, empty <ActivityTimeline>.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -125,26 +127,28 @@ describe("/canteen hub — kit composition", () => {
     ).toBeInTheDocument();
   });
 
-  it("pins an incoming <TransferBanner>; Accept → POST …/accept + toast + refresh", async () => {
-    hook.data.movements = [mv({})];
+  it("the incoming banner's primary action NAVIGATES to the receive screen (no inline accept)", async () => {
+    hook.data.movements = [mv({}), mv({ id: "mv-2", productId: "prod-rice", quantity: "-4.0000" })];
     renderScreen();
     const user = userEvent.setup();
-    const region = screen.getByRole("region", { name: /Incoming stock · Rice Basmati/ });
-    await user.click(within(region).getByRole("button", { name: /Accept \(\+12 kg\)/ }));
-    await waitFor(() => expect(acceptFn).toHaveBeenCalledWith("mv-1"));
-    expect(hook.refresh).toHaveBeenCalled();
-    expect(await screen.findByText(/Accepted 12 kg Rice Basmati/)).toBeInTheDocument();
+    const region = screen.getByRole("region", { name: /Incoming transfers/ });
+    // Summary banner, not one-per-line.
+    expect(within(region).getByText(/2 items incoming/)).toBeInTheDocument();
+    await user.click(
+      within(region).getByRole("button", { name: /Review .* Receive/ }),
+    );
+    expect(push).toHaveBeenCalledWith("/canteen/transfer/receive");
+    // The old one-tap accept / flag calls must NOT fire from the hub.
+    expect(acceptFn).not.toHaveBeenCalled();
+    expect(flagFn).not.toHaveBeenCalled();
   });
 
-  it("Flag sends { flag, note }", async () => {
-    hook.data.movements = [mv({})];
-    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("bag torn");
+  it("no incoming banner when nothing is in transit", () => {
+    hook.data.movements = [];
     renderScreen();
-    const user = userEvent.setup();
-    const region = screen.getByRole("region", { name: /Incoming stock · Rice Basmati/ });
-    await user.click(within(region).getByRole("button", { name: "Flag Variance" }));
-    await waitFor(() => expect(flagFn).toHaveBeenCalledWith("mv-1", "bag torn"));
-    promptSpy.mockRestore();
+    expect(
+      screen.queryByRole("region", { name: /Incoming transfers/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("navigates from the Stock Count tile to /canteen/stock-count", async () => {

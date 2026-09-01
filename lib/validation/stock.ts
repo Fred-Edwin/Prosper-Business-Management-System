@@ -199,7 +199,12 @@ export const correctMovementSchema = z.object({
   note: z.string().trim().min(1).nullable().optional(),
 });
 
-export const acceptTransferSchema = z.object({}).optional();
+// Phase 2 accept. Body is optional; when present it may carry
+// `receivedQuantity` — an unsigned magnitude of what actually arrived
+// (the receiver adjusting a line down/up). Absent ⇒ received == dispatched.
+export const acceptTransferSchema = z
+  .object({ receivedQuantity: magnitudeString.optional() })
+  .optional();
 
 export const flagTransferSchema = z.object({
   note: z.string().trim().min(1, "Describe the discrepancy"),

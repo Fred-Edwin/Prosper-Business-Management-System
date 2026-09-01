@@ -5,8 +5,10 @@
 // 9BA-0 is superseded). Same shape as the Store Manager hub.
 //
 // Composition:
-//   • pinned <TransferBanner> per incoming transfer from Store/Restaurant
-//     (ADR-39) — Accept → POST …/accept, Flag → { flag, note }.
+//   • one pinned <TransferBanner> when transfers are incoming (ADR-39) —
+//     "N items incoming — Review & Receive" → navigates to
+//     /canteen/transfer/receive, where the attendant confirms/adjusts the
+//     quantities and accepts. No inline one-tap accept, no flag-to-admin.
 //   • <ActionTileGrid> — Transfer Dispatch / Stock Count / Stock Levels.
 //   • <ActivityTimeline> — today's canteen movement log / empty line.
 //   • <ErrorState> on a fetch failure.
@@ -16,12 +18,12 @@ import { useRouter } from "next/navigation";
 import { ArrowLeftRight, ClipboardList, Boxes } from "lucide-react";
 import { ActionTileGrid, type ActionTile } from "@/components/kit/action-tile-grid";
 import { ActivityTimeline } from "@/components/kit/activity-timeline";
-import { TransferBanner } from "@/components/kit/banner";
+import { InstructionalBanner } from "@/components/kit/instructional-banner";
+import { Button } from "@/components/kit/button";
 import { ErrorState } from "@/components/kit/error-state";
 import { useToast } from "@/components/kit/toast";
 import {
   useStaffStock,
-  stockApi,
   deriveIncomingTransfers,
 } from "@/app/store-manager/use-staff-stock";
 import {
@@ -40,7 +42,6 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
   const router = useRouter();
   const { toast } = useToast();
   const { data, loading, error, refresh } = useStaffStock();
-  const [busyId, setBusyId] = React.useState<string | null>(null);
 
   // F7-3 (QA S7) — today's canteen stock counts, so the attendant can
   // undo a mistaken same-day count (the `voidStockCount` recovery path,
@@ -88,46 +89,11 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
 
   const incoming = deriveIncomingTransfers(data.movements, myLocationId);
   const timeline = movementsToTimeline(data.movements, data.products);
-
-  const productName = (id: string) =>
-    data.products.find((p) => p.id === id)?.name ?? "stock";
-  const productUnit = (id: string) =>
-    data.products.find((p) => p.id === id)?.unitLabel ?? "";
-
-  async function onAccept(movementId: string, productId: string, qty: string) {
-    setBusyId(movementId);
-    try {
-      await stockApi.acceptTransfer(movementId);
-      toast(
-        `Accepted ${trimQty(qty).replace("-", "")} ${productUnit(productId)} ${productName(productId)}`,
-        { tone: "success" },
-      );
-      await refresh();
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't accept the transfer.", {
-        tone: "danger",
-      });
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function onFlag(movementId: string) {
-    const note = window.prompt("Describe the variance (what arrived vs. expected):");
-    if (note == null || note.trim() === "") return;
-    setBusyId(movementId);
-    try {
-      await stockApi.flagTransfer(movementId, note.trim());
-      toast("Variance flagged — the Admin will review it.", { tone: "info" });
-      await refresh();
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't flag the transfer.", {
-        tone: "danger",
-      });
-    } finally {
-      setBusyId(null);
-    }
-  }
+  const incomingUnits = incoming.reduce(
+    (sum, { movement }) =>
+      sum + Math.abs(Number.parseFloat(movement.quantity) || 0),
+    0,
+  );
 
   const tiles: ActionTile[] = [
     {
@@ -153,30 +119,27 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
 
   return (
     <div className="flex flex-col gap-(--sp-6) px-(--sp-6) py-(--sp-6)">
-      {incoming.map(({ movement, flagged }) => (
-        <TransferBanner
-          key={movement.id}
-          title={`Incoming stock · ${productName(movement.productId)}`}
-          detail={`${trimQty(movement.quantity).replace("-", "")} ${productUnit(
-            movement.productId,
-          )} dispatched ${new Date(movement.occurredAt).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}`}
-          primaryLabel={
-            busyId === movement.id
-              ? "Accepting…"
-              : `Accept (+${trimQty(movement.quantity).replace("-", "")} ${productUnit(
-                  movement.productId,
-                )})`
-          }
-          flagged={flagged}
-          onPrimary={() =>
-            onAccept(movement.id, movement.productId, movement.quantity)
-          }
-          onFlag={() => onFlag(movement.id)}
-        />
-      ))}
+      {incoming.length > 0 && (
+        <div role="region" aria-label="Incoming transfers" className="flex flex-col gap-(--sp-4)">
+          <InstructionalBanner
+            step={incoming.length}
+            title={`${incoming.length} ${
+              incoming.length === 1 ? "item" : "items"
+            } incoming — Review & Receive`}
+            body={`${trimQty(String(incomingUnits))} unit${
+              incomingUnits === 1 ? "" : "s"
+            } dispatched from Store / Restaurant. Confirm what actually arrived.`}
+          />
+          <Button
+            variant="primary"
+            size="lg"
+            className="w-full"
+            onClick={() => router.push("/canteen/transfer/receive")}
+          >
+            Review &amp; Receive
+          </Button>
+        </div>
+      )}
 
       <div className="flex flex-col gap-(--sp-4)">
         <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-caption/micro">

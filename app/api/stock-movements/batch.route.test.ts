@@ -168,6 +168,18 @@ beforeAll(async () => {
       occurredAt: new Date("2026-08-01T06:00:00Z"),
     },
   });
+  // A dish batch already at the Restaurant, so the SM → Canteen transfer
+  // (dispatched FROM the Restaurant) has stock to move.
+  await prisma.stockMovement.create({
+    data: {
+      productId: dishProduct,
+      locationId: restaurantId,
+      movementType: "production",
+      quantity: new Prisma.Decimal("30"),
+      recordedById: adminId,
+      occurredAt: new Date("2026-08-01T06:00:00Z"),
+    },
+  });
 });
 
 afterAll(async () => {
@@ -297,6 +309,21 @@ describe("batch movement routes — auth + wiring", () => {
       lines: [{ productId: ingredientAtStore, quantity: "1" }],
     });
     expect(res.status).toBe(403);
+  });
+
+  // FIX-1 — the SM → Canteen sellable-output transfer is dispatched FROM
+  // the Restaurant (production's landing location), not the SM's home
+  // Store. The own-location guard must carve this out, like the
+  // production batch route already does.
+  it("transfer batch: SM dispatching FROM the Restaurant → 201", async () => {
+    mockSession.current = sessionFor("store_manager", smId);
+    const res = await callBatch("transfers", {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      lines: [{ productId: dishProduct, quantity: "4" }],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data[0].movementType).toBe("transfer");
   });
 
   it("non-sale batch: SM with no location link → 403", async () => {
