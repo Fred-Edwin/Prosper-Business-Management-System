@@ -357,6 +357,20 @@ describe("SM — Record Batch Production", () => {
     renderFlow(<MovementPickerFlow mode="production" />);
     expect(screen.getByText("No dishes set up")).toBeInTheDocument();
   });
+
+  // FIX-1 — the readout is the real Restaurant balance under an
+  // "Available:" prefix (was the cryptic "In Rest.:", and when the
+  // balances read was cross-location-blocked for the SM it fell back to a
+  // floor of 1). Grilled Chicken = 6 in LEVELS, not 1.
+  it("row readout shows Available: N from the derived Restaurant balance", () => {
+    renderFlow(<MovementPickerFlow mode="production" />);
+    expect(
+      screen.getByRole("group", { name: /^Grilled Chicken, Available: 6 pcs/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: /In Rest\./ }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 // ── Transfer ────────────────────────────────────────────────────────
@@ -395,7 +409,7 @@ describe("SM — Transfer Stock", () => {
 
     expect(
       screen.getByText(
-        /Removes 72 pcs from Store now; lands at Canteen once they accept\./,
+        /Removes 72 pcs from Restaurant now; lands at Canteen once they accept\./,
       ),
     ).toBeInTheDocument();
 
@@ -406,7 +420,7 @@ describe("SM — Transfer Stock", () => {
     );
     await waitFor(() =>
       expect(api.transferBatch).toHaveBeenCalledWith({
-        fromLocationId: "loc-store",
+        fromLocationId: "loc-rest",
         toLocationId: "loc-canteen",
         lines: [
           { productId: "p-soda", quantity: "48" },

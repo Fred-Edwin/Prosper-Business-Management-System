@@ -67,6 +67,11 @@ export type MovementMode =
 
 /** Modes whose source location is the Canteen (not the Store). */
 const CANTEEN_SOURCED = new Set<MovementMode>(["dispatch"]);
+/** Modes whose source location is the Restaurant (not the Store).
+ *  SM → Canteen transfer moves cooked dishes + sellable goods OUT of the
+ *  Restaurant (where production lands them) — never the Store, and never
+ *  ingredients. Owner decision, fix/product-scoping QA. */
+const RESTAURANT_SOURCED = new Set<MovementMode>(["transfer"]);
 
 // ── Per-flow configuration ─────────────────────────────────────────────
 
@@ -94,8 +99,8 @@ type FlowConfig = {
   searchPlaceholder: string;
   sectionLabel: string;
   /** `SelectableProductRow.availableLabelPrefix`. The kit only supports a
-   * prefix, so Production's flow-doc suffix ("N in Rest.") ships as the
-   * prefix "In Rest.:" — cosmetic delta, logged for QA. */
+   * prefix, so a flow-doc suffix ("N in Rest.") ships as a prefix
+   * ("Available:") — cosmetic delta, logged for QA. */
   availPrefix: string;
   /** `true` ⇒ spend flow: the row stepper is bounded by `available` and an
    * over-available quantity BLOCKS. `false` ⇒ additive: unbounded, only a
@@ -148,7 +153,7 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     productKinds: "dish",
     searchPlaceholder: "Search dishes…",
     sectionLabel: "Select dishes produced",
-    availPrefix: "In Rest.:",
+    availPrefix: "Available:",
     spend: false,
     categoryTabs: false,
     emptyTitle: "No dishes set up",
@@ -157,10 +162,11 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
   },
   transfer: {
     title: "Transfer Stock",
-    direction: "Store → …",
+    direction: "Restaurant → …",
     tone: "info",
     // The SM sends cooked dishes + sellable goods (sodas, snacks, packaged
-    // items) to the Canteen — never raw ingredients. FIX-1 FIX A.
+    // items) OUT of the Restaurant to the Canteen — never raw ingredients.
+    // FIX-1 FIX A (kind filter); source = Restaurant per fix/product-scoping.
     productKinds: "dish-or-goods",
     searchPlaceholder: "Search sodas, goods, stock…",
     sectionLabel: "Select items to transfer",
@@ -168,8 +174,8 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     spend: true,
     categoryTabs: true,
     emptyTitle: "Nothing to transfer",
-    emptyDescription: "The Store has no stock to send right now.",
-    errorTitle: "Couldn't load Store stock",
+    emptyDescription: "The Restaurant has no stock to send right now.",
+    errorTitle: "Couldn't load Restaurant stock",
   },
   "non-sale": {
     title: "Log Non-Sale",
@@ -240,15 +246,23 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   const canteenLocationId =
     data.locations.find((l) => l.type === "canteen")?.id ?? "";
   // The SOURCE location for this flow: the Canteen for Dispatch, the
-  // Store for every SM flow. Feeds the batch `locationId` /
-  // `fromLocationId`, the destination-picker exclusion, and the badge.
+  // Restaurant for the SM → Canteen Transfer, the Store for every other
+  // SM flow. Feeds the batch `locationId` / `fromLocationId`, the
+  // destination-picker exclusion, and the badge.
   const sourceLocationId = CANTEEN_SOURCED.has(mode)
     ? canteenLocationId
-    : storeLocationId;
-  const sourceLabel = CANTEEN_SOURCED.has(mode) ? "Canteen" : "Store";
+    : RESTAURANT_SOURCED.has(mode)
+      ? restaurantLocationId
+      : storeLocationId;
+  const sourceLabel = CANTEEN_SOURCED.has(mode)
+    ? "Canteen"
+    : RESTAURANT_SOURCED.has(mode)
+      ? "Restaurant"
+      : "Store";
   // The location whose derived balances feed the row `available` readouts:
   // Production reads the Restaurant (the dish's landing stock); Dispatch
-  // reads the Canteen; every other flow reads the Store.
+  // reads the Canteen; Transfer reads the Restaurant (its source); every
+  // other flow reads the Store.
   const balanceLocationId =
     mode === "production" ? restaurantLocationId : sourceLocationId;
 
