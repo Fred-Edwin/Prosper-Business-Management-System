@@ -93,12 +93,50 @@ tabbed **`/admin/sales`** screen.
      session. The "Corrected" / "Correction of #N" status text still
      ties the pair. (This tint was dead code in the shipped A3 too — the
      const was defined but never passed.)
-  3. **Mobile toolbar** — the controls scroll horizontally rather than
+  3. **Mobile toolbar** — the controls **wrap onto rows** rather than
      collapsing secondary ones into a **"More"** chip (`IJ1-0`).
-     Functionally equivalent; all controls reachable.
+     Functionally equivalent; all controls reachable. (Was briefly
+     `overflow-x-auto`, which clipped the dropdown popovers — fixed to
+     `flex-wrap` in the follow-up below.)
   4. **Date control** — a native `<input type=date>` in a small popover
      (the shipped A4 pattern), not the kit `DatePicker` calendar. The
      "Today" default already worked (F7-8); kept working.
+  5. **Linked row-group tint on mobile** — the mobile Orders card list
+     *does* tint the correction card (`bg-(--surface-subtle)`); only the
+     desktop `SimpleTable` can't (delta 2).
+
+**Follow-up fixes (2026-09-01, same session, after owner spotted issues
+on `pnpm dev` mobile):**
+- **Canteen Derived tab had no mobile layout** — it was the desktop
+  `<SimpleTable>` (5 cols) crushed into 440px, text overlapping. Added
+  the `hidden md:block` table / `flex md:hidden` **stacked-card list**
+  per artboard `ILC-0` (name + KES on one row; "Last counted …" /
+  "Covers … · N sold" sub-lines; `—` for never-counted). Did the same
+  for the Restaurant Orders tab per `IJ1-0` (time + "cashier · type ·
+  payment" left; total + status right; correction card tinted).
+- **Filter dropdowns unreachable on mobile** — the toolbar row had
+  `overflow-x-auto`, which (CSS: one axis non-visible ⇒ the other
+  becomes `auto`) clipped the `Select` / date popovers that open
+  downward. Changed to `flex-wrap` (the `[M2-SA]` mobile artboards show
+  ≤4 chips, they wrap cleanly). Verified: dropdowns now open fully.
+- **Restaurant Orders looked "broken" (0 orders)** — not a wiring bug
+  (the `/api/orders` filter params work; verified `?paymentMethod=mpesa`
+  returns only mpesa rows). The tab defaults to a **`date=today`** filter
+  (flow doc §G) and the dev seed's orders are all dated Aug 27–30 vs a
+  Sep 1 "today", so everything is filtered out. Made that empty state
+  actionable: **"No orders today"** + a **"Show all dates"** button
+  (sets `date=null` → omits the param → all orders). The date chip now
+  reads **"All dates"** (bold, off-default) in that mode, with a
+  visible result count + Reset. Reworked the `DateControl` model so
+  `today` / `null` (all dates) / a specific day are all distinct. **The
+  stale seed itself is a `prisma/seed.ts` concern for another session**
+  — some orders should be dated relative-to-today.
+
+- **Out of scope but flagged for the orchestrator:** `/admin/stock/opening`
+  (the bulk opening-stock grid) has **no mobile layout** — the owner hit
+  it during the walkthrough. Not a 3a file (brief §5 forbids touching
+  Ledger/Stock screens); needs its own session.
+
 - **Owner walkthrough:** owed (Admin).
 
 ### 2026-08-30 — M2 Session 6e: Gap-Fix Sprint — Domain & API Hydration (Developer) — DONE

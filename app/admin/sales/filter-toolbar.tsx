@@ -39,11 +39,18 @@ export type DateControl = {
   id: string;
   kind: "date";
   label: string; // "Date", "Date range"
-  /** `YYYY-MM-DD` or null for the default ("Today" / "All dates"). */
+  /** `YYYY-MM-DD`, or null meaning "all dates". */
   value: string | null;
+  /** `YYYY-MM-DD` (e.g. today) or null — the value that reads as "default". */
   default: string | null;
-  /** Label when value === default (e.g. "Today" / "All dates"). */
+  /** Chip label when value === default (e.g. "Today" / "All dates"). */
   defaultLabel: string;
+  /**
+   * Chip label when value is null but null is NOT the default — i.e. the
+   * "all dates" escape from a date-defaulted control. Omit when null IS
+   * the default.
+   */
+  nullLabel?: string;
 };
 
 export type FilterControl = SelectControl | DateControl;
@@ -67,7 +74,11 @@ function DateChip({
   const rootRef = React.useRef<HTMLDivElement>(null);
   const inputId = `filter-${control.id}-input`;
   const off = isOffDefault(control);
-  const shownLabel = off && control.value ? control.value : control.defaultLabel;
+  const shownLabel = !off
+    ? control.defaultLabel
+    : control.value
+      ? control.value
+      : (control.nullLabel ?? control.defaultLabel);
 
   React.useEffect(() => {
     if (!open) return;
@@ -203,7 +214,7 @@ function SelectChip({
         options={prefixed}
         value={control.value}
         onChange={onChange}
-        className="w-auto min-w-[124px]"
+        className="w-auto min-w-[160px]"
       />
     </div>
   );
@@ -242,8 +253,11 @@ export function SalesFilterToolbar({
       aria-label="Filters"
       className="flex flex-col md:flex-row md:items-center gap-(--sp-4) py-(--sp-6) px-(--sp-6)"
     >
-      {/* Controls — scroll horizontally on mobile */}
-      <div className="flex items-center gap-(--sp-4) overflow-x-auto md:overflow-visible md:flex-1">
+      {/* Controls — wrap onto rows on mobile (NOT overflow-x-auto: that
+          clips the Select / date popovers, which drop downward). The
+          [M2-SA] mobile artboards show at most 2–4 chips, so they wrap
+          cleanly. */}
+      <div className="flex flex-wrap items-center gap-(--sp-4) md:flex-nowrap md:flex-1">
         {controls.map((c) =>
           c.kind === "select" ? (
             <SelectChip

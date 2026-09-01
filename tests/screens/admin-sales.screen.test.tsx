@@ -175,6 +175,11 @@ function renderSales(initialTab: "orders" | "derived" = "orders") {
   );
 }
 
+// jsdom has no viewport, so the responsive `hidden md:block` / `md:hidden`
+// split renders BOTH the desktop <table> and the mobile card <ul>. Scope
+// row assertions to one layout. The desktop table carries role="table".
+const desktop = () => within(screen.getByRole("table"));
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockOrdersState = { orders: [CASH_ORDER, MPESA_ORDER], loading: false, error: null };
@@ -198,7 +203,7 @@ describe("A3+A4 merged Sales — shell & tabs", () => {
       screen.getByRole("tab", { name: "Canteen Derived" }).getAttribute("aria-selected"),
     ).toBe("true");
     // The Canteen Derived table (not the orders table) is shown.
-    expect(screen.getByText("Soda 300ml")).toBeDefined();
+    expect(screen.getAllByText("Soda 300ml").length).toBeGreaterThan(0);
     expect(screen.getByText("Period covered")).toBeDefined();
     expect(screen.queryByText("Mary Njeri")).toBeNull();
   });
@@ -207,11 +212,11 @@ describe("A3+A4 merged Sales — shell & tabs", () => {
     const user = userEvent.setup();
     renderSales("orders");
     // Orders tab visible first.
-    expect(screen.getByText("Mary Njeri")).toBeDefined();
+    expect(desktop().getByText("Mary Njeri")).toBeDefined();
 
     await user.click(screen.getByRole("tab", { name: "Canteen Derived" }));
     expect(replace).toHaveBeenCalledWith("/admin/sales?tab=derived");
-    expect(await screen.findByText("Soda 300ml")).toBeDefined();
+    expect((await screen.findAllByText("Soda 300ml")).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("tab", { name: "Restaurant Orders" }));
     expect(replace).toHaveBeenLastCalledWith("/admin/sales");
@@ -223,15 +228,20 @@ describe("A3+A4 merged Sales — shell & tabs", () => {
 describe("Restaurant Orders tab", () => {
   it("renders the orders table (Time · Cashier · Type · Total · Payment · Status)", () => {
     renderSales();
-    expect(screen.getByText("Mary Njeri")).toBeDefined();
-    expect(screen.getByText("KES 210.00")).toBeDefined();
-    expect(screen.getAllByText("Posted").length).toBeGreaterThan(0);
+    expect(desktop().getByText("Mary Njeri")).toBeDefined();
+    expect(desktop().getByText("KES 210.00")).toBeDefined();
+    expect(desktop().getAllByText("Posted").length).toBeGreaterThan(0);
   });
 
-  it("empty state when there are no orders", () => {
+  it("empty 'today' offers a Show all dates action (default date filter = today)", async () => {
+    const user = userEvent.setup();
     mockOrdersState = { orders: [], loading: false, error: null };
     renderSales();
-    expect(screen.getByText("No orders yet")).toBeDefined();
+    // The tab defaults to date=today (flow doc §G); an empty today is a
+    // narrowing, so the Admin gets a way to widen it.
+    expect(screen.getByText("No orders today")).toBeDefined();
+    await user.click(screen.getByRole("button", { name: "Show all dates" }));
+    await waitFor(() => expect(lastOrdersFilter.date).toBeUndefined());
   });
 
   it("filtered-empty state with a Reset action when a filter matches nothing", async () => {
@@ -281,7 +291,7 @@ describe("Restaurant Orders tab", () => {
   it("opens the read-only detail drawer, then the correction form", async () => {
     const user = userEvent.setup();
     renderSales();
-    await user.click(screen.getByText("KES 210.00"));
+    await user.click(desktop().getByText("KES 210.00"));
     expect(screen.getByText("Order #1041")).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Record correction" }));
     expect(screen.getByText(/Replaces order #1041/)).toBeDefined();
@@ -303,7 +313,7 @@ describe("F7-4: correction form restates the whole order", () => {
   async function openCorrection(user: ReturnType<typeof userEvent.setup>, order = CASH_ORDER) {
     mockOrdersState = { orders: [order], loading: false, error: null };
     renderSales();
-    await user.click(screen.getByText(`KES ${Number(order.total).toFixed(2)}`));
+    await user.click(desktop().getByText(`KES ${Number(order.total).toFixed(2)}`));
     await user.click(screen.getByRole("button", { name: "Record correction" }));
   }
 
@@ -382,9 +392,11 @@ describe("F7-4: correction form restates the whole order", () => {
 describe("Canteen Derived tab", () => {
   it("renders Product · Last counted · Period covered · Units sold · Revenue", () => {
     renderSales("derived");
-    expect(screen.getByText("Soda 300ml")).toBeDefined();
-    expect(screen.getByText("96")).toBeDefined();
-    expect(screen.getByText("KES 5,760.00")).toBeDefined();
+    // desktop <table> + mobile card list both render in jsdom — scope to the table.
+    const table = within(screen.getByRole("table"));
+    expect(table.getByText("Soda 300ml")).toBeDefined();
+    expect(table.getByText("96")).toBeDefined();
+    expect(table.getByText("KES 5,760.00")).toBeDefined();
   });
 
   it("empty state when there are no counts", () => {

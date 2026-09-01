@@ -211,12 +211,49 @@ export function DerivedTab() {
             : {})}
         />
       ) : (
-        <SimpleTable
-          columns={columns}
-          rows={rows}
-          rowKey={(r) => `${r.productId}-${r.lastCountedAt ?? "none"}`}
-          className="w-full"
-        />
+        <>
+          {/* Desktop table (≥ --bp-md) — artboard I5S-0 */}
+          <div className="hidden md:block">
+            <SimpleTable
+              columns={columns}
+              rows={rows}
+              rowKey={(r) => `${r.productId}-${r.lastCountedAt ?? "none"}`}
+              className="w-full"
+            />
+          </div>
+
+          {/* Mobile card list (< --bp-md) — artboard ILC-0 */}
+          <ul className="flex md:hidden flex-col w-full list-none">
+            {rows.map((r) => (
+              <li
+                key={`${r.productId}-${r.lastCountedAt ?? "none"}`}
+                className="flex flex-col gap-(--sp-1) py-(--sp-5) px-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
+              >
+                <div className="flex items-baseline justify-between gap-(--sp-4)">
+                  <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/sm min-w-0">
+                    {r.productName}
+                  </span>
+                  <span className="font-mono [color:var(--text-primary)] text-body/sm shrink-0">
+                    {r.revenue != null ? fmtMoney(r.revenue) : "—"}
+                  </span>
+                </div>
+                <span className="font-ui [color:var(--text-secondary)] text-caption/micro">
+                  {r.lastCountedAt
+                    ? `Last counted ${fmtDateMed(r.lastCountedAt)} · ${relativeDay(r.lastCountedAt)}`
+                    : "Never counted"}
+                </span>
+                {r.periodStart && r.periodEnd && (
+                  <span className="font-ui [color:var(--text-secondary)] text-caption/micro">
+                    {`Covers ${fmtDateMed(r.periodStart)} → ${fmtDateMed(r.periodEnd)}`}
+                    {r.unitsSold != null
+                      ? ` · ${Number(r.unitsSold).toLocaleString("en-US")} sold`
+                      : ""}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );

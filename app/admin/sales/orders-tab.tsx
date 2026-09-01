@@ -199,9 +199,11 @@ export function OrdersTab() {
       id: "date",
       kind: "date",
       label: "Date",
-      value: filter.date === today ? null : filter.date,
-      default: null,
+      // filter.date: `today` = default, null = "all dates", else a specific day.
+      value: filter.date,
+      default: today,
       defaultLabel: "Today",
+      nullLabel: "All dates",
     },
   ];
 
@@ -215,7 +217,9 @@ export function OrdersTab() {
           value === ALL || value == null ? null : (value as PaymentMethod),
       }));
     } else if (id === "date") {
-      setFilter((f) => ({ ...f, date: value ?? today }));
+      // value: a "YYYY-MM-DD" pick, or `today` from the chip's reset button.
+      // The empty-state "Show all dates" path sets null directly (below).
+      setFilter((f) => ({ ...f, date: value }));
     }
   }
 
@@ -228,11 +232,22 @@ export function OrdersTab() {
     });
   }
 
+  // Off-default = anything other than {no cashier, no payment, date=today,
+  // not corrected-only}. `date === null` (all dates) counts as off-default.
   const anyFilterActive =
     filter.cashierId !== null ||
     filter.paymentMethod !== null ||
     filter.correctedOnly ||
-    (filter.date !== null && filter.date !== today);
+    filter.date !== today;
+
+  // The "Today" date is the default (flow doc §G) — but an empty Today is
+  // still a filter narrowing the view, and the Admin needs a path to older
+  // orders. Offer a "Show all dates" action on that specific empty.
+  const onlyTodayFilter =
+    filter.cashierId === null &&
+    filter.paymentMethod === null &&
+    !filter.correctedOnly &&
+    filter.date === today;
 
   // ── Table columns ──────────────────────────────────────────────────
 
@@ -351,31 +366,104 @@ export function OrdersTab() {
         </div>
       ) : visibleOrders.length === 0 ? (
         <EmptyState
-          variant={anyFilterActive ? "filtered" : "default"}
-          title={anyFilterActive ? "No orders match" : "No orders yet"}
+          variant={anyFilterActive || onlyTodayFilter ? "filtered" : "default"}
+          title={
+            anyFilterActive
+              ? "No orders match"
+              : onlyTodayFilter
+                ? "No orders today"
+                : "No orders yet"
+          }
           description={
             anyFilterActive
               ? "Try different filters or reset."
-              : "Orders placed by the Cashiers will appear here."
+              : onlyTodayFilter
+                ? "No orders have been recorded today. Change the date to see earlier orders."
+                : "Orders placed by the Cashiers will appear here."
           }
           {...(anyFilterActive
             ? { actionLabel: "Reset filters", onAction: resetFilters }
-            : {})}
+            : onlyTodayFilter
+              ? {
+                  actionLabel: "Show all dates",
+                  onAction: () => setFilter((f) => ({ ...f, date: null })),
+                }
+              : {})}
         />
       ) : (
-        // NOTE (QA delta): Paper GCP-0 tints the correction row
-        // (bg-(--surface-subtle) + left accent bar) as a linked pair with its
-        // original. `SimpleTable` has no per-row styling hook and the kit is
-        // frozen this session, so the tint is deferred — the "Corrected" /
-        // "Correction of #N" status text still ties the pair. Flagged for QA.
-        <SimpleTable
-          columns={columns}
-          rows={visibleOrders}
-          rowKey={(o) => o.id}
-          onRowClick={(o) => setDrawer({ kind: "detail", order: o })}
-          rowChevron
-          className="w-full"
-        />
+        <>
+          {/* Desktop table (≥ --bp-md) — artboard I00-0.
+              NOTE (QA delta): Paper GCP-0 tints the correction row
+              (bg-(--surface-subtle) + left accent bar) as a linked pair
+              with its original. `SimpleTable` has no per-row styling hook
+              and the kit is frozen this session, so the tint is deferred —
+              the "Corrected" / "Correction of #N" status text still ties
+              the pair. Flagged for QA. */}
+          <div className="hidden md:block">
+            <SimpleTable
+              columns={columns}
+              rows={visibleOrders}
+              rowKey={(o) => o.id}
+              onRowClick={(o) => setDrawer({ kind: "detail", order: o })}
+              rowChevron
+              className="w-full"
+            />
+          </div>
+
+          {/* Mobile card list (< --bp-md) — artboard IJ1-0 */}
+          <ul className="flex md:hidden flex-col w-full list-none">
+            {visibleOrders.map((o) => {
+              const isCorrection = o.correctsOrderId !== null;
+              const hasCorrection = correctionByOriginalId.has(o.id);
+              const origNum = isCorrection
+                ? (numberById.get(o.correctsOrderId ?? "") ?? null)
+                : null;
+              return (
+                <li key={o.id}>
+                  <button
+                    type="button"
+                    onClick={() => setDrawer({ kind: "detail", order: o })}
+                    className={`flex w-full items-start justify-between gap-(--sp-4) py-(--sp-5) px-(--sp-6) text-left border-b border-b-solid [border-bottom-color:var(--border-subtle)] kit-interactive kit-focus-ring ${
+                      isCorrection ? "bg-(--surface-subtle)" : ""
+                    }`}
+                  >
+                    <div className="flex flex-col gap-(--sp-1) min-w-0">
+                      <span className="font-mono [color:var(--text-secondary)] text-body/sm">
+                        {fmtTime(o.occurredAt)}
+                      </span>
+                      <span className="font-ui [color:var(--text-secondary)] text-caption/micro">
+                        {(o.cashierName || cashierFallback(o.cashierId)) +
+                          ` · ${ORDER_TYPE_LABEL[o.orderType]} · ${PAYMENT_LABEL[o.paymentMethod]}`}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-(--sp-1) items-end shrink-0">
+                      <span className="font-mono [color:var(--text-primary)] text-body/sm">
+                        {fmtMoney(o.total)}
+                      </span>
+                      <span
+                        className={`font-ui text-caption/micro ${
+                          isCorrection
+                            ? "[color:var(--text-tertiary)]"
+                            : hasCorrection
+                              ? "text-warning"
+                              : "text-success"
+                        }`}
+                      >
+                        {isCorrection
+                          ? origNum != null
+                            ? `Correction of #${origNum}`
+                            : "Correction"
+                          : hasCorrection
+                            ? "Corrected"
+                            : "Posted"}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
 
       {/* Detail + correction Drawer */}
