@@ -1,12 +1,9 @@
-// Store Manager — Receive Goods flow (log a supplier delivery). Session 12:
-// composed from the kit + wired to POST /api/stock-movements
-// { movementType: "purchase_receipt" }. ADR-44 — the hub's "Receive Goods"
-// tile from artboard 8T3-0 is superseded.
-//
-// The 1-tap "match a pending payment" path (linking purchasePaymentId) is
-// TODO(mock) in ./receive-flow.tsx — GET /api/stock-movements/outstanding
-// is Admin-only, so there is no staff-facing list of payments awaiting a
-// receipt yet. The manual receipt (no link) works fully.
+// Store Manager — Receive Goods flow (log a supplier delivery). M2-3c
+// (ADR-44 body reversal → Option A): the multi-row <SelectableProductRow>
+// picker + "Deliveries awaiting receipt" <MatchCard> list, wired to POST
+// /api/stock-movements/receipts/batch. The "match a delivery the Admin
+// already paid for" path is live — GET /api/stock-movements/outstanding
+// was widened to store_manager in 3-DOMAIN.
 import { ReceiveFlow } from "./receive-flow";
 
 export default function ReceiveFlowPage() {

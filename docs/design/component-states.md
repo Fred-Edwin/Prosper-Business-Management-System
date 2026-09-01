@@ -450,6 +450,47 @@ info treatment, distinct from C23's amber — §6 D6.)
 
 **Add:** one error-cell artboard.
 
+**Mobile composition (`Opening Stock — Mobile [M2-3DF]`, `LIS-0` + states
+`LN4-0`, added 2026-09-01).** `<BulkEntryGrid>` is desktop-only — its
+multi-column-per-location grid does not fit 390px. Below `--bp-md` the
+Opening Stock screen (`app/admin/stock/opening/opening-client.tsx`)
+**does not render `<BulkEntryGrid>`**; it composes a **stacked card list**
+from existing primitives — no kit change:
+
+- one **card per product**: name (`--text-body`/`--weight-medium`) +
+  right-aligned category label (`--color-info` ingredient /
+  `--color-warning` dish·goods, `--text-caption`); meta line
+  `{home location} · per {unit}` (`--text-sm`/`--text-secondary`).
+- one **input row** per card — only the product's **home-location**
+  column is editable on mobile (the desktop's other-location greyed
+  `0.0` cells are dropped): a `--text-tertiary` uppercase micro-label
+  `COUNT AT {LOCATION}`, then a 44px `.kit-field` (`inputmode="decimal"`,
+  mono value, trailing unit) that fills the row, then a fixed **76px
+  right-lane readout**: live `KES {value}` when the count parses and the
+  product has a buying price · `Dish` for a dish · `—` otherwise ·
+  `✓ Saved` (`--color-success`) / `↻ Corrected` (`--color-warning`)
+  after a save batch.
+- **cell states** map 1:1 to C26: default (placeholder `--text-disabled`),
+  editing (`.kit-field` `--color-accent` border + live readout), error
+  (§9.8 — `--color-danger` border + `--color-danger-bg` + a helper line
+  **below** the field, which a grid cell can't show — the mobile card
+  *gains* the §9.8 helper row that `6TT-0` documents as an exception),
+  saved, corrected.
+- **InstructionalBanner** (step 1) stacked; **category tabs** = the
+  `8Q4-0` horizontally-scrollable chip strip (`overflow-x:auto`,
+  `flex-shrink:0` per chip) — not kit `<Tabs>`; **consolidated
+  valuation** = the dark `--color-gray-900` strip stacked
+  (`CONSOLIDATED DAY 1 VALUATION` micro-label → wrapping `Raw stock … ·
+  Dishes …` → `Consolidated` in `--color-success`; muted until a count
+  is entered); **sticky bottom bar** (`8Q4-0` pattern): `Discard`
+  tertiary + full-width primary `Save {n} Opening Counts`, label →
+  `Save Baseline & Initialize Day 1` + `disabled` (§9.7) when nothing is
+  dirty.
+- states drawn: default / editing / live-value / saved / corrected /
+  error on `LIS-0`; **loading** (3 skeleton cards, §9.10) + **empty tab**
+  (kit `EmptyState`) on `LN4-0`. No Physical-Assets tab — matches the
+  shipped screen, not the desktop `7UD-0` artboard.
+
 ### C27 — Action-tile grid
 
 `6WD-0` + hubs. Tap target.
@@ -508,6 +549,34 @@ info treatment, distinct from C23's amber — §6 D6.)
 
 Composite of C8 + C12 + avatar. **No states of its own** — its parts
 carry their states. No artboards. ✅
+
+### C33 — SelectableProductRow  *(M2-3KIT — added 2026-08-31)*
+
+`JL7-0` ("Component Kit — Selectable Product Row [M2-3D]"). The multi-row
+product-picker row for the 6 Store-Manager / Canteen movement flows
+(ADR-44 body reversal — owner, Option A). **implemented + gated
+(M2-3KIT)** — 9 Storybook stories under `test:visual` + `test:a11y` + §9
+`postVisit`; `title: "Kit/SelectableProductRow"`.
+
+| State | Trigger | artboard? |
+|---|---|---|
+| not selected | `!selected && available > 0` | ARTBOARD ✅ (`JL7-0` §1) — plain row; name, `{prefix} {available} {unit}` readout (`--font-mono` `--text-caption` `--text-secondary`), `+ Select` (`<Button size="sm">` secondary) right |
+| selected (in batch) | `selected && quantity <= available` | ARTBOARD ✅ (`JL7-0` §2) — `--surface-selected` fill + `--color-accent` 1px border; inline compact `− [n] +` stepper right |
+| at available | `selected && quantity >= ceiling` (`ceiling = max ?? available`) | ARTBOARD ✅ (`JL7-0` §3) — as selected, stepper `+` disabled via §9.7 (`--text-disabled` + `opacity 0.5`); **not** an error |
+| over available — BLOCKED | `selected && quantity > available` | ARTBOARD ✅ (`JL7-0` §4) — §9.8: `--color-danger` border + `--color-danger-bg` fill, stepper border + typed value `--color-danger`, inline helper *"Only N unit on hand — reduce or remove this line."* `aria-invalid` on the value. Fires `onBlockedChange(productId, true)` so the parent flow disables its sticky submit. |
+| zero available | `available === 0` | ARTBOARD ✅ (`JL7-0` §5) — row `opacity 0.5`, readout `None on hand`, `+ Select` `disabled` + `tabIndex=-1`; `onSelect` cannot fire |
+| hard-disabled | `disabled` prop | GLOBAL — same visual as zero-available (row muted, control inert); distinct trigger, for a parent that needs to freeze the whole row |
+| `+ Select` focus-visible | — | GLOBAL (§9.1 — `.kit-focus-ring` 2px accent ring) |
+| stepper `−`/`+` focus-visible / hover / disabled | — | GLOBAL (§9.1 / §9.5 / §9.7 via `.kit-interactive` + `.kit-focus-ring`) |
+| value field focus | — | GLOBAL (`role="spinbutton"` `<input>`, ADR-43/48 tap-to-type contract re-used inline — see kit-audit §1) |
+
+**Deviation from `JL7-0` (documented, kit-audit §1):** the embedded
+stepper is authored inline, not composed from `<QuantityStepper>` (C10),
+because C10's `<FormField>` chrome / `w-[220px]` / `--control-md` height
+are not prop-overridable and would break the fixed-width trailing-slot
+alignment across a row list. The ADR-43/48 `role="spinbutton"` +
+tap-to-type + `↑`/`↓` step + `onValueString`(→`onQuantityString`)
+contract is re-used verbatim. C10 itself is unchanged.
 
 ---
 
@@ -910,6 +979,8 @@ per-component before → after record).
 | C30 BottomNav | active/inactive/pressed | **implemented** — `<nav aria-label="Primary">` |
 | C31 FlowHeader | default/**no-badge**/back-pressed | **implemented** — `<header>` + `role="heading"` |
 | C32 Toolbar row | (composite) | n/a — its parts carry their states |
+| C33 SelectableProductRow | not-selected / selected / at-available / **over-available BLOCKED** / zero-available / hard-disabled / focus (+ Select, stepper, value) | **implemented + gated (M2-3KIT, 2026-08-31)** — `JL7-0`. Composes `<Button size="sm">` + tokens + the shared `.kit-interactive` / `.kit-focus-ring` / §9.7 rules. Blocked state = §9.8 (`--color-danger` border + `--color-danger-bg` + helper line + `aria-invalid`) and raises `onBlockedChange(id, true)` for the parent's sticky-submit gate. Embedded compact stepper authored inline (not C10 — slot-alignment constraint, kit-audit §1) but re-uses the ADR-43/48 `role="spinbutton"` tap-to-type contract verbatim; C10 unchanged. 9 stories green under `test:visual` + `test:a11y` + §9 `postVisit` (`interaction.assertColor` on the selected accent border/tint + the blocked danger border/bg; `assertFocusRing` on `+ Select`). 9 visual baselines committed. **KIT GAP (deferred, post-Submission-1):** no additive/`neverBlocks` mode — 3c/3d additive flows (Receive/Production) pass `max(onHand, lineQty, 1)` as `available`; residual = a 0-stock dish reads `In Rest.: 1`. |
+| **C34 FilterToolbar** | default / one-active / multi-active / toggle-style / mobile / filtered-empty (+ 2 §9.2 focus-ring proofs) | **implemented + gated (M2-3KIT-FILTER)** — `components/kit/filter-toolbar.tsx`, composed from `Select` / `DatePicker` / `ToggleSwitch` / `Button` (no new primitive). `role="search"` region, controlled (owns no filter state), Reset rendered iff any control ≠ default (null-safe for `kind:"date"`), `aria-live="polite"` result count. Mobile (< `--bp-md`): scrollable chip row + `More` → `BottomSheet` of all controls; count + Reset on their own row. ADR-42 gate: 8 stories (`Kit/FilterToolbar`), 8 visual baselines committed under `tests/visual/__screenshots__/`, axe clean (0 serious/critical), `pnpm tsc --noEmit` 0, `pnpm test` jsdom 416 green. §9.2 focus ring proven on the first `Select` trigger + the Reset link. Kit touch: `Select` + `DatePicker` gained an additive, a11y-only `aria-label` prop (names a label-less trigger; ignored when `label` is set). **Documented deviations from L9O-0** (also in the component header + stories JSDoc, for 3e): (a) an at-default `select` label stays `--text-primary` — the kit `Select` trigger has no recessive-tone hook and forking it is out of scope; the "filter is on" signal for a select is carried by the value text ("All" → concrete) + Reset appearing; date + toggle controls, rendered by the toolbar itself, DO honour the tone rule; (b) the date chip uses `DatePicker`'s trailing calendar glyph + mono value, where L9O-0 draws a leading glyph + ui-font value. |
 
 **New primitives (no §2 row — added this session, `kit-audit.md §3`):**
 `Spinner`, `FormField` (mechanical); `Toast` / `ToastProvider` / `useToast()`,

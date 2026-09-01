@@ -35,6 +35,22 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
   };
 });
 
+// F7-3 — the hub's "Today's stock counts" undo section.
+const derivedHook = vi.hoisted(() => ({
+  rows: [] as unknown[],
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
+const voidCountFn = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock("@/app/canteen/use-stock-count", () => ({
+  useDerivedSales: () => derivedHook,
+  useStockCountActions: () => ({
+    recordStockCount: vi.fn(),
+    voidStockCount: voidCountFn,
+  }),
+}));
+
 import { CanteenHubClient } from "@/app/canteen/hub-client";
 
 function mv(over: Partial<StockMovementView>): StockMovementView {
@@ -58,6 +74,7 @@ function mv(over: Partial<StockMovementView>): StockMovementView {
     purchasePaidFrom: null,
     correctsMovementId: null,
     note: null,
+    derivedRevenue: null,
     createdAt: "2026-08-28T09:00:00Z",
     updatedAt: "2026-08-28T09:00:00Z",
     ...over,
@@ -80,6 +97,9 @@ beforeEach(() => {
   hook.data.products = [
     { id: "prod-rice", name: "Rice Basmati", unitLabel: "kg" },
   ];
+  derivedHook.rows = [];
+  derivedHook.error = null;
+  voidCountFn.mockResolvedValue(undefined);
 });
 
 describe("/canteen hub — kit composition", () => {
@@ -134,19 +154,117 @@ describe("/canteen hub — kit composition", () => {
     expect(push).toHaveBeenCalledWith("/canteen/stock-count");
   });
 
-  it("renders a canteen derived-sale movement as 'Stock count' in timeline (G7)", () => {
+  it("F7-3: no 'Today's stock counts' section when nothing was counted today", () => {
+    renderScreen();
+    expect(screen.queryByText(/Today.s stock counts/)).not.toBeInTheDocument();
+  });
+
+  it("F7-3: today's count lists with 'Delete today's count' → confirm → voidStockCount + toast + refresh", async () => {
+    derivedHook.rows = [
+      {
+        productId: "prod-rice",
+        productName: "Rice Basmati",
+        lastCountedAt: "2026-08-31T09:00:00Z",
+        periodStart: null,
+        periodEnd: "2026-08-31T09:00:00Z",
+        unitsSold: "48.0000",
+        revenue: "2880.00",
+        stockCountId: "count-abc",
+      },
+    ];
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderScreen();
+    const user = userEvent.setup();
+
+    expect(screen.getByText(/Today.s stock counts/)).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /Delete today.s count/ }),
+    );
+    await waitFor(() => expect(voidCountFn).toHaveBeenCalledWith("count-abc"));
+    expect(derivedHook.refresh).toHaveBeenCalled();
+    expect(hook.refresh).toHaveBeenCalled();
+    expect(
+      await screen.findByText(/Count deleted · Rice Basmati/),
+    ).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  it("F7-3: cancelling the confirm does not call voidStockCount", async () => {
+    derivedHook.rows = [
+      {
+        productId: "prod-rice",
+        productName: "Rice Basmati",
+        lastCountedAt: "2026-08-31T09:00:00Z",
+        periodStart: null,
+        periodEnd: "2026-08-31T09:00:00Z",
+        unitsSold: "48.0000",
+        revenue: "2880.00",
+        stockCountId: "count-abc",
+      },
+    ];
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /Delete today.s count/ }),
+    );
+    expect(voidCountFn).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  // ── F7-7: the derived-sale row is revenue-in, not stock-out ──────────
+  it("F7-7: a derived-sale row shows +KES revenue in the success tone + 'sold' subtitle", () => {
     hook.data.movements = [
       mv({
         id: "mv-sale-count",
         movementType: "sale",
-        quantity: "-48.0000",
+        quantity: "-96.0000",
         stockCountId: "count-123",
+        derivedRevenue: "5760.00",
         occurredAt: "2026-08-28T14:30:00Z",
       }),
     ];
     renderScreen();
     expect(screen.getByText("Rice Basmati")).toBeInTheDocument();
-    expect(screen.getByText(/Stock count/)).toBeInTheDocument();
-    expect(screen.getByText("-48 kg")).toBeInTheDocument();
+    // subtitle: units sold + time (no red stock-out figure).
+    expect(screen.getByText(/96 kg sold ·/)).toBeInTheDocument();
+    const value = screen.getByText("+KES 5,760.00");
+    expect(value).toBeInTheDocument();
+    expect(value.className).toMatch(/text-success/);
+    // the old "-96 kg" stock-out treatment must NOT appear.
+    expect(screen.queryByText(/-96 kg/)).not.toBeInTheDocument();
+  });
+
+  it("F7-7: a zero-sold count shows a muted em-dash, not a red figure", () => {
+    hook.data.movements = [
+      mv({
+        id: "mv-sale-zero",
+        movementType: "sale",
+        quantity: "0.0000",
+        stockCountId: "count-999",
+        derivedRevenue: null,
+        occurredAt: "2026-08-28T15:00:00Z",
+      }),
+    ];
+    renderScreen();
+    const value = screen.getByText("—");
+    expect(value).toBeInTheDocument();
+    // never the danger tone for a derived sale.
+    expect(value.className).not.toMatch(/text-danger/);
+  });
+
+  it("F7-7: a non-canteen-sale movement still renders unchanged (signed qty, its own tone)", () => {
+    hook.data.movements = [
+      mv({
+        id: "mv-accept",
+        movementType: "transfer",
+        quantity: "48.0000",
+        stockCountId: null,
+        occurredAt: "2026-08-28T11:32:00Z",
+      }),
+    ];
+    renderScreen();
+    expect(screen.getByText("+48 kg")).toBeInTheDocument();
+    expect(screen.getByText(/Transfer ·/)).toBeInTheDocument();
   });
 });

@@ -15,6 +15,32 @@ create a `Debt`; repayment is in `customers-credit-flow.md`. Day Close as
 a hard lock is **M3** — M2 uses the soft "is the order's business day
 today?" check (§3.4 of the plan).
 
+> **Status note — Design Sprints A / A2 (2026-08-31, fidelity pass for
+> Submission 1).** The Admin's **A3 Orders list is now the "Restaurant
+> Orders" tab of a merged "Sales" screen** — one nav item **Sales** with
+> two underline tabs (**Restaurant Orders** / **Canteen Derived**); the
+> separate "Derived sales" nav link is removed. A3's content (list +
+> read-only detail drawer + correction form drawer + linked
+> correction row-group) is unchanged, it just lives under a tab. Canonical
+> artboards are the `[M2-SA]` set at `worldY 24000` (populated / empty /
+> filtered-empty / error / loading, desktop + mobile per tab); the
+> standalone `FA1-0` / `GIA-0` are **superseded**.
+> **The old pill filter bar is replaced by the filter toolbar** (Session
+> A): labelled dropdown controls whose current value sits inside the
+> label (`Cashier: Mary Njeri ▾`, `Payment: All ▾` — kit `Select`), a
+> `Today` / `All dates` **date chip** (kit `DatePicker` trigger), a plain
+> `☐ Corrected only` **checkbox**, then right-aligned (`margin-left:auto`)
+> the **result count** (`--text-tertiary`) · a `·` · a **`Reset`** link
+> (`--color-accent`, shown only when a filter is off its default). Row:
+> `display:flex; align-items:center; gap:var(--sp-4);
+> padding-block:var(--sp-6); width:1200px`. Mobile variant: a
+> horizontally-scrollable dropdown-chip row (`Cashier ▾ · Date ▾ ·
+> Payment ▾ · More`), `Clear all` → `Reset`. The **A3 correction drawer
+> is still quantity-only** in the built screen — the full corrected-order
+> form (payment method / order type / delivery fee / add-line) is QA
+> finding F7-4, routed to build batch 3a; see `customers-credit-flow.md`
+> §G.
+
 ---
 
 ## Who and why
@@ -400,3 +426,17 @@ bottom-sheet overlays (dimmed parent screen + scrim + panel).
 - `C5 Customer Attach — quick-create phone error [M2-01]`
 - `Component Kit — M2 Sales Patterns [M2-01]` (order-line row, product tile, sticky total bar — states)
 - `Component Kit — Form Controls` (`6CG-0`) — QuantityStepper tap-to-type states added
+
+**A3 (now the Restaurant Orders tab) — canonical `[M2-SA]` set (Design
+Sprint A, `worldY 24000`):**
+
+- `A3+A4 Sales (merged) — desktop, Restaurant Orders tab [M2-SA]` (populated)
+- `A3+A4 Sales (merged) — desktop, Restaurant Orders tab — empty [M2-SA]`
+- `A3+A4 Sales (merged) — desktop, Restaurant Orders tab — filtered-empty [M2-SA]`
+- `A3+A4 Sales (merged) — desktop, Restaurant Orders tab — error [M2-SA]`
+- `A3+A4 Sales (merged) — Restaurant Orders tab, read-only order-detail drawer [M2-SA]` (was `FYX-0` — filter toolbar rolled on, Design Sprint A2)
+- `A3+A4 Sales (merged) — Restaurant Orders tab, correction form drawer [M2-SA]` (was `G4I-0` — A2)
+- `A3+A4 Sales (merged) — Restaurant Orders tab, order + correction linked row-group [M2-SA]` (was `GCP-0` — A2)
+- `A3+A4 Sales (merged) — mobile, Restaurant Orders tab [M2-SA]`
+- Loading state: §9.10 skeleton, 3 rows (canonical `A2 loading` / `C38-0` treatment — not re-drawn)
+- **Superseded:** `A3 Orders List — desktop populated [M2-01]` (`FA1-0`), `A3 Orders List — mobile [M2-01]` (`GIA-0`)

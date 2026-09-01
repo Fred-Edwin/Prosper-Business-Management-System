@@ -63,12 +63,20 @@ afterAll(async () => {
 });
 
 describe("admin-only endpoints reject a store manager", () => {
-  it("outstanding, assets list, unarchive product, restore asset → 403", async () => {
+  it("assets list, unarchive product, restore asset → 403", async () => {
     actAs({ id: smId, role: "store_manager" });
 
-    expect((await api.outstanding()).status).toBe(403);
     expect((await api.unarchiveProduct(productId)).status).toBe(403);
     expect((await api.restoreAsset(assetId)).status).toBe(403);
+  });
+
+  it("outstanding is no longer Admin-only — a store manager gets a location-scoped 200 (M2 §3.4)", async () => {
+    actAs({ id: smId, role: "store_manager" });
+    const out = await api.outstanding();
+    expect(out.status).toBe(200);
+    for (const r of out.body.data.awaitingReceipt) {
+      expect(r.locationId).toBe(storeId);
+    }
   });
 });
 

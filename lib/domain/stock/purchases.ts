@@ -9,6 +9,14 @@ import type {
 import { toMagnitude, toMoney, toMovementView } from "./internal";
 import { DomainError } from "./errors";
 import { assertLocationExists, assertProductExists } from "./guards";
+import {
+  newCorrelationId,
+  parseBatchLines,
+  writeMovementLine,
+  type LineAuditMeta,
+} from "./movement-core";
+
+type Tx = Prisma.TransactionClient;
 
 const PAID_FROM_DISPLAY: Record<"cash" | "mpesa_bank", string> = {
   cash: "Cash",
@@ -121,44 +129,126 @@ export async function recordPurchasePayment(
  * exists (PRD §4.2). An optional `purchasePaymentId` links it back to a
  * payment; if given it must point at a real `purchase_payment` row.
  */
+async function receiptLineCore(
+  tx: Tx,
+  line: {
+    productId: string;
+    locationId: string;
+    magnitude: Prisma.Decimal;
+    purchasePaymentId?: string | null;
+    recordedById: string;
+  },
+  audit: LineAuditMeta,
+) {
+  await assertProductExists(tx, line.productId);
+  await assertLocationExists(tx, line.locationId);
+
+  const linkedId =
+    line.purchasePaymentId != null && line.purchasePaymentId !== ""
+      ? line.purchasePaymentId
+      : null;
+
+  if (linkedId) {
+    const payment = await tx.stockMovement.findUnique({
+      where: { id: linkedId },
+      select: { id: true, movementType: true },
+    });
+    if (!payment || payment.movementType !== "purchase_payment") {
+      throw new DomainError(
+        "NOT_FOUND",
+        "The linked purchase payment does not exist.",
+        "purchasePaymentId",
+      );
+    }
+  }
+
+  return writeMovementLine(
+    tx,
+    {
+      productId: line.productId,
+      locationId: line.locationId,
+      movementType: "purchase_receipt",
+      quantity: line.magnitude,
+      recordedById: line.recordedById,
+      occurredAt: new Date(),
+      purchasePaymentId: linkedId,
+    },
+    audit,
+  );
+}
+
 export async function recordPurchaseReceipt(
   input: RecordPurchaseReceiptInput,
 ): Promise<StockMovementView> {
-  const qty = toMagnitude(input.quantity);
-
-  const row = await prisma.$transaction(async (tx) => {
-    await assertProductExists(tx, input.productId);
-    await assertLocationExists(tx, input.locationId);
-
-    if (input.purchasePaymentId != null && input.purchasePaymentId !== "") {
-      const payment = await tx.stockMovement.findUnique({
-        where: { id: input.purchasePaymentId },
-        select: { id: true, movementType: true },
-      });
-      if (!payment || payment.movementType !== "purchase_payment") {
-        throw new DomainError(
-          "NOT_FOUND",
-          "The linked purchase payment does not exist.",
-          "purchasePaymentId",
-        );
-      }
-    }
-
-    return tx.stockMovement.create({
-      data: {
+  const magnitude = toMagnitude(input.quantity);
+  const row = await prisma.$transaction((tx) =>
+    receiptLineCore(
+      tx,
+      {
         productId: input.productId,
         locationId: input.locationId,
-        movementType: "purchase_receipt",
-        quantity: qty,
+        magnitude,
+        purchasePaymentId: input.purchasePaymentId,
         recordedById: input.recordedById,
-        occurredAt: new Date(),
-        purchasePaymentId:
-          input.purchasePaymentId != null && input.purchasePaymentId !== ""
-            ? input.purchasePaymentId
-            : null,
       },
-    });
+      { actorId: input.recordedById, action: "purchase_receipt" },
+    ),
+  );
+  return toMovementView(row);
+}
+
+// ── Batch ───────────────────────────────────────────────────────────────
+
+export type RecordPurchaseReceiptBatchInput = {
+  locationId: string;
+  lines: Array<{
+    productId: string;
+    quantity: string;
+    purchasePaymentId?: string | null;
+  }>;
+  recordedById: string;
+};
+
+/**
+ * Record a multi-line purchase receipt in **one atomic transaction**
+ * (3-DOMAIN handoff §3.1). Additive — no over-stock block (§3.8 has no
+ * removal here) — but every line's product / location / linked payment is
+ * validated first; empty `lines` / duplicate `productId` reject, nothing
+ * written. No `MoneyMovement` (a plain receipt never touches money — that
+ * stays on `recordPurchasePayment`). One `AuditLog` row per line, shared
+ * `correlationId`.
+ */
+export async function recordPurchaseReceiptBatch(
+  input: RecordPurchaseReceiptBatchInput,
+): Promise<StockMovementView[]> {
+  const magnitudes = parseBatchLines(input.lines);
+  const correlationId = newCorrelationId();
+
+  const rows = await prisma.$transaction(async (tx) => {
+    await assertLocationExists(tx, input.locationId);
+
+    const written = [];
+    for (let i = 0; i < input.lines.length; i++) {
+      written.push(
+        await receiptLineCore(
+          tx,
+          {
+            productId: input.lines[i].productId,
+            locationId: input.locationId,
+            magnitude: magnitudes[i],
+            purchasePaymentId: input.lines[i].purchasePaymentId,
+            recordedById: input.recordedById,
+          },
+          {
+            actorId: input.recordedById,
+            correlationId,
+            action: "purchase_receipt_batch",
+          },
+        ),
+      );
+    }
+    return written;
   });
 
-  return toMovementView(row);
+  return rows.map(toMovementView);
 }

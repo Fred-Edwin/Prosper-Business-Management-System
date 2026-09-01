@@ -5,6 +5,7 @@ import type {
   DerivedBalance,
   MovementType,
   NonSaleReason,
+  OutstandingPurchases,
   StockMovementView,
 } from "@/lib/domain/stock";
 import type { ProductWithLocations, Location } from "@/lib/domain/catalog";
@@ -119,6 +120,39 @@ export type PurchaseReceiptInput = {
   purchasePaymentId?: string | null;
 };
 
+// ── Batch bodies (POST /api/stock-movements/<type>/batch) ───────────────
+//
+// The multi-row picker in the SM / Canteen movement flows (ADR-44 body
+// reversal — Option A) submits one atomic batch per flow. One flow-level
+// shape + a `lines` array; the domain enforces the §9.8 BLOCK (any line
+// over on-hand ⇒ whole batch rejected, nothing written) and rejects an
+// empty `lines` / a duplicate `productId`. The single-line `stockApi.*`
+// calls above stay for the History / correction paths.
+
+/** One picker row; `quantity` is an unsigned magnitude decimal string. */
+export type BatchLine = { productId: string; quantity: string };
+/** Receive lines may additionally link a matched purchase payment. */
+export type ReceiptBatchLine = BatchLine & { purchasePaymentId?: string | null };
+
+export type ReceiptBatchInput = {
+  locationId: string;
+  lines: ReceiptBatchLine[];
+};
+export type IssueBatchInput = { locationId: string; lines: BatchLine[] };
+export type ProductionBatchInput = { locationId: string; lines: BatchLine[] };
+export type TransferBatchInput = {
+  fromLocationId: string;
+  toLocationId: string;
+  lines: BatchLine[];
+};
+export type NonSaleBatchInput = {
+  locationId: string;
+  reason: NonSaleReason;
+  /** Required iff `reason === "other"`. */
+  note?: string;
+  lines: BatchLine[];
+};
+
 // ── Low-level API calls (no React state) ────────────────────────────────
 
 export const stockApi = {
@@ -195,6 +229,61 @@ export const stockApi = {
       method: "POST",
       body: JSON.stringify({ movementType: "purchase_receipt", ...input }),
     });
+  },
+
+  // ── Batch writes (one atomic POST per flow) ──────────────────────────
+
+  receiptBatch(input: ReceiptBatchInput): Promise<StockMovementView[]> {
+    return request<StockMovementView[]>(
+      `/api/stock-movements/receipts/batch`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  issueBatch(input: IssueBatchInput): Promise<StockMovementView[]> {
+    return request<StockMovementView[]>(`/api/stock-movements/issues/batch`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  productionBatch(input: ProductionBatchInput): Promise<StockMovementView[]> {
+    return request<StockMovementView[]>(
+      `/api/stock-movements/production/batch`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  transferBatch(input: TransferBatchInput): Promise<StockMovementView[]> {
+    return request<StockMovementView[]>(
+      `/api/stock-movements/transfers/batch`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  nonSaleBatch(input: NonSaleBatchInput): Promise<StockMovementView[]> {
+    return request<StockMovementView[]>(
+      `/api/stock-movements/non-sale/batch`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          locationId: input.locationId,
+          reason: input.reason,
+          note:
+            input.note && input.note.trim() !== ""
+              ? input.note.trim()
+              : undefined,
+          lines: input.lines,
+        }),
+      },
+    );
+  },
+
+  /** SM- / Canteen-scoped: purchases the Admin paid for, awaiting a receipt. */
+  listOutstanding(): Promise<OutstandingPurchases> {
+    return request<OutstandingPurchases>(
+      `/api/stock-movements/outstanding`,
+    );
   },
 
   /** Phase 2 of a 2-phase transfer — accept: writes the `+q` counterpart. */
@@ -384,6 +473,43 @@ export function useStockLevels(locationId: string | undefined) {
       setLoading(false);
     }
   }, [locationId]);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { rows, loading, error, refresh };
+}
+
+// ── Hook: deliveries awaiting receipt (Receive flow — §3.1) ────────────
+
+/**
+ * The SM-scoped "Deliveries awaiting receipt" list for the Receive flow:
+ * `purchase_payment` rows the Admin has already paid for that have no
+ * receipt linked back. Server-side scoped to the SM's own location
+ * (`GET /api/stock-movements/outstanding`, widened to `store_manager` in
+ * 3-DOMAIN). A failure here is non-fatal — the flow falls back to
+ * manual-only receive, so this hook surfaces `error` but the screen just
+ * hides the section.
+ */
+export function useOutstandingDeliveries() {
+  const [rows, setRows] = React.useState<StockMovementView[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const refresh = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const out = await stockApi.listOutstanding();
+      setRows(out.awaitingReceipt);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't load deliveries.");
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   React.useEffect(() => {
     void refresh();

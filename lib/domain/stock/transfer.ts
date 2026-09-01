@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type {
   AcceptTransferInput,
@@ -8,6 +9,50 @@ import type {
 import { toMagnitude, toMovementView } from "./internal";
 import { DomainError } from "./errors";
 import { assertLocationExists, assertProductExists } from "./guards";
+import {
+  assertRemovalWouldNotGoNegative,
+  newCorrelationId,
+  parseBatchLines,
+  writeMovementLine,
+  type LineAuditMeta,
+} from "./movement-core";
+
+type Tx = Prisma.TransactionClient;
+
+/**
+ * Validate + write one dispatch-side (`-q`) `transfer` row on `tx` at
+ * `fromLocationId`, carrying `toLocationId` in
+ * `transferCounterpartLocationId`. Phase 2 (`acceptTransfer`) is
+ * unchanged and out of scope for the batch (3-DOMAIN handoff §3.1). No
+ * over-stock block here — the batch caller runs that up front (§3.8).
+ */
+async function transferDispatchLineCore(
+  tx: Tx,
+  line: {
+    productId: string;
+    fromLocationId: string;
+    toLocationId: string;
+    magnitude: Prisma.Decimal;
+    recordedById: string;
+  },
+  audit: LineAuditMeta,
+) {
+  await assertProductExists(tx, line.productId);
+  return writeMovementLine(
+    tx,
+    {
+      productId: line.productId,
+      locationId: line.fromLocationId,
+      movementType: "transfer",
+      quantity: line.magnitude.negated(),
+      recordedById: line.recordedById,
+      occurredAt: new Date(),
+      transferCounterpartLocationId: line.toLocationId,
+      note: "Transfer dispatched — awaiting receipt",
+    },
+    audit,
+  );
+}
 
 /**
  * 2-phase stock transfer between two locations (ADR-39).
@@ -54,25 +99,103 @@ export async function recordTransfer(
   }
 
   const row = await prisma.$transaction(async (tx) => {
-    await assertProductExists(tx, input.productId);
     await assertLocationExists(tx, input.fromLocationId, "fromLocationId");
     await assertLocationExists(tx, input.toLocationId, "toLocationId");
 
-    return tx.stockMovement.create({
-      data: {
+    return transferDispatchLineCore(
+      tx,
+      {
         productId: input.productId,
-        locationId: input.fromLocationId,
-        movementType: "transfer",
-        quantity: qty.negated(),
+        fromLocationId: input.fromLocationId,
+        toLocationId: input.toLocationId,
+        magnitude: qty,
         recordedById: input.recordedById,
-        occurredAt: new Date(),
-        transferCounterpartLocationId: input.toLocationId,
-        note: "Transfer dispatched — awaiting receipt",
       },
-    });
+      { actorId: input.recordedById, action: "transfer" },
+    );
   });
 
   return toMovementView(row);
+}
+
+// ── Batch (dispatch side only) ──────────────────────────────────────────
+
+export type RecordTransferBatchInput = {
+  fromLocationId: string;
+  toLocationId: string;
+  lines: Array<{ productId: string; quantity: string }>;
+  recordedById: string;
+};
+
+/**
+ * Record a multi-line transfer **dispatch** in one atomic transaction
+ * (3-DOMAIN handoff §3.1). Writes the N dispatch-side (`-q`) rows now;
+ * `acceptTransfer` / `flagTransfer` stay single-transfer and out of
+ * scope. The whole batch is **rejected — nothing written**
+ * (`VALIDATION_ERROR`, field `"lines"`) if any line would drive its
+ * product's derived `from` balance negative (§3.8 parity). Empty `lines`,
+ * duplicate `productId`, or `from === to` also reject. One `AuditLog`
+ * row per line, shared `correlationId`.
+ */
+export async function recordTransferBatch(
+  input: RecordTransferBatchInput,
+): Promise<StockMovementView[]> {
+  const magnitudes = parseBatchLines(input.lines);
+
+  if (input.fromLocationId === input.toLocationId) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "A transfer needs two different locations.",
+      "toLocationId",
+    );
+  }
+  const correlationId = newCorrelationId();
+
+  const rows = await prisma.$transaction(async (tx) => {
+    await assertLocationExists(tx, input.fromLocationId, "fromLocationId");
+    await assertLocationExists(tx, input.toLocationId, "toLocationId");
+
+    // Phase 1: BLOCK.
+    for (let i = 0; i < input.lines.length; i++) {
+      await assertProductExists(tx, input.lines[i].productId);
+      const product = await tx.product.findUnique({
+        where: { id: input.lines[i].productId },
+        select: { name: true },
+      });
+      await assertRemovalWouldNotGoNegative(
+        tx,
+        input.lines[i].productId,
+        input.fromLocationId,
+        magnitudes[i],
+        product?.name ?? "Product",
+      );
+    }
+
+    // Phase 2: write.
+    const written = [];
+    for (let i = 0; i < input.lines.length; i++) {
+      written.push(
+        await transferDispatchLineCore(
+          tx,
+          {
+            productId: input.lines[i].productId,
+            fromLocationId: input.fromLocationId,
+            toLocationId: input.toLocationId,
+            magnitude: magnitudes[i],
+            recordedById: input.recordedById,
+          },
+          {
+            actorId: input.recordedById,
+            correlationId,
+            action: "transfer_batch",
+          },
+        ),
+      );
+    }
+    return written;
+  });
+
+  return rows.map(toMovementView);
 }
 
 /** Is this row a pending (dispatched, not yet accepted) transfer? */

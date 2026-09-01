@@ -53,6 +53,13 @@ export interface SelectProps {
   className?: string;
   id?: string;
   /**
+   * Accessible name for the trigger when the component is used WITHOUT a
+   * visible `label` (e.g. inside FilterToolbar, where the label lives in the
+   * trigger text). Ignored when `label` is set — FormField wires the name
+   * then. Additive / a11y-only (M2-3KIT-FILTER).
+   */
+  "aria-label"?: string;
+  /**
    * When true, the open popover shows a text input that filters the option
    * list (label contains, case-insensitive). Default false — the component
    * behaves exactly as before.
@@ -80,7 +87,11 @@ export function Select({
   id,
   searchable = false,
   noMatchesLabel = "No matches",
+  "aria-label": ariaLabel,
 }: SelectProps) {
+  // Only apply the fallback name when there is no visible label (FormField
+  // wires aria-labelledby in that case).
+  const triggerAriaLabel = label ? undefined : ariaLabel;
   const isControlled = value !== undefined;
   const [internal, setInternal] = React.useState(defaultValue);
   const current = isControlled ? value : internal;
@@ -345,6 +356,7 @@ export function Select({
                     ? `${listboxId}-opt-${activeIdx}`
                     : undefined
                 }
+                aria-label={triggerAriaLabel}
                 aria-describedby={describedBy}
                 aria-invalid={invalid}
                 value={query}
@@ -373,6 +385,7 @@ export function Select({
                   ? `${listboxId}-opt-${activeIdx}`
                   : undefined
               }
+              aria-label={triggerAriaLabel}
               aria-describedby={describedBy}
               aria-invalid={invalid}
               onClick={() => (open ? closeList() : openList())}

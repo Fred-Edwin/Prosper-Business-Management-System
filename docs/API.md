@@ -177,7 +177,17 @@ decimal string, from this row's location's perspective), recordedById,
 occurredAt (ISO), reason, reasonNote, orderId, stockCountId,
 transferCounterpartLocationId, purchasePaymentId, purchaseSupplier,
 purchaseOrderedQty, purchaseTotalCost, purchasePaidFrom,
-correctsMovementId, note, createdAt, updatedAt }`.
+correctsMovementId, note, derivedRevenue, createdAt, updatedAt }`.
+
+`derivedRevenue` (2dp decimal string | `null`) is set **only on a canteen
+derived `sale` row** (`movementType === "sale"` with a `stockCountId`): it
+is the revenue of that derived sale — the amount of the matching
+`canteen_sale` `MoneyMovement` (joined on `sourceType = "canteen_sale"`,
+`sourceId` = the `stockCountId`). `null` on every other movement type and
+on a zero-sold count (which writes no `MoneyMovement`). It lets the
+Canteen hub timeline render a derived sale as revenue-in instead of
+stock-out. Only `GET /api/stock-movements` populates it; the write
+endpoints return `null`.
 
 `purchaseSupplier` / `purchaseOrderedQty` (4dp decimal string) /
 `purchaseTotalCost` (2dp decimal string) / `purchasePaidFrom` (`"cash"` |
@@ -202,6 +212,51 @@ applies the sign.
 - `transfer` — Store Manager / Canteen Attendant. `{ movementType: "transfer", productId, fromLocationId, toLocationId, quantity }`. **Phase 1 of 2:** writes the `−quantity` dispatch row at `fromLocationId` only (stock leaves now; `toLocationId` in `transferCounterpartLocationId`). Same from/to → `400`. Completed by `POST .../:id/accept`.
 - `non_sale_consumption` — Admin / Store Manager / Canteen Attendant, location-scoped. `{ movementType: "non_sale_consumption", productId, locationId, quantity, reason, reasonNote? }`. `−quantity`. `reason` ∈ `staff_meal | complimentary | spoiled | damaged | other`; `reasonNote` **required iff `reason = "other"`** → `400` on `reasonNote`.
 
+### Batch movement endpoints — `POST /api/stock-movements/<type>/batch`
+
+**Added M2 batch-movements (2026-08-31).** The Store-Manager / Canteen
+movement flows submit a multi-row product picker (search + category tabs +
+N selectable rows, each with an inline quantity) as **one atomic batch**
+rather than N single POSTs (ADR-44 picker reversal; orchestrator decision
+2026-08-31). One endpoint per movement type. Each runs in a single Prisma
+transaction and shares the single-line function's per-line
+validation + row-writing core (they cannot diverge).
+
+**Common rules for every batch endpoint:**
+
+- Body carries flow-level fields + `lines: [{ productId, quantity, … }]`.
+- **Empty `lines`** → `400` `VALIDATION_ERROR`, `field: "lines"`, nothing
+  written.
+- **Duplicate `productId` across lines** → `400` `VALIDATION_ERROR`,
+  `field: "lines"` ("combine them into a single line"), nothing written.
+- **§3.8 BLOCK (parity with orders):** for the removing flows (issue /
+  transfer-out / non-sale), if **any** line's quantity exceeds its
+  product's current derived balance at the target location, the **whole
+  batch is rejected** — `400` `VALIDATION_ERROR`, `field: "lines"`, the
+  message naming the short line(s) and each one's available quantity. **No
+  `StockMovement`, no `MoneyMovement`, no `AuditLog` row is written.** The
+  derived balance is never allowed to go negative. Receipt / production
+  are additive — no block — but still validate product / location / kind
+  up front.
+- **Audit (ADR-25):** one `AuditLog` row **per line**, all inside the
+  transaction, each stamped with a shared `correlationId` (in the audit
+  `newValue` JSON, prefix `batch_`) so the N rows read as one logical
+  action. The single-line functions now also write one `AuditLog` row per
+  call (they previously wrote none — ADR-25 gap closed here).
+- Success → `201` with `{ "data": StockMovementView[] }` (one entry per
+  line, in submission order).
+- Role scoping matches the single-line `POST /api/stock-movements` per
+  type **exactly** — a location-bound caller may only post a batch for
+  their own location.
+
+| Endpoint | Roles | Body | Notes |
+|---|---|---|---|
+| `POST /api/stock-movements/receipts/batch` | Store Manager / Canteen Attendant (own location) · Admin | `{ locationId, lines: [{ productId, quantity, purchasePaymentId? }] }` | Additive. `purchasePaymentId` per line, if given, must reference a real `purchase_payment` row → `404`. **No `MoneyMovement`** (a plain receipt never touches money — that stays on `purchase_payment`). |
+| `POST /api/stock-movements/issues/batch` | Store Manager (own location) · Admin | `{ locationId, lines: [{ productId, quantity }] }` | `−quantity` per line at the Store. §3.8 BLOCK applies. |
+| `POST /api/stock-movements/production/batch` | Store Manager · Admin | `{ locationId, lines: [{ productId, quantity }] }` | `+quantity` per line; `locationId` **must be a `restaurant`**; every line's `productId` **must be `kind = "dish"`** → `400`. Additive (no block). Inherently Store → Restaurant, so no own-location guard. |
+| `POST /api/stock-movements/transfers/batch` | Store Manager / Canteen Attendant (own `from` location) · Admin | `{ fromLocationId, toLocationId, lines: [{ productId, quantity }] }` | **Dispatch side only** — writes the N `−quantity` dispatch rows now (each with `transferCounterpartLocationId = toLocationId`). `acceptTransfer` / `flagTransfer` stay single-transfer. `from === to` → `400`. §3.8 BLOCK on the `from` balance. |
+| `POST /api/stock-movements/non-sale/batch` | Admin / Store Manager / Canteen Attendant (own location) | `{ locationId, reason, note?, lines: [{ productId, quantity }] }` | One `reason` (+ `note` **required iff `reason = "other"`** → `400` on `note`) applies to every line. `−quantity` per line. §3.8 BLOCK applies. |
+
 ### `POST /api/stock-movements/:id/accept`
 Phase 2 of a 2-phase transfer. `:id` is the pending dispatch (`−q`) row.
 Roles: the receiving location's Store Manager / Canteen Attendant, or
@@ -223,11 +278,19 @@ only** (`403` otherwise); if the day is still open → Admin **or the
 original recorder**. `delta = 0` → `400`.
 
 ### `GET /api/stock-movements/outstanding`
-Roles: Admin only (`403` otherwise). Returns `{ awaitingReceipt: [...],
-unmatchedReceipts: [...] }` — `purchase_payment` rows no `purchase_receipt`
-links back to, and `purchase_receipt` rows with a null `purchasePaymentId`
-(PRD §4.2). Each entry is a full movement row (same shape as `GET
-/api/stock-movements`).
+Roles: **Admin or Store Manager** (`403` for every other role; a Store
+Manager with no assigned location → `403`).
+
+- **Admin** — every location (unchanged).
+- **Store Manager** — hard-scoped to their assigned location. Backs the
+  Receive flow's "match a delivery the Admin already paid for" picker
+  (M2 batch-movements §3.4). Widened M2 batch-movements (2026-08-31); it
+  was Admin-only through M1.
+
+Returns `{ awaitingReceipt: [...], unmatchedReceipts: [...] }` —
+`purchase_payment` rows no `purchase_receipt` links back to, and
+`purchase_receipt` rows with a null `purchasePaymentId` (PRD §4.2). Each
+entry is a full movement row (same shape as `GET /api/stock-movements`).
 
 ### `GET /api/stock-movements/balances`
 **Added Session 7 (2026-08-27), ADR-40.** Batched derived-balance read —
@@ -244,9 +307,13 @@ Roles: same as `GET /api/stock-movements` — Admin (any location), Store
 Manager / Canteen Attendant (their own location only; a foreign
 `locationId` → `[]`). Cashier: `403`.
 
-Returns `{ data: [{ productId, locationId, quantity }] }` — one entry per
-requested id, `quantity` a signed decimal string, `"0.0000"` when the
-product has no rows.
+Returns `{ data: [{ productId, locationId, quantity, lastMovementAt }] }` —
+one entry per requested id, `quantity` a signed decimal string, `"0.0000"`
+when the product has no rows. `lastMovementAt` (added M2 batch-movements,
+2026-08-31) is the ISO timestamp of the most recent `StockMovement`
+(`MAX(occurredAt)`) for that (product, location) at or before `asOf`, or
+`null` when the product has no rows — the `986-0` / `9GW-0` stock-levels
+screens render a "last movement Nh ago" meta line from it.
 
 ---
 
@@ -442,6 +509,25 @@ day has rolled ("This day is closed — ask an administrator to correct
 this count" — an Admin correction path is a later session). `404
 NOT_FOUND` for an unknown id. Returns `{ data: { voided: true } }`.
 Writes a `hard_delete` `AuditLog` row.
+
+### `GET /api/canteen/stock-counts/preview`
+Roles: **Canteen Attendant** (their assigned canteen), Admin (only if
+assigned a canteen; otherwise `403`). A **dry-run** of the canteen
+derived sale for a counted-remaining value — **persists nothing** (no
+`StockCount`, `StockMovement`, `MoneyMovement`, or `AuditLog`). Feeds the
+K1 preview card (F7-2 / QA S7). Runs the **same** `deriveStockCount`
+calculation `POST /api/canteen/stock-counts` uses, so the `unitsSold` /
+`revenue` shown are byte-for-byte what the commit will write.
+Query: `?productId=` (required), `?countedRemaining=` (required, decimal
+string ≥ 0), `?occurredAt=` (ISO, optional — defaults to now). Returns
+`{ data: StockCountPreview }`:
+`{ blocked, exceedsExpectedBy, isFirstCount, periodStart, lastCountedAt, daysSincePrevious, countedRemaining, unitsSold, revenue, closingStockWillBe }`.
+When the shelf holds more than the ledger accounts for, `blocked: true`
+with `exceedsExpectedBy` set and `unitsSold` / `revenue` `null` — a **200**,
+not a 4xx (so the screen renders the blocked state); `POST` would reject
+the same input with `400`. `400 VALIDATION_ERROR` for a missing / malformed
+`countedRemaining` (field named). `NOT_FOUND` / `VALIDATION_ERROR` for a
+bad product, exactly as `POST`.
 
 ### `GET /api/canteen/stock-counts`
 Roles: Admin (every canteen), Canteen Attendant (their own canteen only).

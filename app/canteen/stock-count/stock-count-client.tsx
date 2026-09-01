@@ -35,10 +35,10 @@ import { useToast } from "@/components/kit/toast";
 import { ErrorState } from "@/components/kit/error-state";
 import {
   useStockCountActions,
-  useDerivedSales,
+  useStockCountPreview,
   StockCountRequestError,
+  type StockCountPreview,
 } from "../use-stock-count";
-import { nairobiBusinessDate } from "@/app/cashier/use-orders";
 
 // ── Canteen products hook ─────────────────────────────────────────────
 // Calls dedicated GET /api/canteen/products endpoint.
@@ -87,8 +87,24 @@ function useCanteenProducts() {
 
 // ── Display helpers ────────────────────────────────────────────────────
 
-function fmtMoney(amount: number): string {
-  return `KES ${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+function fmtMoney(amount: number | string): string {
+  const n = typeof amount === "number" ? amount : Number(amount);
+  if (!Number.isFinite(n)) return `KES ${amount}`;
+  return `KES ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+}
+
+/** "12" ← "12.0000"; keeps real fractions ("12.5" ← "12.5000"). */
+function trimQty(s: string): string {
+  return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
+}
+
+function fmtCountedDate(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Nairobi",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(new Date(iso));
 }
 
 // ── K1 main component ──────────────────────────────────────────────────
@@ -101,7 +117,6 @@ export function StockCountClient() {
   const { products, loading: productsLoading, error: productsError } =
     useCanteenProducts();
   const { recordStockCount } = useStockCountActions();
-  const { rows: existingCounts } = useDerivedSales({ date: nairobiBusinessDate() });
 
   const [screen, setScreen] = React.useState<Screen>("picker");
   const [selected, setSelected] = React.useState<CanteenProduct | null>(null);
@@ -110,16 +125,13 @@ export function StockCountClient() {
   const [qty, setQty] = React.useState(0);
   const [submitting, setSubmitting] = React.useState(false);
 
-  // Derived: preview values (all client-side, server is the gate).
-  // We show them purely for orientation — same formula as the domain.
-  const todayCount = selected
-    ? existingCounts.find((r) => r.productId === selected.id)
-    : null;
-  const previousQty = todayCount ? Number(todayCount.unitsSold) : 0;
-  const unitsSold = qty >= 0 ? qty : 0; // counted remaining, not sold directly
-  // The derivation formula: sold = opening + received - counted.
-  // We don't have opening/received here; show placeholder until domain runs.
-  // Display what we can: "Confirm count" triggers the real derivation.
+  // F7-2: the real derived sold / revenue for the counted value, straight
+  // from the shared `deriveStockCount` calc — the exact figures the commit
+  // will persist. Debounced; re-runs on every counted-value change.
+  const { preview, loading: previewLoading } = useStockCountPreview(
+    selected?.id ?? null,
+    String(qty),
+  );
 
   // Categories from the canteen products list.
   const categories = React.useMemo(() => {
@@ -180,7 +192,11 @@ export function StockCountClient() {
     }
   }
 
-  const canConfirm = selected !== null && !submitting;
+  // Block Confirm when the derivation says the count exceeds expected
+  // stock — the server rejects it anyway; disabling here matches the
+  // flow-doc "blocked" state (walkthrough C).
+  const blocked = preview?.blocked === true;
+  const canConfirm = selected !== null && !submitting && !blocked;
 
   return (
     <div className="flex flex-col min-h-screen bg-(--surface-page)">
@@ -242,7 +258,8 @@ export function StockCountClient() {
               setSelected(null);
               setQty(0);
             }}
-            previousCount={previousQty}
+            preview={preview}
+            previewLoading={previewLoading}
           />
         ) : null}
       </div>
@@ -410,25 +427,74 @@ function CategoryTab({
 
 // ── Counting sub-screen ───────────────────────────────────────────────
 // Matches Paper H8J-0: product header + QuantityStepper + preview banner.
+// The preview card (F7-2) shows the REAL derived sold / revenue for the
+// counted value — the same figures the commit will persist — via
+// `GET /api/canteen/stock-counts/preview` (`useStockCountPreview`).
+
+function previewText(
+  preview: StockCountPreview | null,
+  previewLoading: boolean,
+  unit: string,
+): string {
+  if (!preview) {
+    return previewLoading
+      ? "Working out sales for this count…"
+      : "Enter the counted quantity to see units sold and revenue.";
+  }
+
+  const closing = `${trimQty(preview.closingStockWillBe)} ${unit}`;
+
+  if (preview.blocked) {
+    return (
+      `Counted more than expected — the shelf has ${trimQty(
+        preview.exceedsExpectedBy ?? "0",
+      )} ${unit} more than the ledger accounts for. ` +
+      "A delivery or transfer into the canteen may not have been recorded. " +
+      "Ask the Store Manager to log it, then recount — the count can't be saved until the numbers line up."
+    );
+  }
+
+  const sold = `${trimQty(preview.unitsSold ?? "0")} ${unit}`;
+  const revenue = fmtMoney(preview.revenue ?? "0");
+
+  if (preview.isFirstCount) {
+    return (
+      `First count for this product. Everything since its opening stock: ` +
+      `sold ${sold}. Revenue ${revenue}. Closing stock will be set to ${closing}.`
+    );
+  }
+
+  const since = preview.lastCountedAt
+    ? `since last count on ${fmtCountedDate(preview.lastCountedAt)}`
+    : "since the last count";
+  const days =
+    preview.daysSincePrevious != null && preview.daysSincePrevious > 0
+      ? ` (${preview.daysSincePrevious} ${
+          preview.daysSincePrevious === 1 ? "day" : "days"
+        })`
+      : "";
+
+  return (
+    `Since ${since}${days}: sold ${sold}. Revenue ${revenue}. ` +
+    `Closing stock will be set to ${closing}.`
+  );
+}
 
 function CountingScreen({
   product,
   qty,
   onQtyChange,
   onChangeProduct,
-  previousCount,
+  preview,
+  previewLoading,
 }: {
   product: CanteenProduct;
   qty: number;
   onQtyChange: (v: number) => void;
   onChangeProduct: () => void;
-  previousCount: number;
+  preview: StockCountPreview | null;
+  previewLoading: boolean;
 }) {
-  // Derive a simple preview. The real derivation happens server-side.
-  // We show: "Since last count … counted X = sold Y pcs. Revenue …"
-  // Without opening/received, we can only show what was counted.
-  // Keep the preview honest: omit what we don't have.
-
   return (
     <div className="flex flex-col gap-(--sp-5) p-(--sp-6)">
       {/* Selected product block */}
@@ -470,12 +536,15 @@ function CountingScreen({
         </div>
       </div>
 
-      {/* Calculated impact preview */}
-      <CalculatedImpactBanner>
-        {qty >= 0
-          ? `Counted ${qty} ${product.unitLabel} remaining. The closing stock will be set to ${qty} ${product.unitLabel}. Sales and revenue will be derived when you confirm.`
-          : "Enter a quantity to see the impact preview."}
-      </CalculatedImpactBanner>
+      {/* Calculated impact preview — real derived sold / revenue (F7-2).
+          The full 9-state K1 rebuild (inline §9.8 error + InstructionalBanner
+          for the blocked case) is Batch 3d; here the preview text carries the
+          "counted more than expected" explanation and Confirm is disabled. */}
+      <div data-testid="k1-preview">
+        <CalculatedImpactBanner>
+          {previewText(preview, previewLoading, product.unitLabel)}
+        </CalculatedImpactBanner>
+      </div>
     </div>
   );
 }

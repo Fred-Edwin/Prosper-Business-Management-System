@@ -15,7 +15,11 @@ export { editOwnOrder } from "./edit-own-order";
 export { correctOrder } from "./correct-order";
 export { listOrders } from "./list-orders";
 
-export { recordStockCount, voidStockCount } from "./record-stock-count";
+export {
+  recordStockCount,
+  voidStockCount,
+  previewStockCount,
+} from "./record-stock-count";
 export {
   getDerivedSalesForProduct,
   listDerivedSales,

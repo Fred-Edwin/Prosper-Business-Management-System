@@ -225,6 +225,35 @@ describe("A1 — Customers & Credit register", () => {
     );
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
+
+  it("filter row: the shared <FilterToolbar> carries the search slot + a 'Has balance' toggle at its default; Reset appears only once it is on, and clears it", async () => {
+    renderA1();
+    const user = userEvent.setup();
+    const toolbar = within(screen.getByRole("search", { name: "Filter customers" }));
+
+    // search slot lives inside the toolbar row
+    expect(
+      toolbar.getByRole("searchbox", { name: "Search customers" }),
+    ).toBeInTheDocument();
+
+    // toggle at default (off) → no Reset
+    const toggle = toolbar.getByRole("switch", { name: "Has balance" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(
+      toolbar.queryByRole("button", { name: "Reset" }),
+    ).not.toBeInTheDocument();
+
+    // turn it on → filters to owing, Reset shows
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    const reset = await toolbar.findByRole("button", { name: "Reset" });
+
+    // Reset clears the toggle back to its default
+    await user.click(reset);
+    expect(
+      toolbar.getByRole("switch", { name: "Has balance" }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
 });
 
 describe("A2 — Customer detail", () => {

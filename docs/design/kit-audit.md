@@ -397,6 +397,62 @@ gated (M2-02)**.
 | ARIA | **missing** — should be `role="spinbutton"` (or `role="group"` + an `<input type="number">`) with `aria-valuenow` / `aria-valuemin` / `aria-valuemax` / `aria-valuetext` (with unit). Label renders a `<div>` — link it. | ✓ — `role="spinbutton"` + `aria-valuenow` / `-valuemin` / `-valuemax` / `-valuetext` (`"{value} {unit}"`); label is a real `<label htmlFor>` via `<FormField>`; helper wired `aria-describedby` + `aria-invalid`. `axe` clean on all 7 stories. |
 | notes | Flag the `<span>`→`<input>` change for owner review — it's needed to satisfy the spec'd states but is close to a behaviour change. | Signed off M2 Session 2: commit-on-blur / Enter + `onValueString` escape hatch + `↑`/`↓` stepping = the ratified ADR-48 "keep the §9 contract, add the input" pattern (same as `Select searchable`). No new API surface. Not judged a wrong commit-trigger → no owner escalation. |
 
+### SelectableProductRow — `components/kit/selectable-product-row.tsx`  *(NEW — M2-3KIT, 2026-08-31)*
+
+Required (`§2 C33`): not-selected (ARTBOARD ✓ `JL7-0` §1), selected /
+in-batch (ARTBOARD ✓ §2), at-available / `+` disabled (ARTBOARD ✓ §3),
+over-available BLOCKED (ARTBOARD ✓ §4, §9.8), zero-available / inert
+(ARTBOARD ✓ §5), hard-disabled (GLOBAL), `+ Select` + stepper focus /
+hover / disabled (GLOBAL §9.1 / §9.5 / §9.7).
+
+The multi-row product-picker row for the 6 Store-Manager / Canteen
+movement flows (Receive, Issue, Production, Transfer, Non-sale, Canteen
+Dispatch), after the owner reversed ADR-44's one-line-form body (Option
+A, 2026-08-31). 3-DESIGN drew `JL7-0`; this session (M2-3KIT) built and
+ADR-42-gated it. C33 status: **implemented + gated (M2-3KIT)**.
+
+| aspect | BEFORE | AFTER |
+|---|---|---|
+| existed? | **n/a** — composed ad hoc in the M1 one-line flow screens (bespoke value box + ±32px steppers, `bg-accent` pill tabs — ADR-44 §context); no shared row, no `Avail:` readout, no over-stock block. The SM/Canteen screens could issue a quantity blind. | new file `components/kit/selectable-product-row.tsx`. One row = product name (ellipsis, `min-w-0`) · fixed 96px `Avail: N unit` readout (`--font-mono` `--text-caption`/`--text-micro` `--text-secondary`, `whitespace-nowrap`) · fixed 108px trailing control (`+ Select` / compact stepper). Fixed-width slots so columns line up down a list. |
+| tokens-only? | — | ✓ — `--surface-selected` / `--color-accent` (selected), `--color-danger` / `--color-danger-bg` (§9.8 blocked), `--text-*`, `--border-subtle` / `--border-strong`; `.kit-interactive` + `.kit-focus-ring` on the stepper `−`/`+`; `<Button size="sm">` for `+ Select`. One inline `opacity-[0.5]` for the zero-available / disabled mute (same convention as `SegmentedControl` / `ToggleSwitch`). |
+| §9.1 focus ring | — | ✓ — `+ Select` (`.kit-focus-ring` via `<Button>`), stepper `−`/`+` (`.kit-focus-ring`), value `<input>` (native). Proven `FocusSelectButton` (`assertFocusRing`). |
+| §9.4 selected tint | — | ✓ — `data-selected` row: `--surface-selected` fill + `--color-accent` 1px border. Proven `Selected` (`assertColor` on `borderColor` = `--color-accent` and `backgroundColor` = `--surface-selected`). |
+| §9.7 disabled | — | ✓ — at-ceiling `+` is a native `<button disabled>` under `.kit-interactive:disabled`; zero-available / `disabled` prop mute the whole row + `+ Select` `disabled` + `tabIndex=-1`; `onSelect` cannot fire (proven `ZeroAvailable`). |
+| §9.8 blocked | — | ✓ — `quantity > available` ⇒ `data-blocked` row: `--color-danger` border + `--color-danger-bg` fill, stepper border + typed value `--color-danger`, `aria-invalid` on the value, inline helper *"Only N unit on hand — reduce or remove this line."* Proven `OverAvailableBlocked` (`assertColor` danger border + bg; helper text present; `aria-invalid="true"`). |
+| embedded stepper | — | **DEVIATION** — authored **inline**, not composed from `<QuantityStepper>` (C10). C10 always renders inside `<FormField>` with a hard-coded `w-[220px]` wrapper, `--control-md` (36px) height and `--radius-sm`, plus an optional unit slot — **none prop-overridable** — which overflows `JL7-0`'s 108px trailing slot and breaks the cross-row column alignment that is a stated core contract. The compact `− [n] +` box (108px / 32px / `--radius-md` / no unit) is written inline but **re-uses the ADR-43/48 contract verbatim**: value = `<input inputmode="decimal" role="spinbutton">` with `aria-valuenow`/`-valuemin`/`-valuemax`/`-valuetext`; tap-to-type, commit on blur / Enter; `↑`/`↓` step; `−`/`+` native `<button>` disabled at bound; `onQuantityString` mirrors `QuantityStepper.onValueString`. **`QuantityStepper` (C10) is not touched.** Proven `TapToTypeQuantity` (type "30" → `onQuantityString("p-beef","30")` then blur → `onQuantityChange("p-beef",30)`). |
+| blocked-signal API | — | **`onBlockedChange?(productId, blocked)`** — a per-row callback fired on transition (with an unmount cleanup that clears a stale `true`). Chosen over a derived flag so the parent flow owns the aggregate ("disable the sticky submit while ANY row is blocked") without prop-drilling state back down. 3c/3d wire it into their sticky-submit `disabled`. |
+| deselect | — | Stepping `−` (or typing) to `<= min` (default `0`) fires `onDeselect(productId)` — the row returns to `+ Select`. Proven `DeselectBySteppingToZero`. |
+| ARIA | — | Each row is `role="group"` with an accessible name = product + readout (+ quantity + "exceeds available stock" when blocked). The embedded value keeps its own `role="spinbutton"`. `axe` clean on all 9 stories (no rule opt-out needed — the `--text-secondary` readout clears AA at `--text-micro`). |
+| stories / baselines | — | 9 stories (`Kit/SelectableProductRow`): `NotSelected`, `Selected`, `AtAvailable`, `OverAvailableBlocked`, `ZeroAvailable`, `TapToTypeQuantity`, `DeselectBySteppingToZero`, `FocusSelectButton`, `LongName`. 9 visual baselines committed under `tests/visual/__screenshots__/kit-selectableproductrow--*.png` (first run — eyeballed against `JL7-0`). `test:visual` + `test:a11y` + §9 `postVisit` green; `tsc` 0. |
+| minor deviations from `JL7-0` | — | (1) `+ Select` is `<Button size="sm">` (32px / `--radius-sm` / `--sp-5` pad) where the artboard drew a bespoke 28px / `--radius-md` / 10px-pad chip — handover §3.1 mandates the kit Button. (2) `Avail:` slot widened 88→96px + `whitespace-nowrap` so `Avail: 46.5 kg` never wraps at `--text-caption` in a 390px row (artboard's `w-max` + `flex-wrap` relied on more effective width). Both cosmetic, no contract impact. |
+
+### FilterToolbar — `components/kit/filter-toolbar.tsx`  *(NEW — designed M2-3DF 2026-08-31; build pending 3-KIT-FILTER)*
+
+Required (`§2 C34`): default (ARTBOARD ✓ `L9O-0` §1), one filter active
+(ARTBOARD ✓ §2), multiple active (ARTBOARD ✓ §3), toggle-style control
+(ARTBOARD ✓ §4), mobile (ARTBOARD ✓ §5, model `IKW-0`), filtered-empty
+consequence (ARTBOARD ✓ §6). Reset focus/hover/pressed (GLOBAL §9.1/
+§9.5/§9.6); each sub-control's own states inherited from C5/C7/C9.
+
+Full spec: `docs/design/filter-toolbar.md`. Model artboard `IEA-0` (the
+toolbar A/A2 already shipped inside `I00-0`).
+
+| aspect | BEFORE (start of 3e) | AFTER (target) |
+|---|---|---|
+| existed? | **NO shared component.** The dismissible-pill "Filter Bar" (`GQQ-0`) was transcribed ad hoc into `admin-orders-client.tsx` / `derived-sales-client.tsx` as `ActiveFilterChip` / `InactiveFilterChip` atoms — active chips with a dismiss `✕` mixed with dormant picker chips; dismissing a chip removed the control from the UI with no way back (F7-8). A/A2's merged-Sales `[M2-SA]` set replaced that with an **inline** toolbar (`IEA-0`) — correct shape, but per-screen markup, free to drift. Ledger (`stock-client.tsx`) + Assets (`assets-client.tsx`) use `<PillFilter>` / a bespoke filled-pill radiogroup for their filter axes. | new file `components/kit/filter-toolbar.tsx`. One controlled component: `controls: FilterControl[]` (`{id,label,kind:"select"\|"date"\|"toggle",options?,value,default}`) + `onChange(id,value)` + `onReset?` + `resultCount` + `resultNoun` + `aria-label`. Renders the labelled-dropdown row from `IEA-0`; `< --bp-md` renders the `IKW-0` chip-scroller + `More`. |
+| tokens-only? | — | ✓ — composes `Select` (C5) / `DatePicker` (C9) trigger / native checkbox / `ToggleSwitch` (C7) / text / `<Button variant="…tertiary">` (Reset). Row: `flex`, `gap-(--sp-4)`, `py-(--sp-6)`, `w-[1200px]` desktop. Control box (for the ad-hoc dropdowns that are really `Select` triggers): `h-36`, `--surface-page`, `1px --border-strong`, `--radius-sm`, `px-(--sp-5)`, 14px chevron `--text-tertiary`. No raw values. |
+| controlled? | — | ✓ — owns **no** filter state. Screen holds the filter object + re-queries. Same model as `Select`/`Tabs`/`PillFilter`. |
+| §9.1 focus ring | — | Reset (`.kit-focus-ring` via `<Button>`); each sub-control keeps its own. |
+| §9.5 / §9.6 hover / pressed | — | Reset → `--surface-hover` (tertiary Button rule); row itself has none. |
+| §9 "filter is on" signal | — | Control label `--text-secondary`/`--weight-regular` when `value === default`; `--text-primary`/`--weight-medium` when off default. Asserted per-state in `postVisit` (`assertColor`). Do **not** drop this — it's the only on-control indicator. |
+| Reset visibility | — | Present iff `controls.some(c => c.value !== c.default)` (null-safe compare for `kind:"date"`); absent (not disabled) otherwise. `·` separator rendered only alongside Reset. |
+| keyboard | — | Each control's primitive is unchanged (Select APG listbox, DatePicker dialog, checkbox, ToggleSwitch). Reset = native `<button>`. No roving pattern — it's a toolbar of independent controls, not a single-select group. |
+| ARIA | — | Wrapper `role="search"` + `aria-label` (default `"Filters"`). Result count `aria-live="polite"`. Sub-controls carry their own `aria-*`. |
+| mobile | — | `overflow-x:auto` row of 32px chips (`flex-shrink:0`, `white-space:nowrap`, 12px chevron `stroke-width:2`) + trailing `More` chip for overflow/secondary controls; count + Reset on their own row below. |
+| search field | — | Not a `FilterControl`. A screen with free-text search (Assets, Customers) puts a sibling `<SearchInput>` in the same toolbar row — own state/handler, shares the reset path (screen clears the string on reset). |
+| stories / baselines | — | to build in 3-KIT-FILTER: `Default`, `OneActive`, `MultipleActive`, `ToggleControl`, `Mobile`, `FilteredEmpty`, `ResetHover`, `ResetFocusVisible`. `test:visual` + `test:a11y` + §9 `postVisit`; baselines eyeballed vs `L9O-0` / `IEA-0`. |
+| screens 3e retrofits | — | Sales Restaurant Orders + Canteen Derived (reconcile A/A2's inline toolbar to the component), A1 Customers (the `Has balance` toggle → `kind:"toggle"`), **Admin Stock Ledger** (`Admin Stock Ledger — filter toolbar [M2-3DF]` — Location/Category/Date into the toolbar; `Columns` stays a separate control), **Admin Assets** (`Admin Assets — filter toolbar [M2-3DF]` — Search/Location/Condition into the toolbar; Category `Tabs` strip stays). Financials transactions unchanged (Tabs only). Stock Levels `PillFilter` strips unchanged (out of scope). |
+
 ### SimpleTable — `components/kit/simple-table.tsx`
 
 Required (`§2 C15`): header, body row (ARTBOARD ✓), body row hover (ARTBOARD ✓
@@ -655,6 +711,7 @@ no-badge variant (ARTBOARD ✓ via `!direction`), back pressed (GLOBAL).
 | **`FormField`** (`components/kit/form-field.tsx`) | label + control slot + helper/error row (§9.8) as ONE component; wires `aria-describedby` + `aria-invalid`. | Wraps any `.kit-field` control via `children` or render-prop; generates ids; helper row = `text-(--color-danger) text-caption/micro mt-(--sp-2)` when `error`, else `--text-secondary`. Field components (`TextInput`, `Textarea`, `Select`, `QuantityStepper`) compose it for the labelled case; keep them working bare. | mechanical — flag but trivial |
 | **`Toast` / `Notifier`** (`components/kit/toast.tsx`) | success/feedback primitive — "correction saved" etc. `role="status"`, admin top-right / staff bottom-center, `--z-toast`, auto-dismiss ~4s pausable on hover/focus, `--dur-base` `transform` slide, stacks, no reduced-motion special-casing (D4). | `<ToastProvider>` + `useToast()` hook returning `toast(msg, opts)`. Position via a `placement` prop on the provider. Document the choice. | **YES — real layout choices** (placement, stacking, timing) |
 | **`PageShell` / `ContentRegion`** (`components/kit/page-shell.tsx`) | the "stock body doesn't fill the viewport like catalog" fix. One `<PageShell>` owning `--content-max` (1200px), page padding, and a toolbar slot. | `<PageShell toolbar={…}>children</PageShell>` → `max-w-(--content-max) mx-auto px-… ` + a sticky-capable toolbar row. Screens adopt it next session. | **YES — real layout decisions** |
+| **`FilterToolbar`** (`components/kit/filter-toolbar.tsx`) | **shipped + ADR-42-gated (M2-3KIT-FILTER).** Replaces the dismissible-pill filter bar (GQQ-0, QA F7-8) everywhere with a persistent labelled-dropdown toolbar. Paper: `L9O-0` (target), models `IEA-0` / `IKW-0`. Design contract: `docs/design/filter-toolbar.md`. | Composed from `Select` / `DatePicker` / `ToggleSwitch` / `Button` — no new primitive. Controlled; `role="search"`; Reset iff any control ≠ default; mobile (< `--bp-md`) chip row + `More` → `BottomSheet`. Kit touch: `Select` + `DatePicker` gained an additive a11y-only `aria-label` prop (names a label-less trigger). 8 stories + 8 visual baselines; axe clean; tsc 0; jsdom 416 green. **Deviations from L9O-0** (see the component header): (a) at-default `select` label stays `--text-primary` (no tone hook on `Select`); (b) date chip uses `DatePicker`'s trailing glyph + mono value. 3e retrofits Ledger / Assets / merged-Sales / Customers onto it. | gated this session |
 
 ---
 

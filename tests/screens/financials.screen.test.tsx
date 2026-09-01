@@ -33,6 +33,23 @@ function renderScreen() {
   );
 }
 
+/**
+ * The screen renders BOTH a `hidden md:flex` desktop branch and a
+ * `flex md:hidden` mobile branch (Session 3b). jsdom applies no media
+ * queries, so both are in the DOM. These specs target the desktop branch;
+ * `desktop()` scopes queries to it. Mobile has its own spec block below.
+ */
+function desktop(): HTMLElement {
+  const node = document.querySelector<HTMLElement>(".md\\:flex.flex-col.grow");
+  if (!node) throw new Error("desktop branch not found");
+  return node;
+}
+function mobile(): HTMLElement {
+  const node = document.querySelector<HTMLElement>(".md\\:hidden.flex-col.grow");
+  if (!node) throw new Error("mobile branch not found");
+  return node;
+}
+
 /** A full StockMovementView with overridable fields. */
 function movement(over: Partial<Record<string, unknown>> = {}) {
   return {
@@ -94,8 +111,10 @@ describe("/admin/financials — kit composition", () => {
   it("keeps the KPI strip rendered but unwired (— / M3)", async () => {
     renderScreen();
     await waitFor(() => expect(api.outstanding).toHaveBeenCalled());
-    expect(screen.getByText("Total Business Liquidity")).toBeInTheDocument();
-    expect(screen.getAllByText("M3").length).toBe(4);
+    expect(
+      within(desktop()).getByText("Total Business Liquidity"),
+    ).toBeInTheDocument();
+    expect(within(desktop()).getAllByText("M3").length).toBe(4);
   });
 
   it("renders the purchases table with an <EmptyState> and a Record-Payment action", async () => {
@@ -227,9 +246,11 @@ describe("/admin/financials — kit composition", () => {
   it("shows the all-clear line when nothing is outstanding", async () => {
     renderScreen();
     await screen.findByRole("table");
-    expect(
-      await screen.findByText(/Nothing to reconcile\./),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(desktop()).getByText(/Nothing to reconcile\./),
+      ).toBeInTheDocument(),
+    );
   });
 
   it("'Record payment' on a delivery with no payment opens the drawer pre-selected", async () => {
@@ -253,7 +274,9 @@ describe("/admin/financials — kit composition", () => {
     const user = userEvent.setup();
     await screen.findByRole("table");
 
-    await user.click(screen.getByRole("button", { name: "Record payment" }));
+    await user.click(
+      within(desktop()).getByRole("button", { name: "Record payment" }),
+    );
     const dialog = await screen.findByRole("dialog");
     // Pre-selected to the delivered product.
     expect(
@@ -299,5 +322,98 @@ describe("/admin/financials — kit composition", () => {
 
     expect(api.recordPurchasePayment).toHaveBeenCalledOnce();
     expect(await screen.findByText("Payment recorded")).toBeInTheDocument();
+  });
+});
+
+// ── Mobile branch (Session 3b — artboards IQO-0 / ITG-0 / IW1-0 / IYM-0) ────
+describe("/admin/financials — mobile branch", () => {
+  const PAY = movement({
+    id: "pp-mob",
+    occurredAt: new Date().toISOString(),
+    purchaseSupplier: "Nairobi Grains Millers",
+    purchaseOrderedQty: "100.0000",
+    purchaseTotalCost: "18000.00",
+    purchasePaidFrom: "mpesa_bank",
+  });
+
+  it("renders the dark 2×2 KPI grid, still unwired (— / M3)", async () => {
+    renderScreen();
+    await waitFor(() => expect(api.outstanding).toHaveBeenCalled());
+    const m = within(mobile());
+    expect(m.getByText("Total liquidity")).toBeInTheDocument();
+    expect(m.getByText("Today's outflows")).toBeInTheDocument();
+    expect(m.getAllByText("M3").length).toBe(4);
+  });
+
+  it("renders transactions as stacked-row cards (supplier + amount + meta)", async () => {
+    api.listMovements.mockImplementation(
+      ({ movementType }: { movementType: string }) =>
+        Promise.resolve(movementType === "purchase_payment" ? [PAY] : []),
+    );
+    api.listProducts.mockResolvedValue([PROD_1]);
+    api.listLocations.mockResolvedValue([LOC_1]);
+    renderScreen();
+    const m = within(mobile());
+    // The `·`-joined meta line is unique to the stacked transaction card.
+    expect(
+      await m.findByText(/Rice Basmati 100\.0 kg · Store · M-Pesa/),
+    ).toBeInTheDocument();
+    expect(m.getAllByText("Nairobi Grains Millers").length).toBeGreaterThan(0);
+    expect(m.getByText("KES 18,000.00")).toBeInTheDocument();
+  });
+
+  it("shows the empty copy when there are no transactions", async () => {
+    renderScreen();
+    const m = within(mobile());
+    expect(await m.findByText("No transactions yet")).toBeInTheDocument();
+  });
+
+  it("shows an <ErrorState> with Retry on a fetch failure", async () => {
+    api.listMovements.mockRejectedValue(new Error("boom"));
+    renderScreen();
+    const m = within(mobile());
+    expect(await m.findByText("Couldn't load financials")).toBeInTheDocument();
+    expect(m.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(
+      m.getByText(/Reconciliation is unavailable/),
+    ).toBeInTheDocument();
+  });
+
+  it("has a sticky bottom '+ Record Payment' bar that opens the drawer", async () => {
+    api.listProducts.mockResolvedValue([PROD_1]);
+    api.listLocations.mockResolvedValue([LOC_1]);
+    renderScreen();
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(
+      within(mobile()).getByRole("button", { name: "+ Record Payment" }),
+    );
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("the Reconciliation 'Received, no payment' card has an in-card Record payment button", async () => {
+    const now = new Date().toISOString();
+    api.outstanding.mockResolvedValue({
+      awaitingReceipt: [],
+      unmatchedReceipts: [
+        movement({
+          id: "rcpt-mob",
+          movementType: "purchase_receipt",
+          occurredAt: now,
+          productId: "prod-1",
+          quantity: "46.0000",
+          purchasePaymentId: null,
+        }),
+      ],
+    });
+    api.listProducts.mockResolvedValue([PROD_1]);
+    api.listLocations.mockResolvedValue([LOC_1]);
+    renderScreen();
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    const m = within(mobile());
+    expect(await m.findByText("• Received, no payment")).toBeInTheDocument();
+    await user.click(m.getByRole("button", { name: "Record payment" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 });

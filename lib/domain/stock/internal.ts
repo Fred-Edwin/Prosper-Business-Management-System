@@ -90,6 +90,9 @@ export function toMovementView(row: StockMovementRow): StockMovementView {
         : null,
     correctsMovementId: row.correctsMovementId,
     note: row.note,
+    // Only `listMovements` joins the `canteen_sale` MoneyMovement; the
+    // single-write path has no revenue to report.
+    derivedRevenue: null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

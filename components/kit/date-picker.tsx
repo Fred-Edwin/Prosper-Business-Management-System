@@ -47,6 +47,12 @@ export interface DatePickerProps {
   onPrevMonth?: () => void;
   onNextMonth?: () => void;
   onSelectDay?: (day: number) => void;
+  /**
+   * Accessible name for the trigger when used WITHOUT a visible `label`
+   * (e.g. inside FilterToolbar). Ignored when `label` is set — the trigger
+   * is then named via aria-labelledby. Additive / a11y-only (M2-3KIT-FILTER).
+   */
+  "aria-label"?: string;
   className?: string;
   id?: string;
 }
@@ -99,6 +105,7 @@ export function DatePicker({
   onPrevMonth,
   onNextMonth,
   onSelectDay,
+  "aria-label": ariaLabel,
   className,
   id,
 }: DatePickerProps) {
@@ -226,6 +233,7 @@ export function DatePicker({
         aria-expanded={open}
         aria-controls={open ? dialogId : undefined}
         aria-labelledby={label ? `${labelId} ${triggerId}` : undefined}
+        aria-label={label ? undefined : ariaLabel}
         onClick={() => setOpen((o) => !o)}
         className="flex items-center justify-between h-(--control-md) px-(--sp-5) rounded-sm shrink-0 border border-solid [border-color:var(--border-strong)] kit-field kit-focus-ring"
       >

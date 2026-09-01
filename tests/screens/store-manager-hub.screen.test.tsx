@@ -63,6 +63,7 @@ function mv(over: Partial<StockMovementView>): StockMovementView {
     purchasePaidFrom: null,
     correctsMovementId: null,
     note: null,
+    derivedRevenue: null,
     createdAt: "2026-08-28T08:30:00Z",
     updatedAt: "2026-08-28T08:30:00Z",
     ...over,
@@ -162,5 +163,34 @@ describe("/store-manager hub — kit composition", () => {
     expect(
       within(region).queryByRole("button", { name: /Accept/ }),
     ).not.toBeInTheDocument();
+  });
+
+  // ── F7-7 guard: the SM hub timeline is byte-unchanged by the Canteen
+  //    derived-sale branch added to movementsToTimeline (staff-stock-format).
+  //    An SM location never carries a canteen sale, so every row here keeps
+  //    the signed-quantity value + its movement-kind subtitle.
+  it("F7-7 guard: SM timeline rows render the signed quantity + kind, not +KES", () => {
+    hook.data.movements = [
+      mv({
+        id: "sm-issue",
+        movementType: "issue",
+        quantity: "-18.5000",
+        occurredAt: "2026-08-28T10:00:00Z",
+      }),
+      mv({
+        id: "sm-prod",
+        productId: "prod-soda",
+        movementType: "production",
+        quantity: "+40.0000",
+        occurredAt: "2026-08-28T09:00:00Z",
+      }),
+    ];
+    const { container } = renderScreen();
+    expect(screen.getByText("-18.5 pcs")).toBeInTheDocument();
+    expect(screen.getByText("+40 pcs")).toBeInTheDocument();
+    expect(screen.getByText(/Issued to Kitchen ·/)).toBeInTheDocument();
+    expect(screen.getByText(/Batch production ·/)).toBeInTheDocument();
+    // no revenue string leaks into the SM hub.
+    expect(container.textContent).not.toMatch(/KES/);
   });
 });

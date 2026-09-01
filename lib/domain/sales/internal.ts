@@ -74,12 +74,19 @@ export function moneyString(value: Prisma.Decimal): string {
   return value.toFixed(2);
 }
 
-/** Map an `Order` row (+ its cashier and lines/products) to the wire shape. */
+/**
+ * Map an `Order` row (+ its cashier and lines/products) to the wire shape.
+ *
+ * `correctedBy` is passed only for a **correction row** (`correctsOrderId`
+ * set) — the acting Admin's name + the instant the correction was
+ * recorded, hydrated by the caller from the `AuditLog` `correct` entry.
+ */
 export function toOrderView(
   row: Order & {
     cashier?: { name: string } | null;
     lines: (OrderLine & { product?: { name: string } | null })[];
   },
+  correctedBy?: { at: Date; name: string } | null,
 ): OrderView {
   return {
     id: row.id,
@@ -93,6 +100,12 @@ export function toOrderView(
     customerId: row.customerId,
     total: moneyString(row.total),
     correctsOrderId: row.correctsOrderId,
+    correctedAt:
+      row.correctsOrderId != null
+        ? (correctedBy?.at ?? row.createdAt).toISOString()
+        : null,
+    correctedByName:
+      row.correctsOrderId != null ? (correctedBy?.name ?? null) : null,
     occurredAt: row.occurredAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

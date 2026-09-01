@@ -23,6 +23,30 @@ Admin's read-only orders list (A3) and the order-correction drawer it
 owns (shared with the Cashier's C4 "Correct this (Admin)" route). No
 supplier credit — never tracked (PRD §4.6).
 
+> **Status note — Design Sprints A / A2 (2026-08-31, fidelity pass for
+> Submission 1).**
+> **A3** is now the **"Restaurant Orders" tab of the merged "Sales"
+> screen** (see `restaurant-sales-flow.md` for the merge + the filter
+> toolbar that replaces the pill bar). Its content — read-only detail
+> drawer + correction form drawer + linked correction row-group — is
+> unchanged and its canonical artboards are the `[M2-SA]` set at
+> `worldY 24000`. §G below (the correction drawer contents) still stands;
+> the built drawer is **quantity-only** pending QA finding F7-4 (full
+> corrected-order form → build batch 3a).
+> **A1's filter row is converted to the toolbar idiom** (Design Sprint
+> A2): the **"Has balance" pill becomes a labelled toggle** — the text
+> `Has balance` (`--text-sm`, `--weight-medium`, `--text-primary`) next
+> to the kit **toggle switch** (`40×22` track, `--color-accent` on / knob
+> right; `--border-strong` off / knob left), sitting in the same flex row
+> as the search field. The row is right-aligned (`margin-left:auto` via a
+> flex spacer) with the **result count** (`--text-tertiary`) · a `·` · a
+> **`Reset`** link (`--color-accent`, `--weight-medium`, shown only when
+> a filter is off its default). Row: `display:flex; align-items:center;
+> gap:var(--sp-4)`. Mobile (`EPJ-0`): the toggle row sits full-width
+> below the search field (`Has balance` label left, toggle right).
+> Nothing else on A1/A2 changed — content is the owner-confirmed
+> fidelity-reference and stays as-is.
+
 ---
 
 ## Who and why
@@ -322,14 +346,22 @@ existing `Drawer` / `BottomSheet` + existing form controls +
 - `A2 Customer Detail — zero history [M2-01]`
 - `A2 Customer Detail — loading [M2-01]`
 - `A2 Customer Detail — mobile [M2-01]`
-- `A3 Orders List — desktop populated [M2-01]`
-- `A3 Orders List — filtered-empty [M2-01]`
-- `A3 Orders List — empty [M2-01]`
-- `A3 Orders List — error [M2-01]`
-- `A3 Orders List — read-only order-detail drawer open [M2-01]`
-- `A3 Orders List — correction form drawer open [M2-01]`
-- `A3 Orders List — order + correction linked group [M2-01]`
-- `A3 Orders List — mobile [M2-01]`
+**A3 — now the "Restaurant Orders" tab of the merged Sales screen; see
+`restaurant-sales-flow.md` "Artboards" for the canonical `[M2-SA]` set.**
+The M2-01 standalone A3 artboards are superseded / re-skinned:
+
+- `A3 Orders List — desktop populated [M2-01]` (`FA1-0`) — **SUPERSEDED** by `[M2-SA]`
+- `A3 Orders List — mobile [M2-01]` (`GIA-0`) — **SUPERSEDED** by `[M2-SA]` mobile Restaurant Orders tab
+- `A3+A4 Sales (merged) — desktop, Restaurant Orders tab — filtered-empty / — error [M2-SA]` (replace the standalone `filtered-empty` / `empty` / `error` frames)
+- `A3+A4 Sales (merged) — Restaurant Orders tab, read-only order-detail drawer [M2-SA]` (was `FYX-0`; filter toolbar rolled on, A2)
+- `A3+A4 Sales (merged) — Restaurant Orders tab, correction form drawer [M2-SA]` (was `G4I-0`; A2)
+- `A3+A4 Sales (merged) — Restaurant Orders tab, order + correction linked row-group [M2-SA]` (was `GCP-0`; A2)
+
+**A1 — filter row updated to the toolbar idiom (A2); all 7 A1 artboards
+touched:** `DU2-0` (desktop populated), `DZ0-0` (filtered-empty), `E41-0`
+(empty — no filter row, unchanged), `E97-0` (error — no filter row,
+unchanged), `EJ6-0` (repayment drawer open), `EEE-0` (add customer drawer
+open), `EPJ-0` (mobile). Content otherwise unchanged.
 
 All A1–A3 frames created in Session 1b (M2-01b, 2026-08-29), page
 "Shell+Component kit", `worldY 16000`–`18200`. Composed from the Admin

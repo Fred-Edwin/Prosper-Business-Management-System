@@ -27,6 +27,7 @@ import { PageShell } from "@/components/kit/page-shell";
 import { Tabs } from "@/components/kit/tabs";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
 import { StatusChip } from "@/components/kit/status-chip";
+import { ErrorState } from "@/components/kit/error-state";
 import { Button } from "@/components/kit/button";
 import type {
   OutstandingPurchases,
@@ -41,6 +42,16 @@ const KPI_TILES = [
   "Cash",
   "M-Pesa / Bank Till",
   "Today's Total Outflows",
+];
+
+// Mobile KPI grid (artboard IQO-0): a dark 2×2 grid. Same four figures, still
+// unwired until the F3 MoneyMovement ledger (ADR-36 D-FIN) — rendered "—" / "M3"
+// with the artboard's semantic colour per cell, just made to fit 390px.
+const MOBILE_KPI_TILES: { label: string; tone: string }[] = [
+  { label: "Total liquidity", tone: "text-white" },
+  { label: "Cash at hand", tone: "text-success" },
+  { label: "M-Pesa / Bank", tone: "text-info" },
+  { label: "Today's outflows", tone: "text-danger" },
 ];
 
 const PAID_FROM_LABEL: Record<string, string> = {
@@ -79,6 +90,15 @@ function fmtMoney(dec: string | null): string {
 function trimQty(dec: string): string {
   const n = Number(dec);
   return Number.isFinite(n) ? n.toFixed(1) : dec;
+}
+
+/** "Aug 24" for the mobile txn card's `·`-joined meta line. */
+function fmtDateMed(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "Africa/Nairobi",
+  });
 }
 
 /** The Africa/Nairobi calendar day of an instant (YYYY-MM-DD), for the
@@ -415,7 +435,8 @@ export function FinancialsClient() {
         </>
       }
     >
-      <div className="flex flex-col grow gap-(--sp-8)">
+      {/* ───────── Desktop ───────── */}
+      <div className="hidden md:flex flex-col grow gap-(--sp-8)">
         {/* KPI stat strip — markup kept; values unwired until F3 (ADR-36 D-FIN). */}
         <div className="flex [width:100%] items-center shrink-0 border border-solid [border-color:var(--border-subtle)]">
           {KPI_TILES.map((label, i) => (
@@ -508,6 +529,25 @@ export function FinancialsClient() {
           )}
         </div>
       </div>
+
+      {/* ───────── Mobile (artboard IQO-0 / ITG-0 / IW1-0 / IYM-0 / J17-0) ───────── */}
+      <MobileFinancials
+        kpiTiles={MOBILE_KPI_TILES}
+        tabs={tabs}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        txnTab={activeTab}
+        purchaseTab={TAB_PURCHASES}
+        txRows={txRows}
+        receipts={receipts}
+        productById={productById}
+        locationById={locationById}
+        reconRows={reconRows}
+        loading={loading}
+        error={error}
+        onRetry={() => void refresh()}
+        onRecordPayment={openDrawer}
+      />
 
       {drawerOpen && (
         <PaymentDrawer
@@ -646,6 +686,349 @@ function ReconTable({
               </div>
             );
           })}
+    </div>
+  );
+}
+
+// ── Mobile Financials (artboards IQO-0 populated / ITG-0 empty / IW1-0 loading /
+//    IYM-0 error / J17-0 payment sheet). Per fidelity-audit-m1.md §"Admin
+//    Financials — mobile" — the 10 numbered deltas. A `< --bp-md` branch;
+//    the desktop markup above is the `md:` branch, unchanged. ────────────────
+
+const MOBILE_RECON_STATUS: Record<
+  ReconStatus,
+  { label: string; text: string; tinted: boolean }
+> = {
+  awaiting_delivery: { label: "• Awaiting delivery", text: "text-warning", tinted: false },
+  delivered: { label: "• Delivered", text: "text-success", tinted: false },
+  received_no_payment: {
+    label: "• Received, no payment",
+    text: "text-info",
+    tinted: true,
+  },
+  flagged: { label: "• Flagged", text: "text-danger", tinted: false },
+};
+
+function MobileFinancials({
+  kpiTiles,
+  tabs,
+  activeTab,
+  onTabChange,
+  txnTab,
+  purchaseTab,
+  txRows,
+  receipts,
+  productById,
+  locationById,
+  reconRows,
+  loading,
+  error,
+  onRetry,
+  onRecordPayment,
+}: {
+  kpiTiles: { label: string; tone: string }[];
+  tabs: { key: string; label: string }[];
+  activeTab: string;
+  onTabChange: (key: string) => void;
+  txnTab: string;
+  purchaseTab: string;
+  txRows: PurchaseTxRow[];
+  receipts: StockMovementView[];
+  productById: Map<string, ProductWithLocations>;
+  locationById: Map<string, Location>;
+  reconRows: ReconRow[];
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  onRecordPayment: (productId?: string) => void;
+}) {
+  const showPurchases = txnTab === purchaseTab;
+
+  const metaLine = (m: StockMovementView, qty: string) => {
+    const p = productById.get(m.productId);
+    const dest = locationById.get(m.locationId)?.name ?? "—";
+    const paidFrom = m.purchasePaidFrom
+      ? (PAID_FROM_LABEL[m.purchasePaidFrom] ?? m.purchasePaidFrom)
+      : null;
+    const parts = [
+      `${p ? p.name : m.productId} ${trimQty(qty)}${p ? ` ${p.unitLabel}` : ""}`,
+      dest,
+      ...(paidFrom ? [paidFrom] : []),
+      fmtDateMed(m.occurredAt),
+    ];
+    return parts.join(" · ");
+  };
+
+  const txnCards = showPurchases
+    ? txRows.map(({ payment, matched }) => ({
+        id: payment.id,
+        title: payment.purchaseSupplier ?? "Supplier not recorded",
+        amount:
+          payment.purchaseTotalCost != null
+            ? `KES ${fmtMoney(payment.purchaseTotalCost)}`
+            : "Cost not recorded",
+        meta: metaLine(payment, payment.purchaseOrderedQty ?? "0"),
+        statusText: matched ? "• Received" : "• Pending delivery",
+        statusTone: matched ? "text-success" : "text-warning",
+      }))
+    : receipts.map((r) => {
+        const p = productById.get(r.productId);
+        return {
+          id: r.id,
+          title: p ? `${p.name} delivery` : "Delivery",
+          amount: "",
+          meta: metaLine(r, r.quantity),
+          statusText: r.purchasePaymentId ? "• Matched" : "• Unmatched",
+          statusTone: r.purchasePaymentId ? "text-success" : "text-warning",
+        };
+      });
+
+  const emptyCopy = showPurchases
+    ? {
+        title: "No transactions yet",
+        body: "Stock payments, expenses and owner draws will appear here as they are recorded.",
+      }
+    : {
+        title: "No deliveries recorded",
+        body: "Deliveries appear here once the Store Manager receives them.",
+      };
+
+  return (
+    <div className="flex md:hidden flex-col grow min-h-0">
+      <div className="flex flex-col grow min-h-0 overflow-y-auto">
+        {/* 1. KPI 2×2 grid — dark, present but unwired (— / M3, ADR-36 D-FIN). */}
+        <div className="flex flex-wrap [background-color:var(--nav-bg)] shrink-0">
+          {kpiTiles.map((tile, i) => (
+            <div
+              key={tile.label}
+              className={`flex flex-col grow basis-[45%] p-(--sp-5) gap-(--sp-2) ${
+                i % 2 === 0
+                  ? "border-r border-r-solid border-r-(--nav-border)"
+                  : ""
+              } ${
+                i < 2 ? "border-b border-b-solid border-b-(--nav-border)" : ""
+              }`}
+            >
+              <div className="font-ui uppercase [letter-spacing:var(--tracking-caps)] text-(--nav-text-label) text-micro/micro">
+                {tile.label}
+              </div>
+              <div className="flex items-baseline gap-(--sp-3)">
+                <div
+                  className={`font-mono font-(--weight-semibold) ${tile.tone} text-body/body`}
+                >
+                  —
+                </div>
+                <div className="font-ui text-(--nav-text-label) text-micro/micro">
+                  M3
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 3. Transaction tabs → horizontally-scrollable chip row (8Q4-0 pattern). */}
+        <div className="flex items-center py-(--sp-4) px-(--sp-5) overflow-x-auto gap-(--sp-3) shrink-0 border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+          {tabs.map((t) => {
+            const active = t.key === activeTab;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => onTabChange(t.key)}
+                aria-pressed={active}
+                className={`flex items-center h-[32px] shrink-0 px-(--sp-4) rounded-lg kit-focus-ring ${
+                  active
+                    ? "[background-color:var(--surface-selected)]"
+                    : "border border-solid [border-color:var(--border-strong)]"
+                }`}
+              >
+                <span
+                  className={`font-ui ${
+                    active
+                      ? "font-(--weight-medium) text-accent"
+                      : "[color:var(--text-secondary)]"
+                  } text-sm/micro`}
+                >
+                  {t.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {error ? (
+          <div className="py-(--sp-8)">
+            <ErrorState
+              title="Couldn't load financials"
+              description="Something went wrong fetching the data. Check your connection and try again."
+              onRetry={onRetry}
+            />
+          </div>
+        ) : loading ? (
+          /* 7. loading — KPI + tabs stay; txn list = 3 skeleton rows. */
+          <div className="flex flex-col [width:100%]">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="flex flex-col p-(--sp-5) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
+              >
+                <div className="kit-skeleton h-[14px] w-2/3 rounded-sm" />
+                <div className="kit-skeleton h-[12px] w-full rounded-sm" />
+                <div className="kit-skeleton h-[12px] w-1/3 rounded-sm" />
+              </div>
+            ))}
+          </div>
+        ) : txnCards.length === 0 ? (
+          <div className="flex flex-col items-center text-center py-(--sp-10) px-(--sp-6) gap-(--sp-3)">
+            <div className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/body">
+              {emptyCopy.title}
+            </div>
+            <div className="font-ui [color:var(--text-tertiary)] text-sm/sm">
+              {emptyCopy.body}
+            </div>
+          </div>
+        ) : (
+          /* 4. Transactions → stacked-row cards. */
+          <div className="flex flex-col [width:100%]">
+            {txnCards.map((c) => (
+              <div
+                key={c.id}
+                className="flex flex-col p-(--sp-5) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
+              >
+                <div className="flex items-baseline gap-(--sp-4)">
+                  <div className="font-ui font-(--weight-medium) grow [color:var(--text-primary)] text-body/body">
+                    {c.title}
+                  </div>
+                  {c.amount && (
+                    <div className="font-mono font-(--weight-semibold) shrink-0 [color:var(--text-primary)] text-body/body">
+                      {c.amount}
+                    </div>
+                  )}
+                </div>
+                <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
+                  {c.meta}
+                </div>
+                {/* Artboard shows an "Edit" link here, but there is no
+                    edit-a-payment flow (the desktop table is read-only too —
+                    corrections go through Reconciliation). Status only. */}
+                <div className={`font-ui ${c.statusTone} text-caption/micro`}>
+                  {c.statusText}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 5. Reconciled-outflows footer — stacked dark block. Unwired money
+            (F3) so figures render as "—". 10. margin-top so it doesn't butt
+            the last txn card. */}
+        {!error && (
+          <div className="flex flex-col p-(--sp-5) gap-(--sp-2) mt-(--sp-4) [background-color:var(--nav-bg)] shrink-0">
+            <div className="font-ui uppercase [letter-spacing:var(--tracking-caps)] text-(--nav-text-label) text-micro/micro">
+              Total reconciled outflows
+            </div>
+            <div className="flex items-baseline flex-wrap gap-(--sp-4)">
+              <div className="font-ui text-white text-caption/micro">Cash —</div>
+              <div className="font-ui text-white text-caption/micro">
+                Bank/M-Pesa —
+              </div>
+            </div>
+            <div className="flex items-baseline gap-(--sp-3)">
+              <div className="font-ui text-(--nav-text-subtle) text-sm/micro">
+                Total outflow
+              </div>
+              <div className="font-mono font-(--weight-semibold) text-danger text-body/sm">
+                —
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 6 + 10. Reconciliation → stacked cards, with a section-rhythm break. */}
+        <div className="flex flex-col mt-(--sp-8) border-t-8 border-t-solid [border-top-color:var(--surface-subtle)]">
+          <div className="flex flex-col pb-(--sp-4) pt-(--sp-6) gap-(--sp-1)">
+            <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h2/h2">
+              Reconciliation
+            </div>
+            <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
+              Payments awaiting delivery, and deliveries without a payment.
+            </div>
+          </div>
+
+          {error ? (
+            <div className="font-ui [color:var(--text-tertiary)] text-sm/sm px-(--sp-5) pb-(--sp-5)">
+              Reconciliation is unavailable while the page can't load.
+            </div>
+          ) : loading ? (
+            <div className="flex flex-col p-(--sp-5) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+              <div className="kit-skeleton h-[14px] w-1/2 rounded-sm" />
+              <div className="kit-skeleton h-[12px] w-3/4 rounded-sm" />
+            </div>
+          ) : reconRows.length === 0 ? (
+            <div className="font-ui [color:var(--text-secondary)] text-sm/sm px-(--sp-5) pb-(--sp-5)">
+              Every payment is matched to a delivery, and every delivery has a
+              payment. Nothing to reconcile.
+            </div>
+          ) : (
+            reconRows.map((row) => {
+              const s = MOBILE_RECON_STATUS[row.status];
+              return (
+                <div
+                  key={row.id}
+                  className={`flex flex-col p-(--sp-5) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)] ${
+                    s.tinted ? "[background-color:var(--surface-subtle)]" : ""
+                  }`}
+                >
+                  <div className="flex items-baseline gap-(--sp-4)">
+                    <div className="font-ui font-(--weight-medium) grow [color:var(--text-primary)] text-body/body">
+                      {row.supplierOrItem}
+                    </div>
+                    <div
+                      className={`font-mono shrink-0 text-body/sm ${
+                        row.amount == null
+                          ? "[color:var(--text-tertiary)]"
+                          : "[color:var(--text-primary)]"
+                      }`}
+                    >
+                      {row.amount ?? "—"}
+                    </div>
+                  </div>
+                  <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
+                    {row.product}
+                  </div>
+                  <div className={`font-ui ${s.text} text-caption/micro`}>
+                    {s.label}
+                  </div>
+                  {row.status === "received_no_payment" && (
+                    <button
+                      type="button"
+                      onClick={() => onRecordPayment(row.recordPaymentProductId)}
+                      className="flex items-center justify-center h-[40px] mt-(--sp-2) rounded-md shrink-0 bg-accent kit-interactive kit-focus-ring"
+                    >
+                      <span className="font-ui font-(--weight-medium) text-white text-body/sm">
+                        Record payment
+                      </span>
+                    </button>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* 9. Global "Record Payment" → sticky bottom action bar. */}
+      <div className="flex items-center py-(--sp-4) px-(--sp-5) gap-(--sp-4) shrink-0 [background-color:var(--surface-page)] border-t border-t-solid [border-top-color:var(--border-subtle)]">
+        <button
+          type="button"
+          onClick={() => onRecordPayment()}
+          className="flex items-center justify-center h-[44px] grow rounded-md gap-(--sp-2) bg-accent kit-interactive kit-focus-ring"
+        >
+          <span className="font-ui font-(--weight-medium) text-white text-body/sm">
+            + Record Payment
+          </span>
+        </button>
+      </div>
     </div>
   );
 }

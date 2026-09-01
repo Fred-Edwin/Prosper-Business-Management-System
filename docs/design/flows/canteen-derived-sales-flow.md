@@ -33,6 +33,23 @@ Non-sale consumption and transfers into the Canteen already exist (M1);
 this flow *uses* them as inputs to the derivation, it does not re-design
 them.
 
+> **Status note — Design Sprints A / A2 (2026-08-31, fidelity pass for
+> Submission 1).** The Admin's **A4 Canteen Derived Sales view is now the
+> "Canteen Derived" tab of the merged "Sales" screen** — one nav item
+> **Sales**, two underline tabs (**Restaurant Orders** / **Canteen
+> Derived**); the separate "Derived sales" nav link is removed. A4's
+> content (per-product `SimpleTable` — Product · Last counted · Period
+> covered · Units sold · Revenue) is unchanged. Canonical artboards are
+> the `[M2-SA]` set at `worldY 24000` (populated / filtered-empty /
+> loading, desktop + mobile); standalone `GL2-0` / `GRM-0` / `H4I-0` are
+> **superseded**. **The pill filter bar is replaced by the filter toolbar
+> — Product + Date-range variant:** a `Product: All ▾` labelled dropdown
+> (kit `Select`) + a `Date range ▾` chip (kit `DatePicker` trigger),
+> right-aligned result count (`--text-tertiary`) · `Reset`
+> (`--color-accent`, shown only off-default). Mobile: a
+> horizontally-scrollable `Product ▾ · Date range ▾` chip row. K1 and K2
+> are unchanged by this pass.
+
 ---
 
 ## Who and why
@@ -373,11 +390,20 @@ kit change) is used by K1 but is not gated by this flow.
 - `K1 Stock Count — confirm success [M2-01]`
 - `K2 Canteen Hub — derived-sale entry in timeline [M2-01]`
 - `K2 Canteen Hub — derived-sale interleaved with other movements [M2-01]`
-- `A4 Canteen Derived Sales — desktop populated [M2-01]`
-- `A4 Canteen Derived Sales — product never counted [M2-01]`
-- `A4 Canteen Derived Sales — filtered-empty [M2-01]`
-- `A4 Canteen Derived Sales — loading [M2-01]`
-- `A4 Canteen Derived Sales — mobile [M2-01]`
+- `A4 Canteen Derived Sales — desktop populated [M2-01]` — **SUPERSEDED** by the `[M2-SA]` Canteen Derived tab
+- `A4 Canteen Derived Sales — product never counted [M2-01]` — **SUPERSEDED** (the merged populated tab should include a "Never" / "—" never-counted row; build note)
+- `A4 Canteen Derived Sales — filtered-empty [M2-01]` — **SUPERSEDED**
+- `A4 Canteen Derived Sales — loading [M2-01]` — **SUPERSEDED**
+- `A4 Canteen Derived Sales — mobile [M2-01]` — **SUPERSEDED**
+
+**A4 (now the Canteen Derived tab) — canonical `[M2-SA]` set (Design
+Sprint A, `worldY 24000`):**
+
+- `A3+A4 Sales (merged) — desktop, Canteen Derived tab [M2-SA]` (populated; Product + Date-range filter toolbar)
+- `A3+A4 Sales (merged) — desktop, Canteen Derived tab — filtered-empty [M2-SA]`
+- `A3+A4 Sales (merged) — desktop, Canteen Derived tab — loading [M2-SA]`
+- `A3+A4 Sales (merged) — mobile, Canteen Derived tab [M2-SA]`
+- Empty / error: plain `EmptyState` / `ErrorState` per the flow doc (A4 has no distinct "no products" empty)
 
 Frames created in Session 1b (M2-01b, 2026-08-29) and **re-spun
 2026-08-30** to match the shipped `voidStockCount` (see the

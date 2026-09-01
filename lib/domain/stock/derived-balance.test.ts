@@ -160,4 +160,116 @@ describe("getDerivedStockBalance", () => {
     expect(byId.get(productId)).toBe("120.0000");
     expect(byId.get(empty.id)).toBe("0.0000");
   });
+
+  it("carries lastMovementAt = MAX(occurredAt) per product; null when no rows", async () => {
+    const { locationIds, prefix, recorderId } = ctx;
+    const locationId = locationIds.store;
+
+    const p = await prisma.product.create({
+      data: {
+        name: `${prefix} Sugar`,
+        kind: "ingredient",
+        unitLabel: "kg",
+        buyingPrice: 90,
+      },
+    });
+    const noRows = await prisma.product.create({
+      data: {
+        name: `${prefix} Cinnamon`,
+        kind: "ingredient",
+        unitLabel: "g",
+        buyingPrice: 5,
+      },
+    });
+
+    await setOpeningStock({
+      productId: p.id,
+      locationId,
+      businessDate: "2026-08-01",
+      quantity: "50",
+      recordedById: recorderId,
+    });
+    // A newer movement — its occurredAt should be the reported max.
+    const receipt = await recordPurchaseReceipt({
+      productId: p.id,
+      locationId,
+      quantity: "5",
+      recordedById: recorderId,
+    });
+
+    const balances = await getDerivedStockBalances([p.id, noRows.id], locationId);
+    const byId = new Map(balances.map((b) => [b.productId, b]));
+    expect(byId.get(p.id)?.lastMovementAt).toBe(receipt.occurredAt);
+    expect(byId.get(noRows.id)?.lastMovementAt).toBeNull();
+  });
+
+  it("is scoped to the passed locationId — rows at other locations never leak in (§3.3)", async () => {
+    const { locationIds, prefix, recorderId } = ctx;
+    const p = await prisma.product.create({
+      data: {
+        name: `${prefix} Yeast`,
+        kind: "ingredient",
+        unitLabel: "g",
+        buyingPrice: 10,
+      },
+    });
+    // Same product, stock at TWO locations.
+    await setOpeningStock({
+      productId: p.id,
+      locationId: locationIds.store,
+      businessDate: "2026-08-01",
+      quantity: "80",
+      recordedById: recorderId,
+    });
+    await setOpeningStock({
+      productId: p.id,
+      locationId: locationIds.canteen,
+      businessDate: "2026-08-01",
+      quantity: "12",
+      recordedById: recorderId,
+    });
+
+    const [atStore] = await getDerivedStockBalances([p.id], locationIds.store);
+    const [atCanteen] = await getDerivedStockBalances(
+      [p.id],
+      locationIds.canteen,
+    );
+    expect(atStore.quantity).toBe("80.0000"); // NOT 92 — canteen rows excluded
+    expect(atStore.locationId).toBe(locationIds.store);
+    expect(atCanteen.quantity).toBe("12.0000");
+  });
+
+  it("lastMovementAt respects the asOf cutoff", async () => {
+    const { locationIds, prefix, recorderId } = ctx;
+    const locationId = locationIds.store;
+    const p = await prisma.product.create({
+      data: {
+        name: `${prefix} Flour`,
+        kind: "ingredient",
+        unitLabel: "kg",
+        buyingPrice: 80,
+      },
+    });
+    await setOpeningStock({
+      productId: p.id,
+      locationId,
+      businessDate: "2026-08-01",
+      quantity: "10",
+      recordedById: recorderId,
+    });
+    await recordPurchaseReceipt({
+      productId: p.id,
+      locationId,
+      quantity: "3",
+      recordedById: recorderId,
+    });
+
+    const asOf = new Date("2026-08-02T00:00:00Z"); // before the "now" receipt
+    const [bal] = await getDerivedStockBalances([p.id], locationId, asOf);
+    // Only the opening row is in range; its occurredAt is the day start.
+    expect(bal.lastMovementAt).not.toBeNull();
+    expect(new Date(bal.lastMovementAt as string).getTime()).toBeLessThan(
+      asOf.getTime(),
+    );
+  });
 });

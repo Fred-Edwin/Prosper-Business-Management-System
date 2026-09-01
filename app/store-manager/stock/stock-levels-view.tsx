@@ -5,13 +5,23 @@
 // 986-0 / 9GW-0 superseded). NOT the Admin <DenseLedger> (desktop).
 //
 // Composition: <DenseSummaryStrip> (line-count + total-units totals) +
-// <PillFilter> (product kind) + a mobile card list (kit <Card>-style rows
-// with a mono qty) + <EmptyState> / <EmptyState variant="filtered"> /
-// <ErrorState>. Fed by useStockLevels → GET /api/stock-movements/balances
-// (ADR-40); the client renders the signed derived balance as-is.
+// <PillFilter> + a mobile card list (kit <Card>-style rows with a mono
+// qty) + <EmptyState> / <EmptyState variant="filtered"> / <ErrorState>.
+// Fed by useStockLevels → GET /api/stock-movements/balances (ADR-40); the
+// client renders the signed derived balance as-is.
+//
+// M2-3d: the filter pill set is a PROP (fidelity-audit-m1 §"Canteen —
+// Stock levels" item 4 / flow doc §"Stock Levels"). The Store Manager
+// keeps its kind-based `All · Ingredients · Goods · Dishes`; the Canteen
+// passes `All · Beverages · Goods` — no dead "Dishes" pill (a Canteen
+// holds sodas / goods / snacks). Because "Beverages" is not a
+// `ProductKind`, each pill carries its own `match(product)` predicate
+// rather than a single kind-equality filter; the SM pills just wrap
+// kind-equality so SM behaviour is unchanged.
 
 import * as React from "react";
 import type { ProductKind } from "@prisma/client";
+import type { ProductWithLocations } from "@/lib/domain/catalog";
 import { DenseSummaryStrip } from "@/components/kit/dense-summary-strip";
 import { PillFilter } from "@/components/kit/pill-filter";
 import { EmptyState } from "@/components/kit/empty-state";
@@ -20,24 +30,64 @@ import { Spinner } from "@/components/kit/spinner";
 import { useStockLevels, stockApi } from "@/app/store-manager/use-staff-stock";
 import { trimQty } from "@/app/store-manager/staff-stock-format";
 
-type KindFilter = "all" | ProductKind;
+/** One filter pill. `match` omitted ⇒ the "All" pill (matches every row). */
+export type StockLevelsPill = {
+  key: string;
+  label: string;
+  match?: (product: ProductWithLocations) => boolean;
+};
 
-const KIND_PILLS: { key: KindFilter; label: string }[] = [
+const byKind =
+  (k: ProductKind) =>
+  (p: ProductWithLocations): boolean =>
+    p.kind === k;
+
+/**
+ * The Store Manager pill set — the default. Kind-based, unchanged from the
+ * pre-3d behaviour (`Dishes` is meaningful here: the SM stages cooked
+ * dishes for the Restaurant).
+ */
+export const SM_STOCK_PILLS: StockLevelsPill[] = [
   { key: "all", label: "All" },
-  { key: "ingredient", label: "Ingredients" },
-  { key: "goods", label: "Goods" },
-  { key: "dish", label: "Dishes" },
+  { key: "ingredient", label: "Ingredients", match: byKind("ingredient") },
+  { key: "goods", label: "Goods", match: byKind("goods") },
+  { key: "dish", label: "Dishes", match: byKind("dish") },
+];
+
+/**
+ * The Canteen pill set. "Beverages" ~ the product's `category` reads as a
+ * drink (soda / beverage / drink); "Goods" is everything else the Canteen
+ * carries. No "Dishes" pill — a Canteen holds no dishes.
+ */
+const BEVERAGE_RE = /bever|soda|drink|juice|water/i;
+export const CANTEEN_STOCK_PILLS: StockLevelsPill[] = [
+  { key: "all", label: "All" },
+  {
+    key: "beverages",
+    label: "Beverages",
+    match: (p) => !!p.category && BEVERAGE_RE.test(p.category),
+  },
+  {
+    key: "goods",
+    label: "Goods",
+    match: (p) => !(p.category && BEVERAGE_RE.test(p.category)),
+  },
 ];
 
 export function StockLevelsView({
   locationLabel,
   locationType,
+  pillSet = SM_STOCK_PILLS,
 }: {
   locationLabel: string;
   locationType: "store" | "canteen";
+  /** Filter pills for this view. Defaults to the SM (kind-based) set. */
+  pillSet?: StockLevelsPill[];
 }) {
-  const [locationId, setLocationId] = React.useState<string | undefined>(undefined);
-  const [kind, setKind] = React.useState<KindFilter>("all");
+  const [locationId, setLocationId] = React.useState<string | undefined>(
+    undefined,
+  );
+  const [pillKey, setPillKey] = React.useState<string>(pillSet[0]?.key ?? "all");
 
   // Resolve this staff member's own locationId once (the list read is
   // scoped server-side; balances needs the id explicitly).
@@ -53,21 +103,29 @@ export function StockLevelsView({
   }, [locationType]);
 
   const { rows, loading, error, refresh } = useStockLevels(locationId);
-  const [kindById, setKindById] = React.useState<Map<string, ProductKind>>(new Map());
+  const [productById, setProductById] = React.useState<
+    Map<string, ProductWithLocations>
+  >(new Map());
 
   React.useEffect(() => {
     let cancelled = false;
     void stockApi.listProducts().then((ps) => {
       if (cancelled) return;
-      setKindById(new Map(ps.map((p) => [p.id, p.kind])));
+      setProductById(new Map(ps.map((p) => [p.id, p])));
     });
     return () => {
       cancelled = true;
     };
   }, []);
 
+  const activePill = pillSet.find((p) => p.key === pillKey) ?? pillSet[0];
   const filtered =
-    kind === "all" ? rows : rows.filter((r) => kindById.get(r.productId) === kind);
+    !activePill?.match
+      ? rows
+      : rows.filter((r) => {
+          const product = productById.get(r.productId);
+          return product ? activePill.match!(product) : false;
+        });
 
   const totalUnits = filtered.reduce(
     (sum, r) => sum + Number.parseFloat(r.quantity),
@@ -77,7 +135,11 @@ export function StockLevelsView({
   if (error) {
     return (
       <div className="flex flex-col gap-(--sp-5) p-(--sp-6)">
-        <ErrorState description={error} onRetry={refresh} />
+        <ErrorState
+          title="Couldn't load stock levels"
+          description="Check your connection and try again."
+          onRetry={refresh}
+        />
       </div>
     );
   }
@@ -89,7 +151,7 @@ export function StockLevelsView({
           Stock Levels
         </div>
         <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
-          {locationLabel} · as of now
+          {locationLabel} · as of today
         </div>
       </div>
 
@@ -108,9 +170,9 @@ export function StockLevelsView({
 
       <PillFilter
         aria-label="Filter by product kind"
-        options={KIND_PILLS}
-        activeKey={kind}
-        onChange={(k) => setKind(k as KindFilter)}
+        options={pillSet.map((p) => ({ key: p.key, label: p.label }))}
+        activeKey={pillKey}
+        onChange={setPillKey}
       />
 
       {loading ? (
@@ -123,12 +185,20 @@ export function StockLevelsView({
           title="Nothing in this category"
           description="No products of this kind have stock at this location right now."
           actionLabel="Clear filter"
-          onAction={() => setKind("all")}
+          onAction={() => setPillKey(pillSet[0]?.key ?? "all")}
         />
       ) : filtered.length === 0 ? (
         <EmptyState
-          title="No stock on hand"
-          description={`Nothing has a derived balance at ${locationLabel} yet.`}
+          title={
+            locationType === "canteen"
+              ? "No stock at the Canteen yet"
+              : "No stock on hand"
+          }
+          description={
+            locationType === "canteen"
+              ? "Canteen stock will show here once the Store Manager transfers items in, or opening stock is set."
+              : `Nothing has a derived balance at ${locationLabel} yet.`
+          }
         />
       ) : (
         <ul className="flex flex-col list-none">

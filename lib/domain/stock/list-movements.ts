@@ -69,7 +69,33 @@ export async function listMovements(
     orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
   });
 
-  return rows.map(toMovementView);
+  const views = rows.map(toMovementView);
+
+  // F7-7: join each canteen derived `sale` row (a `sale` with a
+  // `stockCountId`) to its `canteen_sale` MoneyMovement so the Canteen
+  // hub timeline can render it as revenue-in instead of stock-out. The
+  // money row's `sourceId` is the `stockCount.id` (not the movement id).
+  const countIds = rows
+    .filter((r) => r.movementType === "sale" && r.stockCountId != null)
+    .map((r) => r.stockCountId as string);
+
+  if (countIds.length > 0) {
+    const revenueRows = await prisma.moneyMovement.findMany({
+      where: { sourceType: "canteen_sale", sourceId: { in: countIds } },
+      select: { sourceId: true, amount: true },
+    });
+    const revenueByCountId = new Map(
+      revenueRows.map((m) => [m.sourceId, m.amount.toFixed(2)]),
+    );
+    for (let i = 0; i < rows.length; i++) {
+      const countId = rows[i].stockCountId;
+      if (rows[i].movementType === "sale" && countId != null) {
+        views[i].derivedRevenue = revenueByCountId.get(countId) ?? null;
+      }
+    }
+  }
+
+  return views;
 }
 
 /**
@@ -83,13 +109,39 @@ export async function listMovements(
  * Admin-only - enforced at the route.
  */
 export async function listOutstandingPurchases(): Promise<OutstandingPurchases> {
+  return listOutstandingPurchasesImpl(undefined);
+}
+
+/**
+ * Store-Manager-scoped sibling of `listOutstandingPurchases`: the same
+ * "deliveries awaiting receipt" read, hard-filtered to a single
+ * `locationId` (the caller's assigned location). A Store Manager sees
+ * only their location's pending deliveries so the Receive flow's "match a
+ * delivery the Admin already paid for" picker is scoped correctly
+ * (3-DOMAIN handoff §3.4). Admin keeps the unfiltered
+ * `listOutstandingPurchases`.
+ */
+export async function listOutstandingPurchasesForLocation(
+  locationId: string,
+): Promise<OutstandingPurchases> {
+  return listOutstandingPurchasesImpl(locationId);
+}
+
+async function listOutstandingPurchasesImpl(
+  locationId: string | undefined,
+): Promise<OutstandingPurchases> {
+  const locationFilter = locationId ? { locationId } : {};
   const [payments, unmatchedReceipts, linkedReceipts] = await Promise.all([
     prisma.stockMovement.findMany({
-      where: { movementType: "purchase_payment" },
+      where: { movementType: "purchase_payment", ...locationFilter },
       orderBy: { occurredAt: "desc" },
     }),
     prisma.stockMovement.findMany({
-      where: { movementType: "purchase_receipt", purchasePaymentId: null },
+      where: {
+        movementType: "purchase_receipt",
+        purchasePaymentId: null,
+        ...locationFilter,
+      },
       orderBy: { occurredAt: "desc" },
     }),
     prisma.stockMovement.findMany({

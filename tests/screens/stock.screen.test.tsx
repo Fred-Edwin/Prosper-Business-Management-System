@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // Session 11 per-screen gate — /admin/stock rebuilt as a kit composition.
-// Drives the PillFilter, the ErrorState / filtered-EmptyState branches, the
-// DenseLedger cell-click -> rail correction Drawer -> toast, with useLedger and
-// stockApi mocked.
+// 3e retrofit: the location <PillFilter> is now the shared kit <FilterToolbar>
+// (Location · Category · Date). Drives that toolbar, the ErrorState /
+// filtered-EmptyState branches, the DenseLedger cell-click -> rail correction
+// Drawer -> toast, with useLedger and stockApi mocked.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -119,13 +120,37 @@ beforeEach(() => {
 });
 
 describe("/admin/stock — kit composition", () => {
-  it("renders the ledger with a location <PillFilter>", () => {
+  it("renders the ledger with the shared <FilterToolbar> — Location · Category · Date at their defaults, no Reset", () => {
     renderScreen();
-    const group = screen.getAllByRole("radiogroup", {
-      name: "Filter by location",
-    })[0];
-    expect(within(group).getByRole("radio", { name: "All (2)" })).toBeInTheDocument();
-    expect(within(group).getByRole("radio", { name: "Store" })).toBeInTheDocument();
+    const toolbar = within(
+      screen.getAllByRole("search", { name: "Filter the stock ledger" })[0],
+    );
+    // Location select (kit names its combobox with the control label).
+    expect(
+      toolbar.getByRole("combobox", { name: "Location" }),
+    ).toBeInTheDocument();
+    expect(
+      toolbar.getByRole("combobox", { name: "Category" }),
+    ).toBeInTheDocument();
+    // Date control at its default business day; nothing off default → no Reset.
+    expect(
+      toolbar.queryByRole("button", { name: "Reset" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("changing the Location select re-queries (state moves off default) and shows Reset", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    const toolbar = within(
+      screen.getAllByRole("search", { name: "Filter the stock ledger" })[0],
+    );
+    await user.click(toolbar.getByRole("combobox", { name: "Location" }));
+    await user.click(
+      screen.getByRole("option", { name: "Location: Restaurant" }),
+    );
+    expect(
+      await screen.findAllByRole("button", { name: "Reset" }),
+    ).not.toHaveLength(0);
   });
 
   it("shows <ErrorState> with a Retry when the fetch failed", () => {
@@ -136,19 +161,22 @@ describe("/admin/stock — kit composition", () => {
     expect(screen.getAllByRole("button", { name: "Retry" })[0]).toBeInTheDocument();
   });
 
-  it("shows a filtered <EmptyState> with Clear-filter when a location filter matches nothing", async () => {
+  it("shows a filtered <EmptyState> with Reset when a location filter matches nothing", async () => {
     renderScreen();
     const user = userEvent.setup();
     rowsBox.rows = [];
-    await user.click(
-      screen.getAllByRole("radio", { name: "Restaurant" })[0],
+    const toolbar = within(
+      screen.getAllByRole("search", { name: "Filter the stock ledger" })[0],
     );
-    const status = screen
-      .getAllByRole("status")
-      .find((n) => within(n).queryByText(/No stock movements for this filter/));
-    expect(status).toBeTruthy();
+    await user.click(toolbar.getByRole("combobox", { name: "Location" }));
+    await user.click(
+      screen.getByRole("option", { name: "Location: Restaurant" }),
+    );
     expect(
-      screen.getAllByRole("button", { name: "Clear filter" })[0],
+      screen.getAllByText(/No stock movements for this filter/)[0],
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Reset filters" })[0],
     ).toBeInTheDocument();
   });
 
@@ -175,5 +203,95 @@ describe("/admin/stock — kit composition", () => {
 
     await waitFor(() => expect(correctFn).toHaveBeenCalledOnce());
     expect(await screen.findByText("Correction saved")).toBeInTheDocument();
+  });
+});
+
+// ── Mobile branch (Session 3b — artboard 8Q4-0) ───────────────────────────
+// jsdom applies no media queries, so both `hidden md:flex` (desktop) and
+// `flex md:hidden` (mobile) render. `mobile()` scopes to the mobile branch.
+function mobile(): HTMLElement {
+  const node = document.querySelector<HTMLElement>(".md\\:hidden.flex-col.grow");
+  if (!node) throw new Error("mobile branch not found");
+  return node;
+}
+
+describe("/admin/stock — mobile branch", () => {
+  it("shows the dark KPI strip, unwired (— / M3)", () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    const m = within(mobile());
+    expect(m.getByText("Stock on Hand (Total)")).toBeInTheDocument();
+    expect(m.getByText("Today's Sold Value")).toBeInTheDocument();
+    expect(m.getAllByText("M3").length).toBe(2);
+  });
+
+  it("shows a 'KES —' sub-line under each row's closing quantity (M3-unwired)", () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    expect(within(mobile()).getAllByText("KES —").length).toBeGreaterThan(0);
+  });
+
+  it("shows skeleton rows while loading (not a bare 'Loading…' line)", () => {
+    hook.loading = true;
+    rowsBox.rows = [];
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    const m = mobile();
+    expect(m.querySelectorAll(".kit-skeleton").length).toBeGreaterThanOrEqual(3);
+    expect(within(m).queryByText("Loading…")).not.toBeInTheDocument();
+  });
+
+  it("shows a plain <EmptyState> (not a bare text line) when the day has no movements", () => {
+    hook.loading = false;
+    rowsBox.rows = [];
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    expect(within(mobile()).getByText("No movements this day")).toBeInTheDocument();
+  });
+
+  it("renders a stacked row with short chip labels and an 'Adjust' button", () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    const m = within(mobile());
+    expect(m.getByText("Beef Fillet (kg)")).toBeInTheDocument();
+    expect(m.getByText("+50.0 Purch")).toBeInTheDocument();
+    expect(m.getByRole("button", { name: "Adjust" })).toBeInTheDocument();
+  });
+
+  it("'Adjust' on a single-movement row opens the correction Drawer", async () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(within(mobile()).getByRole("button", { name: "Adjust" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Adjust Row Movements")).toBeInTheDocument();
+  });
+
+  it("has a sticky bottom bar with an 'Opening Stock' link", () => {
+    render(
+      <ToastProvider placement="top-right">
+        <StockClient />
+      </ToastProvider>,
+    );
+    const link = within(mobile()).getByRole("link", { name: "Opening Stock" });
+    expect(link).toHaveAttribute("href", "/admin/stock/opening");
   });
 });
