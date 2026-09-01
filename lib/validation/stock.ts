@@ -130,6 +130,68 @@ export const createStockMovementSchema = z.discriminatedUnion("movementType", [
   recordNonSaleConsumptionSchema,
 ]);
 
+// ── Batch movement bodies (POST /api/stock-movements/<type>/batch) ───────
+//
+// The SM / Canteen movement flows submit a multi-row product picker as one
+// atomic batch (3-DOMAIN, ADR-44 picker reversal). One flow-level shape +
+// a `lines: [{ productId, quantity, … }]` array. The domain enforces the
+// §3.8 BLOCK (any line over on-hand ⇒ whole batch rejected, nothing
+// written) and rejects an empty `lines` / a duplicate `productId`.
+
+const batchLine = z.object({
+  productId: id,
+  quantity: magnitudeString,
+});
+
+/** `lines` must be present; emptiness is a domain `VALIDATION_ERROR` (field `"lines"`). */
+const batchLines = z.array(batchLine);
+
+export const recordPurchaseReceiptBatchSchema = z.object({
+  locationId: id,
+  lines: z.array(
+    batchLine.extend({ purchasePaymentId: id.nullable().optional() }),
+  ),
+});
+
+export const recordKitchenIssueBatchSchema = z.object({
+  locationId: id,
+  lines: batchLines,
+});
+
+export const recordProductionBatchSchema = z.object({
+  locationId: id,
+  lines: batchLines,
+});
+
+export const recordTransferBatchSchema = z.object({
+  fromLocationId: id,
+  toLocationId: id,
+  lines: batchLines,
+});
+
+export const recordNonSaleConsumptionBatchSchema = z.object({
+  locationId: id,
+  reason: nonSaleReason,
+  note: z.string().trim().min(1).nullable().optional(),
+  lines: batchLines,
+});
+
+export type RecordPurchaseReceiptBatchBody = z.infer<
+  typeof recordPurchaseReceiptBatchSchema
+>;
+export type RecordKitchenIssueBatchBody = z.infer<
+  typeof recordKitchenIssueBatchSchema
+>;
+export type RecordProductionBatchBody = z.infer<
+  typeof recordProductionBatchSchema
+>;
+export type RecordTransferBatchBody = z.infer<
+  typeof recordTransferBatchSchema
+>;
+export type RecordNonSaleConsumptionBatchBody = z.infer<
+  typeof recordNonSaleConsumptionBatchSchema
+>;
+
 // ── Other endpoints ─────────────────────────────────────────────────────
 
 export const correctMovementSchema = z.object({

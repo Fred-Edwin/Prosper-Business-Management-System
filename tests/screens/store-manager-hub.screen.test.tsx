@@ -63,6 +63,7 @@ function mv(over: Partial<StockMovementView>): StockMovementView {
     purchasePaidFrom: null,
     correctsMovementId: null,
     note: null,
+    derivedRevenue: null,
     createdAt: "2026-08-28T08:30:00Z",
     updatedAt: "2026-08-28T08:30:00Z",
     ...over,
