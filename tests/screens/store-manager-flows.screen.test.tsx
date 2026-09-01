@@ -59,6 +59,17 @@ const levels = vi.hoisted(() => ({
   error: null as string | null,
   refresh: vi.fn(),
 }));
+// `transfer` mode: per-product source balance (dish → Restaurant, else →
+// Store). Built from LEVELS in beforeEach.
+const transferLevels = vi.hoisted(() => ({
+  byProduct: new Map<
+    string,
+    { quantity: string; sourceLocationId: string; sourceLabel: string }
+  >(),
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
 const outstanding = vi.hoisted(() => ({
   rows: [] as unknown[],
   loading: false,
@@ -81,6 +92,7 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
     ...actual,
     useStaffStock: () => staff,
     useStockLevels: () => levels,
+    useTransferSourceLevels: () => transferLevels,
     useOutstandingDeliveries: () => outstanding,
     stockApi: { ...actual.stockApi, ...api },
   };
@@ -108,6 +120,24 @@ beforeEach(() => {
   levels.rows = LEVELS;
   levels.loading = false;
   levels.error = null;
+  // Same figures as LEVELS, tagged by each product's true source: dishes
+  // at the Restaurant, everything else at the Store.
+  transferLevels.byProduct = new Map(
+    LEVELS.map((l) => {
+      const p = PRODUCTS.find((x) => x.id === l.productId);
+      const fromRestaurant = p?.kind === "dish";
+      return [
+        l.productId,
+        {
+          quantity: l.quantity,
+          sourceLocationId: fromRestaurant ? "loc-rest" : "loc-store",
+          sourceLabel: fromRestaurant ? "Restaurant" : "Store",
+        },
+      ];
+    }),
+  );
+  transferLevels.loading = false;
+  transferLevels.error = null;
   outstanding.rows = [];
   outstanding.loading = false;
   outstanding.error = null;
@@ -409,7 +439,7 @@ describe("SM — Transfer Stock", () => {
 
     expect(
       screen.getByText(
-        /Removes 72 pcs from Restaurant now; lands at Canteen once they accept\./,
+        /Removes 72 pcs from Store \/ Restaurant now; lands at Canteen once they accept\./,
       ),
     ).toBeInTheDocument();
 
@@ -418,9 +448,11 @@ describe("SM — Transfer Stock", () => {
         name: /Dispatch Transfer to Canteen \(−72 pcs\)/,
       }),
     );
+    // Goods dispatch FROM the Store (where deliveries land) — one batch,
+    // since both selected lines are goods.
     await waitFor(() =>
       expect(api.transferBatch).toHaveBeenCalledWith({
-        fromLocationId: "loc-rest",
+        fromLocationId: "loc-store",
         toLocationId: "loc-canteen",
         lines: [
           { productId: "p-soda", quantity: "48" },
@@ -428,6 +460,32 @@ describe("SM — Transfer Stock", () => {
         ],
       }),
     );
+  });
+
+  it("splits the dispatch by source: dishes leave the Restaurant, goods the Store", async () => {
+    renderFlow(<MovementPickerFlow mode="transfer" />);
+    const user = userEvent.setup();
+
+    await pickRow(user, "Soda 300ml", "10"); // goods → Store
+    await pickRow(user, "Grilled Chicken", "4"); // dish → Restaurant
+    await user.click(screen.getByRole("combobox", { name: /Destination/ }));
+    await user.click(await screen.findByRole("option", { name: "Canteen" }));
+
+    await user.click(
+      screen.getByRole("button", { name: /^Dispatch Transfer to Canteen/ }),
+    );
+
+    await waitFor(() => expect(api.transferBatch).toHaveBeenCalledTimes(2));
+    expect(api.transferBatch).toHaveBeenCalledWith({
+      fromLocationId: "loc-store",
+      toLocationId: "loc-canteen",
+      lines: [{ productId: "p-soda", quantity: "10" }],
+    });
+    expect(api.transferBatch).toHaveBeenCalledWith({
+      fromLocationId: "loc-rest",
+      toLocationId: "loc-canteen",
+      lines: [{ productId: "p-chicken", quantity: "4" }],
+    });
   });
 
   it("blocked over-stock disables submit", async () => {

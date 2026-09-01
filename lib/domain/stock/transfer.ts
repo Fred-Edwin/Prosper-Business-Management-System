@@ -215,12 +215,30 @@ function isPendingDispatch(row: {
  * Phase 2: the receiver accepts an in-transit transfer. Writes the `+q`
  * counterpart row at the destination and links it to the pending `-q` row.
  *
+ * `input.receivedQuantity` (unsigned magnitude, optional) is what actually
+ * arrived. Omitted ⇒ the `+q` is the exact negation of the dispatch (the
+ * plain accept). Given and different ⇒ the `+q` lands at the received
+ * amount and carries a variance note. The source location's ledger already
+ * dropped by the full dispatched magnitude at phase 1, so a shortfall or
+ * overage is just stock lost / gained in transit — nothing else is
+ * written, and each location's derived balance stays a correct picture of
+ * what it holds. `deriveIncomingTransfers` keys "accepted" off the
+ * presence of a linked `+q` row (`correctsMovementId`), never quantity
+ * equality, so a variance `+q` clears the pending banner exactly like a
+ * matching one.
+ *
  * `CONFLICT` if the row is not a pending dispatch (already accepted, or
- * not a dispatch row at all).
+ * not a dispatch row at all). `VALIDATION_ERROR` on a non-positive
+ * `receivedQuantity`.
  */
 export async function acceptTransfer(
   input: AcceptTransferInput,
 ): Promise<StockMovementView> {
+  const received =
+    input.receivedQuantity != null && input.receivedQuantity !== ""
+      ? toMagnitude(input.receivedQuantity, "receivedQuantity")
+      : null;
+
   const row = await prisma.$transaction(async (tx) => {
     const dispatch = await tx.stockMovement.findUnique({
       where: { id: input.movementId },
@@ -254,17 +272,23 @@ export async function acceptTransfer(
       );
     }
 
+    const dispatched = dispatch.quantity.negated(); // -(-q) = +q, the sent magnitude
+    const landed = received ?? dispatched;
+    const variance = !landed.equals(dispatched);
+
     return tx.stockMovement.create({
       data: {
         productId: dispatch.productId,
         locationId: toLocationId,
         movementType: "transfer",
-        quantity: dispatch.quantity.negated(), // -(-q) = +q
+        quantity: landed,
         recordedById: input.recordedById,
         occurredAt: new Date(),
         transferCounterpartLocationId: dispatch.locationId,
         correctsMovementId: dispatch.id,
-        note: "Transfer received",
+        note: variance
+          ? `Received ${landed.toString()}, dispatched ${dispatched.toString()}`
+          : "Transfer received",
       },
     });
   });

@@ -19,12 +19,25 @@ export type CanteenProduct = {
   locationId?: string;
 };
 
-export function useCanteenProducts() {
+/**
+ * `enabled` (default `true`) gates the fetch: `GET /api/canteen/products`
+ * is `admin` + `canteen_attendant` only, so the shared `MovementPickerFlow`
+ * — which calls this hook on every mode but only *uses* the result in
+ * `dispatch` — must pass `enabled={false}` on the Store Manager modes, or
+ * every SM stock screen fires a pointless `403`.
+ */
+export function useCanteenProducts(enabled = true) {
   const [products, setProducts] = React.useState<CanteenProduct[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [loading, setLoading] = React.useState(enabled);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    if (!enabled) {
+      setProducts([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     void (async () => {
       try {
         const res = await fetch("/api/canteen/products", {
@@ -46,7 +59,7 @@ export function useCanteenProducts() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [enabled]);
 
   return { products, loading, error };
 }

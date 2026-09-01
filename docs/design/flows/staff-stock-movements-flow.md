@@ -205,7 +205,13 @@ Top to bottom, inside the scrolling body:
    **lands** at the destination once staff there accept it (the incoming
    banner on the destination hub — `8T3-0` / `9BA-0`). The impact
    banner and the success toast both say so ("lands at {dest} once they
-   accept").
+   accept"). FIX-2: the receiver now taps the banner into a **Review &
+   Receive** list — one row per incoming line with the quantity
+   pre-filled to what was dispatched and adjustable to what actually
+   arrived — and one **Receive** submit; the flag-to-admin path is
+   retired for the Canteen routine (a variance is just a note on the
+   `+q` row). The SM Transfer is multi-source: dishes dispatch from the
+   Restaurant, sodas / goods from the Store.
 
 5. **Production increments Restaurant stock immediately.** A cooked batch
    is available to the Restaurant the moment it's logged — no accept

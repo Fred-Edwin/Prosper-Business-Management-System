@@ -134,6 +134,66 @@ describe("recordTransfer (2-phase)", () => {
     expect(toBal.quantity).toBe("0.0000");
   });
 
+  it("accept with a lower receivedQuantity lands the +q at what arrived; neither balance is over/understated", async () => {
+    const { store, canteen } = ctx.locationIds;
+    const productId = await freshProductWithOpening("100", store);
+
+    const dispatch = await recordTransfer({
+      productId,
+      fromLocationId: store,
+      toLocationId: canteen,
+      quantity: "30",
+      recordedById: ctx.recorderId,
+    });
+
+    const accepted = await acceptTransfer({
+      movementId: dispatch.id,
+      receivedQuantity: "28",
+      recordedById: ctx.otherStaffId,
+    });
+
+    expect(accepted.quantity).toBe("28.0000");
+    expect(accepted.correctsMovementId).toBe(dispatch.id);
+    expect(accepted.note).toContain("Received 28");
+    expect(accepted.note).toContain("dispatched 30");
+
+    // Source dropped by the full 30 that physically left; destination rose
+    // by the 28 that physically arrived. The 2 lost in transit are simply
+    // gone — no stock created or destroyed by the transfer mechanism.
+    const fromBal = await getDerivedStockBalance({ productId, locationId: store });
+    const toBal = await getDerivedStockBalance({ productId, locationId: canteen });
+    expect(fromBal.quantity).toBe("70.0000"); // 100 − 30
+    expect(toBal.quantity).toBe("28.0000"); // 0 + 28
+
+    // The variance +q still clears the pending banner (keys off the link).
+    await expect(
+      acceptTransfer({ movementId: dispatch.id, recordedById: ctx.otherStaffId }),
+    ).rejects.toMatchObject({ constructor: DomainError, code: "CONFLICT" });
+  });
+
+  it("plain accept (no receivedQuantity) is unchanged — +q equals the dispatched amount", async () => {
+    const { store, canteen } = ctx.locationIds;
+    const productId = await freshProductWithOpening("50", store);
+
+    const dispatch = await recordTransfer({
+      productId,
+      fromLocationId: store,
+      toLocationId: canteen,
+      quantity: "12",
+      recordedById: ctx.recorderId,
+    });
+    const accepted = await acceptTransfer({
+      movementId: dispatch.id,
+      recordedById: ctx.otherStaffId,
+    });
+
+    expect(accepted.quantity).toBe("12.0000");
+    expect(accepted.note).toBe("Transfer received");
+
+    const toBal = await getDerivedStockBalance({ productId, locationId: canteen });
+    expect(toBal.quantity).toBe("12.0000");
+  });
+
   it("rejects a transfer with the same from/to location", async () => {
     const { store } = ctx.locationIds;
     const productId = await freshProductWithOpening("10", store);

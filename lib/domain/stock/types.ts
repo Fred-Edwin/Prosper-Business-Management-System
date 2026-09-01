@@ -173,6 +173,16 @@ export type RecordTransferInput = {
 export type AcceptTransferInput = {
   /** The pending (`from`-side, `-q`) transfer row's id. */
   movementId: string;
+  /**
+   * What actually arrived, as an unsigned magnitude. Optional — omitted
+   * means "received exactly what was dispatched" (the plain accept). When
+   * present and different from the dispatched magnitude, the `+q` row is
+   * written at this amount and carries a variance note; the source
+   * location's ledger already dropped by the full dispatched amount at
+   * phase 1, so the difference is simply stock lost/gained in transit —
+   * the two ledgers stay a correct picture of what each location holds.
+   */
+  receivedQuantity?: string;
   recordedById: string;
 };
 
