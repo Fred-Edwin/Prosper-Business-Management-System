@@ -2009,3 +2009,69 @@ multi-select, no async/remote options; no change to the non-searchable
 `Select` beyond making the new paths inert; no screen file — the
 payment-drawer swap to `<Select searchable>` is a later Development-Sprint
 edit.
+
+---
+
+## ADR-49: M2 Submission-1 fidelity pass — three carried decisions (Tech Lead Session FINAL, 2026-09-01)
+
+**Status:** ACCEPTED. Recorded at the M2 Submission-1 landing; each item
+was ratified in-session by the owner during the fidelity-pass sprints
+(3-DOMAIN, 3a, 3c/3d, 3-KIT-FILTER). No new behaviour is introduced
+here — this ADR just gives the three a permanent home.
+
+### 1. ADR-44 reversal (partial) — the one-line movement-form body is superseded; the multi-row picker is restored
+
+ADR-44 accepted the Session-4b Store Manager / Canteen artboards being
+replaced by the proven kit, and in doing so the 6 staff movement flows
+(SM receive / issue / production / transfer / non-sale, + Canteen
+dispatch) shipped with a **single-line** form body. The owner chose
+**Option A** on 2026-08-31: restore the **multi-row
+`SelectableProductRow` picker** (select many products, per-row quantity)
+as the flow body. Sessions 3c / 3d rebuilt all 6 flows on one shared
+`MovementPickerFlow` + `FLOW_CONFIG`.
+
+**What still stands from ADR-44:** the `FlowScaffold` chrome —
+`FlowHeader` + a scroll body + a sticky submit bar — is unchanged; only
+the body between them changed from one line to N rows. The kit is the
+visual acceptance target (ADR-44's core claim) — `SelectableProductRow`
+went through the full ADR-42 gate (9 stories/baselines) before the flows
+composed it.
+
+**Interim residual (tracked as a follow-up, not fixed here):** additive
+flows pass `max(onHand, lineQty, 1)` as the row's "available" figure
+because `SelectableProductRow` has no additive / `neverBlocks` mode yet —
+so a 0-stock product reads `In Rest.: 1` on an additive flow. The KIT
+follow-up (`neverBlocks` mode) removes it.
+
+### 2. `editOwnOrder` audit prune (F7-10) — the one place M2 deletes an audit row instead of appending
+
+A same-day Cashier edit of their own order (`editOwnOrder`) **deletes**
+the `AuditLog` rows for the `MoneyMovement`s it is about to replace, then
+writes the fresh movements. This is the only path in M2 that removes an
+`AuditLog` row rather than appending a correction row.
+
+**Why it's acceptable:** the movements those audit rows described no
+longer exist after the edit (a same-day edit is a true rewrite, not a
+correction — CONVENTIONS §4.6), and the edit itself is audited by a fresh
+`action: "correct"` `AuditLog` row naming the order. No history of a
+*posted* (day-closed) record is ever mutated — that path is still the
+append-only Admin correction.
+
+**Inverse, recorded for completeness:** the single-line stock-movement
+domain fns (`receiveStock` / `issueStock` / … ) **gained** a per-call
+`AuditLog` row in `feat/m2-batch-movements`. They previously wrote **none**
+— a latent ADR-25 (every mutation writes `AuditLog`) gap, now closed. The
+new batch endpoints write 1 `AuditLog` row per line plus a `batch_*`
+`correlationId`.
+
+### 3. `Select` / `DatePicker` `aria-label` prop — additive, a11y-only
+
+`feat/m2-3kit-filter-toolbar` added an optional `aria-label` prop to the
+kit `Select` and `DatePicker`. It is **a11y-only** (names the label-less
+trigger for screen readers) and **ignored when `label` is set**. It was
+needed so `<FilterToolbar>` can render its compact label-less filter
+triggers without an accessibility violation. **No behaviour or visual
+change at any existing call site** — every current `Select` / `DatePicker`
+passes `label`, so the prop is inert for them.
+
+---

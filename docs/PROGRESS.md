@@ -17,17 +17,82 @@ Running status log, updated at the end of every sprint session.
 
 ## Milestone 2 — Staff can sell, every day
 
-**Plan:** `docs/sprints/milestone-2-plan.md` (living — Session 6 split
-into 6a / 6b / 6c / 6d / 6e).
-**Status:** Sessions 2, 3, 4, 5 done; 1a + 1b done. **Sessions 6a + 6b +
-6c + 6d + 6e done** (backend gap-fills + Customers feature; responsive Admin shell +
-nav wiring + `SimpleTable` rowChevron + Catalog `category` field;
-Restaurant Orders C1–C5 + hooks + minimal seed; Admin Orders A3 + Canteen
-Derived Sales A4 + Canteen Stock Count K1 + Canteen Hub K2 + full M2 seed +
-Domain Gap-Fixes G1–G4 + final gates). Ready for Session 7 (QA). S1a + S3 + S4 + S5 sit on
-`feat/m2-session-4-orders`; 6a–6e are on `feat/m2-session-6-screens`.
-Merge order to `main`: the whole M2 chain → 6a → 6b → 6c → 6d → 6e → S7 (one
-PR after QA, mirroring how M1 landed).
+**Plan:** `docs/sprints/milestone-2-plan.md`.
+**Status: DONE — landed on `main` 2026-09-01** as one `--no-ff` merge
+(`integration/m2-submission-1` → `main`, M2 Submission 1 = M1 + M2).
+All sessions done: 1a, 1b, 2, 3, 4, 5, 6a–6e, 7, plus the Submission-1
+fidelity pass (3-DOMAIN, 3-KIT, 3-KIT-FILTER, 3-DESIGN, 3-DESIGN-FILTERS,
+3a, 3b, 3c, 3d, 3e, opening-stock-mobile) and FINAL. Gate at landing:
+`pnpm test` 556/556 (69 files), `tsc` 0, `build` clean (41 routes).
+Deferrals recorded in `docs/sprints/m2-followups.md`.
+
+### 2026-09-01 — M2 Submission 1 landed on `main` (Tech Lead — Session FINAL) — DONE
+
+`integration/m2-submission-1` (the orchestrator's green superset of the
+10 fidelity-pass branches + S7) landed on `main` as **one `--no-ff`
+merge** — mirroring how M1 landed. No feature branch was re-merged.
+
+- **Gate on `main` after the merge:** `pnpm test` 556/556 (69 files),
+  `pnpm tsc --noEmit` 0, `pnpm build` clean — 41 routes (`/admin/sales`
+  present; `/admin/orders` + `/admin/canteen/derived-sales` → 308
+  redirects; 5 `…/batch` stock-movement routes; `/api/canteen/stock-counts/preview`).
+- **Dead staff hamburger removed** (`components/shells/staff-shell.tsx`).
+  No staff caller ever wired `onMenuClick` / a drawer — the button did
+  nothing on tap. Header is now the location/role label + avatar;
+  sign-out stays on the avatar. Owner-approved.
+- **Seed fixes** (`prisma/seed.ts`): `Location.name` re-asserted on the
+  upsert `update` (an early row stored the id string in `name`, which
+  rendered raw on `/admin/stock`); `makeOrder` re-dates an existing
+  order + its stock/money/debt rows on re-seed so the Admin Sales
+  "Today" default and the same-day edit gate keep working on any later
+  `pnpm dev` day.
+- **ADR-49** added (`docs/DECISIONS.md`): the three carried fidelity-pass
+  decisions — ADR-44 partial reversal (multi-row picker restored),
+  `editOwnOrder` audit-prune rationale + the inverse ADR-25 gap-close,
+  and the additive `Select` / `DatePicker` `aria-label` prop.
+- **Docs reconciled:** `milestone-2-plan.md` §7 table re-baselined + §10
+  changelog line; `ROADMAP.md` M2 → DONE; `API.md` `recordPurchasePayment`
+  MoneyMovement line corrected; this log's M2 status → DONE.
+- **Follow-ups** recorded in `docs/sprints/m2-followups.md` (nothing
+  fixed there — KIT `neverBlocks` mode, `DatePicker` quick-rows,
+  `Drawer variant="sheet"`, A2 Assets artboard CATEGORY strip,
+  `/api/canteen/products` route-purity, F7-7 hub subtitle fields, +
+  the 3c/3d QA deltas).
+- **Branch cleanup:** the 13 merged feature/integration/QA branches
+  deleted (local + origin where pushed); only `main` remains.
+
+**Milestone 2 is done.** M3 starts from a fresh milestone-plan doc.
+
+### 2026-08-31 — M2 Session 7: QA Sprint — adversarial pass + fixes (QA Engineer) — DONE
+
+First adversarial QA pass on Milestone 2. Full findings +
+attack-list dispositions: `docs/sprints/milestone-2-session-7-qa-report.md`.
+
+- **Attack list (plan §7) — all targets PASS.** Money-ledger integrity,
+  order-correction idempotency across a chain (incl. correcting the same
+  original twice and correcting a credit order), credit-balance
+  derivation + flagged overpayment, canteen derived-sales math across a
+  period boundary (transfers-in + production + non-sale consumption),
+  cross-cashier isolation (domain + route), Africa/Nairobi edit-window
+  boundary, audit coverage, route-handler purity, and the standard error
+  shape / §3.8 rejection — each verified with a new adversarial test.
+  **No High-severity data-integrity defect.**
+- **11 findings — 0 High / 4 Medium / 6 Low** + the C4-corrected-banner
+  data gap, all in the Session 6 **screen** layer (the domain holds).
+- **Fixed this session:** F7-2 (K1 sold/revenue preview built for real —
+  `lib/domain/sales/derive-stock-count.ts` shared calc +
+  `GET /api/canteen/stock-counts/preview`); F7-1 (C4 credit↔cash edit
+  path); F7-3 ("Today's stock counts" + delete on the Canteen hub via
+  `voidStockCount`); F7-5 / F7-6 (A3 correction banner labels + subtitle);
+  F7-10 (ADR-25 audit-prune note); the C4 corrected-banner data gap
+  (`OrderView.correctedAt` / `correctedByName`).
+- **Deferred to follow-ups:** F7-4 (A3 correction form is quantity-only),
+  F7-7 / F7-8 / F7-9 (K2 hub revenue, A3 filter Staff list,
+  `/api/canteen/products` route-purity).
+- **Tests:** `qa-m2-session-7.test.ts` (11 adversarial),
+  `preview-stock-count.test.ts` (5), `…/preview/route.test.ts` (6), plus
+  regressions in the four touched screen suites. Gate at report time:
+  `pnpm test` 450/450, `tsc` 0, `build` clean.
 
 ### 2026-09-01 — M2 Session 3a: Admin merged "Sales" screen + F7-4 + F7-8 (Developer) — DONE
 

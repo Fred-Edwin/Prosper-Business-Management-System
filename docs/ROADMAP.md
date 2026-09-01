@@ -13,11 +13,12 @@ misleading ledger "Edit" column (Design Sprint). Record: the
 `docs/PROGRESS.md` M1 ledger + `docs/DECISIONS.md` ADR-13–48;
 `docs/sprints/milestone-1-plan.md` is a closed stub.
 
-**Milestone 2 — planned (2026-08-29), not started.** Restaurant Sales
-(Orders), Customers & Credit, Canteen Derived Sales — the money ledger
-goes live. 7-session sequence (6 if no new kit component is needed).
-Living plan: **`docs/sprints/milestone-2-plan.md`**; Session 1 handoff:
-`docs/sprints/milestone-2-session-1-handoff.md`.
+**Milestone 2 — DONE (2026-09-01).** Restaurant Sales (Orders), Customers
+& Credit, Canteen Derived Sales — the money ledger is live, all balances
+derived. Landed on `main` as one merge (M2 Submission 1 = M1 + M2), all
+12 screens matching Paper on desktop and mobile. Closed plan:
+**`docs/sprints/milestone-2-plan.md`**; shipped detail:
+`docs/PROGRESS.md`; deferrals: `docs/sprints/m2-followups.md`.
 
 Milestones 3–5 below are unchanged and not yet broken into sprints.
 
@@ -93,17 +94,17 @@ no dependency on stock, sales, or money.
 
 ---
 
-## Milestone 2 — Staff can sell, every day
+## Milestone 2 — Staff can sell, every day — DONE (2026-09-01)
 
 **Plan & session sequence:** [`docs/sprints/milestone-2-plan.md`](sprints/milestone-2-plan.md)
-(living — re-baselined as it runs). Session 1 handoff:
-[`docs/sprints/milestone-2-session-1-handoff.md`](sprints/milestone-2-session-1-handoff.md).
+(closed). Shipped detail: [`docs/PROGRESS.md`](PROGRESS.md); deferrals:
+[`docs/sprints/m2-followups.md`](sprints/m2-followups.md).
 
-| Feature | PRD |
-|---|---|
-| Restaurant Sales (Orders) | §4.3 |
-| Customers & Credit | §4.6 |
-| Canteen Derived Sales | §4.4 |
+| Feature | PRD | Status |
+|---|---|---|
+| Restaurant Sales (Orders) | §4.3 | **DONE** — create / edit-own / append-only correct / role-scoped list; §3.8 BLOCK; C1–C5 + Admin `/admin/sales`; adversarial QA passed (S7). |
+| Customers & Credit | §4.6 | **DONE** — derived balances, repayment → MoneyMovement, ledger; C6 + A1 + A2; QA passed. |
+| Canteen Derived Sales | §4.4 | **DONE** — stock-count derivation exact across period boundaries, counted-more rejected + `voidStockCount` undo, revenue MoneyMovement; K1 + K2 + A4; QA passed. |
 
 **Unlocks:** Cashiers record real orders (cash/M-Pesa first). Canteen
 Attendant counts stock; sales derive automatically. Customers carry

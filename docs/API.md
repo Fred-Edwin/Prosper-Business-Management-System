@@ -159,9 +159,10 @@ does not block anything.
 > original spec: `opening` is a `POST` body here (not a separate endpoint);
 > `POST /api/stock-movements/:id/accept` is added for the 2-phase transfer;
 > `GET /api/stock-movements/balances` (batched derived-balance read) added
-> Session 7 (ADR-40); `recordPurchasePayment` does **not** yet write a
-> `MoneyMovement` (deferred to F3 — see ADR-39). Signed-quantity +
-> 2-phase-transfer model: ADR-39.
+> Session 7 (ADR-40); `recordPurchasePayment` **writes a paired `−cost`
+> `MoneyMovement`** (`sourceType = "purchase_payment"`, account =
+> `paidFromAccount`) — the M1 `TODO(mock)` was resolved in M2 Session 4
+> (see the plan §10). Signed-quantity + 2-phase-transfer model: ADR-39.
 > Success envelope is `{ "data": ... }`; errors use the standard shape.
 
 ### `GET /api/stock-movements`
@@ -205,7 +206,7 @@ with the created row. Inputs take an **unsigned magnitude**; the domain
 applies the sign.
 
 - `opening` — Admin. `{ movementType: "opening", productId, locationId, businessDate (YYYY-MM-DD), quantity }`. Writes an `opening` row at that business day's start. A second call for the same product/location/date is a **correction** of the first (ADR-15), not a duplicate.
-- `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`). `supplier` / `quantity` / `cost` / `paidFromAccount` are persisted to the real `purchaseSupplier` / `purchaseOrderedQty` / `purchaseTotalCost` / `purchasePaidFrom` columns (ADR-46 §3); a human `note` sentence is also composed for display. The `MoneyMovement` debit is **not** written yet — F3 owns it (ADR-39). The **payment-drawer product picker shows `ingredient` + `goods` only** (a `dish` is never purchased — ADR-33); the API does not reject a `dish` productId, the UI just never offers one.
+- `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`). `supplier` / `quantity` / `cost` / `paidFromAccount` are persisted to the real `purchaseSupplier` / `purchaseOrderedQty` / `purchaseTotalCost` / `purchasePaidFrom` columns (ADR-46 §3); a human `note` sentence is also composed for display. A paired **`−cost` `MoneyMovement`** is written (`sourceType = "purchase_payment"`, account = `paidFromAccount`) — resolved in M2 Session 4 (was the M1 `TODO(mock)`). The **payment-drawer product picker shows `ingredient` + `goods` only** (a `dish` is never purchased — ADR-33); the API does not reject a `dish` productId, the UI just never offers one.
 - `purchase_receipt` — Store Manager / Canteen Attendant. `{ movementType: "purchase_receipt", productId, locationId, quantity, purchasePaymentId? }`. `+quantity` at `locationId`. `purchasePaymentId`, if given, must reference a real `purchase_payment` row → `404` otherwise.
 - `issue` — Store Manager. `{ movementType: "issue", productId, locationId, quantity }`. `−quantity` at the Store (Store → cooking; single row).
 - `production` — Store Manager. `{ movementType: "production", productId, locationId, quantity }`. `+quantity` at `locationId`, which **must be a `restaurant` location**; `productId` **must be `kind = "dish"`** → `400` otherwise.

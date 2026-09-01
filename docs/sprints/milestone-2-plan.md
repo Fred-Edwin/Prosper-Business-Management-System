@@ -1,10 +1,11 @@
 # Milestone 2 — Plan & Session Sequence
 
-**Status:** Active — planning approved 2026-08-29. This is the authoritative,
-living plan for Milestone 2. It is **updated as the milestone progresses**:
-when sequencing changes, the session table in §7 is rewritten to reflect
-reality and a one-line entry is added to §10 — never stacked `> UPDATED`
-blocks (see guardrail 4).
+**Status:** DONE — Milestone 2 landed on `main` 2026-09-01 (M2 Submission 1
+= M1 + M2). See `docs/PROGRESS.md` for the shipped detail and
+`docs/sprints/m2-followups.md` for the recorded deferrals. This remains
+the authoritative record of the M2 session sequence; the §7 table
+reflects final reality and §10 is the history of how it got there — never
+stacked `> UPDATED` blocks (see guardrail 4).
 
 ---
 
@@ -257,11 +258,37 @@ backend exists before the frontend session, so there is nothing to mock.
 | 6a | Development Sprint | Developer | **DONE 2026-08-30.** Backend gap-fills the M2 screen designs need but the plan never scoped (owner-approved scope exceptions): **`Order.number`** (human order number for A2/A3/C1/C4), **`Product.category`** (+ `cashier` in the products / stock-balances read roles) for the C2/K1 category tab rows, **`Repayment.account` + `.note`** for the A2 ledger Reference cell. One deploy migration. Plus the **Customers & Credit** screens (C6, A1, A2) composed from the proven kit + `use-customers.ts` + 18 screen specs. `pnpm test` 368/368; `tsc` 0; `build` clean. Paper-verified: A1/A2/C6 populated states. | Backend fills merged; Customers screens live on real data; specs green; A2 reconciled with the new fields. |
 | 6b | Development Sprint | Developer | **DONE 2026-08-30** (owner walkthrough still owed). Responsive Admin shell — the `6BD-0` mobile header + `1ZP-0` `MobileNavDrawer` merged into `components/shells/admin-shell.tsx` (sidebar `hidden md:flex`; hamburger < `--bp-md`; `children` renders once). Admin nav wired: **Sales** → `/admin/orders`, new **Derived sales** → `/admin/canteen/derived-sales` (both nav lists); active-key by longest href-prefix. Cashier bottom nav → **Today · New Order · Customers**. `SimpleTable` gained opt-in `rowChevron` (off = byte-identical; new story + one new baseline; `kit-audit.md` / `component-states.md` updated) — set on A1. Catalog product drawer gained a free-text **Category** field. All remaining Customers state artboards verified vs Paper — structural match, minor copy deltas logged for QA. `tsc` 0; kit `test:visual`/`test:a11y` green (1 new snapshot); full `pnpm test` deferred to 6d. | Admin shell responsive; every M2 nav link routes; `rowChevron` shipped + gated; Catalog sets `category`; Customers artboards verified. **Owner walkthrough pending.** |
 | 6c | Development Sprint | Developer | **DONE 2026-08-30** (owner walkthrough owed). `app/cashier/use-orders.ts` (`useOrders` + `useOrder`) + `app/cashier/use-restaurant-products.ts` + C1 (`app/cashier/page.tsx`) · C2 (`app/cashier/orders/new/`) · C3 (checkout `BottomSheet` over C2) · C4 (`app/cashier/orders/[id]/`, edit-vs-read-only) · C5 (attach `BottomSheet`, reuses `useCustomers`). §3.8 line block + credit-needs-customer + C4 own+same-day gate all wired; `account` omitted (domain-derived). `cashier-orders.screen.test.tsx` — 28 tests, every structural state + the §3 contracts + no-margin. Minimal `seedM2Sales()` block (menu categories + stock, 2nd cashier, 4 customers, ~8 orders incl. yesterday + a corrected pair). One hook change: `useCustomers.createCustomer` now returns the created row. `tsc` 0, `build` clean, `pnpm test` 396/396. | Every Cashier order screen live on real data; specs green; walked + signed off. |
-| 6d | Development Sprint | Developer | **Admin Orders + Canteen + wrap.** A3 (Admin orders list + read-only detail drawer + correction form drawer + linked row-group; `use-orders` shared; no delete affordance; no margin column). `app/canteen/use-stock-count.ts` hook + A4 (Derived Sales) + K1 (Stock Count, now unblocked) + K2 (derived-sale row type in the existing Canteen hub `ActivityTimeline`). Specs (`admin-orders`, `canteen-derived-sales`, + the K2 row in `canteen-hub`). Owner walkthrough as Admin + Canteen Attendant. Extend `prisma/seed.ts` with M2 dev data. Final gates + all doc updates. | All 12 M2 screens live; `grep TODO(mock)` in M2 `app/**` clean; full suite + `tsc` + `build` + kit gates green; per-feature walkthroughs done; PROGRESS/plan/API/handoff updated. Hand to QA (S7). |
-| 7 | QA Sprint | QA Engineer | Adversarial pass against every M2 acceptance criterion, the 3 flow docs, the approved screens. Report before fixing. | Findings report delivered; fixes applied with regression tests; full suite + `tsc` + `build` + kit gates green; PROGRESS + ROADMAP updated. |
+| 6d | Development Sprint | Developer | **DONE 2026-08-30.** A3 (Admin orders list + read-only detail drawer + correction form drawer + linked row-group; `use-orders` shared; no delete affordance; no margin column). `app/canteen/use-stock-count.ts` hook + A4 (Derived Sales) + K1 (Stock Count) + K2 (derived-sale row type in the existing Canteen hub `ActivityTimeline`). Screen specs `admin-orders` / `canteen-derived-sales` / `canteen-stock-count` / `canteen-hub` (17 suites, 127 screen tests). Full M2 seed in `prisma/seed.ts`. Gates clean: `tsc` 0, `build` 40 routes, `pnpm test` 411/411. Agreed with owner to run 6e (backend `cashierName` / `productName` hydration on `OrderView`) before S7. | All 12 M2 screens live; `grep TODO(mock)` in M2 `app/**` clean; full suite + `tsc` + `build` + kit gates green. Hand to QA (S7). |
+| 6e | Development Sprint | Developer | **DONE 2026-08-31.** `OrderView` gains `cashierName` / `productName` from the domain read (G1/G2) so A3 / C4 render names, not ids. `pnpm test` green. | `OrderView` carries display names; specs green. |
+| 7 | QA Sprint | QA Engineer | **DONE 2026-08-31.** Adversarial pass against every M2 acceptance criterion, the 3 flow docs, the approved screens — `docs/sprints/milestone-2-session-7-qa-report.md`. **0 High.** F7-1/3/5/6/10 + the C4 banner fixed. **F7-2** preview built for real (`lib/domain/sales/derive-stock-count.ts` — shared calc, `GET /api/canteen/stock-counts/preview`). Regression tests added (`qa-m2-session-7.test.ts`, `preview-stock-count.test.ts` + route tests). | Findings report delivered; fixes applied with regression tests; full suite + `tsc` + `build` + kit gates green. |
 
-**Count: 11 session-slots** (Session 1 → 1a + 1b; Session 6 → 6a + 6b +
-6c + 6d). 1a, 1b, 2, 3, 4, 5, **6a, 6b, 6c** done. 6d, 7 pending.
+### Submission-1 fidelity pass — 2026-08-31 → 2026-09-01
+
+M2's 12 screens were live and gated after S7, but not all matched Paper
+on mobile and the filter rows were bespoke. A concurrent fidelity pass
+(one branch per session, all merged onto `integration/m2-submission-1`
+and gated 556/0/clean, then landed on `main` as one merge on 2026-09-01)
+closed that gap.
+
+| Session | Branch | Delivered |
+|---|---|---|
+| 3-DOMAIN / batch | `feat/m2-batch-movements` | 5 `POST …/batch` stock endpoints (receipts / issues / production / transfers / non-sale), one atomic txn each, §3.8 BLOCK parity, 1 `AuditLog`/line + a `batch_*` `correlationId`. `lastMovementAt` on the balances payload. `GET …/outstanding` widened to `store_manager` (location-scoped). `derivedRevenue` on `StockMovementView` (F7-7). Shared `lib/domain/stock/movement-core.ts`. Side effect: the single-line movement fns now write 1 `AuditLog` row each (ADR-25 gap closed — see ADR-49). |
+| 3-KIT | `feat/m2-3kit-selectable-row` | `SelectableProductRow` kit component — ADR-42-gated (9 stories/baselines). Embedded compact stepper authored inline (reuses the ADR-43/48 contract verbatim). KIT GAP deferred: no additive / `neverBlocks` mode. |
+| 3-KIT-FILTER | `feat/m2-3kit-filter-toolbar` | `FilterToolbar` kit component — ADR-42-gated (8 stories/baselines). Kit touch: `Select` + `DatePicker` gained an additive a11y-only `aria-label` prop (ADR-49). |
+| 3a | `feat/m2-3a-sales` | `/admin/sales` = one nav item, tabs Restaurant Orders / Canteen Derived, `?tab=` deep-link, 308 redirects (`/admin/orders` + `/admin/canteen/derived-sales` → `/admin/sales`), nav collapsed in both shells. F7-4 full corrected-order form. F7-8 Payment + Cashier pickers. Mobile card layouts. `correction-form.tsx` rebuilt (lost in the concurrent-session incident). |
+| 3b | `feat/m2-3b-admin-mobile` | Financials + Assets + Ledger `flex`/`md:hidden` mobile branches. Assets "category" field dropped (ADR-44 stands). |
+| opening-stock-mobile | `feat/opening-stock-mobile` | `/admin/stock/opening` `< --bp-md` stacked-card branch. `component-states.md` C26 note. |
+| 3c | `feat/m2-3c-sm-flows` | 5 SM movement screens rebuilt on the Option-A multi-row picker via one shared `MovementPickerFlow` + `FLOW_CONFIG` (ADR-49 §1). Fixed `FlowScaffold` scroll / sticky-footer. Interim: additive flows pass `max(onHand, lineQty, 1)`. |
+| 3d | `feat/m2-3d-canteen` | Canteen Dispatch via a dispatch mode in the shared picker. Stock Levels pill-set-as-prop. F7-7 hub +KES revenue row (branch-guarded; SM hub byte-identical + guard test). |
+| 3e | `feat/m2-3e-filter-retrofit-v2` | Sales / Customers / Ledger / Assets filter rows → `<FilterToolbar>` (kit unchanged). `app/admin/sales/filter-toolbar.tsx` deleted. Deferred: 3a's date quick-rows didn't survive; "Corrected only" renders as a toggle not a checkbox. |
+| 3-DESIGN / 3-DESIGN-FILTERS | (flow-doc edits, landed `76c4d8f`) | `restaurant-sales-flow.md` / `canteen-derived-sales-flow.md` / `customers-credit-flow.md` + `kit-audit.md` + `design-principles.md` reconciled to the built screens. |
+| FINAL | `main` merge | Landed `integration/m2-submission-1` on `main` (one `--no-ff` merge). Removed the dead staff hamburger. Seed re-dates orders relative to `now` + heals `Location.name`. ADR-49. Docs reconciled. |
+
+**Count: 13 session-slots** (Session 1 → 1a + 1b; Session 6 → 6a–6e).
+1a, 1b, 2, 3, 4, 5, 6a–6e, 7 done, plus the Submission-1 fidelity pass
+(3-DOMAIN, 3-KIT, 3-KIT-FILTER, 3-DESIGN, 3-DESIGN-FILTERS, 3a, 3b, 3c,
+3d, 3e, opening-stock-mobile) and FINAL. **Milestone 2 is DONE
+(2026-09-01).**
 
 ### Allowed concurrency
 
@@ -453,4 +480,20 @@ current reality; this is the history of how it got there.)*
   `pnpm build` (all 40 routes), `pnpm test` (411/411 passed). Plan agreed
   with owner to run Session 6e for backend domain field hydration (G1/G2
   cashierName/productName in OrderView) before Session 7 QA.
+- 2026-08-31 — **Sessions 6e + 7 done.** 6e: `OrderView` carries
+  `cashierName` / `productName` from the domain read. S7: adversarial QA
+  pass — 0 High; F7-1/3/5/6/10 + the C4 banner fixed; F7-2 preview built
+  for real (`derive-stock-count.ts` + `GET /api/canteen/stock-counts/preview`).
+  See `milestone-2-session-7-qa-report.md`.
+- 2026-09-01 — **Submission-1 fidelity pass + M2 S7 QA landed as one
+  integration merge.** 11 fidelity-pass branches (3-DOMAIN batch endpoints,
+  3-KIT `SelectableProductRow`, 3-KIT-FILTER `FilterToolbar`, 3a merged
+  `/admin/sales`, 3b + opening-stock-mobile responsive branches, 3c/3d
+  staff + canteen picker flows, 3e filter retrofit, 3-DESIGN flow-doc
+  reconciliation) + S7 were merged onto `integration/m2-submission-1`,
+  gated 556/0/clean, and landed on `main` as one `--no-ff` merge. FINAL
+  session: dead staff hamburger removed, seed re-dates orders relative to
+  `now` + heals `Location.name`, ADR-49 recorded, milestone docs
+  reconciled. **Milestone 2 is DONE.** §7 table re-baselined (13
+  session-slots + the fidelity pass).
 
