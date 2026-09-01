@@ -55,7 +55,17 @@ export type MovementMode =
   | "issue"
   | "production"
   | "transfer"
-  | "non-sale";
+  | "non-sale"
+  // M2-3d: the Canteen Transfer Dispatch flow. Behaves exactly like
+  // `transfer` (multi-row picker, category tabs, a Destination <Select>,
+  // the two-phase-transfer rule, POST …/transfers/batch) but the SOURCE
+  // is the Canteen, not the Store: balances, the batch `fromLocationId`
+  // and the "Canteen → {dest}" badge all read the Canteen. Role: Canteen
+  // Attendant (+ Admin). On success it returns to `/canteen`.
+  | "dispatch";
+
+/** Modes whose source location is the Canteen (not the Store). */
+const CANTEEN_SOURCED = new Set<MovementMode>(["dispatch"]);
 
 // ── Per-flow configuration ─────────────────────────────────────────────
 
@@ -165,6 +175,22 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     emptyDescription: "The Store has no stock on hand to write off.",
     errorTitle: "Couldn't load Store stock",
   },
+  dispatch: {
+    title: "Transfer Stock",
+    direction: "Canteen → …",
+    tone: "info",
+    // A Canteen carries sodas / goods / snacks — in this data set some
+    // are modelled as `dish`. List everything the Canteen holds.
+    productKinds: "all",
+    searchPlaceholder: "Search sodas, goods, stock…",
+    sectionLabel: "Select items to transfer",
+    availPrefix: "Avail:",
+    spend: true,
+    categoryTabs: true,
+    emptyTitle: "Nothing to transfer",
+    emptyDescription: "The Canteen has no stock to send right now.",
+    errorTitle: "Couldn't load Canteen stock",
+  },
 };
 
 // The Transfer category tab row (flow doc §"Body composition" item 3).
@@ -188,16 +214,25 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   const { toast } = useToast();
   const { data, loading, error, refresh } = useStaffStock();
 
-  // The SM's own location, resolved from the flow's location scope.
+  // The staff member's own location, resolved from the flow's scope.
   const storeLocationId =
     data.locations.find((l) => l.type === "store")?.id ?? "";
   const restaurantLocationId =
     data.locations.find((l) => l.type === "restaurant")?.id ?? "";
+  const canteenLocationId =
+    data.locations.find((l) => l.type === "canteen")?.id ?? "";
+  // The SOURCE location for this flow: the Canteen for Dispatch, the
+  // Store for every SM flow. Feeds the batch `locationId` /
+  // `fromLocationId`, the destination-picker exclusion, and the badge.
+  const sourceLocationId = CANTEEN_SOURCED.has(mode)
+    ? canteenLocationId
+    : storeLocationId;
+  const sourceLabel = CANTEEN_SOURCED.has(mode) ? "Canteen" : "Store";
   // The location whose derived balances feed the row `available` readouts:
-  // Production reads the Restaurant (the dish's landing stock); every
-  // other flow reads the Store.
+  // Production reads the Restaurant (the dish's landing stock); Dispatch
+  // reads the Canteen; every other flow reads the Store.
   const balanceLocationId =
-    mode === "production" ? restaurantLocationId : storeLocationId;
+    mode === "production" ? restaurantLocationId : sourceLocationId;
 
   const { rows: levelRows } = useStockLevels(balanceLocationId || undefined);
   const availableById = React.useMemo(() => {
@@ -316,12 +351,12 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   const hasBlockedLine = blockedIds.size > 0;
   const noteRequired = mode === "non-sale" && reason === "other";
   const noteValid = !noteRequired || note.trim() !== "";
-  const secondaryValid =
-    mode === "transfer"
-      ? destId !== ""
-      : mode === "non-sale"
-        ? reason !== ""
-        : true;
+  const isTransferLike = mode === "transfer" || mode === "dispatch";
+  const secondaryValid = isTransferLike
+    ? destId !== ""
+    : mode === "non-sale"
+      ? reason !== ""
+      : true;
 
   const batchTotal = selectedLines.reduce((sum, l) => sum + l.quantity, 0);
   // One unit label if every selected line shares it; else generic "units".
@@ -333,7 +368,7 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   const batchUnit =
     unitLabels.size === 1 ? [...unitLabels][0] || "units" : "units";
   // Additive flows (Receive / Production) add to a ledger → `+`; the spend
-  // flows (Issue / Transfer / Non-sale) remove → `−`.
+  // flows (Issue / Transfer / Non-sale / Dispatch) remove → `−`.
   const additive = mode === "receive" || mode === "production";
   const signedTotal = `${additive ? "+" : "−"}${formatQty(batchTotal)} ${batchUnit}`;
 
@@ -353,6 +388,7 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
     production: "Log Batch Production",
     transfer: `Dispatch Transfer${destName() ? ` to ${destName()}` : ""}`,
     "non-sale": "Log Non-Sale",
+    dispatch: `Dispatch Transfer${destName() ? ` to ${destName()}` : ""}`,
   };
   function destName(): string {
     return data.locations.find((l) => l.id === destId)?.name ?? "";
@@ -393,9 +429,11 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
           locationId: restaurantLocationId,
           lines: plain,
         });
-      } else if (mode === "transfer") {
+      } else if (isTransferLike) {
+        // Transfer (Store → …) and Canteen Dispatch (Canteen → …) share
+        // the phase-1 batch endpoint; only the source location differs.
         written = await stockApi.transferBatch({
-          fromLocationId: storeLocationId,
+          fromLocationId: sourceLocationId,
           toLocationId: destId,
           lines: plain,
         });
@@ -410,7 +448,7 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
       toast(successToast(mode, written.length, batchTotal, batchUnit, destName()), {
         tone: "success",
       });
-      router.push("/store-manager");
+      router.push(mode === "dispatch" ? "/canteen" : "/store-manager");
     } catch (e) {
       const msg =
         e instanceof StockRequestError
@@ -424,9 +462,10 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
     }
   }
 
-  // ── Direction badge (Transfer tracks the destination) ───────────────
-  const direction =
-    mode === "transfer" ? `Store → ${destName() || "…"}` : cfg.direction;
+  // ── Direction badge (Transfer / Dispatch track the destination) ─────
+  const direction = isTransferLike
+    ? `${sourceLabel} → ${destName() || "…"}`
+    : cfg.direction;
 
   // ── error state ────────────────────────────────────────────────────
   if (error) {
@@ -582,13 +621,13 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
           </div>
 
           {/* Per-flow secondary fields */}
-          {mode === "transfer" && (
+          {isTransferLike && (
             <Select
               label="Destination"
               required
               placeholder="Send to…"
               options={data.locations
-                .filter((l) => l.id !== storeLocationId)
+                .filter((l) => l.id !== sourceLocationId)
                 .map((l) => ({ value: l.id, label: l.name }))}
               value={destId}
               onChange={setDestId}
@@ -687,7 +726,14 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
             !loading &&
             selectedLines.length > 0 && (
               <CalculatedImpactBanner>
-                {impactCopy(mode, selectedLines.length, batchTotal, batchUnit, destName())}
+                {impactCopy(
+                  mode,
+                  selectedLines.length,
+                  batchTotal,
+                  batchUnit,
+                  destName(),
+                  sourceLabel,
+                )}
               </CalculatedImpactBanner>
             )
           )}
@@ -711,6 +757,7 @@ function impactCopy(
   total: number,
   unit: string,
   dest: string,
+  source: string,
 ): string {
   const t = `${formatQty(total)} ${unit}`;
   switch (mode) {
@@ -724,7 +771,8 @@ function impactCopy(
     case "production":
       return `Adds ${t} across ${nProducts(mode, n)} to Restaurant stock now.`;
     case "transfer":
-      return `Removes ${t} from Store now; lands at ${
+    case "dispatch":
+      return `Removes ${t} from ${source} now; lands at ${
         dest || "the destination"
       } once they accept.`;
     case "non-sale":
@@ -748,6 +796,7 @@ function successToast(
     case "production":
       return `Logged · ${nProducts(mode, n)} · +${t} to Restaurant`;
     case "transfer":
+    case "dispatch":
       return `Dispatched · ${nProducts(mode, n)} · awaiting ${
         dest || "destination"
       } accept`;
