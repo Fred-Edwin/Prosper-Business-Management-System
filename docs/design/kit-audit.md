@@ -426,6 +426,33 @@ ADR-42-gated it. C33 status: **implemented + gated (M2-3KIT)**.
 | stories / baselines | — | 9 stories (`Kit/SelectableProductRow`): `NotSelected`, `Selected`, `AtAvailable`, `OverAvailableBlocked`, `ZeroAvailable`, `TapToTypeQuantity`, `DeselectBySteppingToZero`, `FocusSelectButton`, `LongName`. 9 visual baselines committed under `tests/visual/__screenshots__/kit-selectableproductrow--*.png` (first run — eyeballed against `JL7-0`). `test:visual` + `test:a11y` + §9 `postVisit` green; `tsc` 0. |
 | minor deviations from `JL7-0` | — | (1) `+ Select` is `<Button size="sm">` (32px / `--radius-sm` / `--sp-5` pad) where the artboard drew a bespoke 28px / `--radius-md` / 10px-pad chip — handover §3.1 mandates the kit Button. (2) `Avail:` slot widened 88→96px + `whitespace-nowrap` so `Avail: 46.5 kg` never wraps at `--text-caption` in a 390px row (artboard's `w-max` + `flex-wrap` relied on more effective width). Both cosmetic, no contract impact. |
 
+### FilterToolbar — `components/kit/filter-toolbar.tsx`  *(NEW — designed M2-3DF 2026-08-31; build pending 3-KIT-FILTER)*
+
+Required (`§2 C34`): default (ARTBOARD ✓ `L9O-0` §1), one filter active
+(ARTBOARD ✓ §2), multiple active (ARTBOARD ✓ §3), toggle-style control
+(ARTBOARD ✓ §4), mobile (ARTBOARD ✓ §5, model `IKW-0`), filtered-empty
+consequence (ARTBOARD ✓ §6). Reset focus/hover/pressed (GLOBAL §9.1/
+§9.5/§9.6); each sub-control's own states inherited from C5/C7/C9.
+
+Full spec: `docs/design/filter-toolbar.md`. Model artboard `IEA-0` (the
+toolbar A/A2 already shipped inside `I00-0`).
+
+| aspect | BEFORE (start of 3e) | AFTER (target) |
+|---|---|---|
+| existed? | **NO shared component.** The dismissible-pill "Filter Bar" (`GQQ-0`) was transcribed ad hoc into `admin-orders-client.tsx` / `derived-sales-client.tsx` as `ActiveFilterChip` / `InactiveFilterChip` atoms — active chips with a dismiss `✕` mixed with dormant picker chips; dismissing a chip removed the control from the UI with no way back (F7-8). A/A2's merged-Sales `[M2-SA]` set replaced that with an **inline** toolbar (`IEA-0`) — correct shape, but per-screen markup, free to drift. Ledger (`stock-client.tsx`) + Assets (`assets-client.tsx`) use `<PillFilter>` / a bespoke filled-pill radiogroup for their filter axes. | new file `components/kit/filter-toolbar.tsx`. One controlled component: `controls: FilterControl[]` (`{id,label,kind:"select"\|"date"\|"toggle",options?,value,default}`) + `onChange(id,value)` + `onReset?` + `resultCount` + `resultNoun` + `aria-label`. Renders the labelled-dropdown row from `IEA-0`; `< --bp-md` renders the `IKW-0` chip-scroller + `More`. |
+| tokens-only? | — | ✓ — composes `Select` (C5) / `DatePicker` (C9) trigger / native checkbox / `ToggleSwitch` (C7) / text / `<Button variant="…tertiary">` (Reset). Row: `flex`, `gap-(--sp-4)`, `py-(--sp-6)`, `w-[1200px]` desktop. Control box (for the ad-hoc dropdowns that are really `Select` triggers): `h-36`, `--surface-page`, `1px --border-strong`, `--radius-sm`, `px-(--sp-5)`, 14px chevron `--text-tertiary`. No raw values. |
+| controlled? | — | ✓ — owns **no** filter state. Screen holds the filter object + re-queries. Same model as `Select`/`Tabs`/`PillFilter`. |
+| §9.1 focus ring | — | Reset (`.kit-focus-ring` via `<Button>`); each sub-control keeps its own. |
+| §9.5 / §9.6 hover / pressed | — | Reset → `--surface-hover` (tertiary Button rule); row itself has none. |
+| §9 "filter is on" signal | — | Control label `--text-secondary`/`--weight-regular` when `value === default`; `--text-primary`/`--weight-medium` when off default. Asserted per-state in `postVisit` (`assertColor`). Do **not** drop this — it's the only on-control indicator. |
+| Reset visibility | — | Present iff `controls.some(c => c.value !== c.default)` (null-safe compare for `kind:"date"`); absent (not disabled) otherwise. `·` separator rendered only alongside Reset. |
+| keyboard | — | Each control's primitive is unchanged (Select APG listbox, DatePicker dialog, checkbox, ToggleSwitch). Reset = native `<button>`. No roving pattern — it's a toolbar of independent controls, not a single-select group. |
+| ARIA | — | Wrapper `role="search"` + `aria-label` (default `"Filters"`). Result count `aria-live="polite"`. Sub-controls carry their own `aria-*`. |
+| mobile | — | `overflow-x:auto` row of 32px chips (`flex-shrink:0`, `white-space:nowrap`, 12px chevron `stroke-width:2`) + trailing `More` chip for overflow/secondary controls; count + Reset on their own row below. |
+| search field | — | Not a `FilterControl`. A screen with free-text search (Assets, Customers) puts a sibling `<SearchInput>` in the same toolbar row — own state/handler, shares the reset path (screen clears the string on reset). |
+| stories / baselines | — | to build in 3-KIT-FILTER: `Default`, `OneActive`, `MultipleActive`, `ToggleControl`, `Mobile`, `FilteredEmpty`, `ResetHover`, `ResetFocusVisible`. `test:visual` + `test:a11y` + §9 `postVisit`; baselines eyeballed vs `L9O-0` / `IEA-0`. |
+| screens 3e retrofits | — | Sales Restaurant Orders + Canteen Derived (reconcile A/A2's inline toolbar to the component), A1 Customers (the `Has balance` toggle → `kind:"toggle"`), **Admin Stock Ledger** (`Admin Stock Ledger — filter toolbar [M2-3DF]` — Location/Category/Date into the toolbar; `Columns` stays a separate control), **Admin Assets** (`Admin Assets — filter toolbar [M2-3DF]` — Search/Location/Condition into the toolbar; Category `Tabs` strip stays). Financials transactions unchanged (Tabs only). Stock Levels `PillFilter` strips unchanged (out of scope). |
+
 ### SimpleTable — `components/kit/simple-table.tsx`
 
 Required (`§2 C15`): header, body row (ARTBOARD ✓), body row hover (ARTBOARD ✓

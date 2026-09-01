@@ -351,6 +351,23 @@ Product Catalog, Dense Ledger filtered-empty, mobile Activity timeline,
 Financials reconciliation) plus the four role home pages. Resolved:
 `DECISIONS.md` ADR-36d.
 
+**18th kit area added (Design Sprint M2-3DF, 2026-08-31):**
+`FilterToolbar` — `Component Kit — Filter Toolbar [M2-3DF]` (`L9O-0`),
+model `IEA-0`. The persistent labelled-dropdown filter bar that
+**replaces the dismissible-pill "Filter Bar" (`GQQ-0`)** — dismissing a
+chip removed the control from the UI with no way back (M2 Session 7,
+F7-8). Composed from `Select` / `DatePicker` / native checkbox /
+`ToggleSwitch` / text / tertiary `Button` — **no new primitive**.
+Controlled (`controls[]` + `onChange` + `resultCount` + `resultNoun`);
+owns no filter state. `Reset` appears only when a control is off its
+default. Six states + a full contract on `L9O-0`. Spec:
+`docs/design/filter-toolbar.md`; states matrix `component-states.md` §2
+C34. Built + ADR-42-gated by 3-KIT-FILTER; rolled onto every
+multi-filter screen (Sales, Customers, Stock Ledger, Assets) by 3e. The
+one-tap `PillFilter` (C12) category / location tab-strips on the Stock
+Levels screens are **not** converted — a `FilterToolbar` is for the
+multi-control filter row, not a single-axis switch.
+
 Four patterns were built ad hoc during Sprint 05 screen reassembly and have
 since been formalized into the kit (no longer exceptions):
 
