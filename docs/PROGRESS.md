@@ -15,6 +15,105 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 3 Session 2 — Handovers & Reconciliation backend + staff "today only" gate (Developer — 2026-09-03) — DONE
+
+**Shipped.**
+
+- **`lib/domain/handovers`** is a real module (was an empty dir),
+  structured after `lib/domain/customers`:
+  - `declareHandover` — Cashier / Canteen Attendant declares cash +
+    M-Pesa for their own `Staff`-linked location. Day-close **and**
+    today-only gated.
+  - `editOwnHandover` — staff true-edit of their own declaration before
+    close and before a receipt exists (`CONFLICT` once received). Both
+    gates.
+  - `recordReceipt` — Admin records actual received; computes
+    `variance = received − (current derived declared)` per channel and
+    **stores it permanently** on a new `ReceiptOfHandover` row. Shortfall
+    → required note → `HandoverShortfall`. Day-close gated. **Writes no
+    `MoneyMovement`** (ADR-54).
+  - `correctHandover` / `correctReceipt` — Admin-only, append-only,
+    **not** day-close gated. `correctHandover` writes a delta `Handover`
+    row via `correctsHandoverId`, computing the delta against
+    `original + Σ existing deltas` (double-submit → delta 0 →
+    `VALIDATION_ERROR`; cannot correct a correction — the F-1 pattern
+    from `correctMovement`). `correctReceipt` writes a fresh
+    `ReceiptOfHandover` row with corrected absolutes + recomputed stored
+    variance (no `corrects_receipt_id` column — reads take the latest
+    receipt).
+  - Reads: `listHandovers` (role-scoped — staff see own, Admin sees all;
+    `date` + `locationId` filters; correction rows excluded, derived
+    figures folded in) and `getReconciliation(date)` — the Admin
+    reconciliation view's read (declared vs received vs stored variance
+    per handover + day totals).
+- **API:** `app/api/handovers/` — `POST` (declare, staff), `PATCH /:id`
+  (edit own, staff), `POST /:id/receive` (Admin), `POST /:id/correct`
+  (Admin, discriminated `target: "handover" | "receipt"`), `GET` (list,
+  role-scoped), `GET /reconciliation` (Admin). Thin handlers,
+  `lib/validation/handovers.ts`.
+- **Staff "today only" gate (ADR-53) — added task from the owner
+  mid-session.** New shared guard `assertStaffDateIsToday(value, actor)`
+  in `lib/domain/audit/day-close-guard.ts` (exported from the barrel):
+  a non-admin may only create / edit a record dated to today
+  (Africa/Nairobi); Admin is exempt. Applied **in addition to**
+  `assertDayOpen` in: `createOrder`, `editOwnOrder`, `recordStockCount`,
+  `voidStockCount`, `recordRepayment` (via a new optional
+  `CustomerContext.role`), `declareHandover`, `editOwnHandover`, and the
+  `writeMovementLine` stock chokepoint (via optional
+  `LineAuditMeta.actorRole` — inert today as every stock create lands at
+  `now`, a guard for any future backdated stock path).
+
+**Key decisions (ADRs).**
+
+- **ADR-54 — a handover receipt writes NO `MoneyMovement`.** The takings
+  are already on the money ledger from point-of-sale (`sourceType:
+  "order"` / `"canteen_sale"`); a handover is a custody transfer, and
+  `MoneyAccount` has no till-vs-hand split for it to move between.
+  Variance is a `HandoverShortfall` note, not a ledger debit. **Hook for
+  Session 4:** if Financials introduces a till/hand account split, a
+  receipt becomes the transfer event and SHOULD write a paired movement
+  with `sourceType: "handover_receipt"` (enum value reserved for it).
+  Until then: nothing.
+- **ADR-53** — the staff today-only rule above.
+
+**Deltas from plan.**
+
+- The today-only gate was not in the Session 2 handoff — it arrived from
+  the orchestrator mid-session as an owner decision and was folded in.
+- **30 existing tests** assumed staff could backdate writes (order /
+  stock-count suites using fixed 2026-08 fixture dates). Fixed to match
+  the new rule, not weakened: canteen-derivation suites now use an
+  `admin`-role actor for backdated `recordStockCount` (the domain gates
+  on `locationId`, not role; role-scoping has dedicated coverage);
+  order-correction / edit-own-order tests drop the backdated `occurredAt`
+  (default = today) or backdate via a post-create `prisma.update`. One
+  `voidStockCount` closed-day test re-anchored to a fixed 2019 date to
+  dodge shared-DB `DayClose.date` collisions.
+- No `milestone-3-plan.md` created (per handoff).
+
+**Gate state.** `pnpm test` / `typecheck` / `build` green. No UI this
+session (handover UI is next). No `TODO(mock)` in new files.
+
+**For the handover UI session (next).**
+
+- Build the Admin reconciliation screen against **`GET
+  /api/handovers/reconciliation?date=`** — its `rows[]` shape (above) is
+  the exact contract; do not re-derive. `totals` are pre-summed.
+- Staff declare/edit screens hit `POST /api/handovers` and
+  `PATCH /api/handovers/:id`. A staff member has exactly one open
+  declaration to edit per day; `editOwnHandover` returns `CONFLICT` once
+  the Admin has received it — surface that as "already received, ask the
+  Admin".
+- The receipt drawer (Admin) posts to `/:id/receive`; when either
+  received figure is below declared, the note field is **required** — the
+  domain returns `VALIDATION_ERROR` field `shortfallNote`, wire the
+  inline error off that.
+- Corrections (Admin) post to `/:id/correct` with `target`. The screen
+  shows current derived figures; the form submits corrected **absolute**
+  values (declared: absolute too — the domain computes the delta).
+
+---
+
 ## Milestone 3 Session 1 — Day Close foundation (Developer — 2026-09-02) — DONE
 
 **Shipped.**

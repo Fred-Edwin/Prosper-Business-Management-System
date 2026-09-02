@@ -43,7 +43,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           : undefined,
         note: parsed.data.note,
       },
-      { actorId: auth.user.id },
+      { actorId: auth.user.id, role: auth.user.role },
     );
     return ok(repayment, { status: 201 });
   } catch (e) {

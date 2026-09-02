@@ -1,5 +1,9 @@
 import { prisma } from "@/lib/db";
-import { assertDayOpen, isDayClosed } from "@/lib/domain/audit";
+import {
+  assertDayOpen,
+  assertStaffDateIsToday,
+  isDayClosed,
+} from "@/lib/domain/audit";
 import { recordMoneyMovement } from "@/lib/domain/financials";
 import type {
   ActorContext,
@@ -67,6 +71,9 @@ export async function recordStockCount(
   const occurredAt = input.occurredAt ?? new Date();
 
   const result = await prisma.$transaction(async (tx) => {
+    // Staff "today only" gate (ADR-53) — an attendant may only count for
+    // today; Admin is exempt. In addition to the day-close gate.
+    assertStaffDateIsToday(occurredAt, ctx);
     // Day-close gate (ADR-52) — a count is a fresh primary entry; a
     // sealed date is off-limits to staff and Admin alike.
     await assertDayOpen(occurredAt, tx);
@@ -204,6 +211,9 @@ export async function voidStockCount(
     if (count.countedById !== ctx.userId || count.locationId !== ctx.locationId) {
       throw new DomainError("FORBIDDEN", "You can only undo your own stock counts.");
     }
+    // Staff "today only" (ADR-53) — a void is a same-day recovery; a
+    // count dated to any prior day is an Admin correction, not a staff undo.
+    assertStaffDateIsToday(count.occurredAt, ctx);
     if (await isDayClosed(count.occurredAt, tx)) {
       throw new DomainError(
         "FORBIDDEN",

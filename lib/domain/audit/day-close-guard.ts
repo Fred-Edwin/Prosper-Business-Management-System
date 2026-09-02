@@ -4,6 +4,37 @@ import { toBusinessDate, businessDateOnly } from "@/lib/time";
 import { DomainError } from "./errors";
 
 /**
+ * Staff may only create or edit records dated to **today** (Africa/Nairobi
+ * business date) — ADR-53. Session 1 removed the old inline "is the
+ * business date today?" heuristic when `DayClose` went live; the owner
+ * then decided a staff member must still not be able to write to an
+ * arbitrary not-yet-closed past or future date.
+ *
+ *   - `actor.role === "admin"` → **not restricted** (an Admin records and
+ *     corrects on past dates, subject only to the day-close rules).
+ *   - Any other role, `value`'s business date ≠ today → `FORBIDDEN`.
+ *
+ * This is **in addition to** `assertDayOpen`, never a replacement — a
+ * staff create path calls both (blocked on a closed day AND on any
+ * non-today date). `value` may be a `Date` instant or a `YYYY-MM-DD`
+ * business-date string.
+ */
+export function assertStaffDateIsToday(
+  value: DateOrBusinessDate,
+  actor: { role: string },
+): void {
+  if (actor.role === "admin") return;
+  const target = toBusinessDateString(value);
+  const today = toBusinessDate(new Date());
+  if (target !== today) {
+    throw new DomainError(
+      "FORBIDDEN",
+      "You can only record or edit entries dated today.",
+    );
+  }
+}
+
+/**
  * The **one** implementation of "is this business date sealed?" (ADR-52).
  *
  * Before this existed, day-close was enforced in a single place —

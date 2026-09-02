@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, afterEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
+import { toBusinessDate } from "@/lib/time";
 import { createOrder } from "./create-order";
 import { correctOrder } from "./correct-order";
 import { listOrders } from "./list-orders";
@@ -17,7 +18,8 @@ describe("listOrders", () => {
   beforeAll(async () => {
     ctx = await setupSalesTestData(SCOPE);
     const chapati = ctx.products[0];
-    // Cashier A: two orders, one today, one on 2026-08-05.
+    // Cashier A: two orders today, an hour apart (staff may only write
+    // today — ADR-53; the earlier-instant one exercises newest-first).
     await createOrder(
       {
         orderType: "dine_in",
@@ -30,7 +32,7 @@ describe("listOrders", () => {
       {
         orderType: "takeaway",
         paymentMethod: "mpesa",
-        occurredAt: new Date("2026-08-05T09:00:00Z"),
+        occurredAt: new Date(Date.now() - 60 * 60 * 1000),
         lines: [{ productId: chapati.id, quantity: "2" }],
       },
       { userId: ctx.cashierId, role: "cashier", restaurantId: ctx.restaurantId },
@@ -91,12 +93,20 @@ describe("listOrders", () => {
   });
 
   it("date filter windows on the Africa/Nairobi business day", async () => {
+    // Both of Cashier A's orders are today (ADR-53); a same-day filter
+    // returns both, a different day returns none.
+    const today = toBusinessDate(new Date());
     const rows = await listOrders(
-      { date: "2026-08-05" },
+      { date: today },
       { userId: ctx.cashierId, role: "cashier" },
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].orderType).toBe("takeaway");
+    expect(rows).toHaveLength(2);
+
+    const otherDay = await listOrders(
+      { date: "2019-01-01" },
+      { userId: ctx.cashierId, role: "cashier" },
+    );
+    expect(otherDay).toHaveLength(0);
   });
 
   it("newest first", async () => {

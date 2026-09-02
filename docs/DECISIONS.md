@@ -2255,3 +2255,114 @@ a real module (was an empty dir). It exports:
   `ToggleSwitch`, and a `SimpleTable` of recent closed dates each with a
   one-tap **Reopen**. Composed from the frozen kit; no new route, no kit
   changes.
+
+---
+
+## ADR-53: Staff may only create or edit records dated TODAY — a second gate alongside day-close (Developer, Milestone 3 Session 2, 2026-09-03)
+
+**Context.** ADR-52 replaced the old M2 "is the business date today?"
+heuristic with a real `DayClose` lookup. That left a gap the owner
+flagged after Session 1 shipped: with only `assertDayOpen` in force, a
+staff member could create or edit a record dated to **any** past or
+future day that nobody had closed yet. The owner's rule: staff work is
+always "today's" work — a Cashier or attendant has no business
+backdating an order, a count, a repayment, or a handover.
+
+**Decision.** A single shared guard, `assertStaffDateIsToday(value,
+actor)`, in `lib/domain/audit/day-close-guard.ts` (exported from the
+module barrel):
+
+- `actor.role === "admin"` → **not restricted.** The Admin still records
+  and corrects on past dates, subject only to the day-close rules
+  (`assertDayOpen` for a fresh row on an open past day; the correction
+  paths for a sealed one).
+- Any other role, `value`'s Africa/Nairobi business date ≠ today →
+  `FORBIDDEN` ("You can only record or edit entries dated today.").
+
+This is **in addition to** `assertDayOpen`, never a replacement. A staff
+create path calls **both** — blocked on a closed day *and* on any
+non-today date. `value` accepts a `Date` instant or a `YYYY-MM-DD`
+string (same signature style as the other guards).
+
+**Call sites (the gate is implemented once; these just delegate):**
+
+- `createOrder`, `editOwnOrder` — `ctx` already carries `role`.
+- `recordStockCount`, `voidStockCount` — `ctx` already carries `role`.
+- `recordRepayment` — `CustomerContext` gained an optional `role`; the
+  repayments route passes `auth.user.role`. Guard is skipped only if
+  `role` is absent (no production caller omits it).
+- `declareHandover`, `editOwnHandover` — built on the corrected rule
+  from the start (this session), not retrofitted.
+- `writeMovementLine` (the stock chokepoint) — `LineAuditMeta` gained an
+  optional `actorRole`; when set, the gate runs on the row's
+  `occurredAt`. **Every stock create path lands at `new Date()` today**,
+  so there is no live backdating vector through stock — this is a
+  chokepoint guard for any future backdated stock path. Existing callers
+  do not pass `actorRole` yet; nothing regresses.
+
+**Not gated:** the Admin correction paths (`correctOrder`,
+`correctMovement`, `correctHandover`, `correctReceipt`) — a correction
+must work on any date and already enforces admin-only. `acceptTransfer`
+/ `flagTransfer` — in-flight completions stamped `now` (ADR-52 rationale
+unchanged).
+
+**Tests.** One test per rule (`lib/domain/audit/staff-today-guard.test.ts`),
+not one per call site: non-admin + non-today → `FORBIDDEN`; non-admin +
+today → allowed; admin + past date → allowed. The handovers domain suite
+adds an integration check (`declareHandover` staff-backdate → `FORBIDDEN`).
+Existing sales/stock suites that backdated staff writes now either seal
+the date (already do, post-ADR-52) or use an admin actor for the
+backdated setup.
+
+---
+
+## ADR-54: Recording a handover receipt writes NO `MoneyMovement` — a handover is a custody transfer, not new revenue (Developer, Milestone 3 Session 2, 2026-09-03)
+
+**Context.** `POST /api/handovers/:id/receive` records what the Admin
+actually received against what a staff member declared, and API.md's
+sketch said it "Writes `MoneyMovement` rows." `MoneySourceType` even
+carries a `handover_receipt` value. The `/admin/financials` KPIs (Cash
+at hand, M-Pesa/Bank) that Session 4 builds derive from
+`SUM(MoneyMovement.amount)` grouped by account (`getAccountBalances`).
+The question: does a receipt write a money row, and if so — received?
+declared? the variance? — into which account?
+
+**Decision — a receipt writes no `MoneyMovement`.** Reasoning:
+
+1. **Double-count.** Orders (`sourceType: "order"`) and canteen sales
+   (`sourceType: "canteen_sale"`) already append `+amount`
+   `MoneyMovement` rows to `cash` / `mpesa_bank` **at the moment the
+   sale is recorded**. A handover moves *those same physical takings*
+   from staff custody to the Admin. If a receipt also wrote `+received`,
+   the day's revenue would land in Cash-at-hand twice.
+2. **No account to move between.** `MoneyAccount` is `cash | mpesa_bank`
+   only — there is no `cash_in_till` vs `cash_at_hand` split. A custody
+   transfer within "cash" has no ledger effect to record; a
+   `MoneyMovement` would either double-count (positive) or be a no-op
+   pair we don't model.
+3. **Variance is not a ledger movement.** A shortfall means physical
+   cash went missing between the till and the Admin — it does not reduce
+   the business's *recorded* revenue. PRD §4.8: shortfalls don't block
+   day-close and don't auto-deduct pay. It is captured as a
+   `HandoverShortfall` row (required note, against the responsible staff
+   member) for the Admin to pursue — not a debit.
+4. **Precedent.** ADR-39 §4 established that money-write decisions defer
+   to Financials rather than being scattered across modules. The
+   conservative, non-double-counting choice is to write nothing now.
+
+**Stored, permanent variance stands.** `ReceiptOfHandover.cashVariance`
+/ `mpesaVariance` = `received − (current derived declared)` are computed
+once at receipt time and stored (PRD §4.5 — never recomputed on read).
+"Current derived declared" folds in any `correctHandover` deltas.
+
+**Hook for Session 4.** If Financials introduces a till-vs-hand account
+split (so "Cash at hand" means *the Admin's* cash, distinct from cash in
+a cashier's drawer), then a handover receipt becomes the transfer event
+between those two accounts and SHOULD write a paired movement
+(`−received` from till, `+received` to hand) with `sourceType:
+"handover_receipt"` — the enum value is reserved for exactly this. That
+is a deliberate Session-4 decision, not something to bolt on here.
+Until then: no money row.
+
+**No `TODO(mock)`** — this is a decision, not a deferral. There is
+nothing stubbed.

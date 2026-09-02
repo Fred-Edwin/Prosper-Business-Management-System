@@ -9,6 +9,7 @@ export {
   isDayClosed,
   assertDayOpen,
   assertActorMayCorrectOnDate,
+  assertStaffDateIsToday,
   type DateOrBusinessDate,
 } from "./day-close-guard";
 export { closeDay, reopenDay } from "./close-day";

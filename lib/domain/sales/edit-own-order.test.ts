@@ -149,17 +149,26 @@ describe("editOwnOrder", () => {
 
   it("editing an order whose business day is closed → FORBIDDEN", async () => {
     const [chapati] = ctx.products;
+    // Create today (staff can only write today — ADR-53), then move it
+    // into the past and seal that day. The point of the test is the
+    // closed-day FORBIDDEN, not the backdated create.
     const order = await createOrder(
       {
         orderType: "dine_in",
         paymentMethod: "cash",
-        occurredAt: new Date("2026-08-01T09:00:00Z"),
         lines: [{ productId: chapati.id, quantity: "1" }],
       },
       cashierA,
     );
-    // M3 real gate: a DayClose row for that business date, not a
-    // "not today" heuristic.
+    const pastDay = new Date("2026-08-01T09:00:00Z");
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { occurredAt: pastDay },
+    });
+    await prisma.stockMovement.updateMany({
+      where: { orderId: order.id },
+      data: { occurredAt: pastDay },
+    });
     await prisma.dayClose.create({
       data: { date: new Date("2026-08-01T00:00:00Z"), closedBy: ctx.adminId },
     });

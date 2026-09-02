@@ -14,6 +14,14 @@ import {
 
 const SCOPE = "stockcount";
 
+// These suites exercise period-boundary derivation math across historical
+// count dates. Post-ADR-53 a `canteen_attendant` may only record a count
+// dated *today*, so recording a count backdated to `T1..T5` is now an
+// Admin (backfill) action — `attendantCtx.role` is `"admin"` here. The
+// stock-count domain gates on `ctx.locationId`, not role (role is
+// enforced at the route), and the "attendant sees own canteen / other
+// role → FORBIDDEN" scoping has dedicated coverage in
+// `derived-sales.test.ts` and the route test.
 const T0 = new Date("2026-08-20T06:00:00Z");
 const T1 = new Date("2026-08-21T06:00:00Z");
 const T2 = new Date("2026-08-22T06:00:00Z");
@@ -25,7 +33,9 @@ describe("recordStockCount", () => {
   let ctx: CanteenTestCtx;
   let attendantCtx: {
     userId: string;
-    role: "canteen_attendant";
+    // Admin role: these tests backdate counts to historical dates, which
+    // ADR-53 makes an Admin-only action. Domain gates on locationId.
+    role: "admin";
     locationId: string;
   };
 
@@ -33,7 +43,7 @@ describe("recordStockCount", () => {
     ctx = await setupCanteenTestData(SCOPE);
     attendantCtx = {
       userId: ctx.attendantId,
-      role: "canteen_attendant",
+      role: "admin",
       locationId: ctx.canteenId,
     };
   });
@@ -389,9 +399,14 @@ describe("recordStockCount", () => {
 
 describe("voidStockCount", () => {
   let ctx: CanteenTestCtx;
+  // Admin role — several tests here backdate the count they then void or
+  // inspect (ADR-53 makes a backdated count Admin-only). The same-day
+  // void tests still pass `occurredAt: now`. Ownership ("another
+  // attendant's count → FORBIDDEN") is checked via `countedById`, not
+  // role, so it is unaffected.
   let attendantCtx: {
     userId: string;
-    role: "canteen_attendant";
+    role: "admin";
     locationId: string;
   };
 
@@ -399,7 +414,7 @@ describe("voidStockCount", () => {
     ctx = await setupCanteenTestData("voidcount");
     attendantCtx = {
       userId: ctx.attendantId,
-      role: "canteen_attendant",
+      role: "admin",
       locationId: ctx.canteenId,
     };
   });
@@ -485,22 +500,24 @@ describe("voidStockCount", () => {
 
   it("voiding a count whose day was closed after the fact → FORBIDDEN", async () => {
     const [soda] = ctx.products;
-    const yesterday = new Date(Date.now() - 26 * 60 * 60 * 1000);
+    // Fixed far-past date (2019 — outside any other suite's range; the
+    // suite cleanup drops dayClose by closedBy). Recorded via the admin
+    // ctx (a backdated count is Admin-only post-ADR-53) while the day was
+    // still open, then sealed.
+    const pastDay = new Date("2019-05-05T08:00:00Z");
     await seedMovement(ctx, {
       productId: soda.id,
       movementType: "opening",
       quantity: "100",
-      occurredAt: new Date(yesterday.getTime() - 60_000),
+      occurredAt: new Date("2019-05-04T08:00:00Z"),
     });
-    // Recorded while the day was still open.
     const { count } = await recordStockCount(
-      { productId: soda.id, countedQuantity: "80", occurredAt: yesterday },
+      { productId: soda.id, countedQuantity: "80", occurredAt: pastDay },
       attendantCtx,
     );
-    // Admin then seals that business date (M3 real gate).
     await prisma.dayClose.create({
       data: {
-        date: businessDateOnly(toBusinessDate(yesterday)),
+        date: businessDateOnly(toBusinessDate(pastDay)),
         closedBy: ctx.adminId,
       },
     });

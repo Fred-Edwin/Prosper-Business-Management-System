@@ -25,9 +25,14 @@ const T5 = new Date("2026-08-25T06:00:00Z");
 
 describe("previewStockCount", () => {
   let ctx: CanteenTestCtx;
+  // Role `"admin"`: this suite backdates the counts it previews / records
+  // to historical fixture dates (T2…), which ADR-53 makes an Admin-only
+  // action. `previewStockCount` / `recordStockCount` gate on
+  // `ctx.locationId`, not role. The "no location → FORBIDDEN" case below
+  // passes its own explicit `canteen_attendant` ctx.
   let attendant: {
     userId: string;
-    role: "canteen_attendant";
+    role: "admin";
     locationId: string;
   };
 
@@ -35,7 +40,7 @@ describe("previewStockCount", () => {
     ctx = await setupCanteenTestData(SCOPE);
     attendant = {
       userId: ctx.attendantId,
-      role: "canteen_attendant",
+      role: "admin",
       locationId: ctx.canteenId,
     };
   });

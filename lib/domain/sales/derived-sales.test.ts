@@ -17,6 +17,16 @@ const T2 = new Date("2026-08-22T06:00:00Z");
 
 describe("getDerivedSalesForProduct / listDerivedSales", () => {
   let ctx: CanteenTestCtx;
+  // `recordCtx` writes the historical counts this suite's reads are
+  // derived from. Post-ADR-53 a backdated count is Admin-only, so its
+  // role is `"admin"` (the stock-count domain gates on `locationId`, not
+  // role). `attendantCtx` below is the real attendant identity, used only
+  // for the read-scoping assertions.
+  let recordCtx: {
+    userId: string;
+    role: "admin";
+    locationId: string;
+  };
   let attendantCtx: {
     userId: string;
     role: "canteen_attendant";
@@ -26,6 +36,11 @@ describe("getDerivedSalesForProduct / listDerivedSales", () => {
 
   beforeEach(async () => {
     ctx = await setupCanteenTestData(SCOPE);
+    recordCtx = {
+      userId: ctx.attendantId,
+      role: "admin",
+      locationId: ctx.canteenId,
+    };
     attendantCtx = {
       userId: ctx.attendantId,
       role: "canteen_attendant",
@@ -50,7 +65,7 @@ describe("getDerivedSalesForProduct / listDerivedSales", () => {
     });
     await recordStockCount(
       { productId: soda.id, countedQuantity: "80", occurredAt: T1 },
-      attendantCtx,
+      recordCtx,
     );
     await seedMovement(ctx, {
       productId: soda.id,
@@ -60,7 +75,7 @@ describe("getDerivedSalesForProduct / listDerivedSales", () => {
     });
     await recordStockCount(
       { productId: soda.id, countedQuantity: "15", occurredAt: T2 },
-      attendantCtx,
+      recordCtx,
     );
     return soda;
   }

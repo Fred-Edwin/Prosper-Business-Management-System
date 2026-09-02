@@ -68,7 +68,7 @@ describe("correctOrder", () => {
       {
         orderType: "dine_in",
         paymentMethod: "cash",
-        occurredAt: new Date("2026-08-10T09:00:00Z"),
+        // occurredAt defaults to today — staff may only write today (ADR-53).
         lines: [{ productId: chapati.id, quantity: "5" }],
       },
       cashier,
@@ -106,10 +106,8 @@ describe("correctOrder", () => {
     // net money effect across the chain = the corrected total only
     expect(await orderMoneyNet(await chainIds(order.id))).toBe("40.00");
 
-    // the correction carries its business day from the original
-    expect(correction.occurredAt).toBe(
-      new Date("2026-08-10T09:00:00Z").toISOString(),
-    );
+    // the correction carries its occurredAt from the original
+    expect(correction.occurredAt).toBe(order.occurredAt);
 
     // AuditLog "correct" on the new row
     const audit = await prisma.auditLog.findMany({

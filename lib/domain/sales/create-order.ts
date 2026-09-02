@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { assertDayOpen } from "@/lib/domain/audit";
+import { assertDayOpen, assertStaffDateIsToday } from "@/lib/domain/audit";
 import { toOrderView } from "./internal";
 import { validateOrder, writeOrderEffects } from "./order-effects";
 import { resolveRestaurantId } from "./restaurant-location";
@@ -32,6 +32,10 @@ export async function createOrder(
 
     const resolved = await validateOrder({ input, restaurantId, tx });
 
+    // Staff "today only" gate (ADR-53) — a Cashier may only create an
+    // order dated today; Admin is exempt. In addition to the day-close
+    // gate below, not instead of it.
+    assertStaffDateIsToday(resolved.occurredAt, ctx);
     // Day-close gate (ADR-52) — a new order on a sealed date is off-limits;
     // an Admin correction (`correctOrder`) is the only way to touch a
     // closed day.

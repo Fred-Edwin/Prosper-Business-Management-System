@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { isDayClosed } from "@/lib/domain/audit";
+import { isDayClosed, assertStaffDateIsToday } from "@/lib/domain/audit";
 import { DomainError } from "./errors";
 import { toOrderView } from "./internal";
 import { validateOrder, writeOrderEffects } from "./order-effects";
@@ -42,7 +42,9 @@ export async function editOwnOrder(
     }
     // A true edit is a staff same-day action — once the order's business
     // date is sealed (ADR-52) the only way back in is an Admin correction
-    // row via `correctOrder`.
+    // row via `correctOrder`. And a staff member may only edit an entry
+    // dated today (ADR-53) — a past-but-still-open date is off-limits too.
+    assertStaffDateIsToday(order.occurredAt, ctx);
     if (await isDayClosed(order.occurredAt, tx)) {
       throw new DomainError(
         "FORBIDDEN",

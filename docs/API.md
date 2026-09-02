@@ -554,18 +554,87 @@ Stock Count product picker and inventory overview.
 
 ## Handovers
 
+> **Implemented M3 Session 2 (2026-09-03).** The contract below reflects
+> what shipped. `camelCase` JSON; money fields are decimal **strings**
+> (`"5000.00"`). Variance is **stored** on the receipt row at receipt
+> time, never recomputed on read (PRD §4.5). A handover receipt writes
+> **NO `MoneyMovement`** — it is a custody transfer of takings already
+> booked to the money ledger at point of sale, not new revenue (ADR-54).
+> Staff create/edit paths are gated by **both** `assertDayOpen` (ADR-52)
+> and the staff "today only" rule (ADR-53); Admin correction paths are
+> gated by neither.
+
 ### `POST /api/handovers`
-Roles: Cashier, Canteen Attendant. Body: `{ cash_declared, mpesa_declared }`.
+Roles: **Cashier, Canteen Attendant** only. Body:
+`{ cashDeclared, mpesaDeclared, occurredAt? }`. The staff member + location
+are resolved from the caller's `Staff` link — a staff member can only
+declare for their own location. `occurredAt` defaults to now and must be
+today (ADR-53) on an open day (ADR-52). → `201` with the `HandoverView`
+(`{ id, staffId, staffName, locationId, locationName, cashDeclared,
+mpesaDeclared, occurredAt, correctsHandoverId, createdAt, receipts[] }`).
+
+### `PATCH /api/handovers/:id`
+Roles: **Cashier, Canteen Attendant** only. Body:
+`{ cashDeclared, mpesaDeclared }`. A true edit of the caller's own
+declaration — `FORBIDDEN` if it is not theirs, if its day is closed, or
+if it is not today; `CONFLICT` once a receipt exists (then only an Admin
+correction may move it). → `200` with the `HandoverView`.
 
 ### `POST /api/handovers/:id/receive`
-Roles: Admin. Body: `{ cash_received, mpesa_received }`. Computes and
-stores variance permanently. Writes `MoneyMovement` rows.
+Roles: **Admin** only. Body:
+`{ cashReceived, mpesaReceived, shortfallNote?, occurredAt? }`. Computes
+`variance = received − (current derived declared)` per channel and stores
+it permanently on a new `ReceiptOfHandover` row. A negative variance on
+either channel (a shortfall) makes `shortfallNote` **required** →
+`VALIDATION_ERROR` field `shortfallNote` if missing; the note is written
+as a `HandoverShortfall` row against the declaring staff member.
+Day-close gated. `CONFLICT` if a receipt already exists (use the
+correction). **No `MoneyMovement` written.** → `201` with the
+`HandoverView` (its `receipts[]` now populated).
 
 ### `POST /api/handovers/:id/correct`
-Roles: Admin only.
+Roles: **Admin** only. **Not** day-close gated (a correction must work on
+a sealed day). Discriminated body on `target`:
+- `{ target: "handover", cashDeclared, mpesaDeclared }` — corrects the
+  declaration. Writes an append-only delta `Handover` row
+  (`correctsHandoverId` = `:id`, amounts = signed deltas vs the current
+  derived declared). Re-submitting the current figures → `VALIDATION_ERROR`
+  (delta 0, no stacking). Cannot correct a correction row.
+- `{ target: "receipt", receiptId, cashReceived, mpesaReceived,
+  shortfallNote? }` — corrects a recorded receipt. Writes a **new**
+  `ReceiptOfHandover` row with the corrected absolute figures + a
+  recomputed stored variance (the schema has no `corrects_receipt_id`;
+  read paths take the latest receipt row). `shortfallNote` required if the
+  corrected receipt is short. Correcting a superseded receipt →
+  `VALIDATION_ERROR`.
+→ `201` with the `HandoverView` of the original handover.
 
 ### `GET /api/handovers`
-Roles: Admin (all), staff (own).
+Roles: **Admin** (all), **Cashier / Canteen Attendant** (their own rows
+only). Query: `date` (`YYYY-MM-DD` business date), `locationId` (narrows
+within role scope). Correction rows are excluded; each row's declared
+figures are the current derived values (original + Σ deltas). Newest
+first. → `200` with `HandoverView[]`.
+
+### `GET /api/handovers/reconciliation`
+Roles: **Admin** only. Query: `date` (`YYYY-MM-DD`, required). The
+Admin reconciliation view's read. → `200` with:
+```
+{
+  date,
+  rows: [{
+    handoverId, staffId, staffName, locationId, locationName, occurredAt,
+    cashDeclared, mpesaDeclared,            // current derived (incl. corrections)
+    cashReceived, mpesaReceived,            // null until a receipt exists
+    cashVariance, mpesaVariance,            // stored on the receipt; null if none
+    received,                               // boolean
+    shortfallNotes: string[],              // notes on the latest receipt
+    receiptId                               // null if no receipt
+  }],
+  totals: { cashDeclared, mpesaDeclared, cashReceived, mpesaReceived,
+            cashVariance, mpesaVariance }   // received/variance sum only rows with a receipt
+}
+```
 
 ---
 

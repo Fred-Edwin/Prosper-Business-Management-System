@@ -145,7 +145,6 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
       {
         orderType: "dine_in",
         paymentMethod: "cash",
-        occurredAt: new Date("2026-08-10T09:00:00Z"),
         lines: [{ productId: chapati.id, quantity: "10" }], // 10 × 20
       },
       cashier,
@@ -162,7 +161,6 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
       {
         orderType: "takeaway",
         paymentMethod: "mpesa",
-        occurredAt: new Date("2026-08-10T10:00:00Z"),
         lines: [{ productId: samosa.id, quantity: "10" }], // 10 × 50
       },
       cashier,
@@ -182,7 +180,6 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
         deliveryFee: "50.00",
         paymentMethod: "credit",
         customerId: custId,
-        occurredAt: new Date("2026-08-10T11:00:00Z"),
         lines: [{ productId: chapati.id, quantity: "5" }], // 5 × 20 + 50 = 150
       },
       cashier,
@@ -243,7 +240,6 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
       {
         orderType: "dine_in",
         paymentMethod: "cash",
-        occurredAt: new Date("2026-08-10T09:00:00Z"),
         lines: [{ productId: chapati.id, quantity: "10" }], // total 200
       },
       cashier,
@@ -343,7 +339,6 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
         orderType: "dine_in",
         paymentMethod: "credit",
         customerId: custId,
-        occurredAt: new Date("2026-08-10T09:00:00Z"),
         lines: [{ productId: chapati.id, quantity: "10" }], // debt 200
       },
       cashier,
@@ -500,9 +495,13 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
 describe("QA-S7 · Canteen derived sales — period-boundary arithmetic", () => {
   const SCOPE = "qa_s7_canteen";
   let ctx: CanteenTestCtx;
+  // Role `"admin"` — this suite records counts backdated to historical
+  // fixture dates to exercise period-boundary arithmetic; ADR-53 makes a
+  // backdated count Admin-only. The stock-count domain gates on
+  // `locationId`, not role.
   let attendant: {
     userId: string;
-    role: "canteen_attendant";
+    role: "admin";
     locationId: string;
   };
 
@@ -512,7 +511,7 @@ describe("QA-S7 · Canteen derived sales — period-boundary arithmetic", () => 
     ]);
     attendant = {
       userId: ctx.attendantId,
-      role: "canteen_attendant",
+      role: "admin",
       locationId: ctx.canteenId,
     };
   });

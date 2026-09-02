@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { recordMoneyMovement } from "@/lib/domain/financials";
-import { assertDayOpen } from "@/lib/domain/audit";
+import { assertDayOpen, assertStaffDateIsToday } from "@/lib/domain/audit";
 import { DomainError } from "./errors";
 import { moneyString } from "./internal";
 import type { CustomerContext, RecordRepaymentInput, Repayment } from "./types";
@@ -69,6 +69,11 @@ export async function recordRepayment(
   const occurredAt = input.occurredAt ?? new Date();
 
   const row = await prisma.$transaction(async (tx) => {
+    // Staff "today only" gate (ADR-53) — a Cashier may only record a
+    // repayment dated today; Admin is exempt. In addition to day-close.
+    if (ctx.role) {
+      assertStaffDateIsToday(occurredAt, { role: ctx.role });
+    }
     // Day-close gate (ADR-52) — a repayment is a fresh money-ledger entry;
     // a sealed date needs an Admin correction, not a new row.
     await assertDayOpen(occurredAt, tx);

@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
-import type { MovementType } from "@prisma/client";
-import { assertDayOpen } from "@/lib/domain/audit";
+import type { MovementType, Role } from "@prisma/client";
+import { assertDayOpen, assertStaffDateIsToday } from "@/lib/domain/audit";
 import { DomainError } from "./errors";
 import { toMagnitude } from "./internal";
 
@@ -30,6 +30,15 @@ type Tx = Prisma.TransactionClient;
 
 export type LineAuditMeta = {
   actorId: string;
+  /**
+   * The acting user's role. When set, `writeMovementLine` enforces the
+   * staff "today only" rule (ADR-53): a non-admin may not write a
+   * `StockMovement` dated to any day other than today. Every stock create
+   * path lands at `new Date()` today, so this is a chokepoint guard for
+   * any future backdated stock path — pass it whenever the caller knows
+   * the role.
+   */
+  actorRole?: Role;
   /** Shared across a batch's N rows; omitted for a single-line call. */
   correlationId?: string;
   /** Human label for the logical action, e.g. `"issue"`, `"issue_batch"`. */
@@ -81,10 +90,14 @@ export async function writeMovementLine(
   // to everyone; the Admin's route back in is `correctMovement`. `data`
   // carries an explicit `occurredAt` for every batch/backdated write; when
   // omitted the row lands now.
-  await assertDayOpen(
-    data.occurredAt ? new Date(data.occurredAt) : new Date(),
-    tx,
-  );
+  const occurredAt = data.occurredAt ? new Date(data.occurredAt) : new Date();
+  // Staff "today only" gate (ADR-53) — in addition to day-close, a
+  // non-admin may only write a movement dated today. Applied here at the
+  // shared chokepoint; admin is exempt.
+  if (audit.actorRole) {
+    assertStaffDateIsToday(occurredAt, { role: audit.actorRole });
+  }
+  await assertDayOpen(occurredAt, tx);
 
   const row = await tx.stockMovement.create({ data });
   await tx.auditLog.create({

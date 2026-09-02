@@ -177,9 +177,10 @@ describe("canteen stock-count routes — role access + wiring", () => {
 
   it("canteen_attendant → 201 on POST, then 200 on GET (own canteen)", async () => {
     mockSession.current = sessionFor("canteen_attendant", attendantId);
-    const created = await post(
-      countBody({ countedQuantity: "980", occurredAt: "2026-08-05T06:00:00.000Z" }),
-    );
+    // occurredAt defaults to now — a canteen_attendant may only count for
+    // today (ADR-53). The opening movement (2026-08-01) is still before
+    // now, so the derivation runs from ledger start unchanged.
+    const created = await post(countBody({ countedQuantity: "980" }));
     expect(created.status).toBe(201);
     expect(created.body.data.derivedSale.unitsSold).toBe("20.0000");
     expect(created.body.data.derivedSale.revenue).toBe("1200.00");
@@ -212,9 +213,7 @@ describe("canteen stock-count routes — role access + wiring", () => {
   it("counted more than expected → 400, nothing written", async () => {
     mockSession.current = sessionFor("canteen_attendant", attendantId);
     const before = await prisma.stockCount.count({ where: { productId } });
-    const res = await post(
-      countBody({ countedQuantity: "99999", occurredAt: "2026-08-06T06:00:00.000Z" }),
-    );
+    const res = await post(countBody({ countedQuantity: "99999" }));
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
     expect(await prisma.stockCount.count({ where: { productId } })).toBe(before);

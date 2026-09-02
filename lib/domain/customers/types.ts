@@ -97,4 +97,10 @@ export type RecordDebtInput = {
 /** Acting-user context for customer mutations. */
 export type CustomerContext = {
   actorId: string;
+  /**
+   * The acting user's role. Required by `recordRepayment` to enforce the
+   * staff "today only" rule (ADR-53) — a non-admin may not record a
+   * repayment dated to any day but today. `createCustomer` ignores it.
+   */
+  role?: string;
 };
