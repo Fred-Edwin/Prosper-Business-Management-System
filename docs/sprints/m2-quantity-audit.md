@@ -12,10 +12,19 @@ stockMovements / 10 orders / 14 orderLines. No source files changed.
 
 **Severity:** HIGH = actively misstates money or stock to a user.
 
+> **STATUS 2026-09-02 — 9 of 10 findings closed.** F3/F5/F10 were closed by
+> the seed rebuild; F1, F2, F4, F6, F7, F8, F9 were fixed in the follow-up
+> session (see `docs/PROGRESS.md` "quantity audit fixes"). Decisions behind
+> F1/F4 are ADR-50, behind F6 ADR-51.
+>
+> **Still open:** F6 has no ledger column of its own (`variance` routes into
+> Issues; a dedicated column needs a `<DenseLedger>` change, owner's call),
+> and F10's question of whether real UI-created rows need a data migration.
+
 ---
 
 
-## F1. Cashier "Today" total double-counts corrected orders — CONFIRMED, HIGH
+## F1. Cashier "Today" total double-counts corrected orders — CONFIRMED, HIGH — **FIXED 2026-09-02** (ADR-50a: `listOrders` excludes the superseded original)
 Screen: /cashier (C1), app/cashier/cashier-today-client.tsx:126-133
 Live: business date 2026-09-01, user "Cashier"
   API returns #155 (260, corrects=null) + #154 (120) => screen renders "KES 380 · 2 orders"
@@ -29,7 +38,7 @@ has cashierId=original but is excluded), so `correctedByNumber` is always empty
 for the cashier => the "Corrected" chip can never render on C1.
 Admin unscoped: 4 rows, naive sum 1380 vs true 1120 — same double-count.
 
-## F2. Three of nine staff bottom-nav tabs 404 — CONFIRMED, HIGH
+## F2. Three of nine staff bottom-nav tabs 404 — CONFIRMED, HIGH — **FIXED 2026-09-02** (Cashier href corrected; both History tabs dropped, owner decision)
 components/layout/staff-shell-client.tsx:24-44 + hrefForKey():65-68
 Nav keys double as route segments (`<basePath>/<key>`), but three keys
 name routes that do not exist:
@@ -42,7 +51,7 @@ The Cashier one is reachable two ways: the sticky "New order" BUTTON works
 Fix for cashier = give the def an explicit href. For the two History tabs a
 product decision is needed: build the screen or drop the tab.
 
-## F3. Restaurant sale movements missing for all seeded orders — SEED ARTIFACT, MEDIUM
+## F3. Restaurant sale movements missing for all seeded orders — SEED ARTIFACT, MEDIUM — **FIXED** by the seed rebuild
 10 orders / 14 order lines exist, but 0 `sale` StockMovement rows.
 prisma/seed.ts:405-423 early-returns when the order id already exists, so a
 re-seed never regenerates the sale rows that were lost.
@@ -52,7 +61,7 @@ moved 115 -> 114 correctly.
 Impact: the ledger's SOLD column and the Restaurant's true on-hand are
 untestable/overstated against current dev data. Restaurant stock reads high
 because nothing was ever sold off it.
-## F4. Ledger hides opening stock on the day it is set — CONFIRMED, HIGH
+## F4. Ledger hides opening stock on the day it is set — CONFIRMED, HIGH — **FIXED 2026-09-02** (ADR-50b: Opening derived backwards from the day's closing)
 app/admin/stock/derive-ledger.ts:28-39 (COLUMN_FOR_TYPE)
 `opening` maps to null ("opening is derived from prior closing, not this
 day's rows"). But on the DAY an `opening` row is written, the prior day's
@@ -67,7 +76,7 @@ shows no column, though its derived sale is written as a separate row.
 Fix options: (a) route `opening` into its own column / into the opening
 figure for its own date, or (b) compute opening as `balances asOf date` MINUS
 the day's column sum, which self-heals for every null-column type.
-## F5. Canteen derived sales report 0 units against real revenue — CONFIRMED, MEDIUM
+## F5. Canteen derived sales report 0 units against real revenue — CONFIRMED, MEDIUM — **FIXED** by the seed rebuild
 GET /api/canteen/stock-counts returns, for every seeded count:
   Soda 300ml   unitsSold "0.0000"  revenue "2880.00"
   Water 500ml  unitsSold "0.0000"  revenue "2000.00"
@@ -82,7 +91,7 @@ sale rows, so the derivation correctly returns 0 from an empty set while the
 MoneyMovement rows (2880/2000/680) survive from the original seed.
 => Fix the seed (F3) and this resolves. Worth a guard so revenue>0 with
 unitsSold==0 is impossible to render.
-## F6. Transfer variance loses stock with no quantity trail — DESIGN GAP, MEDIUM
+## F6. Transfer variance loses stock with no quantity trail — DESIGN GAP, MEDIUM — **FIXED 2026-09-02** (ADR-51: `variance` movement type; ledger column still open)
 Live test: dispatched 6 Samosa Restaurant->Canteen, accepted only 4.
   Restaurant -6, Canteen +4, net system stock 60 -> 58.
 The 2 lost units appear ONLY as free text on the accept row
@@ -94,7 +103,7 @@ Arithmetic is internally consistent — this is a missing accounting concept,
 not a calculation bug. Needs an owner decision (a `variance`/`shrinkage`
 movement type, or a variance column on the ledger).
 
-## F7. SM + Canteen hub "today's activity" shows ALL history — CONFIRMED, MEDIUM
+## F7. SM + Canteen hub "today's activity" shows ALL history — CONFIRMED, MEDIUM — **FIXED 2026-09-02** (`todaysMovements()`, filtered at the timeline not the fetch)
 app/store-manager/hub-client.tsx:51, app/canteen/hub-client.tsx:44 both call
 `useStaffStock()` with NO date. use-staff-stock.ts:433 then calls
 `listMovements({})` — unfiltered — so the timeline renders every movement
@@ -103,20 +112,20 @@ movement log". Live: the SM hub timeline shows the 29 Aug opening rows as
 if they happened today.
 Fix: `useStaffStock(nairobiBusinessDate())` on both hubs.
 
-## F8. Hub timeline renders zero-quantity money rows as stock — CONFIRMED, LOW
+## F8. Hub timeline renders zero-quantity money rows as stock — CONFIRMED, LOW — **FIXED 2026-09-02**
 `purchase_payment` rows carry quantity 0 (money-only, no stock effect) but
 movementsToTimeline renders them like any movement: "Rice · Purchase paid ·
 +0 kg". The Admin ledger deliberately routes this type to NO column
 (COLUMN_FOR_TYPE null); the hub timeline has no such exclusion.
 
-## F9. Soft-deleted products render as "?" / "Unknown product" — CONFIRMED, LOW
+## F9. Soft-deleted products render as "?" / "Unknown product" — CONFIRMED, LOW — **FIXED 2026-09-02** (`productName`/`unitLabel` travel on `StockMovementView`)
 staff-stock-format.ts:100 falls back to "Unknown product" when a movement's
 product is absent from the joined product list. GET /api/products excludes
 soft-deleted rows, so any movement for an archived product (e.g. Beans while
 it was archived) shows an unnamed row with no unit label. Live-reproduced on
 the SM hub. Fix: have the movement read carry productName/unitLabel, or let
 the products fetch include archived rows for name resolution.
-## F10. Goods mis-typed as dishes; goods treated as Canteen-only — CONFIRMED, HIGH (data model)
+## F10. Goods mis-typed as dishes; goods treated as Canteen-only — CONFIRMED, HIGH (data model) — **FIXED** by the seed rebuild; data migration for UI-created rows still open
 Owner (2026-09-02): "goods are also sold at the restaurant — sodas, water and
 all those. Not all goods should go to the canteen."
 Current classification is wrong:

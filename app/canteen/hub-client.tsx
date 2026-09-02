@@ -28,6 +28,7 @@ import {
 } from "@/app/store-manager/use-staff-stock";
 import {
   movementsToTimeline,
+  todaysMovements,
   trimQty,
 } from "@/app/store-manager/staff-stock-format";
 import {
@@ -88,7 +89,7 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
     null;
 
   const incoming = deriveIncomingTransfers(data.movements, myLocationId);
-  const timeline = movementsToTimeline(data.movements, data.products);
+  const timeline = movementsToTimeline(todaysMovements(data.movements), data.products);
   const incomingUnits = incoming.reduce(
     (sum, { movement }) =>
       sum + Math.abs(Number.parseFloat(movement.quantity) || 0),

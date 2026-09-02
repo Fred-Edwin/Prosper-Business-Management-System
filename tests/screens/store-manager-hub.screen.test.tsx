@@ -3,7 +3,7 @@
 // Drives the pinned <TransferBanner> Accept/Flag → toast + refresh, the
 // <ActionTileGrid> navigation, the <ErrorState> branch, and the empty
 // <ActivityTimeline>. useStaffStock + stockApi mocked; no server / DB.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll, beforeAll } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "@/components/kit/toast";
@@ -64,6 +64,8 @@ function mv(over: Partial<StockMovementView>): StockMovementView {
     correctsMovementId: null,
     note: null,
     derivedRevenue: null,
+    productName: null,
+    unitLabel: null,
     createdAt: "2026-08-28T08:30:00Z",
     updatedAt: "2026-08-28T08:30:00Z",
     ...over,
@@ -77,6 +79,19 @@ function renderScreen() {
     </ToastProvider>,
   );
 }
+
+
+// The timeline renders TODAY's movements only (F7, 2026-09-02 audit), so the
+// clock is pinned to the business date these fixtures are dated to. Without
+// this the rows would be filtered out and every timeline assertion would fail
+// for the wrong reason.
+beforeAll(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date("2026-08-28T12:00:00+03:00"));
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();

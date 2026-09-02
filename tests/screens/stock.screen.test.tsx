@@ -13,7 +13,7 @@ import type { LedgerRow } from "@/components/kit/dense-ledger";
 const hook = vi.hoisted(() => ({
   data: {
     movements: [] as unknown[],
-    priorClosing: new Map(),
+    dayClosing: new Map(),
     products: [] as unknown[],
     locations: [
       { id: "loc-store", name: "Store", type: "store" },

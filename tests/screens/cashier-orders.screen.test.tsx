@@ -224,9 +224,14 @@ describe("C1 — Cashier Today", () => {
     expect(screen.queryByText(/profit/i)).not.toBeInTheDocument();
   });
 
-  it("shows the CORRECTED chip on an order that a later row corrects", () => {
+  // F1 (owner decision 2026-09-02): `listOrders` no longer returns an order
+  // once a correction supersedes it — a correction's `total` is the full
+  // recomputed total, so returning both rows made the day's total
+  // double-count (live: "KES 380 · 2 orders" against KES 120 collected on
+  // 1 order). So the screen only ever sees the correction, and the old
+  // "Corrected" chip on the superseded original has nothing left to mark.
+  it("shows the Correction chip, and never a superseded original", () => {
     ordersState.orders = [
-      ORDER_TODAY,
       {
         ...ORDER_TODAY,
         id: "o-corr",
@@ -236,8 +241,28 @@ describe("C1 — Cashier Today", () => {
       },
     ];
     renderC1();
-    expect(screen.getByText("Corrected")).toBeInTheDocument();
     expect(screen.getByText("Correction")).toBeInTheDocument();
+    expect(screen.queryByText("Corrected")).not.toBeInTheDocument();
+  });
+
+  it("counts a corrected sale once in the day's total", () => {
+    // The superseded original (260) is absent from the read, so the naive
+    // sum the header does lands on the correction's 200 alone.
+    ordersState.orders = [
+      {
+        ...ORDER_TODAY,
+        id: "o-corr",
+        number: 1045,
+        correctsOrderId: "o-today",
+        total: "200.00",
+      },
+    ];
+    renderC1();
+    expect(screen.getByText(/1 order ·/)).toBeInTheDocument();
+    // Header total + the single row, both KES 200 — not the 460 a naive sum
+    // of original + correction would have produced.
+    expect(screen.getAllByText("KES 200").length).toBe(2);
+    expect(screen.queryByText("KES 460")).not.toBeInTheDocument();
   });
 
   it("empty state — no orders today", () => {

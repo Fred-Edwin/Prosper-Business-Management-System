@@ -217,15 +217,38 @@ function isPendingDispatch(row: {
  *
  * `input.receivedQuantity` (unsigned magnitude, optional) is what actually
  * arrived. Omitted ⇒ the `+q` is the exact negation of the dispatch (the
- * plain accept). Given and different ⇒ the `+q` lands at the received
- * amount and carries a variance note. The source location's ledger already
- * dropped by the full dispatched magnitude at phase 1, so a shortfall or
- * overage is just stock lost / gained in transit — nothing else is
- * written, and each location's derived balance stays a correct picture of
- * what it holds. `deriveIncomingTransfers` keys "accepted" off the
- * presence of a linked `+q` row (`correctsMovementId`), never quantity
- * equality, so a variance `+q` clears the pending banner exactly like a
- * matching one.
+ * plain accept).
+ *
+ * Given and different ⇒ the transfer is booked in TWO rows at the
+ * destination (owner decision 2026-09-02, F6): the `+q` lands at the FULL
+ * dispatched magnitude, and a `variance` row immediately writes the
+ * difference off. Net effect on the destination's balance is what actually
+ * arrived, exactly as before.
+ *
+ * Why it is shaped this way. Every balance is a plain signed sum of the
+ * rows AT a location (`derived-balance.ts`), so any row written anywhere
+ * moves that location's balance. Both balances were already correct — the
+ * source dropped by the full dispatched magnitude at phase 1, the
+ * destination rose by what arrived — which leaves nowhere to "add" a loss
+ * row without corrupting one of them. So the write-off has to be paired
+ * with the receipt it offsets, at the destination: goods are treated as
+ * having arrived and then been written off on receipt.
+ *
+ * What that buys: the missing units used to exist ONLY as free text on the
+ * accept note ("Received 4, dispatched 6"), so system-wide stock silently
+ * dropped with no column able to explain it. Now the loss is an ordinary
+ * signed movement that sums like any other, and a daily reconciliation can
+ * see where the stock went.
+ *
+ * The variance row is signed to cancel the discrepancy: a shortfall is
+ * negative, an overage positive. It carries `transferCounterpartLocationId`
+ * so the pair stays traceable, and is NOT linked by `correctsMovementId`
+ * (that link is what marks a dispatch accepted, and only the `+q` row may
+ * claim it).
+ *
+ * `deriveIncomingTransfers` keys "accepted" off the presence of a linked
+ * `+q` row (`correctsMovementId`), never quantity equality, so a variance
+ * accept clears the pending banner exactly like a matching one.
  *
  * `CONFLICT` if the row is not a pending dispatch (already accepted, or
  * not a dispatch row at all). `VALIDATION_ERROR` on a non-positive
@@ -274,23 +297,49 @@ export async function acceptTransfer(
 
     const dispatched = dispatch.quantity.negated(); // -(-q) = +q, the sent magnitude
     const landed = received ?? dispatched;
-    const variance = !landed.equals(dispatched);
+    const hasVariance = !landed.equals(dispatched);
+    const occurredAt = new Date();
 
-    return tx.stockMovement.create({
+    const accepted = await tx.stockMovement.create({
       data: {
         productId: dispatch.productId,
         locationId: toLocationId,
         movementType: "transfer",
-        quantity: landed,
+        // On a variance the receipt is booked at the full dispatched amount
+        // and the difference is written off by the `variance` row below, so
+        // the destination still nets exactly what arrived.
+        quantity: hasVariance ? dispatched : landed,
         recordedById: input.recordedById,
-        occurredAt: new Date(),
+        occurredAt,
         transferCounterpartLocationId: dispatch.locationId,
         correctsMovementId: dispatch.id,
-        note: variance
+        note: hasVariance
           ? `Received ${landed.toString()}, dispatched ${dispatched.toString()}`
           : "Transfer received",
       },
     });
+
+    if (hasVariance) {
+      // `landed - dispatched`: negative for a shortfall (stock lost in
+      // transit), positive for an overage. Paired with the receipt above,
+      // so the destination's balance is unchanged from the old behaviour
+      // while the loss becomes a row a total can sum.
+      const delta = landed.minus(dispatched);
+      await tx.stockMovement.create({
+        data: {
+          productId: dispatch.productId,
+          locationId: toLocationId,
+          movementType: "variance",
+          quantity: delta,
+          recordedById: input.recordedById,
+          occurredAt,
+          transferCounterpartLocationId: dispatch.locationId,
+          note: `Transfer variance: received ${landed.toString()} of ${dispatched.toString()} dispatched`,
+        },
+      });
+    }
+
+    return accepted;
   });
 
   return toMovementView(row);

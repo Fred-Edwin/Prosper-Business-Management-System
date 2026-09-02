@@ -10,6 +10,39 @@ import type {
 } from "@/lib/domain/stock";
 import type { ActivityTimelineRow } from "@/components/kit/activity-timeline";
 import type { ProductWithLocations } from "@/lib/domain/catalog";
+import { toBusinessDate } from "@/lib/time";
+
+/**
+ * Narrow a raw movement feed down to what a hub's "Today's activity"
+ * timeline should actually show. Two rules, both from the 2026-09-02
+ * quantity audit:
+ *
+ * F7 — **today only.** Both hubs called `useStaffStock()` with no date, so
+ * `listMovements({})` returned every movement ever recorded and the hub
+ * rendered week-old opening rows under a "today" heading. The fetch itself
+ * deliberately stays unscoped: `deriveIncomingTransfers` needs the full
+ * history to spot a transfer dispatched on an earlier day that is still
+ * awaiting acceptance, so scoping the request would blank the Accept
+ * banner. The date rule therefore belongs here, at the timeline.
+ *
+ * F8 — **no money-only rows.** A `purchase_payment` carries quantity 0
+ * (it moves money, not stock) and rendered as "Rice · Purchase paid ·
+ * +0 kg". The Admin ledger already routes this type to no column; the
+ * timeline now excludes it on the same grounds.
+ *
+ * `today` defaults to the current Africa/Nairobi business date (never
+ * server-local time, per CLAUDE.md); pass it explicitly to test.
+ */
+export function todaysMovements(
+  movements: StockMovementView[],
+  today: string = toBusinessDate(new Date()),
+): StockMovementView[] {
+  return movements.filter(
+    (m) =>
+      m.movementType !== "purchase_payment" &&
+      toBusinessDate(new Date(m.occurredAt)) === today,
+  );
+}
 
 const MOVEMENT_LABEL: Record<MovementType, string> = {
   opening: "Opening stock",
@@ -22,6 +55,7 @@ const MOVEMENT_LABEL: Record<MovementType, string> = {
   non_sale_consumption: "Non-sale",
   stock_count: "Stock count",
   closing: "Closing stock",
+  variance: "Lost in transit",
 };
 
 const NON_SALE_LABEL: Record<NonSaleReason, string> = {
@@ -99,7 +133,13 @@ export function movementsToTimeline(
   const byId = new Map(products.map((p) => [p.id, p]));
   return movements.map((m) => {
     const product = byId.get(m.productId);
-    const unit = product?.unitLabel ?? "";
+    // F9: prefer the name/unit the movement carries. The joined `products`
+    // list comes from `GET /api/products`, which excludes archived rows, so
+    // a movement of an archived product used to fall through to "Unknown
+    // product" with no unit. `productName` is resolved server-side from the
+    // movement's own relation and is right either way.
+    const name = m.productName ?? product?.name ?? "Unknown product";
+    const unit = m.unitLabel ?? product?.unitLabel ?? "";
     // G7: canteen derived-sale — movementType=="sale" with a stockCountId.
     const isCanteenSale =
       m.movementType === "sale" && m.stockCountId !== null;
@@ -109,7 +149,7 @@ export function movementsToTimeline(
       const soldQty = trimQty(m.quantity).replace("-", "");
       const zeroSold = m.derivedRevenue == null;
       return {
-        title: product?.name ?? "Unknown product",
+        title: name,
         subtitle: `${soldQty}${unit ? ` ${unit}` : ""} sold · ${shortTime(
           m.occurredAt,
         )}`,
@@ -124,7 +164,7 @@ export function movementsToTimeline(
         ? NON_SALE_LABEL[m.reason]
         : MOVEMENT_LABEL[m.movementType];
     return {
-      title: product?.name ?? "Unknown product",
+      title: name,
       subtitle: `${kind} · ${shortTime(m.occurredAt)}`,
       value: `${signedQty(m.quantity)}${unit ? ` ${unit}` : ""}`,
       sign: Number.parseFloat(m.quantity) < 0 ? "negative" : "positive",

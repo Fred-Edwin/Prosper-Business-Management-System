@@ -2088,3 +2088,93 @@ change at any existing call site** — every current `Select` / `DatePicker`
 passes `label`, so the prop is inert for them.
 
 ---
+
+---
+
+## ADR-50: A superseded order is excluded from `listOrders`; the ledger's Opening is derived backwards from the day's closing (Developer, 2026-09-02)
+
+**Context.** The 2026-09-02 quantity audit (`docs/sprints/m2-quantity-audit.md`)
+found two defects whose fixes are contract changes, not local patches.
+
+### 50a — corrections: exclude the superseded original (F1)
+
+`correctOrder` writes the correction's `total` as the **full recomputed
+total**, not a delta. `listOrders` returned both the superseded original
+and the correction as ordinary rows, so any consumer that summed the rows
+counted the sale twice: live on 2026-09-01 the Cashier's Today header read
+"KES 380 · 2 orders" against KES 120 truly collected on 1 order, and the
+Admin sales list double-counted identically (naive 1380 vs true 1120).
+
+**Decision.** `listOrders` does not return an order once a correction
+supersedes it. Considered and rejected: returning both rows with a
+`superseded` flag for consumers to honour — it leaves every present and
+future consumer one forgotten check away from re-introducing the bug.
+
+**Consequences.** Revenue totals are correct with the naive sum screens
+already do. The superseded original is no longer visible in a list; the
+audit trail lives in `AuditLog` and on the correction's `correctsOrderId`.
+The artboard's "Corrected" chip on the original has nothing left to mark
+and was removed from C1 — the "Correction" chip on the surviving row
+remains. This also repairs a second defect: a cashier-scoped query never
+returned the Admin's correction, so a cashier's screen could not tell that
+an order had been superseded at all. The superseding lookup therefore
+deliberately runs **outside** the caller's role/date scope.
+
+### 50b — the ledger's Opening is derived backwards (F4)
+
+`COLUMN_FOR_TYPE` routes `opening` and `stock_count` to **no column** —
+correctly, since neither is a movement that happened during the day. But
+Opening was read forward as the prior day's closing, so on the very day a
+product's opening stock was established the grid rendered
+`Opening 0.0 · all columns — · Closing 0.0` for a Store that really held
+40kg. The ledger's own Closing contradicted
+`GET /api/stock-movements/balances` for the same date.
+
+**Decision.** Closing is the day's derived balance (`balances asOf date`),
+and **Opening is computed backwards** from it:
+`opening = closing − Σ(the day's columned movements)`. Considered and
+rejected: giving `opening` its own column — it fixes only that one type,
+and `stock_count` has the identical shape.
+
+**Consequences.** Any movement type that feeds no column keeps its effect
+inside the Opening figure, so the rule self-heals for types added later.
+Closing can never again disagree with the balances API, because it *is*
+that read. Verified against the seed: 19 wrong rows on the opening day → 0,
+the other six days unchanged.
+
+---
+
+## ADR-51: Transfer shortfalls are booked as a `variance` movement paired at the destination (Developer, 2026-09-02)
+
+**Context.** Accepting a transfer short (dispatched 6, accepted 4) left the
+2 missing units as **free text on the accept row** ("Received 4, dispatched
+6"). Each location's balance was right — the source dropped by the full
+dispatched magnitude at phase 1, the destination rose by what arrived — but
+system-wide stock fell 60 → 58 with no column able to explain it, so a
+daily reconciliation could not see where the stock went without reading
+every note. This is a missing accounting concept, not an arithmetic bug.
+
+**Decision.** A new `variance` `MovementType`. Accepting short books a
+**pair at the destination**: the `transfer` receipt lands the **full
+dispatched** magnitude, and a `variance` row immediately writes the
+difference off (negative for a shortfall, positive for an overage).
+
+**Why paired, and why at the destination.** A balance is a plain signed sum
+of the rows *at* a location (ADR-14) — so any row written anywhere moves
+that location's balance. Both balances were already correct, which leaves
+nowhere to simply "add" a loss row without corrupting one of them. Booking
+the variance at the source was tried first and understated the source by
+the shortfall (70 → 68 for stock it never held). The write-off must
+therefore be paired with the receipt it offsets: goods are treated as
+having arrived and then been written off on receipt.
+
+**Consequences.** Balances are byte-identical to the previous behaviour;
+what changes is that the loss is an ordinary signed movement anything can
+sum. The variance row carries `transferCounterpartLocationId` for
+traceability and does **not** take `correctsMovementId` — that link is what
+marks a dispatch accepted, and only the `+q` row may claim it.
+
+**Open.** `variance` currently routes into the ledger's **Issues** column
+so the TOTAL reconciles. A column of its own is the better home but
+requires editing the frozen `<DenseLedger>`; raised with the owner rather
+than forked (CLAUDE.md: never change the kit unprompted).

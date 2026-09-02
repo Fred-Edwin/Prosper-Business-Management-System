@@ -152,10 +152,26 @@ describe("POST /api/stock-movements/:id/accept — adjusted receipt", () => {
 
     const { status, body } = await post(dispatch.id, { receivedQuantity: "27" });
     expect(status).toBe(201);
-    expect(body.data.quantity).toBe("27.0000");
+    // F6 (owner decision 2026-09-02): a short accept books a PAIR at the
+    // destination — the receipt lands the full dispatched 30, and a
+    // `variance` row writes the missing 3 off, so the loss is summable
+    // rather than free text. The canteen still nets the 27 that arrived.
+    expect(body.data.quantity).toBe("30.0000");
     expect(body.data.locationId).toBe(canteenId);
     expect(body.data.correctsMovementId).toBe(dispatch.id);
     expect(body.data.note).toContain("Received 27");
+
+    const variance = await prisma.stockMovement.findFirst({
+      where: { productId, movementType: "variance", locationId: canteenId },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(variance?.quantity.toFixed(4)).toBe("-3.0000");
+
+    const net = await prisma.stockMovement.aggregate({
+      _sum: { quantity: true },
+      where: { productId, locationId: canteenId },
+    });
+    expect(net._sum.quantity?.toFixed(4)).toBe("27.0000");
   });
 
   it("a plain accept (no body) still lands the dispatched amount → 201", async () => {

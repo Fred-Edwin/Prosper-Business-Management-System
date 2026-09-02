@@ -5,10 +5,10 @@
 // stock; the Store's seeded ingredients were invisible entirely).
 //
 // Cause: `useLedger` seeded its candidate (product, location) pairs from
-// `movements` alone, so a resting product never got a `priorClosing`
-// entry — and `deriveLedgerRows`' opening-only branch, written exactly
-// for this case, could never fire. Pairs now come from the catalogue's
-// ProductLocation set as well.
+// `movements` alone, so a resting product never got a balance entry — and
+// `deriveLedgerRows`' movement-free branch, written exactly for this case,
+// could never fire. Pairs now come from the catalogue's ProductLocation
+// set as well.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { useLedger } from "@/app/admin/stock/use-stock";
@@ -108,10 +108,11 @@ const TODAY_MOVEMENTS = [
   },
 ];
 
-// Prior-day closings, keyed by the ids the hook asks for.
-const PRIOR: Record<string, string> = {
+// The selected day's closing balances, keyed by the ids the hook asks for.
+// Oil rests at 40 (no movement); rice closes at 10 after its +10 receipt.
+const DAY_CLOSING: Record<string, string> = {
   "p-oil": "40.0000",
-  "p-rice": "0.0000",
+  "p-rice": "10.0000",
 };
 
 function jsonOk(data: unknown) {
@@ -132,7 +133,7 @@ beforeEach(() => {
           ids.map((productId) => ({
             productId,
             locationId: STORE,
-            quantity: PRIOR[productId] ?? "0.0000",
+            quantity: DAY_CLOSING[productId] ?? "0.0000",
           })),
         );
       }
@@ -148,16 +149,16 @@ afterEach(() => {
 });
 
 describe("Admin ledger — a stocked product that didn't move today", () => {
-  it("asks for prior closings beyond just the products that moved", async () => {
+  it("asks for balances beyond just the products that moved", async () => {
     const { result } = renderHook(() => useLedger("2026-09-02"));
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     // The bug: only `p-rice` (the one that moved) was ever requested.
-    expect(result.current.data.priorClosing.get(`p-oil@${STORE}`)).toBe(
+    expect(result.current.data.dayClosing.get(`p-oil@${STORE}`)).toBe(
       "40.0000",
     );
-    expect(result.current.data.priorClosing.get(`p-rice@${STORE}`)).toBe(
-      "0.0000",
+    expect(result.current.data.dayClosing.get(`p-rice@${STORE}`)).toBe(
+      "10.0000",
     );
   });
 
@@ -167,7 +168,7 @@ describe("Admin ledger — a stocked product that didn't move today", () => {
 
     const { rows } = deriveLedgerRows({
       movements: result.current.data.movements,
-      priorClosing: result.current.data.priorClosing,
+      dayClosing: result.current.data.dayClosing,
       products: result.current.data.products,
       locations: result.current.data.locations,
     });
@@ -192,7 +193,7 @@ describe("Admin ledger — a stocked product that didn't move today", () => {
 
     const { rows } = deriveLedgerRows({
       movements: result.current.data.movements,
-      priorClosing: result.current.data.priorClosing,
+      dayClosing: result.current.data.dayClosing,
       products: result.current.data.products,
       locations: result.current.data.locations,
     });

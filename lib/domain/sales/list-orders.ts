@@ -20,9 +20,25 @@ import type { ActorContext, ListOrdersFilter, OrderView } from "./types";
  * Newest first (`occurredAt` desc, then `createdAt` desc). Lines included.
  *
  * A correction row (`correctsOrderId` set) is returned as its **own row**
- * with `correctsOrderId` exposed — simplest for M2; the Session 6 screen
- * badges it and can link original ↔ correction. No margin / cost /
- * buyingPrice / profit field appears in any row (an `OrderView` has none).
+ * with `correctsOrderId` exposed. The order it SUPERSEDES is **not**
+ * returned (owner decision 2026-09-02, F1).
+ *
+ * Why the exclusion lives here and not on each screen: `correctOrder` writes
+ * the correction's `total` as the full recomputed total, not a delta. So a
+ * consumer that sums every returned row counts a corrected sale twice — live
+ * on 2026-09-01 the Cashier's Today header read "KES 380 · 2 orders" when
+ * KES 120 across 1 order had actually been collected, and the Admin sales
+ * list double-counted the same way. Filtering in the domain read fixes every
+ * consumer at once, present and future, instead of asking each one to
+ * remember a flag.
+ *
+ * This also repairs the "Corrected" chip: a cashier-scoped query returns the
+ * original but never the Admin's correction, so nothing could tell a screen
+ * that an order had been superseded. The surviving correction row carries
+ * `correctsOrderId`, and the audit trail lives in `AuditLog`.
+ *
+ * No margin / cost / buyingPrice / profit field appears in any row (an
+ * `OrderView` has none).
  */
 export async function listOrders(
   filter: ListOrdersFilter,
@@ -57,10 +73,24 @@ export async function listOrders(
     orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
   });
 
+  // Drop any order that a correction has superseded. The correction is
+  // found WITHOUT the role/date scope of the main query on purpose: a
+  // cashier-scoped or single-day read would miss an Admin's correction and
+  // let the superseded original back into the totals.
+  const supersededIds = new Set(
+    (
+      await prisma.order.findMany({
+        where: { correctsOrderId: { in: rows.map((r) => r.id) } },
+        select: { correctsOrderId: true },
+      })
+    ).map((r) => r.correctsOrderId as string),
+  );
+  const liveRows = rows.filter((r) => !supersededIds.has(r.id));
+
   // For any correction row in the result, hydrate "corrected on {date} by
   // {Admin}" from its `AuditLog` `correct` entry (the correction row's own
   // `cashierId` is the *original* cashier, not the acting Admin).
-  const correctionIds = rows
+  const correctionIds = liveRows
     .filter((r) => r.correctsOrderId != null)
     .map((r) => r.id);
   const correctedBy = new Map<string, { at: Date; name: string }>();
@@ -90,5 +120,5 @@ export async function listOrders(
     }
   }
 
-  return rows.map((r) => toOrderView(r, correctedBy.get(r.id) ?? null));
+  return liveRows.map((r) => toOrderView(r, correctedBy.get(r.id) ?? null));
 }

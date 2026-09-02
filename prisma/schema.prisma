@@ -38,6 +38,13 @@ enum MovementType {
   non_sale_consumption
   stock_count
   closing
+  // Stock that left one place and never arrived at the other — today only
+  // written when a transfer is ACCEPTED SHORT (owner decision 2026-09-02,
+  // F6). Before this, the missing units existed solely as free text on the
+  // accept row, so system-wide stock silently dropped with no column able
+  // to explain it. A `variance` row is signed like any other movement and
+  // sums into the ledger's own column, so a daily reconciliation adds up.
+  variance
 }
 
 enum NonSaleReason {

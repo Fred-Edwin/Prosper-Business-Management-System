@@ -303,12 +303,13 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
     expect(correction.correctedByName).toBe(`${ctx.prefix} Admin`);
     expect(correction.correctedAt).not.toBeNull();
 
-    // and via the read path C4 uses (listOrders)
+    // and via the read path C4 uses (listOrders). Since the owner decision
+    // of 2026-09-02 (F1) the superseded original is NOT returned — a
+    // correction's `total` is the full recomputed total, so returning both
+    // rows made every revenue sum double-count. Only the correction survives.
     const list = await listOrders({}, admin);
-    const origRow = list.find((o) => o.id === order.id)!;
+    expect(list.find((o) => o.id === order.id)).toBeUndefined();
     const corrRow = list.find((o) => o.id === correction.id)!;
-    expect(origRow.correctedByName).toBeNull();
-    expect(origRow.correctedAt).toBeNull();
     expect(corrRow.correctedByName).toBe(`${ctx.prefix} Admin`);
     expect(corrRow.correctedAt).not.toBeNull();
   });

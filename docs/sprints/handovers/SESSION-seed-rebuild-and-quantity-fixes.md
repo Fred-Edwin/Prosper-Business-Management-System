@@ -10,25 +10,41 @@ and `app/admin/stock/derive-ledger.ts`.
 
 ---
 
-> **STATUS 2026-09-02 — §2 (the seed rebuild) is DONE.** `prisma/seed.ts`
-> is rewritten (wipe + rebuild); F3, F5 and F10 are closed by the data.
-> Gate green: 597/597 · tsc 0 · build clean. See `docs/PROGRESS.md`
-> "dev seed wiped and rebuilt". **This session should start at §3** —
-> the 10 code findings. Two deltas found while doing §2:
+> **STATUS 2026-09-02 — THIS HANDOVER IS COMPLETE.** §2 (the seed
+> rebuild) shipped in the first session; §3's ten findings are now all
+> addressed. F3/F5/F10 were closed by the seed; F1, F2, F4, F6, F7, F8, F9
+> were fixed in the follow-up session. See `docs/PROGRESS.md` ("quantity
+> audit fixes: 7 of 10 findings closed") for the full write-up, and
+> ADR-50 / ADR-51 for the decisions behind F1/F4 and F6.
 >
-> - §2.2 said "do NOT delete AuditLog". `AuditLog.userId` is a RESTRICT
->   FK onto `user`, so that also forbids deleting Users. The seed now
->   upserts User / Staff / Location by name instead of wiping them.
-> - ~~§3.7's fix names `nairobiBusinessDate()`, which does not exist.~~
->   **This delta is itself wrong — retracted 2026-09-02.**
->   `nairobiBusinessDate()` DOES exist: exported from
->   `app/cashier/use-orders.ts:71`, and `app/canteen/hub-client.tsx`
->   already imports it. Either helper works; `toBusinessDate(new Date())`
->   from `lib/time` is the tidier choice for a non-cashier screen, since
->   it avoids a canteen/SM screen importing from the cashier feature.
+> **Owner decisions taken** (§3.1 and §3.6 asked for these):
+> - **F1** — exclude the superseded original from `listOrders`; only the
+>   correction counts.
+> - **F2 History tabs** — dropped, not built.
+> - **F6** — a new `variance` movement type, not a ledger-only column.
 >
-> F4 (§3.3) now reproduces on demand: the ledger reconciles exactly on all
-> 7 seeded days *except* the opening day.
+> **Two things carried forward, NOT done here:**
+> 1. **F6 has no ledger column of its own.** `variance` routes into the
+>    Issues column so the TOTAL reconciles and the loss is visible, but a
+>    dedicated column means editing the frozen `<DenseLedger>` — owner's
+>    call, per CLAUDE.md.
+> 2. **F10's data migration** — the seed fixed the classification; whether
+>    real rows created through the UI need migrating is still open.
+>
+> **Corrections to this document, found while implementing:**
+> - §3.7's fix (`useStaffStock(nairobiBusinessDate())` on both hubs) would
+>   have introduced a regression. `deriveIncomingTransfers` reads the same
+>   feed and needs the **unscoped** history to find a transfer dispatched
+>   on an earlier day that is still awaiting acceptance; date-scoping the
+>   fetch blanks the Accept banner. The date filter belongs at the
+>   timeline, not the fetch — shipped as `todaysMovements()`.
+> - §3.6's variance row cannot be booked at the **source**. A balance is a
+>   signed sum of the rows at a location, and the source already dropped by
+>   the full dispatched magnitude at phase 1, so a source-side variance
+>   understates it by the shortfall. It is booked at the destination,
+>   paired with a full-magnitude receipt. See ADR-51.
+>
+> Gate at completion: `pnpm test` 621/621 · `tsc` 0 · `build` clean.
 
 ## 0. Why this is split, and what to do first
 

@@ -15,6 +15,100 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Post-M2 — quantity audit fixes: 7 of 10 findings closed (Developer — 2026-09-02) — DONE
+
+Second half of the audit handover (`docs/sprints/handovers/SESSION-seed-rebuild-and-quantity-fixes.md`
+§3). §2 (the seed rebuild) shipped in the previous session and closed
+F3/F5/F10 by data; this session fixed the remaining code findings.
+
+**Owner decisions taken this session** (both were blocked pending a call):
+
+- **F1** — a superseded order is EXCLUDED from `listOrders`; only the
+  correction counts. Chosen over "show both, sum one" so no future
+  consumer can re-introduce the double-count by forgetting a flag.
+- **F2 History tabs** — dropped from the nav rather than built. The hub
+  timeline already covers recent activity; a real History screen can be
+  planned on its own merits.
+- **F6** — a new `variance` movement type, not a ledger-only column, so
+  the loss is a row anything can sum.
+
+**Shipped**
+
+- **F4 · ledger hid opening stock on the day it was set (HIGH).** The
+  Opening column is now walked BACK from the day's own closing balance
+  (`balances asOf date` − Σ the day's columned movements) instead of read
+  forward from the prior day's closing. `useLedger` fetches `dayClosing`
+  in place of `priorClosing`. Self-heals every movement type that feeds no
+  column — `opening` AND `stock_count` — and makes it structurally
+  impossible for the ledger's Closing to contradict
+  `GET /api/stock-movements/balances` for the same date, which was the
+  actual defect. Verified against the live seed: on the opening day all
+  **19** product/location pairs holding stock read `Opening 0.0 · Closing
+  0.0` before and reconcile exactly now; the other 6 days unchanged.
+- **F2 · three of nine staff nav tabs 404'd (HIGH).** `StaffNavDef` gained
+  an optional `href` for when the route isn't `<basePath>/<key>`; the
+  Cashier's "New Order" now points at `/cashier/orders/new` and
+  `activeNavKeyFromPathname` matches the deep route so the tab lights up.
+  Both "History" tabs removed. Re-measured authenticated: real pages
+  19–22KB, the two `history` URLs 13.8KB (Next default 404) and no longer
+  reachable from any tab.
+- **F1 · corrected orders double-counted every revenue total (HIGH).**
+  `listOrders` drops any order a correction supersedes. The superseding
+  query deliberately ignores the caller's role/date scope — a
+  cashier-scoped read never sees the Admin's correction, which is why the
+  original leaked into the cashier's total in the first place. The dead
+  `correctedByNumber` map and the unreachable "Corrected" chip are gone
+  from C1.
+- **F6 · transfer variance lost stock with no quantity trail (MEDIUM).**
+  New `variance` MovementType. Accepting short now books a PAIR at the
+  destination: the receipt lands the FULL dispatched magnitude and a
+  `variance` row writes the difference off. Both balances are identical to
+  the old behaviour — the point is that the loss is now a summable row
+  instead of free text on the accept note. Shape forced by the ledger
+  rule: a balance is a plain signed sum of the rows AT a location, so
+  there was nowhere to "add" a loss row without corrupting a balance that
+  was already correct; the write-off has to be paired with the receipt it
+  offsets.
+- **F7 · both hubs showed ALL history under a "today" heading (MEDIUM).**
+  New `todaysMovements()` filters at the timeline, NOT at the fetch —
+  `deriveIncomingTransfers` needs the unscoped history to find a transfer
+  dispatched on an earlier day that is still awaiting acceptance, so
+  date-scoping the request (as the handover suggested) would have blanked
+  the Accept banner. Covered by a test.
+- **F8 · zero-quantity money rows rendered as stock (LOW).**
+  `purchase_payment` excluded by the same helper, on the same grounds the
+  Admin ledger already routes it to no column.
+- **F9 · soft-deleted products rendered as "?" (LOW).** `productName` /
+  `unitLabel` now travel on `StockMovementView`, resolved server-side from
+  the movement's own relation. Screens must NOT resolve names against
+  `GET /api/products` — that read excludes archived rows and must keep
+  doing so for the pickers (`tests/integration/archived-picker-exclusion.test.ts`).
+
+**Blocked / carried forward**
+
+- **F6 has no ledger column of its own.** `variance` is currently routed
+  into the Issues column so the TOTAL reconciles and the loss is visible.
+  A dedicated column means editing `<DenseLedger>`, which CLAUDE.md
+  freezes — raised with the owner rather than forked. Until then a
+  variance reads as an issue on the grid.
+- **F10 data migration** — the seed fixed the classification, but whether
+  any real rows created through the UI need migrating is still open.
+
+**Notes**
+
+- The dev DB has no `_prisma_migrations` table (built by `db push`, a
+  known condition already logged under M1 follow-ups), so
+  `migrate deploy` refused. The migration file
+  `20260902120000_add_variance_movement_type` is committed for a real
+  deploy AND the enum value was applied directly to the dev DB.
+- `previousBusinessDate` is now unused by `useLedger` but kept — it is
+  exported and directly tested.
+
+**Gate:** `pnpm test` **621/621** (75 files) · `pnpm typecheck` 0 ·
+`pnpm build` clean. No `TODO(mock)` added.
+
+---
+
 ## Post-M2 — quantity accuracy audit, 3 roles + the ledger (Developer — 2026-09-02) — AUDIT DONE, FIXES HANDED OVER
 
 Owner asked for a check that every quantity shown to a Store Manager,

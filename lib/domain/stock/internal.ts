@@ -63,8 +63,18 @@ export function quantityString(value: Prisma.Decimal): string {
 
 type StockMovementRow = Prisma.StockMovementGetPayload<Record<string, never>>;
 
-/** Map a Prisma `StockMovement` row to the wire shape. */
-export function toMovementView(row: StockMovementRow): StockMovementView {
+/** The same row with its `product` relation joined — what `listMovements` selects. */
+type StockMovementRowWithProduct = StockMovementRow & {
+  product?: { name: string; unitLabel: string } | null;
+};
+
+/**
+ * Map a Prisma `StockMovement` row to the wire shape. When the caller
+ * included the `product` relation, its name/unit travel on the view so an
+ * archived product still renders with a name (F9) — see
+ * `StockMovementView.productName`.
+ */
+export function toMovementView(row: StockMovementRowWithProduct): StockMovementView {
   return {
     id: row.id,
     productId: row.productId,
@@ -93,6 +103,8 @@ export function toMovementView(row: StockMovementRow): StockMovementView {
     // Only `listMovements` joins the `canteen_sale` MoneyMovement; the
     // single-write path has no revenue to report.
     derivedRevenue: null,
+    productName: row.product?.name ?? null,
+    unitLabel: row.product?.unitLabel ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

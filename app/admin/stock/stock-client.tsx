@@ -91,7 +91,7 @@ export function StockClient() {
     () =>
       deriveLedgerRows({
         movements: data.movements,
-        priorClosing: data.priorClosing,
+        dayClosing: data.dayClosing,
         products: data.products,
         locations: data.locations,
         locationId: locationId === ALL ? undefined : locationId,

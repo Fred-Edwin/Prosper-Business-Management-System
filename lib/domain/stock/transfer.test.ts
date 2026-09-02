@@ -152,23 +152,80 @@ describe("recordTransfer (2-phase)", () => {
       recordedById: ctx.otherStaffId,
     });
 
-    expect(accepted.quantity).toBe("28.0000");
+    // F6 (owner decision 2026-09-02): a short accept is booked as a PAIR at
+    // the destination — the receipt lands the full dispatched 30, and a
+    // `variance` row writes the missing 2 off. Balances are unchanged from
+    // the old single-row behaviour; the difference is that the loss is now
+    // a row a total can sum, instead of free text on the accept note.
+    expect(accepted.quantity).toBe("30.0000");
     expect(accepted.correctsMovementId).toBe(dispatch.id);
     expect(accepted.note).toContain("Received 28");
     expect(accepted.note).toContain("dispatched 30");
 
-    // Source dropped by the full 30 that physically left; destination rose
-    // by the 28 that physically arrived. The 2 lost in transit are simply
-    // gone — no stock created or destroyed by the transfer mechanism.
+    const varianceRows = await prisma.stockMovement.findMany({
+      where: { productId, movementType: "variance" },
+    });
+    expect(varianceRows).toHaveLength(1);
+    expect(varianceRows[0].quantity.toFixed(4)).toBe("-2.0000");
+    expect(varianceRows[0].locationId).toBe(canteen);
+    // Traceable back to where it was sent from, without claiming the
+    // `correctsMovementId` link that marks a dispatch accepted.
+    expect(varianceRows[0].transferCounterpartLocationId).toBe(store);
+    expect(varianceRows[0].correctsMovementId).toBeNull();
+
+    // Source dropped by the full 30 that physically left; destination nets
+    // the 28 that physically arrived (+30 receipt, −2 written off).
     const fromBal = await getDerivedStockBalance({ productId, locationId: store });
     const toBal = await getDerivedStockBalance({ productId, locationId: canteen });
     expect(fromBal.quantity).toBe("70.0000"); // 100 − 30
-    expect(toBal.quantity).toBe("28.0000"); // 0 + 28
+    expect(toBal.quantity).toBe("28.0000"); // 0 + 30 − 2
 
     // The variance +q still clears the pending banner (keys off the link).
     await expect(
       acceptTransfer({ movementId: dispatch.id, recordedById: ctx.otherStaffId }),
     ).rejects.toMatchObject({ constructor: DomainError, code: "CONFLICT" });
+  });
+
+  it("a short accept leaves system-wide stock explainable by summable rows (F6)", async () => {
+    // The defect this replaces: dispatch 6, accept 4, and system-wide stock
+    // fell 60 → 58 with the 2 missing units recorded only as free text on
+    // the accept note. The Admin ledger's TOTAL closing dropped with no
+    // column accounting for it. Now the drop is exactly the `variance` rows.
+    const { store, canteen } = ctx.locationIds;
+    const productId = await freshProductWithOpening("60", store);
+
+    const before =
+      Number((await getDerivedStockBalance({ productId, locationId: store })).quantity) +
+      Number((await getDerivedStockBalance({ productId, locationId: canteen })).quantity);
+
+    const dispatch = await recordTransfer({
+      productId,
+      fromLocationId: store,
+      toLocationId: canteen,
+      quantity: "6",
+      recordedById: ctx.recorderId,
+    });
+    await acceptTransfer({
+      movementId: dispatch.id,
+      receivedQuantity: "4",
+      recordedById: ctx.otherStaffId,
+    });
+
+    const after =
+      Number((await getDerivedStockBalance({ productId, locationId: store })).quantity) +
+      Number((await getDerivedStockBalance({ productId, locationId: canteen })).quantity);
+
+    // Stock really is 2 lower — that is the physical truth, not a bug.
+    expect(before - after).toBeCloseTo(2, 4);
+
+    // ...and the whole of that drop is accounted for by variance rows, so a
+    // reconciliation can name where it went.
+    const varianceTotal = (
+      await prisma.stockMovement.findMany({
+        where: { productId, movementType: "variance" },
+      })
+    ).reduce((n, r) => n + Number(r.quantity), 0);
+    expect(varianceTotal).toBeCloseTo(-(before - after), 4);
   });
 
   it("plain accept (no receivedQuantity) is unchanged — +q equals the dispatched amount", async () => {

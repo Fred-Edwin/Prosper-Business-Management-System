@@ -74,16 +74,17 @@ function lineCountLabel(order: OrderView): string {
 
 function OrderRow({
   order,
-  correctedByNumber,
   onOpen,
 }: {
   order: OrderView;
-  /** The number of the order that corrects this one, if any (artboard CORRECTED chip). */
-  correctedByNumber: number | null;
   onOpen: () => void;
 }) {
-  const isCorrection = order.correctsOrderId !== null; // this row IS a correction
-  const wasCorrected = correctedByNumber !== null;
+  // F1 (owner decision 2026-09-02): `listOrders` no longer returns an order
+  // once a correction supersedes it, so the only correction state a row can
+  // be in is "this row IS the correction". The artboard's "Corrected" chip
+  // (on the superseded original) has nothing left to mark — that row is gone
+  // from the list, which is also what stops the day's total double-counting.
+  const isCorrection = order.correctsOrderId !== null;
   const meta = [
     nairobiTime(order.occurredAt),
     PAYMENT_LABEL[order.paymentMethod],
@@ -100,9 +101,9 @@ function OrderRow({
           <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/body">
             {ORDER_TYPE_LABEL[order.orderType]} · {lineCountLabel(order)}
           </span>
-          {(wasCorrected || isCorrection) && (
+          {isCorrection && (
             <span className="font-ui py-px px-(--sp-3) rounded-lg [background-color:var(--surface-hover)] tracking-[0.04em] uppercase font-(--weight-medium) [color:var(--text-secondary)] text-micro/micro">
-              {isCorrection ? "Correction" : "Corrected"}
+              Correction
             </span>
           )}
         </div>
@@ -134,16 +135,6 @@ export function CashierTodayClient() {
   );
 
   const dayLabel = nairobiDayLabel(new Date().toISOString());
-
-  // Map original-order id → the number of the correction that replaced it,
-  // so a corrected order shows the CORRECTED chip (artboard BVG-0).
-  const correctedByNumber = React.useMemo(() => {
-    const m = new Map<string, number>();
-    for (const o of orders) {
-      if (o.correctsOrderId) m.set(o.correctsOrderId, o.number);
-    }
-    return m;
-  }, [orders]);
 
   return (
     <div className="flex flex-col grow min-h-0">
@@ -246,7 +237,6 @@ export function CashierTodayClient() {
               <OrderRow
                 key={o.id}
                 order={o}
-                correctedByNumber={correctedByNumber.get(o.id) ?? null}
                 onOpen={() => router.push(`/cashier/orders/${o.id}`)}
               />
             ))}

@@ -26,7 +26,7 @@ import { MatchCard } from "@/components/kit/match-card";
 import { ErrorState } from "@/components/kit/error-state";
 import { useToast } from "@/components/kit/toast";
 import { useStaffStock, stockApi, deriveIncomingTransfers } from "./use-staff-stock";
-import { movementsToTimeline, trimQty } from "./staff-stock-format";
+import { movementsToTimeline, todaysMovements, trimQty } from "./staff-stock-format";
 
 // TODO(mock): the Store Manager has no endpoint for incoming purchase
 // deliveries — GET /api/stock-movements/outstanding is Admin-only
@@ -59,7 +59,7 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
     null;
 
   const incoming = deriveIncomingTransfers(data.movements, myLocationId);
-  const timeline = movementsToTimeline(data.movements, data.products);
+  const timeline = movementsToTimeline(todaysMovements(data.movements), data.products);
 
   const productName = (id: string) =>
     data.products.find((p) => p.id === id)?.name ?? "stock";

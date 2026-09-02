@@ -89,6 +89,21 @@ export type StockMovementView = {
    * single-write functions return `null` here.
    */
   derivedRevenue: string | null;
+  /**
+   * The product's name and unit, resolved on the server from the movement's
+   * own `product` relation — so they are correct even for a product that has
+   * since been ARCHIVED (F9, owner report 2026-09-02). Screens used to
+   * resolve names by joining against `GET /api/products`, which excludes
+   * soft-deleted rows, so a movement for an archived product rendered as
+   * "Unknown product" with no unit. Those pickers must keep excluding
+   * archived rows (`tests/integration/archived-picker-exclusion.test.ts`),
+   * hence the name travels on the movement instead.
+   *
+   * Populated by `listMovements`; `null` from the single-write functions,
+   * which have no join — callers there already know the product.
+   */
+  productName: string | null;
+  unitLabel: string | null;
   createdAt: string;
   updatedAt: string;
 };

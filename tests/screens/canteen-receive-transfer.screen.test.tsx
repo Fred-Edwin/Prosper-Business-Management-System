@@ -73,6 +73,8 @@ function mv(over: Partial<StockMovementView>): StockMovementView {
     correctsMovementId: null,
     note: "Transfer dispatched — awaiting receipt",
     derivedRevenue: null,
+    productName: null,
+    unitLabel: null,
     createdAt: "2026-09-01T09:00:00Z",
     updatedAt: "2026-09-01T09:00:00Z",
     ...over,

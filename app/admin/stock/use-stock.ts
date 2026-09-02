@@ -173,8 +173,20 @@ export const stockApi = {
 export type LedgerData = {
   /** Every movement for the active business day across the active scope. */
   movements: StockMovementView[];
-  /** The prior business day's closing balance, per product, at the active location scope. */
-  priorClosing: Map<string, string>;
+  /**
+   * The **selected** business day's closing balance per `${productId}@${locationId}`
+   * — i.e. `balances(asOf = date)`, the same figure `GET /api/stock-movements/balances`
+   * reports for that date.
+   *
+   * The ledger's Opening is derived BACKWARDS from this (see `deriveLedgerRows`):
+   * `opening = dayClosing − Σ(the day's column movements)`. Deriving it this way
+   * rather than reading the prior day's closing directly is what makes the grid
+   * self-heal for movement types that feed no column — `opening` and `stock_count`
+   * (F4, owner report 2026-09-02). Those rows still move the real balance, so
+   * subtracting only the columned movements leaves their effect inside the Opening
+   * figure, and Closing can no longer contradict the balances API for the same date.
+   */
+  dayClosing: Map<string, string>;
   products: ProductWithLocations[];
   locations: Location[];
 };
@@ -190,15 +202,16 @@ export function previousBusinessDate(date: string): string {
  * Loads everything the ledger renders for a given business `date` and an
  * optional `locationId` scope (undefined = all locations, Admin only).
  *
- * The Opening column is **derived** (ADR-11): opening = the prior business
- * day's closing = `balances(..., asOf = previousBusinessDate(date))`. The
- * day's own movements come from `listMovements({ date })`. No stored
- * opening/closing column is ever read.
+ * Both ends of the row are **derived** (ADR-11) — no stored opening/closing
+ * column is ever read. This hook fetches the selected day's closing
+ * (`balances(..., asOf = date)`); `deriveLedgerRows` then walks backwards to
+ * Opening by subtracting the day's columned movements. See `LedgerData.dayClosing`
+ * for why that direction, and not `asOf = previousBusinessDate(date)`.
  */
 export function useLedger(date: string, locationId?: string) {
   const [data, setData] = React.useState<LedgerData>({
     movements: [],
-    priorClosing: new Map(),
+    dayClosing: new Map(),
     products: [],
     locations: [],
   });
@@ -215,26 +228,25 @@ export function useLedger(date: string, locationId?: string) {
         stockApi.listLocations(),
       ]);
 
-      // Opening = prior day's closing, batched per location.
+      // Closing = the day's own derived balance, batched per location;
+      // Opening is walked back from it in `deriveLedgerRows`.
       //
       // The candidate (product, location) pairs are NOT just the ones that
       // moved today. A product resting untouched — stock on hand, no
       // movement on the selected day — still belongs on the ledger, with
       // its carried-forward opening equal to its closing. That is the
-      // whole point of `deriveLedgerRows`' opening-only branch, and it
+      // whole point of `deriveLedgerRows`' movement-free branch, and it
       // could never fire while this map was seeded from `movements`
-      // alone: a resting product got no `priorClosing` entry, so it got
-      // no row, so the Store's stocked ingredients vanished from every
-      // day on which they happened not to move (owner report 2026-09-02).
+      // alone: a resting product got no balance entry, so it got no row,
+      // so the Store's stocked ingredients vanished from every day on
+      // which they happened not to move (owner report 2026-09-02).
       //
       // So seed the pairs from the catalogue's ProductLocation set — every
       // place a product is actually stocked — plus today's movements
       // (which can name a pair with no ProductLocation row, e.g. a
       // transfer's counterpart leg). `deriveLedgerRows` then drops the
-      // pairs whose opening is 0 AND which had no movement, so a product
-      // that has never been stocked anywhere still doesn't clutter the
-      // grid.
-      const prevDate = previousBusinessDate(date);
+      // pairs that are flat zero and had no movement, so a product that
+      // has never been stocked anywhere still doesn't clutter the grid.
       const pairsByLocation = new Map<string, Set<string>>();
       const addPair = (loc: string, productId: string) => {
         if (locationId && loc !== locationId) return;
@@ -247,21 +259,17 @@ export function useLedger(date: string, locationId?: string) {
       }
       for (const m of movements) addPair(m.locationId, m.productId);
 
-      const priorClosing = new Map<string, string>();
+      const dayClosing = new Map<string, string>();
       await Promise.all(
         [...pairsByLocation.entries()].map(async ([loc, productIds]) => {
-          const balances = await stockApi.balances(
-            [...productIds],
-            loc,
-            prevDate,
-          );
+          const balances = await stockApi.balances([...productIds], loc, date);
           for (const b of balances) {
-            priorClosing.set(`${b.productId}@${b.locationId}`, b.quantity);
+            dayClosing.set(`${b.productId}@${b.locationId}`, b.quantity);
           }
         }),
       );
 
-      setData({ movements, priorClosing, products, locations });
+      setData({ movements, dayClosing, products, locations });
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Failed to load the stock ledger.",

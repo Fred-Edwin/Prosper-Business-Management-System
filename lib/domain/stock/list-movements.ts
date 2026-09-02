@@ -83,9 +83,14 @@ export async function listMovements(
     };
   }
 
+  // Join the product so `productName` / `unitLabel` travel on each row.
+  // Screens must not resolve names against `GET /api/products` — that read
+  // excludes archived rows (and must keep doing so, for the pickers), which
+  // rendered any movement of an archived product as "Unknown product" (F9).
   const rows = await prisma.stockMovement.findMany({
     where,
     orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+    include: { product: { select: { name: true, unitLabel: true } } },
   });
 
   const views = rows.map(toMovementView);

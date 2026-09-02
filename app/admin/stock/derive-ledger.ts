@@ -1,14 +1,27 @@
 // Pure ledger-column derivation. No React, no fetch — given the raw
-// movement list for a business day (from GET /api/stock-movements) plus the
-// prior day's closing balances (from GET /api/stock-movements/balances),
-// produce the LedgerRow[] / LedgerTotals the kit <DenseLedger> renders.
+// movement list for a business day (from GET /api/stock-movements) plus that
+// day's closing balances (from GET /api/stock-movements/balances), produce
+// the LedgerRow[] / LedgerTotals the kit <DenseLedger> renders.
 //
 // Ledger, not stored totals (CLAUDE.md / ADR-11 / ADR-14):
-//   opening  = the prior business day's closing (passed in; never a column)
-//   closing  = opening + Σ(this day's signed movements for the pair)
-//   the "value" columns (closingValue, soldValue) are opening/closing ×
-//     unit cost — cost data the F2 wire does NOT carry for every type, so
-//     they render "—" until F3/F4 (see the flag in the Session 7 wrap-up).
+//   closing  = the day's derived balance (passed in as `dayClosing`; never a column)
+//   opening  = closing − Σ(this day's columned movements for the pair)
+//
+// Note the direction: Opening is walked BACK from the day's real closing,
+// rather than read forward from the prior day's closing. The two agree
+// whenever every movement on the day feeds a column — but `opening` and
+// `stock_count` rows deliberately feed none, and they still move the real
+// balance. Reading forward made those rows invisible: on the very day a
+// product's opening stock was established the grid showed
+// "Opening 0.0 · all columns — · Closing 0.0" while the balances API
+// reported real stock for the same date (F4, owner report 2026-09-02).
+// Subtracting only the columned movements leaves any non-columned effect
+// inside Opening, so Closing can never contradict the balances API again,
+// and the rule self-heals for any future null-column movement type.
+//
+// The "value" columns (closingValue, soldValue) are opening/closing × unit
+// cost — cost data the F2 wire does NOT carry for every type, so they render
+// "—" until F3/F4 (see the flag in the Session 7 wrap-up).
 //
 // Corrections need no special handling (ADR-39): correctMovement writes the
 // delta as an ordinary signed `quantity` row of the same movementType, so
@@ -26,7 +39,7 @@ type ColumnRoute = keyof LedgerColumnSums | "transfer" | null;
 
 /** Which ledger column a movementType feeds. */
 const COLUMN_FOR_TYPE: Record<MovementType, ColumnRoute> = {
-  opening: null, // opening is derived from prior closing, not this day's rows
+  opening: null, // no column — its effect stays inside the derived Opening figure
   purchase_payment: null, // no stock effect (quantity = 0) — never on the grid
   purchase_receipt: "purchases",
   issue: "issues",
@@ -34,8 +47,14 @@ const COLUMN_FOR_TYPE: Record<MovementType, ColumnRoute> = {
   transfer: "transfer", // sign decides transferIn vs transferOut
   sale: "sold",
   non_sale_consumption: "issues", // non-sale consumption reads as an outflow alongside issues
-  stock_count: null,
+  stock_count: null, // ditto: an adjusting count lands in Opening, not a column
   closing: null,
+  // F6 (owner decision 2026-09-02): stock that left on a transfer and never
+  // arrived. It reads as an outflow alongside issues so the TOTAL closing
+  // reconciles and the loss is visible on the grid. A column of its own is
+  // the better home, but `<DenseLedger>` is frozen and adding one is a kit
+  // change — raised with the owner rather than forked here.
+  variance: "issues",
 };
 
 type LedgerColumnSums = {
@@ -87,8 +106,8 @@ function movementCell(
 export type DeriveLedgerInput = {
   /** Every movement row for the active business day (already location-scoped by the API). */
   movements: StockMovementView[];
-  /** Prior business day's closing per `${productId}@${locationId}` (opening = this). */
-  priorClosing: Map<string, string>;
+  /** The selected day's closing balance per `${productId}@${locationId}` (closing = this). */
+  dayClosing: Map<string, string>;
   products: ProductWithLocations[];
   locations: Location[];
   /** Only rows at this location when set; all locations otherwise. */
@@ -97,7 +116,7 @@ export type DeriveLedgerInput = {
 
 /**
  * Build the ledger rows. One row per (product, location) pair that either
- * has an opening balance or at least one movement on the day.
+ * carries a non-zero balance at either end of the day, or moved during it.
  */
 export function deriveLedgerRows(input: DeriveLedgerInput): {
   rows: LedgerRow[];
@@ -105,22 +124,22 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
   /** For each row id, the movement ids behind each column — the correction target. */
   cellMovements: Map<string, Partial<Record<string, string[]>>>;
 } {
-  const { movements, priorClosing, products, locations } = input;
+  const { movements, dayClosing, products, locations } = input;
 
   const productById = new Map(products.map((p) => [p.id, p]));
   const locationById = new Map(locations.map((l) => [l.id, l]));
 
-  // Collect every pair we need a row for: from movements + from prior closings.
+  // Collect every pair we need a row for: from movements + from the day's balances.
   const pairs = new Set<LedgerGroupKey>();
   for (const m of movements) {
     if (input.locationId && m.locationId !== input.locationId) continue;
     pairs.add(groupKey(m.productId, m.locationId));
   }
-  for (const key of priorClosing.keys()) {
+  for (const key of dayClosing.keys()) {
     const [, loc] = key.split("@");
     if (input.locationId && loc !== input.locationId) continue;
-    // Only surface a prior-closing-only row when the opening is non-zero.
-    if (num(priorClosing.get(key) ?? "0") !== 0) pairs.add(key);
+    // Only surface a movement-free row when it actually holds stock.
+    if (num(dayClosing.get(key) ?? "0") !== 0) pairs.add(key);
   }
 
   const sums = ZERO_SUMS();
@@ -135,7 +154,7 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
     const product = productById.get(productId);
     const location = locationById.get(locationId);
 
-    const opening = num(priorClosing.get(key) ?? "0");
+    const closing = num(dayClosing.get(key) ?? "0");
 
     const rowMovements = movements.filter(
       (m) => m.productId === productId && m.locationId === locationId,
@@ -167,14 +186,15 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
       if (m.correctsMovementId) correctedCols.add(columnKey);
     }
 
-    const closing =
-      opening +
-      col.purchases +
-      col.issues +
-      col.production +
-      col.transferIn +
-      col.transferOut +
-      col.sold;
+    // Opening is walked back from the day's real closing — see the header note.
+    const opening =
+      closing -
+      (col.purchases +
+        col.issues +
+        col.production +
+        col.transferIn +
+        col.transferOut +
+        col.sold);
 
     sums.purchases += col.purchases;
     sums.issues += col.issues;
