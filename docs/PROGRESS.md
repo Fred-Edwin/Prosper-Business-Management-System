@@ -15,6 +15,81 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Post-M2 — workflow streamlined + Restaurant re-activated (Tech Lead — 2026-09-02) — DONE
+
+**Owner walkthrough finding.** From the Store Manager account, Issue
+Ingredients showed "None on hand" for every ingredient, Record Batch
+Production showed a uniform "Available: 1" for every dish, and Transfer
+Stock was likewise wrong. **Root cause:** `Location.active` for
+`seed-location-restaurant` had been flipped to `false` (2026-09-01
+13:22:38) — by a `route.test.ts` run against the dev DB (several specs do
+`prisma.location.updateMany({ data: { active: false } })` to win
+`resolveRestaurantId`). `GET /api/locations` returns active-only, so the
+client couldn't resolve `restaurantLocationId`; the three flows fell back
+to `0` / the additive `Math.max(onHand, lineQty, 1)` floor. The domain
+read (`getDerivedStockBalances`) and the balances route were verified
+correct (SM reading the Restaurant returns Chapati 120, etc.). **Fix:**
+`UPDATE "Location" SET active = true WHERE id = 'seed-location-restaurant'`
+(a re-seed also heals it). No code change — the client-side hardening
+(fold the balance hooks' `loading`/`error` in; don't fabricate
+"Available: 1" when the balance location fails to resolve) is noted in
+`m2-followups.md` as optional.
+
+**Recurrence found + root-caused (same session).** After the workflow
+teardown's `pnpm test` run, the Restaurant was `active: false` again. Real
+cause: **Prisma 7 + `@prisma/adapter-pg` does not escape `_` / `%` in
+`startsWith`/`contains`/`endsWith`** — `orders/route.test.ts`'s
+`updateMany({ where: { …, name: { startsWith: "__" } }, data: { active:
+false } })` compiled to `LIKE '__%'` and matched `seed-location-restaurant`
+on every full-suite run. **Fixed** (`app/api/orders/route.test.ts`): select
+the *other* active restaurants by id (no name wildcard), deactivate those,
+restore them in `afterAll`. Full suite now leaves all three seed locations
+`active: true`. The unescaped-wildcard behaviour also affects the
+catalog/customers/assets `{ contains: search }` filters — logged as
+`m2-followups.md` #18, low severity, not fixed. Isolating `test:db` onto a
+throwaway DB (#17) is still the durable fix.
+
+**Workflow change (owner directive).** The per-feature ceremony —
+mandatory Design Sprint in Paper, per-feature kit extension, Storybook
+story-per-state with `test:visual` + `test:a11y` + §9 `postVisit` gates
+(ADR-42), and a standalone QA Sprint — was removed as disproportionate to
+the change sizes this project ships. New loop: **backend → frontend
+(compose from the frozen kit, follow sibling-screen patterns) → in-session
+check.** Paper design happens only when the owner explicitly hands over a
+mock to copy. Applied:
+- `docs/sdlc.md` — Phase 2 marked done-once; Phase 3 rewritten to
+  Backend → Frontend → Check; Phase 1 Session 3 mandate struck.
+- `docs/design/export-workflow.md` — rewritten as a compose-from-kit
+  reference (was "Binding" Paper→code pipeline).
+- `CLAUDE.md` — "How sessions work" + reading list + "Where to look"
+  table updated.
+- `docs/CONVENTIONS.md §4/§6`, `docs/TEST_PLAN.md §2a/§2b`,
+  `docs/design/design-principles.md §9`, `DECISIONS.md` ADR-42
+  (superseded banner), `kit-audit.md` + `component-states.md` (historical
+  banners).
+- **Deleted:** `.storybook/`, all 40 `*.stories.tsx`,
+  `tests/visual/__screenshots__/` (168 baselines), the `storybook` /
+  `build-storybook` / `test:visual` / `test:a11y` scripts, and the
+  `@storybook/*` + `axe-playwright` + `jest-image-snapshot` deps.
+- **Gate after teardown:** `pnpm typecheck` 0 · `pnpm test:unit`
+  258/258 green.
+
+**First feature under the new workflow — Catalog location column + filter
+— DONE (owner walkthrough owed).** Backend: `listProducts` gains a
+`locationId` filter (active `ProductLocation` only — assignment, not
+stock-on-hand); `GET /api/products?locationId=` forwards it; empty string
+treated as absent. Frontend: a "Locations" column (neutral chips) in the
+desktop table + mobile card, and a "Filter by location" `<Select>` in the
+toolbar ("All locations" default); the filtered EmptyState clears search +
+location together. Composed from the frozen kit against the existing
+catalog structure — no design step. Tests: `list-products.test.ts` (5
+cases) + 2 new `catalog.screen.test.tsx` cases. Gate: `pnpm typecheck` 0 ·
+`pnpm test` 583/583 · `pnpm build` clean. Branch
+`chore/streamline-workflow-catalog-locations` (workflow change + feature,
+two commits — not merged; hand back for the walkthrough).
+
+---
+
 ## Milestone 2 — Staff can sell, every day
 
 **Plan:** `docs/sprints/milestone-2-plan.md`.

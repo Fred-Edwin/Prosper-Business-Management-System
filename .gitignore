@@ -18,10 +18,3 @@ Thumbs.db
 
 *.tsbuildinfo
 next-env.d.ts
-
-# Storybook build output
-storybook-static/
-
-# jest-image-snapshot transient diff/received output (baselines ARE committed)
-tests/visual/__screenshots__/__diff_output__/
-tests/visual/__screenshots__/__received__/

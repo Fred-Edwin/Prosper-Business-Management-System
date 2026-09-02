@@ -15,11 +15,7 @@
     "test:e2e": "vitest run tests/integration/m1-flows",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
-    "prisma:seed": "tsx prisma/seed.ts",
-    "storybook": "storybook dev -p 6006 --no-open",
-    "build-storybook": "storybook build",
-    "test:visual": "test-storybook --url http://127.0.0.1:6006",
-    "test:a11y": "test-storybook --url http://127.0.0.1:6006 --failOnConsole"
+    "prisma:seed": "tsx prisma/seed.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -45,25 +41,18 @@
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "@prisma/config": "^7.9.1",
-    "@storybook/addon-a11y": "9.1.20",
-    "@storybook/nextjs-vite": "9.1.20",
-    "@storybook/test-runner": "0.24.4",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.6",
     "@types/bcryptjs": "3.0.0",
-    "@types/jest-image-snapshot": "^6.4.1",
     "@types/node": "26.2.0",
     "@types/pg": "^8.23.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
-    "axe-playwright": "^2.2.2",
     "dotenv": "^17.4.2",
-    "jest-image-snapshot": "^6.5.2",
     "jsdom": "^30.0.1",
     "prisma": "7.9.1",
-    "storybook": "9.1.20",
     "tailwindcss": "^4.3.3",
     "tsx": "4.19.2",
     "typescript": "5.9.3",

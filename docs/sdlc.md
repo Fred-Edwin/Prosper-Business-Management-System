@@ -10,8 +10,8 @@
 
 1. [Phase 0 — Discovery](#phase-0--discovery)
 2. [Phase 1 — Planning](#phase-1--planning)
-3. [Phase 2 — Design System Foundation](#phase-2--design-system-foundation)
-4. [Phase 3 — The Feature Loop (Design → Development → QA)](#phase-3--the-feature-loop-design--development--qa)
+3. [Phase 2 — Design System Foundation](#phase-2--design-system-foundation-done-once-at-project-start)
+4. [Phase 3 — The Feature Loop (Backend → Frontend → Check)](#phase-3--the-feature-loop-backend--frontend--check)
 5. [Phase 4 — Ship](#phase-4--ship)
 6. [Phase 5 — Monitor & Iterate](#phase-5--monitor--iterate)
 7. [Codebase Structure](#codebase-structure)
@@ -67,7 +67,7 @@ This ensures the PRD reflects exactly what was reviewed and approved, section by
 - `API.md` — API contract
 - `SCHEMA.md` — data model
 - `DECISIONS.md` — decision log with reasoning (ADR-style)
-- `CONVENTIONS.md` — naming, folder structure, error-handling patterns, and the `TODO(mock):` convention used to mark mock data during design sprints (see Phase 3.1)
+- `CONVENTIONS.md` — naming, folder structure, error-handling patterns, and the `TODO(mock):` convention used to mark deferred real implementations
 - `TEST_PLAN.md` — **strategy only** at this stage (what needs E2E vs. unit coverage, and why) — not detailed test cases, which are written per-sprint against real code
 
 ### Session 3 — Tech Lead / Scrum Master Role: Roadmap & Sprints
@@ -78,14 +78,14 @@ This ensures the PRD reflects exactly what was reviewed and approved, section by
 
 **Process:** This session runs in three stages, in order:
 1. **Outline the roadmap:** the agent proposes the full sequence of features/epics, in order, with brief reasoning for the sequencing (what depends on what) — no sprint files written yet. This is reviewed and approved as a whole first.
-2. **Walk through and break down sprints, one feature/epic at a time:** for each item in the approved roadmap, the agent breaks it into the mandatory per-feature loop — **one Design Sprint, one or more Development Sprints, and one QA Sprint** (see [Phase 3](#phase-3--the-feature-loop-design--development--qa)) — proposing each sprint's scope and acceptance criteria, and waiting for approval before moving to the next feature/epic. This structure is fixed, not optional: every feature gets this exact sequence of sprint types, never a generic single "build feature X" sprint.
-3. **Write the files:** only once a feature/epic's sprint breakdown is approved does its corresponding set of `docs/sprints/sprint-XX-name.md` files get written, one per sprint (design/dev/QA), clearly labeled by type in the filename or a `type:` field. `ROADMAP.md` is written once the full roadmap outline from stage 1 is approved.
+2. **Walk through and break down sprints, one feature/epic at a time:** for each item in the approved roadmap, the agent breaks it into the build loop — **backend → frontend → check** (see [Phase 3](#phase-3--the-feature-loop-backend--frontend--check)) — proposing each sprint's scope and acceptance criteria, and waiting for approval before moving to the next feature/epic. A small feature is one sprint; a large one splits its backend and/or frontend across sessions. There is **no mandatory Design Sprint** — design happens only when the owner explicitly asks for a Paper mock (see Phase 3).
+3. **Write the files:** only once a feature/epic's sprint breakdown is approved does its corresponding set of `docs/sprints/sprint-XX-name.md` files get written, one per sprint, clearly labeled by scope in the filename or a `type:` field. `ROADMAP.md` is written once the full roadmap outline from stage 1 is approved.
 
-Sprint sizing rule: **a sprint is scoped to what one agent session can hold fully in context while remaining coherent — not a calendar unit.** This applies within each sprint type — e.g., a large feature's Development stage may itself need to be split into several Development Sprints (mini-epic), while its Design Sprint and QA Sprint typically remain single sprints. Every Development Sprint must include its own tests as part of its definition of done.
+Sprint sizing rule: **a sprint is scoped to what one agent session can hold fully in context while remaining coherent — not a calendar unit.** A large feature's backend or frontend may itself split across several sessions (mini-epic). Every sprint that writes code must include its own tests as part of its definition of done.
 
 **Output:**
 - `docs/ROADMAP.md` — the full feature roadmap
-- `docs/sprints/sprint-XX-name.md` — one file per sprint, each labeled by type (Design / Development / QA), scope, acceptance criteria, and status — written incrementally as each feature/epic's breakdown is approved, not all at once
+- `docs/sprints/sprint-XX-name.md` — one file per sprint, labeled by scope, with scope, acceptance criteria, and status — written incrementally as each feature/epic's breakdown is approved, not all at once
 
 ### Session 3.5 — Repository & Git Setup
 
@@ -93,70 +93,49 @@ Sprint sizing rule: **a sprint is scoped to what one agent session can hold full
 
 ---
 
-## Phase 2 — Design System Foundation
+## Phase 2 — Design System Foundation (done once, at project start)
 
-**Goal:** Establish the product's design philosophy and full component library **once**, before any feature-level design work begins — so every feature inherits consistent rules instead of each one quietly inventing its own.
+**Goal:** Establish the product's design philosophy and full component library **once**, so every feature inherits consistent rules instead of each one quietly inventing its own.
 
-**Agent role:** Product Designer.
+**Status for this project:** complete. The principles are in `docs/design/design-principles.md`; the component kit is built and frozen in `components/kit/*`. Feature work **composes from this kit** and does not extend it. If a feature genuinely needs a pattern the kit has no answer for, that is an owner decision — stop and ask.
 
-**Input:** `PRD.md` and relevant architecture docs.
-
-**Process, in two parts:**
-
-**Part A — Design Principles**
-The agent researches current, non-generic design references (not just its default training-data instincts) and establishes the UI/UX principles the entire product will follow. This explicitly names what to avoid — the recognizable "AI slop" patterns: unnecessary gradient overlays, rounded-everything without reason, more than 2–3 font weights/sizes doing real work, decorative icons without function, generic centered-hero layouts. Good design is largely disciplined pattern-following; this session is where the patterns get chosen.
-
-**Part B — Component Library in Paper.design**
-Using Paper's MCP connection to Claude Code, the agent builds the complete component set — buttons, forms, tables, cards — **in every state** (default, hover, loading, error, empty, disabled). Because Paper's canvas is native HTML/CSS/Tailwind, these components are simultaneously the design source of truth and near-final code, removing the traditional design-to-code translation step.
-
-**Output:**
-- `docs/design/design-principles.md` — the *why and when*: written rules an agent can reason from directly, not reverse-engineer from CSS
-- A Paper.design component library — the *what*: the actual reusable, stateful components
-
-> **Why both artifacts, not one:** the markdown doc carries intent ("cards are used only for grouping unrelated actions, never for single CTAs"); the Paper file carries the implementation. An agent reasons better from an explicit written rule than from inferring intent out of component styling alone.
+**What was produced:**
+- `docs/design/design-principles.md` — the *why and when*: written UI/UX rules (§9 is an enforced interaction contract), and the "AI slop" anti-patterns to avoid (gradient overlays, rounded-everything, >2–3 font weights doing real work, decorative icons, centered-hero layouts).
+- `components/kit/*` — the reusable, typed React components. `docs/design/kit-audit.md` and `docs/design/component-states.md` describe what each one does and its states.
 
 ---
 
-## Phase 3 — The Feature Loop (Design → Development → QA)
+## Phase 3 — The Feature Loop (Backend → Frontend → Check)
 
-Once the design foundation exists, every feature moves through this three-stage loop, one feature at a time. **No skipping ahead to build everything before testing anything.**
+Every feature moves through this loop, one feature at a time. **No skipping ahead to build everything before testing anything.**
 
-### 3.1 — Design Sprint
+### 3.1 — Backend
 
-**Agent role:** Product Designer (feature-scoped).
+**Process:** Build `lib/domain/<module>` + `app/api/*` + tests, per `CONVENTIONS.md` and `API.md`. Route handlers stay thin: parse → validate (Zod) → check auth/role/ownership → call the domain → standard response shape. **No business logic in handlers.** Use Plan Mode before non-trivial work.
 
-**Process:** The agent reads `design-principles.md` and the proven component kit (in Storybook), then designs this feature's screens and states in Paper.design, assembling from approved kit components rather than inventing new ones. Iteration happens here until the owner approves.
+**Output:** Working, committed backend with its own tests.
 
-If a screen genuinely needs something with no kit equivalent, the agent **flags it as a new component** — it does not draw a one-off. A flagged component gets its own design + a kit build sprint (states in Paper, then `components/kit/*` with the §9 contract, Storybook story per state, visual-regression + a11y gates — ADR-42) **before any screen composes it**.
+### 3.2 — Frontend
 
-> **Required method — read `docs/design/export-workflow.md`.** From Milestone 2: the design sprint's output is **Paper artboards + flow docs + the confirmed new-component list** — no code. The backend is then built in its own Development Sprint(s), and a later frontend assembly sprint screenshots each approved artboard and composes kit components in the real route to match it, wired to the real domain. No skeleton export, no `fixtures.ts`, no `/design-preview`. (Sprint 06 reconstructed 21 screens from `get_computed_styles` and had to scrap them all — hence "never eyeball a screenshot for a value; pull it with `get_computed_styles`".)
+**Process:** **Compose** the screen from the frozen kit into the real `app/**` route, following the structure of a **sibling screen** that already does something similar (same layout scaffold, same kit components, same per-feature-hook shape). Where a kit component's prop shape doesn't fit the data, write a thin mapper **in the screen file** (a `columns` array for `<SimpleTable>`, a `rows` transform for `<DenseLedger>`, etc.) — **never change the kit**. Wire the screen to the real `lib/domain` calls through a per-feature hook (`use-<feature>`). There is no `fixtures.ts` and no `/design-preview` route.
 
-**Output:**
-- Approved Paper.design artboards for every screen + every meaning-bearing state of this feature
-- `docs/design/flows/feature-name-flow.md` — the user flow for this feature, written **now, at the start of this feature's design sprint** — never upfront for the whole product
-- The confirmed list of any new kit components this feature needs (or an explicit "none")
+**Design is not part of this step.** The kit exists and sibling screens show the patterns; an agent reasons from those directly. A Paper mock enters the loop **only when the owner explicitly asks for one** — because they saw a shipped screen and want it changed. Then the artboard is a **visual reference to copy from** (`get_screenshot` the top-level artboard; `get_computed_styles` for any exact value in doubt — never eyeball a screenshot for a number, per the Sprint 06 scrap), not a gate. If a screen needs a UI pattern the kit doesn't cover, **stop and ask the owner** — don't invent one, don't build a new kit component unprompted.
 
-> **Why flows are written per-feature, not upfront:** a flow document is only trustworthy if written immediately before use. Writing all flows during Phase 1 risks them going stale by the time later features are reached, as understanding of the product evolves through building earlier ones.
+Write `docs/design/flows/<feature>-flow.md` only if the feature's interaction is complex enough that a written flow helps; a simple screen doesn't need one.
 
-### 3.2 — Development Sprint(s)
+**Output:** Working, committed screen wired to the real domain, plus a jsdom + RTL spec under `tests/screens/` for the interactive parts.
 
-**Agent role:** Developer / Tech Lead (implementation mode).
+### 3.3 — Check (same session as the frontend)
 
-**Process (Milestone 2 onward):** the feature's **backend is built first**, in its own Development Sprint(s) — `lib/domain/<module>` + `app/api/*` + tests. Then a **frontend assembly sprint** takes the approved Paper artboards, **screenshots each one, assembles kit components in the real `app/**` route to match it**, and wires that screen to the real `lib/domain` calls through a per-feature hook. There is no skeleton-export step, no `fixtures.ts` mock layer, and no `/design-preview` route — see `docs/design/export-workflow.md` Phases C1/C2. Wire orchestration (which drawer/tab/filter is active, what submit does); grep for any stray `TODO(mock)` before calling the feature done. **No new UI/UX decisions get made in this sprint.** Design questions are out of scope here; if one surfaces, it goes back to a design sprint, not resolved ad hoc mid-build. Use Plan Mode before non-trivial implementation work. Delegate to subagents deliberately — an Explore subagent for unfamiliar code areas, an implementation subagent for the feature itself, a reviewer subagent to check the work before it's considered done. After each feature's frontend sprint, the owner walks the feature on `pnpm dev` as every role that touches it before it is called done.
+**Process:** Run the feature on `pnpm dev` and drive it as **every role that touches it** — try edge cases, try to break it, fix what breaks. This replaces the old separate QA Sprint: it is a lightweight adversarial pass folded into the build session, not a standalone ceremony. Grep for any stray `TODO(mock)`. Keep `pnpm test` + `pnpm typecheck` + `pnpm build` green.
 
-**Output:** Working, committed code with all `TODO(mock)` sources replaced by real data/logic — including the tests defined in this sprint's scope, per the sprint-sizing rule from Phase 1, Session 3.
+A dedicated QA pass still happens **on request** — before a milestone ships, or on a feature the owner flags as risky.
 
-### 3.3 — QA Sprint (Mandatory, Not Optional)
-
-**Agent role:** QA Engineer.
-
-**Process:** Once the feature is functionally complete, the agent adopts an adversarial QA mindset — goes through the implemented feature against its acceptance criteria, tests edge cases, attempts to break it, and reports findings. This step is a **hard rule for every feature, with no exceptions** — it is the discipline that prevents "build everything, test later," which produces compounding, hard-to-trace bugs.
-
-**Output:** A bug/findings report, followed by fixes, before moving to the next feature.
+**Output:** A feature that works, verified by the person who built it, with findings (if any) noted in `PROGRESS.md`.
 
 ### Repeat
 
-Design Sprint → Development Sprint(s) → QA Sprint, once per feature, until the roadmap is complete.
+Backend → Frontend → Check, once per feature, until the roadmap is complete.
 
 ---
 
@@ -248,11 +227,11 @@ project-root/
 | `CONVENTIONS.md` | Phase 1, Session 2 | Naming, structure, error-handling patterns |
 | `TEST_PLAN.md` | Phase 1, Session 2 | Testing strategy (not detailed cases) |
 | `ROADMAP.md` | Phase 1, Session 3 | Full feature roadmap |
-| `sprints/sprint-XX-[type]-[name].md` | Phase 1, Session 3 (per sprint) | Sprint type (Design/Development/QA), scope, acceptance criteria, status |
+| `sprints/sprint-XX-[name].md` | Phase 1, Session 3 (per sprint) | Sprint scope, acceptance criteria, status |
 | `design-principles.md` | Phase 2 | Product-wide UI/UX rules and anti-patterns |
-| Paper.design component library | Phase 2 | Reusable, stateful components |
-| `design/export-workflow.md` | Phase 2 (method), applied every Phase 3 | Paper → code method: compose screens from the proven kit to match the artboard; from M2, backend-first then a frontend assembly sprint (no skeleton export, no fixtures, no `/design-preview`) |
-| `design/flows/feature-name-flow.md` | Phase 3.1 (per feature) | User flow for that specific feature |
+| `components/kit/*` | Phase 2 | The frozen component kit — composed from, not extended, in feature work |
+| `design/export-workflow.md` | Applied every Phase 3.2 | How to compose a screen from the kit: sibling-screen structure, mapper in the screen file, never fork the kit; how to copy from a Paper mock on the rare occasions the owner supplies one |
+| `design/flows/feature-name-flow.md` | Phase 3.2 (only if the flow is complex) | User flow for that specific feature |
 | `PROGRESS.md` | Ongoing, updated per sprint | Running status log — full detail for the current milestone only; older entries compressed to a one-line ledger |
 | `sprints/milestone-XX-plan.md` | One per milestone | The living plan for that milestone: scope, cross-cutting contracts, session sequence (re-baselined as it changes), guardrails |
 
@@ -267,6 +246,15 @@ project-root/
 - **No `.claude/agents/` or `.claude/hooks/`** — a deliberate choice
   (`CLAUDE.md`). Rely on the written rules, each sprint's acceptance
   criteria, and `TEST_PLAN.md`. Ad hoc subagent use is fine.
+- **Streamlined feature loop (from 2026-09).** The earlier per-feature
+  ceremony — a mandatory Design Sprint in Paper, a per-feature kit
+  extension, Storybook story-per-state with visual-regression + a11y
+  gates (ADR-42), and a standalone QA Sprint — was removed as too slow
+  for the change sizes this project actually ships. The kit is frozen;
+  features compose from it against sibling-screen patterns; QA is a
+  lightweight in-session pass; Paper design is on-request only. The
+  Storybook harness and its `test:visual` / `test:a11y` lanes were
+  deleted. ADR-42 is superseded (see `DECISIONS.md`).
 - **One plan file per milestone** (`sprints/milestone-XX-plan.md`),
   updated as the milestone runs — not one file per session. Per-session
   handoff docs are not kept after the session's PROGRESS entry is

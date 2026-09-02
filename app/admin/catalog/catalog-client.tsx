@@ -15,6 +15,7 @@ import { Tabs } from "@/components/kit/tabs";
 import { SearchInput } from "@/components/kit/search-input";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
 import { StatusChip } from "@/components/kit/status-chip";
+import { Select } from "@/components/kit/select";
 import { Button } from "@/components/kit/button";
 import { useToast } from "@/components/kit/toast";
 import type { ProductWithLocations } from "@/lib/domain/catalog";
@@ -45,6 +46,33 @@ function fmt(value: string | null): string {
   return value == null ? "—" : value;
 }
 
+// "All locations" sentinel for the location filter <Select>.
+const ALL_LOCATIONS = "__all__";
+
+/** The location names a product is actively assigned to, sorted. */
+function assignedLocationNames(product: ProductWithLocations): string[] {
+  return product.locations
+    .filter((l) => l.active)
+    .map((l) => l.locationName)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function LocationChips({ product }: { product: ProductWithLocations }) {
+  const names = assignedLocationNames(product);
+  if (names.length === 0) {
+    return <span className="[color:var(--text-tertiary)]">—</span>;
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-[4px]">
+      {names.map((name) => (
+        <StatusChip key={name} variant="neutral">
+          {name}
+        </StatusChip>
+      ))}
+    </span>
+  );
+}
+
 /** Selling price for a named location type, "—" when not sold there. */
 function priceAt(
   product: ProductWithLocations,
@@ -70,12 +98,14 @@ function Money({ value }: { value: string }) {
 export function CatalogClient() {
   const [activeTabKey, setActiveTabKey] = React.useState("all");
   const [search, setSearch] = React.useState("");
+  const [locationId, setLocationId] = React.useState<string>(ALL_LOCATIONS);
 
   const tab = TABS.find((t) => t.key === activeTabKey) ?? TABS[0];
   const filter: CatalogListFilter = {
     kind: tab.kind,
     search,
     includeArchived: tab.archived,
+    locationId: locationId === ALL_LOCATIONS ? undefined : locationId,
   };
 
   const {
@@ -126,7 +156,12 @@ export function CatalogClient() {
   const count = tab.archived
     ? `${visibleProducts.length} archived`
     : `${visibleProducts.length} product${visibleProducts.length === 1 ? "" : "s"}`;
-  const filtered = search.trim() !== "";
+  const filtered = search.trim() !== "" || locationId !== ALL_LOCATIONS;
+
+  function clearFilters() {
+    setSearch("");
+    setLocationId(ALL_LOCATIONS);
+  }
 
   const columns: SimpleTableColumn<ProductWithLocations>[] = [
     {
@@ -150,6 +185,12 @@ export function CatalogClient() {
           {CATEGORY_LABEL[r.kind]}
         </span>
       ),
+    },
+    {
+      key: "locations",
+      header: "Locations",
+      width: "w-[220px]",
+      render: (r) => <LocationChips product={r} />,
     },
     { key: "unit", header: "Unit", width: "w-[70px]", cell: "mono", render: (r) => r.unitLabel },
     {
@@ -235,19 +276,30 @@ export function CatalogClient() {
       }
     >
       <div className="flex flex-col grow gap-(--sp-8)">
-        {/* Tabs + search */}
-        <div className="flex items-center justify-between gap-(--sp-4)">
+        {/* Tabs + filters */}
+        <div className="flex items-center justify-between gap-(--sp-4) flex-wrap">
           <Tabs
             tabs={TABS.map((t) => ({ key: t.key, label: t.label }))}
             activeKey={activeTabKey}
             onChange={setActiveTabKey}
           />
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search products…"
-            aria-label="Search products"
-          />
+          <div className="flex items-center gap-(--sp-4)">
+            <Select
+              aria-label="Filter by location"
+              options={[
+                { value: ALL_LOCATIONS, label: "All locations" },
+                ...locations.map((l) => ({ value: l.id, label: l.name })),
+              ]}
+              value={locationId}
+              onChange={setLocationId}
+            />
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search products…"
+              aria-label="Search products"
+            />
+          </div>
         </div>
 
         {error && (
@@ -265,12 +317,12 @@ export function CatalogClient() {
             loading={loading && visibleProducts.length === 0}
             emptyState={{
               variant: filtered ? "filtered" : "default",
-              title: filtered ? "No products match your search" : "No products yet",
+              title: filtered ? "No products match these filters" : "No products yet",
               description: filtered
-                ? "Try a different search term, or clear the filter."
+                ? "Try a different search term or location, or clear the filters."
                 : "Add your first product to start building the catalog.",
-              actionLabel: filtered ? "Clear search" : "Add Product",
-              onAction: filtered ? () => setSearch("") : openCreate,
+              actionLabel: filtered ? "Clear filters" : "Add Product",
+              onAction: filtered ? clearFilters : openCreate,
             }}
           />
         </div>
@@ -283,7 +335,9 @@ export function CatalogClient() {
             </div>
           ) : visibleProducts.length === 0 ? (
             <div className="font-ui [color:var(--text-tertiary)] text-body/sm py-(--sp-4)">
-              {filtered ? "No products match your search." : "No products yet."}
+              {filtered
+                ? "No products match these filters."
+                : "No products yet."}
             </div>
           ) : (
             products.map((card) => {
@@ -313,6 +367,9 @@ export function CatalogClient() {
                         {card.deletedAt && (
                           <StatusChip variant="neutral">Archived</StatusChip>
                         )}
+                      </div>
+                      <div className="mt-[4px]">
+                        <LocationChips product={card} />
                       </div>
                     </div>
                     <div className="flex items-center gap-(--sp-3)">

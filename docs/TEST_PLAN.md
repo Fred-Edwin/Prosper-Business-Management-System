@@ -8,7 +8,9 @@ built that sprint.
 **Tooling:** Vitest for everything below the browser — unit tests,
 domain-integration tests (DB-backed, multi-module flows), and
 `*.screen.test.tsx` interaction specs (jsdom + React Testing Library).
-The Storybook test-runner (`test:visual` / `test:a11y`) gates the kit.
+**No Storybook / visual-regression / a11y-harness** — the kit is frozen
+and that gate was removed 2026-09 (ADR-42 superseded); kit correctness is
+now carried by the components themselves plus the per-screen jsdom specs.
 **No headless-browser app-level e2e** — dropped after Milestone 1 (too
 slow for the value it added); the "critical multi-step flows" in §2 are
 now covered by Vitest domain-integration tests plus the per-feature owner
@@ -107,42 +109,39 @@ wrong, which only a real domain-call-through-database test can catch.
 
 ---
 
-## 2a. Component kit — Storybook proof harness (Session 10b–10d)
+## 2a. Component kit — no separate harness (ADR-42 superseded, 2026-09)
 
-The `components/kit/*` kit is gated separately from feature screens, by a
-CI-runnable **Storybook proof harness** (ADR-42): one story per state per
-component, checked on every run by **story-snapshot visual regression**
-(`#storybook-root` screenshot vs the committed baseline under
-`tests/visual/__screenshots__/`, `failureThreshold: 0.02`) **and axe
-accessibility** (WCAG 2a/2aa/21a/21aa, fails on any serious/critical). Both
-gates execute in the same `test-storybook` run; `pnpm test:visual` and
-`pnpm test:a11y` are two names for it, signalling intent. Interaction-state
-token assertions (hover/focus/active bg === the resolved token, focus-ring
-present) run in `postVisit` via real CDP pseudo-states — the permanent form
-of Session 9's Gate-2 probe.
+The `components/kit/*` kit is **frozen** — feature work composes from it,
+it is not extended per feature. The former Storybook proof harness
+(one story per state, story-snapshot visual regression, axe, CDP
+`postVisit` token assertions) was **deleted**: `.storybook/`, every
+`*.stories.tsx`, `tests/visual/__screenshots__/`, and the `test:visual` /
+`test:a11y` scripts are gone. See `DECISIONS.md` ADR-42 (superseded note).
 
-**Paper parity** — that the committed baselines still match the Paper kit
-artboards — is verified by a **one-time manual audit checkpoint** (Session
-10d), not a CI diff. The automated per-state screenshot diff against the
-Paper artboard nodes originally specced for Session 10b/10c
-(`session-10b-handoff.md` task 4c) was deliberately dropped: the kit was
-already consistency-audited against Paper in Session 2
-(`component-states.md §8`) and rebuilt verbatim from `get_jsx` in Sessions
-3–4b, the story-snapshot baselines already catch future drift, and the only
-thing a Paper diff would add is that one-time "does today's baseline still
-match Paper" check — which the manual audit covers.
+Kit correctness is now carried by:
+- the components themselves — the `.kit-*` utilities in `app/globals.css`
+  and `components/kit/internal/*` still implement `design-principles.md
+  §9` (hover / focus-visible / active / disabled / loading / error);
+- the per-screen jsdom specs in §2b, which drive the kit behaviour each
+  screen actually depends on (drawer focus-restore, toast on save,
+  empty/error branches, tab/filter switches);
+- the owner walkthrough on `pnpm dev`.
 
-## 2b. Composed screens — per-screen interaction gate (Session 11+)
+A genuine kit bug is fixed directly in `components/kit/*` with a minimal
+change, flagged to the owner — not by reviving the harness.
 
-From Session 11, feature screens are **composed** from the proven kit
-(see `docs/design/export-workflow.md`), not transcribed. Each rebuilt or
-newly-composed screen cluster is gated by **all** of:
+## 2b. Composed screens — per-screen interaction gate
 
-1. **Visual-diff vs the Paper artboard** (rest state) — `get_screenshot`
-   the top-level artboard node, compare; `get_computed_styles` for any
-   value in doubt (never eyeball a screenshot for a value). If `paper` is
-   unreachable, note it and defer the visual check to the owner
-   walkthrough (`export-workflow.md` Phase C2).
+Feature screens are **composed** from the frozen kit (see
+`docs/design/export-workflow.md`), not transcribed. Each new or reworked
+screen cluster is gated by **all** of:
+
+1. **Visual check** — if the owner supplied a Paper mock to match,
+   `get_screenshot` the top-level artboard node and compare;
+   `get_computed_styles` for any value in doubt (never eyeball a
+   screenshot for a value). Otherwise the visual check is the owner
+   walkthrough on `pnpm dev`. If `paper` is unreachable, defer to the
+   walkthrough.
 2. **Interaction spec** — a `*.screen.test.tsx` under `tests/screens/`
    (jsdom + React Testing Library, per-file `// @vitest-environment
    jsdom`, the per-feature hook / `stockApi` mocked, **no server / DB /

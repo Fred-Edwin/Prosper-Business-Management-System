@@ -439,19 +439,18 @@ not pick an answer ad hoc.
 
 ---
 
-## 9. Global interaction states (ENFORCED — a first-class contract)
+## 9. Global interaction states (a first-class contract)
 
-**Status: this is no longer just a spec — it is an enforced contract.** As
-of the Session 10b–10d proof harness, every rule below is asserted
-per-component in Storybook: the `postVisit` interaction pass drives real
-CDP hover / focus-visible / active / disabled / loading pseudo-states and
-checks the resolved background / border / outline against the token the
-rule names, `pnpm test:a11y` (axe) fails CI on any serious/critical
-violation, and `pnpm test:visual` locks the rest-and-drawn states against
-committed baselines. A component that violates §9 cannot pass its story
-run, so it cannot merge. Session 11 then composes the shipped Admin
-screens **from** those proven components, so the screens inherit the
-contract rather than re-implementing it.
+**Status: this is the contract every kit component upholds.** Each rule
+below is encoded **once** — in the `.kit-*` utilities in `app/globals.css`
+and the shared helpers in `components/kit/internal/*` — not re-implemented
+per component. The Session 10b–10d Storybook proof harness that used to
+assert these per-component via CDP pseudo-states was **removed 2026-09**
+(ADR-42 superseded); the rules still hold because the shared utilities
+still implement them and the kit is frozen. Feature screens are composed
+**from** these components, so they inherit the contract rather than
+re-implementing it. A change to a `.kit-*` utility is a deliberate,
+owner-flagged kit edit — verify the affected components by hand.
 
 These are the interaction states that are **not** worth a per-component
 artboard. The kit encodes each of these **once** as global CSS / a shared

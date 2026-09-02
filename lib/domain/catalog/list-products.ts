@@ -12,6 +12,8 @@ import { productInclude, toProductView } from "./internal";
  *
  * - `kind` / `search` (case-insensitive `name` contains) / `includeArchived`
  *   filter the set; soft-deleted rows are excluded unless `includeArchived`.
+ * - `locationId` restricts to products with an **active** `ProductLocation`
+ *   at that location (assignment, not stock-on-hand).
  * - Non-`admin` callers get `buyingPrice` stripped to `null`
  *   (API.md: "buying price stripped for non-Admin").
  * - Deterministic order: kind, then name.
@@ -33,6 +35,11 @@ export async function listProducts(
   }
   if (filter.category && filter.category.trim() !== "") {
     where.category = filter.category.trim();
+  }
+  if (filter.locationId && filter.locationId.trim() !== "") {
+    where.productLocations = {
+      some: { locationId: filter.locationId.trim(), active: true },
+    };
   }
 
   const rows = await prisma.product.findMany({

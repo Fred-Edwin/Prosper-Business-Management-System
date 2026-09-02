@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
     kind: sp.get("kind") ?? undefined,
     search: sp.get("search") ?? undefined,
     category: sp.get("category") ?? undefined,
+    locationId: sp.get("locationId") ?? undefined,
     includeArchived: sp.get("includeArchived") ?? undefined,
   });
   if (!parsed.success) {

@@ -25,7 +25,22 @@ const PRODUCT: ProductWithLocations = {
   deletedAt: null,
   createdAt: NOW.toISOString(),
   updatedAt: NOW.toISOString(),
-  locations: [],
+  locations: [
+    {
+      locationId: "loc-store",
+      locationName: "Store",
+      locationType: "store",
+      sellingPrice: null,
+      active: true,
+    },
+    {
+      locationId: "loc-rest",
+      locationName: "Restaurant",
+      locationType: "restaurant",
+      sellingPrice: "620.00",
+      active: true,
+    },
+  ],
 };
 
 const ARCHIVED_PRODUCT: ProductWithLocations = {
@@ -39,6 +54,7 @@ const state = {
   products: [PRODUCT] as ProductWithLocations[],
   loading: false,
   error: null as string | null,
+  lastFilter: undefined as unknown,
   create: vi.fn().mockResolvedValue(undefined),
   update: vi.fn().mockResolvedValue(undefined),
   archive: vi.fn().mockResolvedValue(undefined),
@@ -52,18 +68,21 @@ vi.mock("@/app/admin/catalog/use-catalog", async () => {
   >("@/app/admin/catalog/use-catalog");
   return {
     ...actual,
-    useCatalog: () => ({
-      products: state.products,
-      locations: LOCATIONS,
-      loading: state.loading,
-      error: state.error,
-      refresh: vi.fn(),
-      create: state.create,
-      update: state.update,
-      archive: state.archive,
-      hardDelete: state.hardDelete,
-      unarchive: state.unarchive,
-    }),
+    useCatalog: (filter: unknown) => {
+      state.lastFilter = filter;
+      return {
+        products: state.products,
+        locations: LOCATIONS,
+        loading: state.loading,
+        error: state.error,
+        refresh: vi.fn(),
+        create: state.create,
+        update: state.update,
+        archive: state.archive,
+        hardDelete: state.hardDelete,
+        unarchive: state.unarchive,
+      };
+    },
   };
 });
 
@@ -93,7 +112,7 @@ describe("/admin/catalog — kit composition", () => {
     expect(within(table).getByText("Chicken Breast")).toBeInTheDocument();
   });
 
-  it("shows a filtered <EmptyState> with a Clear-search action when the search matches nothing", async () => {
+  it("shows a filtered <EmptyState> with a Clear-filters action when the search matches nothing", async () => {
     state.products = [];
     renderScreen();
     const user = userEvent.setup();
@@ -102,8 +121,46 @@ describe("/admin/catalog — kit composition", () => {
     const table = screen.getByRole("table");
     expect(within(table).getByText(/No products match/i)).toBeInTheDocument();
     expect(
-      within(table).getByRole("button", { name: "Clear search" }),
+      within(table).getByRole("button", { name: "Clear filters" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders a Locations column with a chip per active assignment", () => {
+    renderScreen();
+    const table = screen.getByRole("table");
+    expect(
+      within(table).getByRole("columnheader", { name: "Locations" }),
+    ).toBeInTheDocument();
+    const row = within(table)
+      .getByText("Chicken Breast")
+      .closest('[role="row"]') as HTMLElement;
+    expect(within(row).getByText("Store")).toBeInTheDocument();
+    expect(within(row).getByText("Restaurant")).toBeInTheDocument();
+  });
+
+  it("the location filter passes locationId into useCatalog and clears with Clear filters", async () => {
+    state.products = [];
+    renderScreen();
+    const user = userEvent.setup();
+
+    // Default: no location filter.
+    expect(state.lastFilter).toMatchObject({ locationId: undefined });
+
+    // Pick Restaurant from the location <Select>.
+    await user.click(screen.getByRole("combobox", { name: "Filter by location" }));
+    await user.click(await screen.findByRole("option", { name: "Restaurant" }));
+    await waitFor(() =>
+      expect(state.lastFilter).toMatchObject({ locationId: "loc-rest" }),
+    );
+
+    // Clear filters resets it.
+    const table = screen.getByRole("table");
+    await user.click(
+      within(table).getByRole("button", { name: "Clear filters" }),
+    );
+    await waitFor(() =>
+      expect(state.lastFilter).toMatchObject({ locationId: undefined }),
+    );
   });
 
   it("opens the create Drawer, traps focus, and restores focus to the opener on Esc", async () => {

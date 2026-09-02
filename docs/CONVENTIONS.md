@@ -138,10 +138,9 @@ corrections the same way:
 
 ### `TODO(mock)` convention
 
-During design/build sprints, any place where real integration is
-deliberately deferred (e.g., a report screen built against fixture data
-before the underlying query is wired up, or a notification stubbed instead
-of sent) must be marked:
+Any place where real integration is deliberately deferred (e.g., a
+notification stubbed instead of sent, or a value hard-coded pending a
+query that a later sprint will add) must be marked:
 
 ```ts
 // TODO(mock): replace with real stock-balance query once lib/domain/stock/getBalance is implemented
@@ -173,12 +172,16 @@ Rules:
 Distilled from Milestone 1. These are cheap to follow and each one maps
 to a real regression that cost a session.
 
-- **Prove a component before a screen uses it.** A new kit component gets
-  its states designed in Paper, then built with the §9 interaction
-  contract + a Storybook story per state + visual-regression + `axe`
-  a11y (ADR-42) — *before* any screen composes it. Wiring data onto an
-  unproven "picture of a control" is the M1 kit-remediation trap.
-- **Never eyeball a screenshot for a value.** Pull exact values with
+- **Compose from the frozen kit; don't extend it per feature.** The kit
+  in `components/kit/*` is built and done. A screen is assembled from it
+  following a sibling screen's structure, with a thin mapper in the
+  screen file where a prop shape doesn't fit. If a feature genuinely
+  needs a pattern the kit has no answer for, **stop and ask the owner** —
+  don't invent a one-off or add a kit component unprompted. (The old
+  per-feature Design Sprint + Storybook-prove-it gate was removed
+  2026-09 — see `docs/sdlc.md`.)
+- **Never eyeball a screenshot for a value.** On the rare occasion the
+  owner hands over a Paper mock to match, pull exact values with
   `get_computed_styles`. Reconstructing screens from computed styles (no
   `get_jsx`) is what scrapped the Sprint 06 export.
 - **Run explicit audit passes as named steps** before calling a

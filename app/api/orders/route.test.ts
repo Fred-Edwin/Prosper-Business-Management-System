@@ -30,6 +30,8 @@ let managerId: string;
 let attendantId: string;
 let productId: string;
 let orderAId: string;
+/** Restaurants this suite temporarily deactivated — restored in afterAll. */
+let deactivatedRestaurantIds: string[] = [];
 
 async function post(payload: unknown) {
   const { POST } = await import("./route");
@@ -90,18 +92,27 @@ describe("order routes — role access + wiring", () => {
     restaurantId = restaurant.id;
     // The routes don't pass a `restaurantId` (production has exactly one
     // active Restaurant), so `resolveRestaurantId` picks the oldest active
-    // one. Other parallel test files leave `__*_test__` restaurants around;
-    // deactivate only those so resolution lands on ours. A real
-    // (non-prefixed) Restaurant, if one existed, is left untouched.
-    await prisma.location.updateMany({
-      where: {
-        type: "restaurant",
-        active: true,
-        name: { startsWith: "__" },
-        NOT: { id: restaurant.id },
-      },
-      data: { active: false },
-    });
+    // one. Deactivate every *other* currently-active Restaurant so
+    // resolution lands on ours, and remember them so `afterAll` can put
+    // them back exactly as they were.
+    //
+    // NOTE: this used to filter `name: { startsWith: "__" }` to only touch
+    // test rows — but Prisma 7 + @prisma/adapter-pg does NOT escape `_` in
+    // `startsWith`/`contains`/`endsWith`, so `"__"` compiled to LIKE '__%'
+    // and matched EVERY restaurant, deactivating the real seed Restaurant
+    // on every run (broke the SM stock screens + the admin ledger label).
+    deactivatedRestaurantIds = (
+      await prisma.location.findMany({
+        where: { type: "restaurant", active: true, NOT: { id: restaurant.id } },
+        select: { id: true },
+      })
+    ).map((l) => l.id);
+    if (deactivatedRestaurantIds.length > 0) {
+      await prisma.location.updateMany({
+        where: { id: { in: deactivatedRestaurantIds } },
+        data: { active: false },
+      });
+    }
 
     const mk = (role: string, n: string) =>
       prisma.user.create({
@@ -169,6 +180,13 @@ describe("order routes — role access + wiring", () => {
     });
     await prisma.location.deleteMany({ where: { name: { startsWith: PREFIX } } });
     await prisma.user.deleteMany({ where: { name: { startsWith: PREFIX } } });
+    // Put back any Restaurant this suite deactivated in beforeAll.
+    if (deactivatedRestaurantIds.length > 0) {
+      await prisma.location.updateMany({
+        where: { id: { in: deactivatedRestaurantIds } },
+        data: { active: true },
+      });
+    }
     await prisma.$disconnect();
   });
 

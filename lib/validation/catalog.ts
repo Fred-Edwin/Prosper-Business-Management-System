@@ -56,6 +56,12 @@ export const listProductsQuerySchema = z.object({
   kind: productKind.optional(),
   search: z.string().trim().optional(),
   category: z.string().trim().min(1).optional(),
+  // Empty string (`?locationId=`) is treated as absent, not a 400.
+  locationId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v === "" ? undefined : v)),
   includeArchived: z
     .union([z.literal("true"), z.literal("false")])
     .optional()

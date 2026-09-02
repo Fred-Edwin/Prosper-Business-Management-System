@@ -99,3 +99,33 @@ touch-up; none needs a new milestone plan.
 15. **Canteen Stock Levels has no search input.** `9GW-0` draws one; the
     built screen omits it. Add a client-side filter or drop it from the
     artboard.
+
+16. **Movement picker fabricates "Available: 1" when its balance location
+    fails to resolve.** *(2026-09-02 walkthrough.)* `movement-picker-flow.tsx`:
+    `loading` ignores `useStockLevels.loading` and `error` ignores its
+    `error`, and the additive branch's `Math.max(onHand, lineQty, 1)`
+    floor turns an unresolved Restaurant balance into a screen of fake
+    `1`s (this is how the inactive-Restaurant bug presented). Fix: track
+    whether the balance read actually resolved (location id non-empty +
+    hook not errored) and show `<ErrorState>` when it didn't; fold the
+    balance hooks into `loading` / `error`; apply the `,1` floor only to
+    a selected row.
+
+17. **Dev DB shared with the test suite.** `route.test.ts` specs mutate
+    `DATABASE_URL` (the dev DB) directly. `orders/route.test.ts`
+    deactivated `seed-location-restaurant` on every run (fixed 2026-09-02
+    — see #18); the durable fix is still to point the `test:db` lane at a
+    throwaway database so no spec can touch dev data.
+
+18. **Prisma 7 + `@prisma/adapter-pg` does not escape `_` / `%` in
+    `startsWith` / `contains` / `endsWith`.** `startsWith: "__"` compiles
+    to `LIKE '__%'` and matches everything. Confirmed: `startsWith:
+    "St_re"` matches `Store`, `startsWith: "S%"` matches `Store`. Impact:
+    (a) `orders/route.test.ts` deactivated the real Restaurant — fixed by
+    filtering on id, not a name wildcard; (b) the catalog / customers /
+    assets search filters (`{ contains: userInput }`) treat a typed `_` or
+    `%` as a wildcard — low severity, not yet fixed. If Prisma doesn't
+    patch this, wrap search input with a `_`/`%`/`\` escaper before
+    passing it to `contains`. Test-helper `deleteMany({ where: { name:
+    { startsWith: prefix } } })` calls are mostly safe — the literal tail
+    of a real prefix (`__catalog_test__list__`) still scopes them.

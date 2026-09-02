@@ -1,5 +1,13 @@
 # Prosper — Kit Component Audit (Session 10, Deliverable 3a → 3b/3c)
 
+> **Historical record.** This documents the Session 10 kit remediation as
+> it happened. The kit is now **frozen** — feature work composes from it
+> and does not extend it. The Storybook / `test:visual` / `test:a11y`
+> proof harness described throughout this file was **deleted 2026-09**
+> (ADR-42 superseded — see `DECISIONS.md`, `docs/sdlc.md`). Read this for
+> *what each component does and why*; ignore the "gated in Storybook /
+> baselines committed" mechanics — that harness no longer exists.
+
 **Status:** DELIVERABLE 3 + DELIVERABLE 4 COMPLETE. Before-picture (start of
 Session 10) + the fixes applied (3b/3c) + the 4 new primitives (3d) + the
 proof-harness build-out and Paper-parity audit (Deliverable 4, Sessions

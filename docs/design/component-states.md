@@ -1,5 +1,12 @@
 # Prosper — Component States Spec (Milestone 1)
 
+> **Historical record.** This is the Milestone 1 Design-Sprint spec for
+> which state artboards each component needed. The kit is now **frozen**
+> and the Storybook / `test:visual` / `test:a11y` gate referenced in the
+> per-component rows was **removed 2026-09** (ADR-42 superseded). Use this
+> as a map of *what states each kit component supports*; the "ARTBOARD /
+> Phase B pending / gated" workflow annotations are archived.
+
 **Status:** CONFIRMED (2026-08-27). Owner approved all four §7 open
 decisions ("I agree with all your recommendations"): D-CHIP = A
 (underlined semantic-color cell, no chip), D-LABEL = A (label/copy
