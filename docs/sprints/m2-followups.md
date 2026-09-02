@@ -100,8 +100,14 @@ touch-up; none needs a new milestone plan.
     built screen omits it. Add a client-side filter or drop it from the
     artboard.
 
-16. **Movement picker fabricates "Available: 1" when its balance location
-    fails to resolve.** *(2026-09-02 walkthrough.)* `movement-picker-flow.tsx`:
+16. ~~**Movement picker fabricates "Available: 1" when its balance
+    location fails to resolve.**~~ **DONE 2026-09-02** — the
+    `Math.max(onHand, lineQty, 1)` floor is gone (additive rows pass the
+    true `onHand`, with an `AdditiveProductRow` wrapper in the screen
+    file handling the on-hand-0 case the kit gets wrong), and
+    `useStockLevels.loading` / `.error` are folded into the screen's
+    `loading` / `error`. Kit untouched — #1 would delete the wrapper.
+    Original text: *(2026-09-02 walkthrough.)* `movement-picker-flow.tsx`:
     `loading` ignores `useStockLevels.loading` and `error` ignores its
     `error`, and the additive branch's `Math.max(onHand, lineQty, 1)`
     floor turns an unresolved Restaurant balance into a screen of fake
@@ -129,3 +135,73 @@ touch-up; none needs a new milestone plan.
     passing it to `contains`. Test-helper `deleteMany({ where: { name:
     { startsWith: prefix } } })` calls are mostly safe — the literal tail
     of a real prefix (`__catalog_test__list__`) still scopes them.
+
+19. ~~**Stock ledger shows no carried-forward opening line.**~~
+    **DONE 2026-09-02.** *(Owner.)* Reported as "the ledger only shows
+    three rows" — the Store's seeded ingredients were invisible. Two
+    distinct defects, both fixed:
+
+    **(a) Admin ledger dropped every resting product.**
+    `useLedger` (`app/admin/stock/use-stock.ts`) seeded its candidate
+    `(product, location)` pairs from **this day's movements only**, so a
+    product with stock but no movement on the selected day never got a
+    `priorClosing` entry — and therefore never got a row.
+    `deriveLedgerRows` already had a branch written precisely for this
+    case (surface a pair whose opening is non-zero even with no
+    movements), but it could never fire because the pair never arrived.
+    Fix: seed the pairs from the catalogue's `ProductLocation` set (every
+    place a product is actually stocked) **plus** the day's movements
+    (which can name a pair with no `ProductLocation`, e.g. a transfer
+    counterpart leg); soft-deleted products are skipped, and a pair with
+    a 0 opening and no movement is still dropped so never-stocked
+    products don't clutter the grid. Effect on the owner's dev data:
+    **3 rows → 15**, and the hidden stock was not only the Store's — the
+    Restaurant's Chicken Stew 40 / Samosa 60 and the Canteen's Soda 192
+    were equally invisible on any day they happened not to move.
+    Regression gate: `tests/screens/admin-ledger-resting-rows.screen.test.tsx`
+    (verified to fail 2/3 against the old code).
+
+    **(b) Mobile Stock Levels had no day framing at all.**
+    `/store-manager/stock` and `/canteen/stock` rendered a bare current
+    balance per product. Now a stock card per row — **opening → the day's
+    signed movement → closing** — via a new `useStockCard` hook
+    (`app/store-manager/use-staff-stock.ts`). Opening is derived, never
+    stored (ADR-11 / ADR-40): the ledger sum evaluated at the end of the
+    previous business day, i.e. `balances(asOf = previousBusinessDate)`.
+    A resting product reads `Open 40 · — · Close 40`. The headline figure
+    is the day's closing; the summary strip gained a "Moved" count.
+    Non-stock movement types (`opening`, `closing`, `purchase_payment`,
+    `stock_count`) are excluded from the day's delta, mirroring the Admin
+    grid's `COLUMN_FOR_TYPE` nulls. Business date comes from
+    `toBusinessDate` (`Africa/Nairobi`), never server-local.
+
+    Neither fix writes rows or changes the ledger model — both derive at
+    read time, so append-only + "corrections are new rows" are untouched.
+
+20. **Quantity accuracy audit — 10 findings.** *(Owner request,
+    2026-09-02.)* Full detail in `docs/sprints/m2-quantity-audit.md`;
+    fixes specced in
+    `docs/sprints/handovers/SESSION-seed-rebuild-and-quantity-fixes.md`.
+    HIGH: cashier "Today" total double-counts corrections (F1); three of
+    nine staff bottom-nav tabs 404 (F2); the ledger hides opening stock on
+    the day it is set (F4); goods mis-typed as dishes so Batch Production
+    offers sodas to cook (F10). MEDIUM: seeded orders / canteen counts
+    carry no `sale` movements (F3, F5 — seed early-return, production path
+    verified correct); transfer variance loses stock with only a free-text
+    note (F6); both staff hubs render all history under a "today" heading
+    (F7). LOW: zero-quantity money rows render as "+0 kg" (F8);
+    soft-deleted products render as "?" (F9).
+    **F1 and F6 need an owner product decision before coding.**
+
+21. **Seed rebuild — wipe + relative dates.** *(Owner decision,
+    2026-09-02.)* `prisma/seed.ts` to be rewritten: wipe seed-owned rows
+    and rebuild rather than upserting onto existing data; dates relative
+    to the run day so the data never goes stale; corrected product
+    classification (goods sold at the Restaurant AND Canteen, ingredients
+    at the Store only, only dishes producible); 7 days of movement so
+    every ledger column is populated; every order writes its `sale` row.
+    Spec: handover §2. Excluded deliberately — Recipe, Handover,
+    OwnerTransaction, Attendance, StaffPayAdjustment, DayClose and
+    friends have **no UI reading them yet**, so seeding them creates
+    invisible data.
+

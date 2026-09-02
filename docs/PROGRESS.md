@@ -15,6 +15,284 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Post-M2 — quantity accuracy audit, 3 roles + the ledger (Developer — 2026-09-02) — AUDIT DONE, FIXES HANDED OVER
+
+Owner asked for a check that every quantity shown to a Store Manager,
+Canteen Attendant and Restaurant Cashier is actually accurate, and
+mid-session extended it to the Admin ledger ("this is what the admin is
+going to be referring to and checking daily").
+
+**Method.** 16 role screens + the Admin ledger. For each, call its API as
+that role, independently recompute every figure from raw `StockMovement` /
+`Order` rows, compare. Then exercise the real write endpoints with scratch
+data and verify the deltas. All scratch writes reversed — DB back to 18
+stockMovements / 10 orders / 14 orderLines. **No source changed by the audit.**
+
+**10 findings** — full detail in `docs/sprints/m2-quantity-audit.md`.
+HIGH: F1 cashier "Today" total double-counts corrections (renders KES 380
+where KES 120 was collected, and a cashier can never see the "Corrected"
+chip); F2 three of nine staff bottom-nav tabs 404 (owner reported the
+Cashier one; SM + Canteen "History" found by sweep); F4 the ledger hides
+opening stock on the day it is set (Closing contradicts the balances
+endpoint for the same date); F10 goods mis-typed as dishes, so **Record
+Batch Production offers Soda 300ml and Water 500ml as things to cook**.
+MEDIUM: F3/F5 seeded orders and canteen counts have no `sale` movements
+(seed early-return; production path verified correct); F6 transfer variance
+loses stock with only a free-text note (6 dispatched, 4 accepted, 2 vanish
+from every total); F7 both hubs render ALL history under a "today" heading.
+LOW: F8 zero-quantity money rows render as "+0 kg"; F9 archived products
+render as "?".
+
+**Verified correct** (so a later session doesn't "fix" them): issue,
+receive, non-sale, both transfer phases, sale-on-order, cross-day
+carry-forward, and ledger columns/totals recomputed exactly for 30 Aug and
+2 Sep. The canteen stock-count preview is the strongest calculation in the
+app — 192−150=42 sold, KES 2,520, and an over-count correctly blocks.
+
+**One self-correction:** `StockCount.soldQuantity` was first reported as
+corrupt (`"undefined"` in the DB). That column does not exist by design —
+units sold is derived from sale movements, per the ledger rule — and the
+string was an artifact of the audit script. F5 was rewritten.
+
+**Owner decisions taken:** seed to be **wiped and rebuilt** (not upserted),
+with dates **relative to today**; goods are sold at the **Restaurant as well
+as the Canteen**, so the catalogue's kind/location model is wrong today.
+
+**Handed over, not fixed:** `docs/sprints/handovers/SESSION-seed-rebuild-and-quantity-fixes.md`
+carries the seed spec (§2) and all 10 findings (§3). F1 and F6 need an owner
+product decision before coding. Sequence: seed rebuild first (it resolves
+F3/F5/F10 and makes the rest visible), then the code fixes.
+
+---
+
+## Post-M2 — dev seed wiped and rebuilt (Developer — 2026-09-02) — DONE
+
+Task 0 of `SESSION-seed-rebuild-and-quantity-fixes.md` §2. `prisma/seed.ts`
+rewritten from an upsert-onto-existing script into a **wipe + rebuild**,
+per the owner decision recorded in the audit entry above. Only the seed
+changed — no `app/**`, no `lib/**`, no schema, no migration.
+
+**What the new seed lays down.** 18 products · 91 stock movements over 7
+business days · 20 orders / 34 lines · 7 canteen stock counts · 26 money
+movements · 6 customers · 4 assets. Dates are recomputed from `SEED_NOW`
+on every run, so it never goes stale.
+
+**Three audit findings are closed by the data itself:**
+
+- **F3** — every order now writes its `sale` `StockMovement` rows. The old
+  seed early-returned when an order id already existed, so a re-seed left
+  10 orders with zero sale movements. Verified: 20/20 orders have exactly
+  one sale row per line.
+- **F5** — each canteen count writes its paired derived `sale` movement
+  and `canteen_sale` `MoneyMovement`, so `unitsSold` and `revenue` agree.
+  Was `unitsSold "0.0000"` against `revenue "2880.00"`; now Soda 22/1320,
+  Groundnuts 30/900, Mandazi 34/680, and the zero-sold count reads 0/0.00.
+- **F10** — product kinds corrected. Sodas, Water, Mandazi, Groundnuts,
+  Bar Soap and Glucose are `goods`, not `dish`, so **Record Batch
+  Production no longer offers Soda 300ml as a thing to cook**. Enforced
+  and verified: 0 `production` rows name a non-dish, and 0 ingredients
+  hold stock outside the Store. Goods reach the Restaurant/Canteen by
+  `purchase_receipt` or `transfer` only.
+
+**Ledger coverage.** Every `COLUMN_FOR_TYPE` column is non-empty on some
+day of the week (purchases, issues, production, transferIn, transferOut,
+sold, plus `non_sale_consumption`). 9–12 resting products per day exercise
+the resting-rows fix. One product (Chicken Breast, −2) ends negative on
+purpose. One accepted transfer, two pending dispatches (the incoming
+banner), and one corrected `purchase_receipt` using the correction-entry
+pattern.
+
+**Verification.** Ledger closing recomputed against `getDerivedStockBalances`
+for all 7 days: **0 mismatches**. Customer balances resolve to the four
+intended states (owing 320 · settled · owing 500 · in credit −100) plus
+two with no history. Stock-count preview drives correctly end-to-end:
+counting 70 Soda derives 10 sold / KES 600, and an impossible count of 999
+blocks with `exceedsExpectedBy 919`. Seed run three times consecutively —
+identical row counts every time.
+
+**Two constraints found while building it, both now encoded in the file:**
+
+- **`AuditLog.userId` is a RESTRICT foreign key onto `user`.** The handover
+  said "do not delete AuditLog (79 rows of real history)", which makes
+  deleting Users impossible. So `wipe()` spares User / Staff / Location and
+  §2 **upserts** them by their unique `name` instead — every audit entry
+  stays correctly attributed. Non-seed logins are deactivated, not deleted.
+  Orphaned `Staff` rows from the old underscore id convention
+  (`seed-staff-store_manager` vs `seed-staff-store-manager`) *are* deleted —
+  Staff carries no AuditLog FK, and they were surfacing as phantom staff.
+- **Today's canteen count is dated to the morning (06:30), not the evening.**
+  `deriveStockCount` refuses a count at or before an existing one ("counts
+  must move forward in time"), so an evening-dated count today would block
+  the attendant from recording a live one during a walkthrough.
+
+**Deliberately not seeded.** Recipe, RecipeIngredient, Handover,
+ReceiptOfHandover, HandoverShortfall, OwnerTransaction, Attendance,
+StaffPayAdjustment, DayClose — no UI. Expense — has a screen but **no
+`app/api/expenses` route** (verified this session), so seeding it would
+create invisible data. This is the handover §2.3 rule applied.
+
+**F4 now reproduces on a known date.** The ledger's 7-day reconciliation is
+exact on every day *except* the opening day, where it reports Closing 0
+against true balances of 40/25/30 — exactly the F4 symptom
+(`COLUMN_FOR_TYPE.opening` is `null`, so an opening row feeds no column and
+the prior day's closing is 0). That is a code bug for the next session, not
+a seed defect; the seed just makes it reproducible on demand.
+
+**Gate:** `pnpm test` 597/597 (73 files) · `pnpm typecheck` 0 · `pnpm build`
+clean.
+
+**Note for the next session.** The handover's F7 fix names
+`nairobiBusinessDate()`. That function does not exist — the helper is
+`toBusinessDate(new Date())` in `lib/time`.
+
+**Still open:** all 10 findings' *code* fixes (F1, F2, F4, F6, F7, F8, F9,
+and any F10 data migration for rows created through the UI). F1 and F6
+still need an owner product decision before coding — see
+`docs/sprints/m2-quantity-audit.md` §3.1 and §3.6.
+
+---
+
+## Post-M2 — Store opening stock seeded + additive readouts made honest (Developer — 2026-09-02) — DONE
+
+**Owner walkthrough finding (follow-on).** With the Restaurant
+re-activated, the SM flows split cleanly: Record Batch Production and
+Transfer Stock read correctly, but **Issue Ingredients** and **Log
+Non-Sale** showed "None on hand" for every item, and **Receive Goods**
+showed Carrots "On hand: 1 kg". Two independent causes, both now closed.
+
+**Cause 1 — the Store ledger was genuinely empty (data, not a bug).**
+`prisma/seed.ts` seeded opening stock at the Canteen and production at
+the Restaurant, and created the Store's ingredient `Product` rows, but
+never a Store `ProductLocation` and never a Store `opening` movement. The
+only Store row in the ledger was the owner's own test Rice
+`purchase_receipt` (10 kg) — so every other balance summed to a correct
+0. "Opening = yesterday's closing" (ADR-11 / ADR-40) carries a balance
+forward only if there was one; the Store was never given its one-time
+opening figure.
+
+**Fix:** a Store block in `prisma/seed.ts` — each ingredient gets a
+`ProductLocation` at the Store (`sellingPrice: null` — a Store is
+stocked, not sold-at) and one `opening` movement dated 4 days back, keyed
+`seed-sm-store-open-<key>` so a re-seed is a no-op. Figures: Cooking oil
+40 litre, Carrots 25 kg, Beans 30 cups. The `at()` wall-clock-Nairobi
+helper was lifted from `seedM2Sales` to module scope so both use it.
+
+Two seed judgement calls worth recording:
+- **No seeded Rice.** The owner's dev DB already has a Rice created
+  through the app (non-seed id); adding `seed-product-rice` put two
+  identical "Rice" rows in every Store picker. Dropped, and the stray
+  rows from the first run were removed.
+- **Soft-deleted products are skipped.** `seed-product-beans` was
+  soft-deleted through the Catalog on 2026-08-27. The `upsert`'s
+  `update: {}` already declined to resurrect it, but the block would
+  still have written a `ProductLocation` + opening row for a product no
+  read path returns. Added a `product.deletedAt !== null` guard; the
+  stray Beans rows from the first run were removed. (The owner then
+  un-archived Beans mid-session and a re-seed gave it its 30 cups — the
+  guard is what makes that work: un-archive, re-seed, done.)
+
+**Cause 2 — the additive flows fabricated stock (m2-followups #16).**
+`movement-picker-flow.tsx` passed `Math.max(onHand, lineQty, 1)` as an
+additive row's `available`, to dodge two `SelectableProductRow`
+behaviours at once: the §9.8 over-available BLOCK, and `available === 0
+⇒ row inert`. The `, 1` floor meant a true balance of 0 read
+**"On hand: 1"** — the same defect that made the inactive-Restaurant bug
+present as a screen of fake `1`s.
+
+**Fix (screen-only, kit untouched).** Additive rows now pass the TRUE
+`onHand`. An `AdditiveProductRow` wrapper in the screen file handles the
+single state the kit gets wrong for an additive flow — on-hand 0 — and
+delegates everything else to the kit unchanged: an unselected 0-row reads
+an honest "On hand: 0" and stays selectable; a selected one keeps a live
+stepper (a sibling `ZeroStockAdditiveStepperRow` mirroring the kit's
+ADR-43 / ADR-48 stepper contract), with no ceiling, since adding stock
+can never be "over available". Spend flows (Issue / Transfer / Non-sale /
+Dispatch) are unchanged — a 0 balance still reads "None on hand" and the
+row stays inert, as drawn. The kit `neverBlocks` prop
+(m2-followups #1) would delete the wrapper; **not taken** — it needs
+owner sign-off and the kit is frozen.
+
+**Also fixed:** the balance read is now folded into the screen's
+`loading` / `error`. `useStockLevels.loading` / `.error` were both
+ignored, so a slow or failed `GET /api/stock-movements/balances` settled
+into a screen of honest-looking zeros instead of skeletons then
+`<ErrorState>` — mirrors how `transferLevels` / `canteen` were already
+folded in.
+
+**Verified live** (Store Manager on `pnpm dev`, real balances endpoint):
+Issue / Receive / Non-Sale now list Cooking oil 40 litre, Carrots 25 kg,
+Rice 10 kg; only genuinely-unstocked items read 0. Carrots reads
+"On hand: 25 kg" on Receive, not the fabricated 1.
+
+**Gates:** `pnpm test` **597/597** across 73 files · `pnpm typecheck` 0 ·
+`pnpm build` clean. New / changed specs:
+`tests/screens/store-manager-flows.screen.test.tsx` (+6 — additive
+0-readout, additive 0-selectability, production at 0, the spend-flow
+inert path, balance loading / error), `tests/screens/admin-ledger-resting-rows.screen.test.tsx`
+(+3, new — verified to fail 2/3 against the pre-fix `useLedger`), and
+`tests/screens/stock-levels.screen.test.tsx` (migrated to `useStockCard`,
++5 stock-card specs).
+
+**Noted, not fixed:** one flaky failure in `cashier-new-order.screen.test.tsx`
+appeared on a single run while a `prisma:seed` was executing concurrently,
+and did not reproduce on two subsequent full runs. Consistent with
+m2-followups **#17** (the suite runs against the dev DB) — the durable fix
+is still a throwaway `test:db`.
+
+**Ledger rows fixed (owner escalation, same session) — m2-followups #19
+now DONE.** The owner asked why the seeded opening stock wasn't visible in
+the ledger, then sent a screenshot of `/admin/stock` showing **3 rows**. It
+was not a seeding gap: the three visible rows were exactly the three
+product/location pairs that had **moved that day**. Two distinct defects:
+
+**(a) The Admin ledger dropped every resting product.** `useLedger`
+(`app/admin/stock/use-stock.ts`) built its candidate `(product, location)`
+pairs from **this day's movements only**, so a product holding stock but
+not moving on the selected day never got a `priorClosing` entry and so
+never got a row. `deriveLedgerRows` already had a branch written for
+exactly this case (`derive-ledger.ts` — surface a pair whose opening is
+non-zero even with no movements); it could never fire, because the pair
+never arrived. Fix: seed the pairs from the catalogue's `ProductLocation`
+set plus the day's movements, skipping soft-deleted products; a pair with
+a 0 opening and no movement is still dropped. **3 rows → 15** on the
+owner's data — and the hidden stock was not only the Store's: the
+Restaurant's Chicken Stew 40 / Samosa 60 and the Canteen's Soda 192 were
+equally invisible on any day they didn't move. The screenshot corroborated
+the diagnosis: Restaurant Chapati already showed Opening 120.0, so the
+carry-forward arithmetic was never broken — only the row set was.
+
+**(b) Mobile Stock Levels had no day framing.** `/store-manager/stock` and
+`/canteen/stock` rendered a bare current balance. Now a stock card per row
+— **opening → the day's signed movement → closing** — via a new
+`useStockCard` hook. Opening is derived, never stored (ADR-11 / ADR-40):
+`balances(asOf = previousBusinessDate(date))`. A resting product reads
+`Open 40 · — · Close 40`; the headline figure is the day's closing; the
+summary strip gained a "Moved" count. Non-stock movement types
+(`opening`, `closing`, `purchase_payment`, `stock_count`) are excluded
+from the delta, mirroring the Admin grid's `COLUMN_FOR_TYPE` nulls.
+Business date via `toBusinessDate` (`Africa/Nairobi`), never server-local.
+
+Neither fix writes rows or changes the ledger model — both derive at read
+time, so append-only + "corrections are new rows" stand untouched.
+Verified live as Store Manager: Beans `Open 30 · — · Close 30`, Carrots
+`Open 25 · — · Close 25`, Cooking oil `Open 40 · — · Close 40`, Rice
+`Open 0 · +10 · Close 10`.
+
+**Owner's model confirmed correct.** The owner's premise — "yesterday's
+closing should automatically be today's opening" — is exactly how the
+system works and always did: on-hand is a running `SUM(quantity)` over the
+append-only ledger, so carry-forward needs no daily re-write. Verified by
+reading `asOf` 29 Aug → 2 Sep and getting Cooking oil 40 / Carrots 25
+unchanged at every step. What was broken was only which *rows* the two
+screens chose to render.
+
+**Left on the backlog:** m2-followups #17 (throwaway test DB), #18
+(Prisma 7 unescaped LIKE wildcards), and the Admin Locations management
+UI (no UI/API toggles `Location.active` — the hole that let the
+Restaurant silently go inactive). All need an owner scope decision.
+
+---
+
 ## Post-M2 — workflow streamlined + Restaurant re-activated (Tech Lead — 2026-09-02) — DONE
 
 **Owner walkthrough finding.** From the Store Manager account, Issue
