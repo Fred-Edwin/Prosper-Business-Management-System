@@ -1,39 +1,71 @@
 "use client";
 
-// M3 S3 refactor — the KPI stat strip, lifted verbatim out of
-// financials-client.tsx so that file can become a thin tab shell.
+// M3 S4 — the KPI stat strip, now WIRED to GET /api/financials/summary.
+// S3 left it as "—" / "M3" placeholders with a deferred-implementation
+// marker; the money-summary ledger exists now, so that marker is resolved
+// and gone. The desktop strip and the mobile 2×2 grid markup + their
+// semantic colours are unchanged — only the values are real.
 //
-// M1 Financials cut (milestone-1-plan §2 / ADR-36 D-FIN): the strip has NO
-// F2 data source (the MoneyMovement ledger is F3). Per the owner: keep the
-// markup, render all four values as "—" with an "M3" caption. Do NOT wire
-// it, do NOT delete the slot. No client-side money math.
-// TODO(mock): the KPI strip is intentionally unwired — full figures land
-// with the F3 MoneyMovement ledger (Milestone 3). Re-scoped, not forgotten.
+// The four tiles, all from `summary.consolidated`:
+//   • Total Business Liquidity = cashBalance + mpesaBankBalance  (running)
+//   • Cash                     = cashBalance                     (running)
+//   • M-Pesa / Bank Till       = mpesaBankBalance                (running)
+//   • Today's Total Outflows   = totalExpenses for the picked day
+//
+// Balances are running totals (range-independent); "outflows" is the
+// picked business date's logged expenses. Purchases and owner draws have
+// their own tabs — this tile is the expense-outflow at a glance.
 
 import * as React from "react";
+import type { FinancialSummary } from "@/lib/domain/financials";
 
-const KPI_TILES = [
-  "Total Business Liquidity",
-  "Cash",
-  "M-Pesa / Bank Till",
-  "Today's Total Outflows",
+/** "1,234,567.00" from a "1234567.00" decimal string. */
+function money(dec: string): string {
+  const n = Number(dec);
+  return Number.isFinite(n)
+    ? n.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    : dec;
+}
+
+function addDec(a: string, b: string): string {
+  return (Number(a) + Number(b)).toFixed(2);
+}
+
+type Tiles = { liquidity: string; cash: string; mpesa: string; outflows: string };
+
+function tilesFrom(summary: FinancialSummary | null): Tiles | null {
+  if (!summary) return null;
+  const c = summary.consolidated;
+  return {
+    liquidity: addDec(c.cashBalance, c.mpesaBankBalance),
+    cash: c.cashBalance,
+    mpesa: c.mpesaBankBalance,
+    outflows: c.totalExpenses,
+  };
+}
+
+const DESKTOP_ORDER: Array<{ label: string; key: keyof Tiles }> = [
+  { label: "Total Business Liquidity", key: "liquidity" },
+  { label: "Cash", key: "cash" },
+  { label: "M-Pesa / Bank Till", key: "mpesa" },
+  { label: "Today's Total Outflows", key: "outflows" },
 ];
 
-// Mobile KPI grid (artboard IQO-0): a dark 2×2 grid. Same four figures, still
-// unwired until the F3 MoneyMovement ledger (ADR-36 D-FIN) — rendered "—" / "M3"
-// with the artboard's semantic colour per cell, just made to fit 390px.
-const MOBILE_KPI_TILES: { label: string; tone: string }[] = [
-  { label: "Total liquidity", tone: "text-white" },
-  { label: "Cash at hand", tone: "text-success" },
-  { label: "M-Pesa / Bank", tone: "text-info" },
-  { label: "Today's outflows", tone: "text-danger" },
-];
-
-/** Desktop KPI stat strip — markup kept; values unwired until F3 (ADR-36 D-FIN). */
-export function KpiStripDesktop() {
+/** Desktop KPI stat strip — wired to the summary endpoint (S4). */
+export function KpiStripDesktop({
+  summary,
+  loading,
+}: {
+  summary: FinancialSummary | null;
+  loading: boolean;
+}) {
+  const tiles = tilesFrom(summary);
   return (
     <div className="flex [width:100%] items-center shrink-0 border border-solid [border-color:var(--border-subtle)]">
-      {KPI_TILES.map((label, i) => (
+      {DESKTOP_ORDER.map(({ label, key }, i) => (
         <React.Fragment key={label}>
           {i > 0 && (
             <div className="w-px self-stretch shrink-0 [background-color:var(--border-subtle)]" />
@@ -42,7 +74,7 @@ export function KpiStripDesktop() {
             className={`flex flex-col gap-(--sp-3) self-stretch justify-center py-(--sp-6) ${
               i === 0
                 ? "pr-(--sp-8)"
-                : i === KPI_TILES.length - 1
+                : i === DESKTOP_ORDER.length - 1
                   ? "pl-(--sp-8)"
                   : "px-(--sp-8)"
             }`}
@@ -51,12 +83,30 @@ export function KpiStripDesktop() {
               {label}
             </div>
             <div className="flex items-baseline gap-(--sp-3)">
-              <div className="font-mono font-(--weight-semibold) text-display/display [color:var(--text-tertiary)]">
-                —
-              </div>
-              <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
-                M3
-              </div>
+              {tiles ? (
+                <>
+                  <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
+                    KES
+                  </div>
+                  <div
+                    className={`font-mono font-(--weight-semibold) text-display/display ${
+                      key === "outflows"
+                        ? "text-danger"
+                        : "[color:var(--text-primary)]"
+                    }`}
+                  >
+                    {money(tiles[key])}
+                  </div>
+                </>
+              ) : (
+                <div
+                  className={`font-mono font-(--weight-semibold) text-display/display [color:var(--text-tertiary)] ${
+                    loading ? "kit-skeleton rounded-sm w-[110px] h-[1em]" : ""
+                  }`}
+                >
+                  {loading ? "" : "—"}
+                </div>
+              )}
             </div>
           </div>
         </React.Fragment>
@@ -65,11 +115,25 @@ export function KpiStripDesktop() {
   );
 }
 
-/** Mobile dark 2×2 KPI grid — present but unwired (— / M3, ADR-36 D-FIN). */
-export function KpiGridMobile() {
+const MOBILE_ORDER: Array<{ label: string; key: keyof Tiles; tone: string }> = [
+  { label: "Total liquidity", key: "liquidity", tone: "text-white" },
+  { label: "Cash at hand", key: "cash", tone: "text-success" },
+  { label: "M-Pesa / Bank", key: "mpesa", tone: "text-info" },
+  { label: "Today's outflows", key: "outflows", tone: "text-danger" },
+];
+
+/** Mobile dark 2×2 KPI grid — wired to the summary endpoint (S4). */
+export function KpiGridMobile({
+  summary,
+  loading,
+}: {
+  summary: FinancialSummary | null;
+  loading: boolean;
+}) {
+  const tiles = tilesFrom(summary);
   return (
     <div className="flex flex-wrap [background-color:var(--nav-bg)] shrink-0">
-      {MOBILE_KPI_TILES.map((tile, i) => (
+      {MOBILE_ORDER.map((tile, i) => (
         <div
           key={tile.label}
           className={`flex flex-col grow basis-[45%] p-(--sp-5) gap-(--sp-2) ${
@@ -80,14 +144,21 @@ export function KpiGridMobile() {
             {tile.label}
           </div>
           <div className="flex items-baseline gap-(--sp-3)">
-            <div
-              className={`font-mono font-(--weight-semibold) ${tile.tone} text-body/body`}
-            >
-              —
-            </div>
-            <div className="font-ui text-(--nav-text-label) text-micro/micro">
-              M3
-            </div>
+            {tiles ? (
+              <div
+                className={`font-mono font-(--weight-semibold) ${tile.tone} text-body/body`}
+              >
+                {money(tiles[tile.key])}
+              </div>
+            ) : (
+              <div
+                className={`font-mono font-(--weight-semibold) text-(--nav-text-label) text-body/body ${
+                  loading ? "kit-skeleton rounded-sm w-[70px] h-[1em]" : ""
+                }`}
+              >
+                {loading ? "" : "—"}
+              </div>
+            )}
           </div>
         </div>
       ))}

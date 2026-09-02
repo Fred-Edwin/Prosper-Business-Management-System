@@ -1,22 +1,22 @@
 "use client";
 
-// M3 S3 — /admin/financials. One screen, one shared business-date picker
-// in the toolbar, and ONE inner tab row over transaction types:
+// M3 S4 — /admin/financials. One screen, one shared business-date picker
+// in the toolbar, and ONE inner tab row:
 //
-//   [ Stock Purchases ] [ Deliveries ] [ Handovers ]
+//   [ Stock Purchases ] [ Deliveries ] [ Handovers ] [ Expenses ]
+//   [ Owner Draws ] [ Profit ]
 //
 // The date picker (toolbar, defaults to today, no future) scopes every
-// tab — change the date and all three re-fetch for that Africa/Nairobi
-// business day. Expenses / owner draws (S4) slot in as more inner tabs
-// under the same date.
+// tab — change the date and everything re-fetches for that Africa/Nairobi
+// business day.
 //
-// The old ADR-46 "Reconciliation" table is gone: its four states folded
-// into a Status column on the Stock Purchases tab and a Match column on
-// Deliveries (one table language, the kit <SimpleTable>).
-//
-// KPI strip: markup + TODO(mock) kept (S4 Financials owns it), moved
-// below the tab row so a screen that currently shows only "—" doesn't
-// lead with dead tiles.
+// S4 additions:
+//   • The KPI strip is WIRED (was "—"/"M3", deferred in S3): the shell
+//     fetches GET /api/financials/summary for the picked day and hands it
+//     to <KpiStripDesktop> / <KpiGridMobile>.
+//   • Three new inner tabs: Expenses, Owner Draws, Profit — all scoped to
+//     the toolbar date and sharing the one summary fetch where they need
+//     figures from it.
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
@@ -25,17 +25,35 @@ import { DatePicker } from "@/components/kit/date-picker";
 import { Button } from "@/components/kit/button";
 import { TransactionsTab, type TxTabKey } from "./transactions-tab";
 import { KpiStripDesktop, KpiGridMobile } from "./kpi-strip";
+import { ExpensesView } from "./expenses-tab";
+import { OwnerDrawsView } from "./owner-draws-tab";
+import { ProfitSummaryView } from "./profit-summary";
 import { nairobiBusinessDate } from "./use-handovers";
+import { useFinancialSummary } from "./use-financials";
 
-export type FinancialsTabKey = TxTabKey;
+export type FinancialsTabKey =
+  | TxTabKey
+  | "expenses"
+  | "owner-draws"
+  | "profit";
 
 const TABS = [
   { key: "purchases" as const, label: "Stock Purchases", panelId: "fin-panel-purchases" },
   { key: "deliveries" as const, label: "Deliveries", panelId: "fin-panel-deliveries" },
   { key: "handovers" as const, label: "Handovers", panelId: "fin-panel-handovers" },
+  { key: "expenses" as const, label: "Expenses", panelId: "fin-panel-expenses" },
+  { key: "owner-draws" as const, label: "Owner Draws", panelId: "fin-panel-owner-draws" },
+  { key: "profit" as const, label: "Profit", panelId: "fin-panel-profit" },
 ];
 
-const VALID: readonly TxTabKey[] = ["purchases", "deliveries", "handovers"];
+const VALID: readonly FinancialsTabKey[] = [
+  "purchases",
+  "deliveries",
+  "handovers",
+  "expenses",
+  "owner-draws",
+  "profit",
+];
 
 /** `YYYY-MM-DD` → "Sep 2, 2026" for the DatePicker trigger. */
 function fmtTriggerDate(ymd: string): string {
@@ -75,6 +93,13 @@ export function FinancialsClient({
   const today = nairobiBusinessDate();
   const isToday = date === today;
 
+  const {
+    summary,
+    loading: summaryLoading,
+    error: summaryError,
+    refresh: refreshSummary,
+  } = useFinancialSummary(date);
+
   // The payment drawer's open state lives in <TransactionsTab>; it hands
   // the shell a callback so the toolbar "Record Payment" button (Purchases
   // tab only) can trigger it.
@@ -84,8 +109,11 @@ export function FinancialsClient({
   }, []);
 
   const changeTab = React.useCallback((key: string) => {
-    setTab(VALID.includes(key as TxTabKey) ? (key as TxTabKey) : "purchases");
+    setTab(VALID.includes(key as FinancialsTabKey) ? (key as FinancialsTabKey) : "purchases");
   }, []);
+
+  const isTxTab =
+    tab === "purchases" || tab === "deliveries" || tab === "handovers";
 
   return (
     <PageShell
@@ -113,13 +141,12 @@ export function FinancialsClient({
         </>
       }
     >
-      {/* KPI strip — above the tab row (markup + TODO(mock) kept; S4 wires
-          the values). Financials & Expenses → KPI strip → tab selector. */}
+      {/* KPI strip — wired to the summary endpoint (S4). */}
       <div className="hidden md:block pt-(--sp-6)">
-        <KpiStripDesktop />
+        <KpiStripDesktop summary={summary} loading={summaryLoading} />
       </div>
       <div className="md:hidden">
-        <KpiGridMobile />
+        <KpiGridMobile summary={summary} loading={summaryLoading} />
       </div>
 
       <div className="px-(--sp-6) md:px-0 pt-(--sp-6)">
@@ -132,12 +159,30 @@ export function FinancialsClient({
         aria-labelledby={`fin-tabs-tab-${tab}`}
         className="flex flex-col grow min-h-0"
       >
-        <TransactionsTab
-          tab={tab}
-          date={date}
-          isToday={isToday}
-          registerRecordPayment={registerRecordPayment}
-        />
+        {isTxTab ? (
+          <TransactionsTab
+            tab={tab as TxTabKey}
+            date={date}
+            isToday={isToday}
+            registerRecordPayment={registerRecordPayment}
+          />
+        ) : tab === "expenses" ? (
+          <ExpensesView key={date} date={date} onMutated={refreshSummary} />
+        ) : tab === "owner-draws" ? (
+          <OwnerDrawsView
+            key={date}
+            date={date}
+            owedToBusiness={summary?.consolidated.ownerOwedToBusiness ?? null}
+            onMutated={refreshSummary}
+          />
+        ) : (
+          <ProfitSummaryView
+            summary={summary}
+            loading={summaryLoading}
+            error={summaryError}
+            onRetry={refreshSummary}
+          />
+        )}
       </div>
     </PageShell>
   );

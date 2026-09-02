@@ -2366,3 +2366,130 @@ Until then: no money row.
 
 **No `TODO(mock)`** — this is a decision, not a deferral. There is
 nothing stubbed.
+
+> **Context added Milestone 3 Session 4 (2026-09-02) — the split is NOT
+> happening (owner decision).** Session 4 (Financials) considered the
+> till-vs-hand account split described in the hook above and the owner
+> decided **against it for now**. The `MoneyAccount` model stays
+> `cash | mpesa_bank`; "Cash at hand" continues to count takings from the
+> moment of sale. No `handover_receipt` `MoneyMovement` is written; no
+> account dimension is added. The reserved `handover_receipt` enum value
+> remains reserved for a future session if the owner ever wants the
+> split. Session 4 verified from inside the code that the no-split model
+> holds together: a handover receipt still writes nothing, so the day's
+> revenue is counted exactly once and the profit figures in ADR-55 are
+> unaffected by handovers.
+
+---
+
+## ADR-55: Cost of Goods Sold — one all-stock valuation sweep, dishes valued at zero; non-sale consumption is a separate report with a configurable dish cost proxy (Developer, Milestone 3 Session 4, 2026-09-02)
+
+**Context:** PRD §3 (as originally written) and ADR-33 scoped Dish COGS to
+an **ingredients-only** sweep: `opening ingredient stock + ingredient
+purchase receipts − closing ingredient stock`, blended business-wide, with
+a separate per-unit `buying_price` sweep for Goods. Session 4, building
+`getFinancialSummary`, surfaced the client's actual method with the owner.
+It is simpler and it is not what those docs said. This ADR supersedes the
+COGS formula in PRD §3 and the Dish-COGS mechanics in ADR-33 §2 (ADR-33's
+core principle — *recipes never touch a financial figure* — still stands).
+
+**Decision.**
+
+### 1. Cost value by product kind
+
+Every product has a **cost value** used for all stock valuation:
+
+| Kind | Cost value |
+|---|---|
+| `ingredient` | `buyingPrice` |
+| `goods` | `buyingPrice` |
+| `dish` | **0** (already enforced — `create-product.ts` fixes Dish `buyingPrice` to 0, ADR-33) |
+
+Double-counting is prevented **by dishes being valued at zero**, not by
+excluding them from the sweep. The ingredients that became a dish were
+already counted as ingredients when they were bought and when they left
+stock.
+
+### 2. COGS — one sweep, all products, all locations
+
+```
+COGS (period) = opening stock value + purchases value − closing stock value
+```
+
+- Each valuation is `Σ quantity × costValue(product)` over every
+  `StockMovement` for that product/location.
+- **Opening value** = movements with `occurredAt <` period start.
+  **Closing value** = movements with `occurredAt <` period end.
+- **Purchases value = purchase RECEIPTS only** (`movementType =
+  "purchase_receipt"` in the period). NOT production, NOT transfers, NOT
+  opening adjustments. Only stock the business actually bought in counts
+  as "added".
+- **Transfers between the business's own locations are excluded** by
+  construction: a transfer is not in the purchases term, and its two
+  signed legs (`−q` at source, `+q` at destination) net to zero across
+  the opening/closing deltas. Counting a transfer would inflate COGS
+  because nothing entered the business.
+- Production only ever adds a `dish` (cost value 0), so it contributes
+  nothing — but the scoping to `purchase_receipt` is explicit, not
+  reliant on that.
+
+Because dishes value at 0, COGS reduces to *the cost of the ingredients
+and goods that left the business in the period* — the intent.
+
+Per-location COGS is the same sweep restricted to one location. Revenue
+and COGS (and therefore gross profit) are location-attributable; `Expense`
+rows carry no location, so **total expenses, net profit and debts are
+consolidated only**.
+
+### 3. Non-sale consumption cost — a SEPARATE report, a view INTO COGS
+
+The Admin wants to see what waste, staff meals and complimentary items
+cost her, broken out by reason (`staff_meal` / `complimentary` /
+`spoiled` / `damaged` / `other` — already on every `non_sale_consumption`
+row).
+
+**This figure is NOT added to COGS and does NOT reduce Gross or Net
+Profit.** When stock is consumed without a sale it leaves the ledger, so
+it is *already inside the COGS sweep* (it lowered closing stock). The
+separate report is an estimate of a cost that is already counted — a view
+into COGS, shown for management visibility. Adding it on top would
+double-count the same food. This sentence is load-bearing: it is what
+stops a future session from "fixing" the profit calc by subtracting waste
+a second time.
+
+Valuation per consumed unit:
+
+| Kind | Non-sale consumption cost |
+|---|---|
+| `ingredient` / `goods` | `buyingPrice` |
+| `dish` | `dishWasteCostPercent × sellingPrice` |
+
+A Dish has no `buyingPrice`, so its waste cost uses a **percentage of
+selling price as a cost proxy** — a dish selling at KES 100 is assumed to
+have cost ~KES 60 to make. This proxy is used **only** in this report.
+
+### 4. `dishWasteCostPercent` is configurable
+
+Default **0.60**. Single source of truth: `lib/domain/financials/config.ts`
+(`getDishWasteCostPercent()`), overridable via the
+`DISH_WASTE_COST_PERCENT` environment variable (a decimal fraction in
+`(0, 1]`; invalid/out-of-range falls back to the default). It is never
+hard-coded elsewhere. Changing it changes the non-sale consumption report
+and nothing else — COGS, Gross Profit and Net Profit are untouched.
+
+**Consequences.**
+
+- PRD §3 rewritten to this model; SCHEMA §14 to be reconciled next time it
+  is touched (the formulas there still describe the ingredients-only
+  split). ADR-33 §2 is superseded on mechanics; its recipe-isolation
+  principle stands.
+- `getFinancialSummary(from, to)` returns `perLocation` (revenue / cogs /
+  grossProfit), `consolidated` (revenue / cogs / grossProfit /
+  totalExpenses / netProfit / debtsOwedToBusiness / ownerOwedToBusiness /
+  cash + mpesaBank balances) and `nonSaleConsumption` (total + byReason +
+  the percentage in effect) — the last as a clearly separate block.
+- Frontend (`profit-summary.tsx`) renders the non-sale figure well clear
+  of the Revenue → COGS → Net stack, captioned "already inside the COGS
+  figure above", leading with the reason breakdown — so no reader totals
+  the two.
+- No `TODO(mock)` — this is the real implementation.

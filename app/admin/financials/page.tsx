@@ -2,10 +2,10 @@
 // app/admin/layout.tsx's <AdminShell>; renders the approved content region
 // only. The interactive container lives in ./financials-client.tsx.
 //
-// M3 S3: one screen, one toolbar business-date picker, and one inner tab
-// row over transaction types — Stock Purchases / Deliveries / Handovers.
-// `?tab=` (`purchases` | `deliveries` | `handovers`) deep-links a tab so
-// the Handovers nav item and a refresh land in the right place.
+// M3 S3/S4: one screen, one toolbar business-date picker, and one inner
+// tab row — Stock Purchases / Deliveries / Handovers / Expenses / Owner
+// Draws / Profit. `?tab=` deep-links a tab so the Handovers nav item and
+// a refresh land in the right place.
 
 import type { Metadata } from "next";
 import { FinancialsClient, type FinancialsTabKey } from "./financials-client";
@@ -16,7 +16,14 @@ export const metadata: Metadata = {
     "Stock purchases, deliveries and end-of-day cash / M-Pesa handover reconciliation, by business day.",
 };
 
-const TABS = ["purchases", "deliveries", "handovers"] as const;
+const TABS = [
+  "purchases",
+  "deliveries",
+  "handovers",
+  "expenses",
+  "owner-draws",
+  "profit",
+] as const;
 
 export default async function AdminFinancialsPage({
   searchParams,

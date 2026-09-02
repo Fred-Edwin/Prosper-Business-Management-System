@@ -15,6 +15,127 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 3 Session 4 — Financials: expenses, owner draws, profit (Developer — 2026-09-02) — DONE · **M3 COMPLETE**
+
+**Shipped (full-stack — backend + frontend + check).**
+
+- **`lib/domain/financials/` extended** (not a new module):
+  - `recordExpense` — Admin-only. Writes the `Expense` row **and** a paired
+    negative `MoneyMovement` (`sourceType: "expense"`) debiting
+    `paidFromAccount`, one transaction — the `recordPurchasePayment`
+    pattern. Day-close gated (`assertDayOpen`); Admin exempt from the
+    today-only rule so a past-dated expense on an open day is allowed.
+  - `correctExpense` — append-only via `correctsExpenseId`. Admin-only,
+    **not** day-close gated. Delta measured against `original + Σ existing
+    deltas` (M1 F-1 guard — double-submit is delta-0 → `VALIDATION_ERROR`;
+    can't correct a correction). Writes the delta `Expense` row + a paired
+    delta `MoneyMovement`.
+  - `recordOwnerTransaction` — draw (`−` cash, `owner_draw`) / return (`+`
+    cash, `owner_return`), each a `MoneyMovement`. Day-close gated.
+  - `getOwnerOwedToBusiness` — `Σ draws − Σ returns`, DERIVED by grouping
+    `OwnerTransaction` rows (no stored counter — CLAUDE.md non-negotiable).
+  - `listExpenses` (date + category filter, corrections folded),
+    `listOwnerTransactions`.
+  - `getFinancialSummary(from, to)` — the profit calc (see COGS model
+    change below): `perLocation` (revenue / cogs / grossProfit) +
+    `consolidated` (revenue / cogs / grossProfit / totalExpenses /
+    netProfit / debtsOwedToBusiness / ownerOwedToBusiness / cash +
+    mpesaBank balances) + `nonSaleConsumption` (separate).
+  - `config.ts` — `getDishWasteCostPercent()`, default 0.60, env override
+    `DISH_WASTE_COST_PERCENT`. Single source of truth (ADR-55 §4).
+- **API** (`app/api/`, all Admin-only, thin handlers): `POST/GET
+  /api/expenses`, `POST /api/expenses/:id/correct`, `POST/GET
+  /api/owner-transactions`, `GET /api/financials/summary?from=&to=`. Zod
+  in `lib/validation/financials.ts`. `GET /api/financials/balances` was
+  **not** built — those figures are all in `summary.consolidated`.
+- **Frontend** (`app/admin/financials/`, composed from the frozen kit,
+  siblings `handovers-tab.tsx` / `transactions-tab.tsx`):
+  - **KPI strip WIRED** — `kpi-strip.tsx` now takes `summary` + `loading`;
+    the shell fetches `useFinancialSummary(date)` and passes it. The four
+    tiles = liquidity (cash+mpesa) / cash / mpesa / today's expenses.
+    **`TODO(mock)` deleted.** Desktop strip + mobile 2×2 markup + semantic
+    colours unchanged; only values are real. Em-dash until the summary
+    resolves.
+  - **Expenses tab** — `expenses-tab.tsx` + `expense-drawer.tsx`
+    (create + correct modes) + `use-financials.ts`. Table + entry drawer
+    (category / amount / date / paid-from / note); per-row "Correct". A
+    create/correct refreshes the summary + KPIs.
+  - **Owner Draws tab** — `owner-draws-tab.tsx` + `owner-draw-drawer.tsx`.
+    Draw/return log + the running **"Owed back to the business"** figure
+    from `consolidated.ownerOwedToBusiness`.
+  - **Profit tab** — `profit-summary.tsx`. Revenue → COGS → Gross →
+    Expenses → Net stack (consolidated); position tiles (cash / M-Pesa /
+    debts owed / owed by owner); per-location table (revenue / cogs /
+    gross). The **non-sale consumption** figure is a separate block, well
+    clear of the Net stack, captioned "already inside the COGS figure
+    above", leading with the by-reason breakdown — so no reader totals the
+    two (per orchestrator guidance).
+  - `financials-client.tsx` inner tab row now 6 tabs; `page.tsx` `?tab=`
+    accepts the 3 new keys.
+- **Seed** (`prisma/seed.ts`, new §8): today's handovers (exact-match
+  received, shortfall received + note, declared-not-received),
+  6 expenses across the week (cash + mpesa), 3 owner transactions
+  (2 draws + 1 return → owed = 4,000). Stale header comment updated —
+  Handover / ReceiptOfHandover / HandoverShortfall / Expense /
+  OwnerTransaction removed from the exclusion list; Recipe / Attendance /
+  StaffPayAdjustment / DayClose stay excluded (M4).
+
+**COGS model changed mid-session (orchestrator + owner).** The
+ingredients-only sweep in PRD §3 / ADR-33 §2 was **wrong**. Corrected
+model (now ADR-55, PRD §3 rewritten):
+- **COGS = opening stock value + purchase-RECEIPT value − closing stock
+  value**, over EVERY product at EVERY location. Valued by kind:
+  ingredient/goods → `buyingPrice`, dish → **0** (dishes value at zero is
+  what prevents double-counting, not excluding them). "Added" = purchase
+  receipts only — production, transfers, opening excluded. Transfers
+  between the business's own locations never move COGS.
+- **Non-sale consumption cost is a SEPARATE report — a view INTO COGS,
+  not an addition.** Wasted stock already left the ledger and is already
+  in the sweep. Valued: ingredient/goods → `buyingPrice`; dish →
+  `dishWasteCostPercent × sellingPrice` (configurable, default 0.60).
+  Broken out by reason.
+
+**Verified.**
+- Domain: `expenses.test.ts` (9), `owner-transactions.test.ts` (5),
+  `get-financial-summary.test.ts` (8) + the pre-existing `record-money-
+  movement` / `get-account-balances` suites — 29 financials tests green.
+  The profit chain asserts exact figures on a controlled fixture:
+  **revenue 5,000 · COGS 5,000 (goods sweep 2,000 + ingredient sweep
+  3,000, dishes valued 0) · gross 0 · expenses 400 · net −400**; plus
+  explicit tests that a dish contributes 0 to valuation, a transfer
+  doesn't move COGS, production doesn't inflate COGS, a waste event
+  doesn't add to COGS on top, dish waste values at `% × sellingPrice`,
+  and changing the config `%` changes the waste figure but not COGS.
+- Route: admin-only gates on all 4 endpoints (10 tests).
+- Screen: `admin-financials-expenses.screen.test.tsx` — expense drawer
+  submit, expense correct, owner-draw submit + owed figure, KPI tiles
+  rendering real values + em-dash fallback (5 tests). `financials.screen.
+  test.tsx` updated (KPI "M3" placeholder gone).
+- `pnpm test` (full suite), `pnpm typecheck`, `pnpm build` — green.
+- `pnpm dev` as Admin: logged an expense → cash moved by exactly −750;
+  logged a draw (−1000 cash, +1000 owed) and a return (+400 cash, −400
+  owed); recorded a handover receipt → **cash unchanged** (no double-
+  count, ADR-54 no-split holds); non-sale consumption over a past range
+  read spoiled 100 (Carrots 2 × 50 buying) + staffMeal 360 (Chicken Stew
+  3 × 0.60 × 200 selling), and net profit did NOT absorb it.
+
+**Changed from plan / notes for M4.**
+- No `milestone-3-plan.md` (M3 ran without one, per the S1–S3 handoffs).
+- The seed now creates **today-dated handovers**. Three unscoped
+  `handovers.test.ts` admin-wide reads (`getReconciliation(today)` /
+  `listHandovers({}, admin)`) assumed an empty "today" and broke — fixed
+  to assert on their own rows / on deltas. M4 authors: any new test that
+  reads "all rows for today" must scope to its own fixtures.
+- SCHEMA §14 still describes the old ingredients-only COGS split — flagged
+  in ADR-55 to reconcile next time it's touched.
+- `Expense` has no location column and Dish COGS is not per-location, so
+  per-location profit is revenue/COGS/gross only; expenses, net profit,
+  debts are consolidated. Called out in the UI and ADR-55.
+- The no-split decision (ADR-54) was verified from inside the code and is
+  sound — recorded as a context block on ADR-54, not a new ADR.
+
+---
+
 ## Milestone 3 Session 3 — Handover UI (Admin reconciliation tab + staff declare screens) (Developer — 2026-09-03) — DONE
 
 **Shipped.**

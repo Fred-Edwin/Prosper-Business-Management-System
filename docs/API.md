@@ -713,22 +713,101 @@ can eyeball the ledger.
 
 ## Financials
 
+> **Implemented M3 Session 4 (2026-09-02).** Expenses, owner transactions
+> and the profit summary are live. Every figure is derived on read from
+> the ledger tables — nothing is stored. All routes **Admin only** (`401`
+> unauthenticated, `403` any other role). Money crosses the wire as
+> decimal strings. COGS model: see ADR-55.
+
 ### `POST /api/expenses`
-Roles: Admin. Body: `{ category, amount, date, paid_from_account, note? }`.
+Roles: **Admin only.** Body: `{ category, amount, date, paidFromAccount, note? }`
+— `category` ∈ `rent | utilities | transport | gas_fuel | salaries |
+repairs | other`; `amount` decimal string > 0; `date` `YYYY-MM-DD`
+(Africa/Nairobi business date); `paidFromAccount` ∈ `cash | mpesa_bank`.
+Writes the `Expense` row **and** a paired negative `MoneyMovement`
+(`sourceType: "expense"`) debiting `paidFromAccount`, in one transaction.
+Day-close gated — a fresh expense on a sealed day → `403 FORBIDDEN`
+(correct it instead). `201` with the created `ExpenseView`
+(`{ id, category, amount, date, paidFromAccount, note, recordedById,
+corrected, occurredAt }`).
 
 ### `POST /api/expenses/:id/correct`
-Roles: Admin. Body: `{ corrected_amount, note? }`.
+Roles: **Admin only.** Body: `{ amount, note? }` — `amount` is the
+**corrected final amount** (decimal string > 0), not a delta. Append-only
+(ADR-15): writes a new `Expense` row linked via `correctsExpenseId`
+carrying the signed delta, plus a paired delta `MoneyMovement`. Delta is
+measured against the current derived amount (original + Σ existing
+deltas), so a re-submit of the same amount → `400 VALIDATION_ERROR`
+("nothing to correct"). `:id` must be an **original** expense — a
+correction row → `400 VALIDATION_ERROR` (corrections don't chain).
+**Not** day-close gated. `200` with the folded `ExpenseView`.
+
+### `GET /api/expenses`
+Roles: **Admin only.** Query: `?from=&to=&category=` (all optional;
+`from`/`to` are inclusive `YYYY-MM-DD` business dates). Returns
+`ExpenseView[]`, newest first, corrections folded into each row's
+`amount` (correction rows never returned on their own; `corrected: true`
+flags a row that has been corrected).
 
 ### `POST /api/owner-transactions`
-Roles: Admin. Body: `{ type: "draw|return", amount, date, note? }`.
+Roles: **Admin only.** Body: `{ type: "draw" | "return", amount, date, note? }`.
+A `draw` writes a negative `MoneyMovement` on `cash` (`sourceType:
+"owner_draw"`); a `return` writes a positive one (`owner_return`).
+Day-close gated. `201` with the `OwnerTransactionView`
+(`{ id, type, amount, date, note, occurredAt }`).
 
-### `GET /api/financials/balances`
-Roles: Admin. Returns derived Cash at hand, M-Pesa/Bank, "owed to
-business" — each computed on read from `MoneyMovement`.
+### `GET /api/owner-transactions`
+Roles: **Admin only.** Query: `?from=&to=` (optional inclusive
+`YYYY-MM-DD` range). Returns `OwnerTransactionView[]`, newest first.
 
 ### `GET /api/financials/summary`
-Roles: Admin. Query: `?location_id=&from=&to=`. Sales, cost, profit, debts,
-expenses — per location and consolidated (PRD §4.7).
+Roles: **Admin only.** Query: `?from=YYYY-MM-DD&to=YYYY-MM-DD` (both
+required; `400` if missing / malformed / `from > to`). Returns
+`FinancialSummary` (PRD §4.7 / SCHEMA §14 / ADR-55):
+
+```jsonc
+{
+  "from": "2026-09-01", "to": "2026-09-02",
+  "perLocation": [
+    { "locationId": "...", "locationName": "Restaurant",
+      "revenue": "3500.00", "cogs": "1000.00", "grossProfit": "2500.00" }
+  ],
+  "consolidated": {
+    "revenue": "5000.00", "cogs": "5000.00", "grossProfit": "0.00",
+    "totalExpenses": "400.00", "netProfit": "-400.00",
+    "debtsOwedToBusiness": "1200.00", "ownerOwedToBusiness": "4000.00",
+    "cashBalance": "25000.00", "mpesaBankBalance": "15000.00"
+  },
+  "nonSaleConsumption": {
+    "total": "740.00",
+    "byReason": { "staffMeal": "240.00", "complimentary": "0.00",
+                  "spoiled": "500.00", "damaged": "0.00", "other": "0.00" },
+    "dishWasteCostPercent": "0.60"
+  }
+}
+```
+
+- **Revenue** = Σ (units sold × selling price): live restaurant orders
+  (superseded originals dropped, correction rows kept) + canteen derived
+  sales, in the range.
+- **COGS** = opening stock value + purchase-**receipt** value − closing
+  stock value, over every product at every location; valued by kind
+  (ingredient/goods → `buyingPrice`, dish → 0). Transfers and production
+  never move it (ADR-55).
+- **Gross** = revenue − COGS. **Net** = gross − total expenses (Σ
+  `Expense.amount` in the range).
+- Per-location carries revenue/COGS/gross only — expenses, net profit and
+  debts are consolidated (Expense rows carry no location).
+- **`nonSaleConsumption`** is a SEPARATE figure — a view INTO COGS for
+  management visibility, **not** added on top of it. Ingredient/goods
+  waste valued at `buyingPrice`; dish waste at `dishWasteCostPercent ×
+  sellingPrice` (default 0.60, env-configurable — ADR-55 §4).
+
+> `GET /api/financials/balances` (Cash / M-Pesa / owed-to-business) was
+> planned as its own route; those figures are all in
+> `summary.consolidated`, so no separate `/balances` route was built.
+> `GET /api/money/balances` (M2 S3) still serves the bare account
+> balances for QA.
 
 ---
 

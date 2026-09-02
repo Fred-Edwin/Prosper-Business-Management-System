@@ -117,16 +117,20 @@ record to attach to (PRD §4.3).
 
 ---
 
-## Milestone 3 — Admin gets the trust & money picture
+## Milestone 3 — Admin gets the trust & money picture — DONE (2026-09-02)
 
-| Feature | PRD |
-|---|---|
-| Handover & Reconciliation (+ Day Close) | §4.5 |
-| Financials | §4.7 |
+**Record:** `docs/PROGRESS.md` (M3 S1–S4 entries) + `docs/DECISIONS.md`
+ADR-52–55. No `milestone-3-plan.md` was created — M3 ran session-to-session
+off the per-session handoffs.
+
+| Feature | PRD | Status |
+|---|---|---|
+| Handover & Reconciliation (+ Day Close) | §4.5 | **DONE** — day-close seal/reopen + shared guard (S1); handover declare/receive/correct + staff today-only gate (S2); Admin reconciliation tab + staff declare screens (S3). |
+| Financials | §4.7 | **DONE** — expenses (+ paired MoneyMovement, append-only correction), owner draws/returns + derived owed-to-business, profit summary (Revenue − COGS − Expenses), wired KPI strip; COGS model corrected to an all-stock valuation sweep with dishes valued at zero and non-sale consumption as a separate report (ADR-55). Full-stack, `pnpm test` 715/715 (S4). |
 
 **Unlocks:** Admin closes a day, sees expected-vs-received cash/M-Pesa
 variance automatically, logs expenses/owner draws, and sees real profit
-(Revenue − COGS − Expenses). Day Close becomes a hard gate from here on.
+(Revenue − COGS − Expenses). Day Close is a hard gate from here on.
 
 ---
 

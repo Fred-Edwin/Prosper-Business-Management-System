@@ -459,8 +459,12 @@ describe("handovers domain", () => {
     const asCashierB = await listHandovers({}, cashier2);
     expect(asCashierB.map((h) => h.id)).toEqual([hB.id]);
 
+    // Admin sees all — assert BOTH of this test's rows are in the set
+    // (the shared dev DB may carry other handovers, e.g. from the seed).
     const asAdmin = await listHandovers({}, admin);
-    expect(asAdmin.map((h) => h.id).sort()).toEqual([hA.id, hB.id].sort());
+    const adminIds = new Set(asAdmin.map((h) => h.id));
+    expect(adminIds.has(hA.id)).toBe(true);
+    expect(adminIds.has(hB.id)).toBe(true);
   });
 
   it("listHandovers: correction rows are not listed; the original carries derived figures", async () => {
@@ -473,9 +477,13 @@ describe("handovers domain", () => {
       admin,
     );
     const rows = await listHandovers({}, admin);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].id).toBe(h.id);
-    expect(rows[0].cashDeclared).toBe("4800.00");
+    // The original is listed with its derived (corrected) figures; the
+    // correction row itself is not. Scope to this test's handover — the
+    // shared dev DB may carry others.
+    const mine = rows.filter((r) => r.id === h.id);
+    expect(mine).toHaveLength(1);
+    expect(mine[0].cashDeclared).toBe("4800.00");
+    expect(rows.some((r) => r.correctsHandoverId === h.id)).toBe(false);
   });
 
   it("listHandovers: a role with no handover access → FORBIDDEN", async () => {
@@ -496,11 +504,19 @@ describe("handovers domain", () => {
 
   it("getReconciliation: declared vs received vs stored variance per handover + totals", async () => {
     const today = toBusinessDate(new Date());
+
+    // Baseline: the dev DB may already carry today-dated handovers (the
+    // seed makes some). Assert on this test's OWN rows and on the DELTA to
+    // the totals, not on an assumed-empty day.
+    const before = await getReconciliation(today);
+    const beforeIds = new Set(before.rows.map((r) => r.handoverId));
+    const n = (v: string) => Number(v);
+
     const h1 = await declareHandover(
       { cashDeclared: "5000.00", mpesaDeclared: "1000.00" },
       cashier,
     );
-    await declareHandover(
+    const h2 = await declareHandover(
       { cashDeclared: "3000.00", mpesaDeclared: "500.00" },
       cashier2,
     );
@@ -515,7 +531,8 @@ describe("handovers domain", () => {
     );
 
     const recon = await getReconciliation(today);
-    expect(recon.rows).toHaveLength(2);
+    const mine = recon.rows.filter((r) => !beforeIds.has(r.handoverId));
+    expect(mine).toHaveLength(2);
 
     const r1 = recon.rows.find((r) => r.handoverId === h1.id)!;
     expect(r1.cashDeclared).toBe("5000.00");
@@ -524,13 +541,20 @@ describe("handovers domain", () => {
     expect(r1.received).toBe(true);
     expect(r1.shortfallNotes).toEqual(["100 short"]);
 
-    const r2 = recon.rows.find((r) => r.handoverId !== h1.id)!;
+    const r2 = recon.rows.find((r) => r.handoverId === h2.id)!;
     expect(r2.received).toBe(false);
     expect(r2.cashReceived).toBeNull();
     expect(r2.cashVariance).toBeNull();
 
-    expect(recon.totals.cashDeclared).toBe("8000.00");
-    expect(recon.totals.cashReceived).toBe("4900.00");
-    expect(recon.totals.cashVariance).toBe("-100.00");
+    // Totals moved by exactly this test's contribution.
+    expect(n(recon.totals.cashDeclared) - n(before.totals.cashDeclared)).toBe(
+      8000,
+    );
+    expect(n(recon.totals.cashReceived) - n(before.totals.cashReceived)).toBe(
+      4900,
+    );
+    expect(n(recon.totals.cashVariance) - n(before.totals.cashVariance)).toBe(
+      -100,
+    );
   });
 });

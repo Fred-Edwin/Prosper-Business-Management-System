@@ -87,16 +87,55 @@ deduction. **Recipes exist only as an optional, informational tool** (see
 see an estimated per-dish cost and flag production-yield anomalies. A
 recipe never affects stock movements, COGS, or any profit figure.
 
-**Cost of Goods Sold (COGS) for Dishes** is derived, not entered per dish:
+**Cost of Goods Sold (COGS)** is derived from the stock ledger — never
+entered per dish (see ADR-55 for the full model and reasoning).
+
+Every product has a **cost value** used for stock valuation:
+
+| Kind | Cost value |
+|---|---|
+| Ingredient | its buying price |
+| Goods | its buying price |
+| Dish | **0** — its cost is captured at the ingredient level; counting a dish cost on top would double-count the same food |
+
+COGS is one sweep across **all products at all locations**:
 ```
-Ingredient cost consumed (period) = opening ingredient stock
-                                   + ingredient purchases
-                                   − closing ingredient stock
+COGS (period) = opening stock value
+              + purchases value          ← purchase RECEIPTS only
+              − closing stock value
 ```
-This blended figure (across all cooking, all dishes, whole business) is
-the true food cost for the period, in the financial reports (§4.7). Dishes
-carry `buying_price = 0` so their cost is never counted a second time on
-top of this.
+where each valuation is `quantity × cost value`. Scoping that matters:
+
+- **"Purchases" means purchase receipts only** — not production, not
+  transfers, not opening adjustments. Only stock the business actually
+  bought in counts as "added".
+- **Transfers between the business's own locations are excluded.** Nothing
+  entered the business — stock only moved (e.g. Store → Canteen). Counting
+  both sides would inflate the figure.
+- Production adds a Dish, valued at 0, so it contributes nothing by
+  construction — but the scoping above is explicit, not incidental.
+
+Because dishes value at 0, this reduces to "the cost of the ingredients
+and goods that left the business," which is the intent. This blended
+figure is the true food/goods cost for the period, in the financial
+reports (§4.7).
+
+**Non-sale consumption cost is a SEPARATE report — a view INTO COGS, not
+an addition on top of it.** Wasted / staff-meal / complimentary stock has
+already left the ledger and is already inside the COGS sweep above. The
+Admin still wants to see what that cost, broken out by reason, so it is
+reported separately (§4.7). Valuation per consumed unit:
+
+| Kind | Non-sale consumption cost |
+|---|---|
+| Ingredient / Goods | buying price × quantity |
+| Dish | `dishWasteCostPercent` × selling price × quantity |
+
+`dishWasteCostPercent` is a **configurable** cost proxy (ADR-55; default
+**60%**) — a Dish selling at KES 100 is assumed to have cost ~KES 60 to
+make. It stands in for the buying price a Dish does not have, and is used
+**only** in this separate report — never in COGS, Gross Profit or Net
+Profit.
 
 **Money:** Order, Order type (Dine-in/Takeaway/Delivery, delivery orders may
 carry a delivery fee), Payment method (Cash/M-Pesa/Credit), Credit sale,

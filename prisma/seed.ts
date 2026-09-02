@@ -18,12 +18,15 @@ const prisma = new PrismaClient({ adapter });
 //   §5 restaurant sales   — ~18 orders, all methods/types, one corrected
 //   §6 canteen counts     — 6 counts, each with its derived sale (audit F5)
 //   §7 customers & assets
+//   §8 handovers + financials — today's handovers, expenses, owner draws
 //
 // Principles the audit (docs/sprints/m2-quantity-audit.md) demands:
-//   • Only seed what a built screen can display. Recipe, Handover,
-//     ReceiptOfHandover, HandoverShortfall, OwnerTransaction, Attendance,
-//     StaffPayAdjustment, DayClose and Expense have no UI (or no API
-//     route) — seeding them creates invisible data. EXCLUDED on purpose.
+//   • Only seed what a built screen can display. Recipe, Attendance,
+//     StaffPayAdjustment and DayClose have no UI (or no API route) —
+//     seeding them creates invisible data. EXCLUDED on purpose (M4 owns
+//     Recipe/Attendance/StaffPayAdjustment). Handover, ReceiptOfHandover,
+//     HandoverShortfall, Expense and OwnerTransaction now have screens
+//     (M3 S3/S4) and ARE seeded — §8.
 //   • Ledgers, not stored totals. Every balance below is the sum of the
 //     rows this file writes; nothing stores a total (ADR-11 / ADR-40).
 //   • Corrections are new rows. The corrected order and the corrected
@@ -550,6 +553,17 @@ async function main() {
     });
   }
 
+  // ── §8 Handovers + financials ────────────────────────────────────────
+  await seedHandovers({
+    restaurantId: restaurant.id,
+    canteenId: canteen.id,
+    cashier1,
+    cashier2,
+    attendantId,
+    adminId: admin.id,
+  });
+  await seedFinancials({ adminId: admin.id });
+
   console.log("Seed complete (wipe + rebuild).");
   console.log('Admin:  "Admin" / PIN 1234');
   for (const s of staffSeeds) console.log(`${s.role}: "${s.name}" / PIN 1234`);
@@ -886,6 +900,247 @@ async function seedCanteenCounts({
         sourceId: c.id,
         recordedById: attendantId,
         occurredAt: c.at,
+      },
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// §8 Handovers + financials
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Today's end-of-day handovers, so the M3 S3 Handovers tab renders real
+ * rows (the wipe deletes handover tables but the old seed never re-made
+ * any). Three states, matching what the reconciliation screen must show:
+ *
+ *   1. EXACT match — declared === received, zero variance.
+ *   2. SHORTFALL   — received < declared on cash, with the required
+ *      `HandoverShortfall` note.
+ *   3. DECLARED, NOT YET RECEIVED — no `ReceiptOfHandover` row, so the
+ *      Admin's "Record receipt" action has a live target.
+ *
+ * A handover is a custody transfer, not new revenue (ADR-53/54) — no
+ * `MoneyMovement` is written here. `cash_variance` / `mpesa_variance` are
+ * stored on the receipt row exactly as `recordReceipt` would compute them
+ * (`received − declared`), never recomputed on read.
+ */
+async function seedHandovers({
+  restaurantId,
+  canteenId,
+  cashier1,
+  cashier2,
+  attendantId,
+  adminId,
+}: {
+  restaurantId: string;
+  canteenId: string;
+  cashier1: string;
+  cashier2: string;
+  attendantId: string;
+  adminId: string;
+}) {
+  type HandoverSpec = {
+    id: string;
+    staffId: string;
+    /** The login that declared it — kept for traceability in the seed. */
+    userId: string;
+    locationId: string;
+    cashDeclared: string;
+    mpesaDeclared: string;
+    at: Date;
+    receipt?: {
+      cashReceived: string;
+      mpesaReceived: string;
+      shortfallNote?: string;
+    };
+  };
+
+  const specs: HandoverSpec[] = [
+    // 1 · Cashier One — exact match, received.
+    {
+      id: "seed-handover-cashier1",
+      staffId: "seed-staff-cashier",
+      userId: cashier1,
+      locationId: restaurantId,
+      cashDeclared: "4200.00",
+      mpesaDeclared: "1800.00",
+      at: at(0, 20, 15),
+      receipt: { cashReceived: "4200.00", mpesaReceived: "1800.00" },
+    },
+    // 2 · Canteen Attendant — cash short by 300, with the required note.
+    {
+      id: "seed-handover-attendant",
+      staffId: "seed-staff-canteen-attendant",
+      userId: attendantId,
+      locationId: canteenId,
+      cashDeclared: "3300.00",
+      mpesaDeclared: "0.00",
+      at: at(0, 19, 40),
+      receipt: {
+        cashReceived: "3000.00",
+        mpesaReceived: "0.00",
+        shortfallNote: "KES 300 short — attendant says a customer underpaid; following up.",
+      },
+    },
+    // 3 · Cashier Two — declared, NOT yet received (live "Record receipt").
+    {
+      id: "seed-handover-cashier2",
+      staffId: "seed-staff-cashier-2",
+      userId: cashier2,
+      locationId: restaurantId,
+      cashDeclared: "2650.00",
+      mpesaDeclared: "900.00",
+      at: at(0, 20, 30),
+    },
+  ];
+
+  for (const s of specs) {
+    await prisma.handover.create({
+      data: {
+        id: s.id,
+        staffId: s.staffId,
+        locationId: s.locationId,
+        cashDeclared: s.cashDeclared,
+        mpesaDeclared: s.mpesaDeclared,
+        occurredAt: s.at,
+      },
+    });
+
+    if (!s.receipt) continue;
+
+    const cashVariance = (
+      Number(s.receipt.cashReceived) - Number(s.cashDeclared)
+    ).toFixed(2);
+    const mpesaVariance = (
+      Number(s.receipt.mpesaReceived) - Number(s.mpesaDeclared)
+    ).toFixed(2);
+
+    const receipt = await prisma.receiptOfHandover.create({
+      data: {
+        id: `seed-receipt-${s.id}`,
+        handoverId: s.id,
+        cashReceived: s.receipt.cashReceived,
+        mpesaReceived: s.receipt.mpesaReceived,
+        cashVariance,
+        mpesaVariance,
+        recordedById: adminId,
+        occurredAt: new Date(s.at.getTime() + 30 * 60_000),
+      },
+    });
+
+    if (s.receipt.shortfallNote) {
+      await prisma.handoverShortfall.create({
+        data: {
+          id: `seed-shortfall-${s.id}`,
+          receiptOfHandoverId: receipt.id,
+          staffId: s.staffId,
+          note: s.receipt.shortfallNote,
+        },
+      });
+    }
+  }
+}
+
+/**
+ * A handful of expenses and owner transactions across the week, so the M3
+ * S4 Expenses and Owner Draws tabs aren't empty. Each `Expense` /
+ * `OwnerTransaction` is paired with the `MoneyMovement` its domain
+ * function writes (`recordExpense` debits `paidFromAccount`;
+ * `recordOwnerTransaction` moves Cash at hand), so the derived account
+ * balances and the profit summary reconcile with these rows.
+ *
+ * `date` / `occurredAt` are noon of the Nairobi business day — the same
+ * instant `businessDateNoonUtc` produces in the domain.
+ */
+async function seedFinancials({ adminId }: { adminId: string }) {
+  const noon = (daysAgo: number) => at(daysAgo, 12, 0);
+
+  type ExpenseSpec = {
+    id: string;
+    category:
+      | "rent"
+      | "utilities"
+      | "transport"
+      | "gas_fuel"
+      | "salaries"
+      | "repairs"
+      | "other";
+    amount: string;
+    daysAgo: number;
+    paidFrom: "cash" | "mpesa_bank";
+    note?: string;
+  };
+
+  const expenses: ExpenseSpec[] = [
+    { id: "seed-expense-rent", category: "rent", amount: "18000.00", daysAgo: 6, paidFrom: "mpesa_bank", note: "September rent — Kariobangi premises" },
+    { id: "seed-expense-gas", category: "gas_fuel", amount: "2400.00", daysAgo: 4, paidFrom: "cash", note: "13kg gas refill ×2" },
+    { id: "seed-expense-utilities", category: "utilities", amount: "1650.00", daysAgo: 3, paidFrom: "cash", note: "KPLC token" },
+    { id: "seed-expense-transport", category: "transport", amount: "800.00", daysAgo: 2, paidFrom: "cash", note: "Market run — pickup fare" },
+    { id: "seed-expense-repairs", category: "repairs", amount: "3500.00", daysAgo: 1, paidFrom: "mpesa_bank", note: "Deep frier thermostat" },
+    { id: "seed-expense-today", category: "other", amount: "450.00", daysAgo: 0, paidFrom: "cash", note: "Cleaning supplies" },
+  ];
+
+  for (const e of expenses) {
+    await prisma.expense.create({
+      data: {
+        id: e.id,
+        category: e.category,
+        amount: e.amount,
+        date: noon(e.daysAgo),
+        paidFromAccount: e.paidFrom,
+        note: e.note ?? null,
+        recordedById: adminId,
+      },
+    });
+    await prisma.moneyMovement.create({
+      data: {
+        id: `seed-mm-${e.id}`,
+        account: e.paidFrom,
+        amount: `-${e.amount}`, // money out
+        sourceType: "expense",
+        sourceId: e.id,
+        recordedById: adminId,
+        occurredAt: noon(e.daysAgo),
+        note: e.note ?? null,
+      },
+    });
+  }
+
+  // Owner transactions: two draws and one return → owed-to-business =
+  // 5000 + 2000 − 3000 = KES 4,000.
+  type OwnerSpec = {
+    id: string;
+    type: "draw" | "return";
+    amount: string;
+    daysAgo: number;
+    note?: string;
+  };
+  const ownerTxns: OwnerSpec[] = [
+    { id: "seed-owner-draw-1", type: "draw", amount: "5000.00", daysAgo: 5, note: "School fees" },
+    { id: "seed-owner-return-1", type: "return", amount: "3000.00", daysAgo: 3, note: "Put back — sold personal item" },
+    { id: "seed-owner-draw-2", type: "draw", amount: "2000.00", daysAgo: 1, note: "Household shopping" },
+  ];
+  for (const o of ownerTxns) {
+    await prisma.ownerTransaction.create({
+      data: {
+        id: o.id,
+        type: o.type,
+        amount: o.amount,
+        date: noon(o.daysAgo),
+        note: o.note ?? null,
+      },
+    });
+    await prisma.moneyMovement.create({
+      data: {
+        id: `seed-mm-${o.id}`,
+        account: "cash",
+        amount: o.type === "draw" ? `-${o.amount}` : o.amount,
+        sourceType: o.type === "draw" ? "owner_draw" : "owner_return",
+        sourceId: o.id,
+        recordedById: adminId,
+        occurredAt: noon(o.daysAgo),
+        note: o.note ?? null,
       },
     });
   }

@@ -49,6 +49,40 @@ vi.mock("@/app/admin/financials/use-handovers", async (importOriginal) => {
   };
 });
 
+// S4 wired the KPI strip + added the Expenses / Owner Draws / Profit tabs.
+// This shell spec covers the transaction tabs only — stub the financials
+// hooks so the shell's own summary fetch doesn't hit the network.
+let summaryState: {
+  summary: import("@/lib/domain/financials").FinancialSummary | null;
+  loading: boolean;
+  error: string | null;
+} = { summary: null, loading: false, error: null };
+vi.mock("@/app/admin/financials/use-financials", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@/app/admin/financials/use-financials")
+    >();
+  return {
+    ...actual,
+    useFinancialSummary: () => ({ ...summaryState, refresh: vi.fn() }),
+    useExpenses: () => ({
+      expenses: [],
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      create: vi.fn(),
+      correct: vi.fn(),
+    }),
+    useOwnerTransactions: () => ({
+      transactions: [],
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      create: vi.fn(),
+    }),
+  };
+});
+
 import { FinancialsClient } from "@/app/admin/financials/financials-client";
 
 function renderScreen() {
@@ -155,13 +189,17 @@ describe("/admin/financials — shell", () => {
     );
   });
 
-  it("keeps the KPI strip rendered but unwired (— / M3)", async () => {
+  it("renders the KPI strip; shows — for each tile until the summary loads", async () => {
+    summaryState = { summary: null, loading: false, error: null };
     renderScreen();
     await waitFor(() => expect(api.listMovements).toHaveBeenCalled());
     expect(
       within(kpiDesktop()).getByText("Total Business Liquidity"),
     ).toBeInTheDocument();
-    expect(within(kpiDesktop()).getAllByText("M3").length).toBe(4);
+    // S4: the "M3" placeholder captions are gone; an unresolved summary
+    // renders an em-dash per tile.
+    expect(within(kpiDesktop()).queryByText("M3")).not.toBeInTheDocument();
+    expect(within(kpiDesktop()).getAllByText("—").length).toBe(4);
   });
 });
 
