@@ -51,22 +51,71 @@ comment). With `onHand = 0` and nothing typed, that floor shows a
 fabricated **1**. Same defect that used to show Production "Available: 1"
 before the Restaurant was re-activated. See `m2-followups.md` #16.
 
-## Two questions to settle with the owner (product decision — ask, don't assume)
+## Why "opening = yesterday's closing" didn't help here
 
-1. **Is the Store supposed to be stocked via opening stock + deliveries?**
-   If yes → the "empty Store" is a data gap: the Admin enters Store
-   opening balances at `/admin/stock/opening`, and Issue/Non-Sale then
-   show real numbers with no code change. Confirm the intended stocking
-   path for the Store.
+There is one append-only `StockMovement` ledger. Current on-hand =
+`SUM(quantity) WHERE product+location AND occurredAt <= now`. "Opening
+stock for day N" is a **computed view** = that same sum evaluated at the
+end of day N−1 (ADR-11 / ADR-40) — it carries a balance forward only if
+there was one to carry. The Store's running sum is genuinely ~0: the only
+row is the owner's test Rice `purchase_receipt`. `prisma/seed.ts` writes
+`opening` rows for the **Canteen** and `production` rows for the
+**Restaurant**, and creates the Store's ingredient/goods **Product** rows
+— but never a Store `ProductLocation` and never a Store `opening` row. So
+the Store was never given its one-time opening figure.
+
+## Questions to settle with the owner (product decision — ask, don't assume)
+
+1. **Confirmed intent:** the Store is stocked via `/admin/stock/opening`
+   (one-time opening figures) + `Receive Goods` (deliveries). Owner
+   agreed. → seed a realistic Store (task 0 below) and, separately, the
+   owner can exercise the real `/admin/stock/opening` flow any time.
 2. **On an additive flow (Receive), should a 0-balance row be selectable,
    and what should the readout say?** You're *adding* stock — a 0 balance
    shouldn't make the row inert or show a fake "1". Likely answer: show
    `On hand: 0`, keep the row selectable.
 
-## Scope for this session (once #1/#2 are answered)
+## Scope for this session
 
-**Frontend only — `app/store-manager/flows/movement-picker-flow.tsx` +
-`app/store-manager/use-staff-stock.ts`. Do not touch `components/kit/*`.**
+### 0. Seed the Store's opening stock — `prisma/seed.ts`
+
+The Store currently has ingredient/goods **Product** rows but no
+`ProductLocation` at the Store and no `opening` movements. Add a Store
+block so a fresh `pnpm db:seed` produces a realistic, testable Store.
+
+- The ingredients are created in `main()` around
+  [seed.ts:104-122](../../prisma/seed.ts) (`Cooking oil`, `Carrots`,
+  `Beans`) with ids `seed-product-cooking-oil` / `-carrots` / `-beans`.
+  There is also a `Rice` ingredient (non-seed id — created via the app;
+  a fresh clone won't have it, so key the seed on the three above and
+  optionally add a `Rice` product with a fixed `seed-product-rice` id).
+- Pattern to copy: the Canteen `opening` block at
+  [seed.ts:590-608](../../prisma/seed.ts) — `stockMovement.upsert` keyed
+  on a fixed `id`, `movementType: "opening"`, `occurredAt: at(daysAgo,
+  8, 0)` (the `at()` wall-clock-Nairobi helper is defined in
+  `seedM2Sales`; either lift it to module scope or add a small local one
+  in `main()`).
+- Also `productLocation.upsert` each Store ingredient at the Store with
+  `sellingPrice: null` (a Store is stocked, not sold-at) `active: true` —
+  otherwise the new Catalog location filter / column won't show them at
+  the Store either.
+- Suggested figures (ingredients, a few days ago so "opening" reads as
+  prior-day closing): Cooking oil 40 litre, Carrots 25 kg, Beans 30 cups,
+  Rice 50 kg. Keep it small and obviously-fake.
+- Idempotent: fixed `id: "seed-sm-store-open-<key>"`, `upsert`, so
+  re-seed is a no-op.
+- After: `pnpm db:seed`, then `GET
+  /api/stock-movements/balances?locationId=seed-location-store&productIds=…`
+  as Store Manager should show the four ingredients non-zero, and Issue /
+  Non-Sale should list real quantities.
+
+Do **not** try to write these through the domain (`setOpeningStock` needs
+an auth context) — the rest of the seed writes rows directly; match that.
+
+### Tasks 1-4: frontend only
+
+`app/store-manager/flows/movement-picker-flow.tsx` +
+`app/store-manager/use-staff-stock.ts`. **Do not touch `components/kit/*`.**
 
 1. **Fix the additive readout (`m2-followups.md` #16).**
    - Don't fabricate `1`. For an additive flow, an unselected row shows
