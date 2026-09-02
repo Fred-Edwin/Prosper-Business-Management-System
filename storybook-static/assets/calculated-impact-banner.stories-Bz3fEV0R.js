@@ -1,0 +1,13 @@
+import{j as e,c as r}from"./utils-_OH9Wn3f.js";import"./iframe-sMR_UR-7.js";import"./preload-helper-PPVm8Dsz.js";function o({children:a,className:t}){return e.jsxs("div",{role:"status",className:r("[font-synthesis:none] flex items-start p-(--sp-5) rounded-sm gap-(--sp-4) bg-warning-bg antialiased text-caption/micro",t),children:[e.jsxs("svg",{width:"16",height:"16",viewBox:"0 0 24 24","aria-hidden":!0,style:{flexShrink:0,marginTop:2},children:[e.jsx("circle",{cx:"12",cy:"12",r:"10",fill:"none",stroke:"var(--color-warning)",strokeWidth:"1.5"}),e.jsx("line",{x1:"12",y1:"8",x2:"12",y2:"12",stroke:"var(--color-warning)",strokeWidth:"1.5"}),e.jsx("line",{x1:"12",y1:"16",x2:"12.01",y2:"16",stroke:"var(--color-warning)",strokeWidth:"1.5"})]}),e.jsx("div",{className:"font-ui inline-block text-warning text-sm/sm",children:a})]})}o.__docgenInfo={description:"",methods:[],displayName:"CalculatedImpactBanner",props:{children:{required:!0,tsType:{name:"ReactReactNode",raw:"React.ReactNode"},description:""},className:{required:!1,tsType:{name:"string"},description:""}}};const{expect:s,within:c}=__STORYBOOK_MODULE_TEST__,m={title:"Kit/Primitives/CalculatedImpactBanner",component:o,parameters:{layout:"padded",docs:{description:{component:"FLAG (systemic semantic-colour text contrast — Session 10c): the impact sentence is `--color-warning` on `--color-warning-bg` (the drawn `9K9-0` amber-on-amber treatment) ≈ 3.4:1, below WCAG AA 4.5:1. The icon reinforces the meaning. `color-contrast` scoped off → design-sprint decision (a darker on-amber text token, or accept the banner as a non-critical consequence preview)."}},a11y:{config:{rules:[{id:"color-contrast",enabled:!1}]}}}},n={name:"Default (amber, icon + impact sentence) — ARTBOARD 9K9-0",args:{children:"This correction reduces Store beef stock by 3.5 kg. The closing balance for Aug 24 becomes 66.5 kg."},play:async({canvasElement:a})=>{const t=c(a).getByRole("status");await s(t).toBeInTheDocument(),await s(t).toHaveTextContent(/reduces Store beef stock by 3.5 kg/)}};n.parameters={...n.parameters,docs:{...n.parameters?.docs,source:{originalSource:`{
+  name: "Default (amber, icon + impact sentence) — ARTBOARD 9K9-0",
+  args: {
+    children: "This correction reduces Store beef stock by 3.5 kg. The closing balance for Aug 24 becomes 66.5 kg."
+  },
+  play: async ({
+    canvasElement
+  }) => {
+    const status = within(canvasElement).getByRole("status");
+    await expect(status).toBeInTheDocument();
+    await expect(status).toHaveTextContent(/reduces Store beef stock by 3.5 kg/);
+  }
+}`,...n.parameters?.docs?.source}}};const p=["Rest"];export{n as Rest,p as __namedExportsOrder,m as default};

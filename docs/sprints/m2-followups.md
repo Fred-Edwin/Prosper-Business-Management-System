@@ -99,3 +99,22 @@ touch-up; none needs a new milestone plan.
 15. **Canteen Stock Levels has no search input.** `9GW-0` draws one; the
     built screen omits it. Add a client-side filter or drop it from the
     artboard.
+
+16. **Movement picker fabricates "Available: 1" when its balance location
+    fails to resolve.** *(2026-09-02 walkthrough.)* `movement-picker-flow.tsx`:
+    `loading` ignores `useStockLevels.loading` and `error` ignores its
+    `error`, and the additive branch's `Math.max(onHand, lineQty, 1)`
+    floor turns an unresolved Restaurant balance into a screen of fake
+    `1`s (this is how the inactive-Restaurant bug presented). Fix: track
+    whether the balance read actually resolved (location id non-empty +
+    hook not errored) and show `<ErrorState>` when it didn't; fold the
+    balance hooks into `loading` / `error`; apply the `,1` floor only to
+    a selected row.
+
+17. **Dev DB shared with the test suite.** Several `route.test.ts` specs
+    run `prisma.location.updateMany({ data: { active: false } })` against
+    `DATABASE_URL`, which is the dev DB — one such run deactivated the
+    Restaurant and broke three screens. Point the `test:db` lane at a
+    throwaway database (or have every such spec restore `active: true` in
+    `afterAll` and scope the "deactivate competing restaurants" query by
+    test-prefix name so it can never touch `seed-location-*`).

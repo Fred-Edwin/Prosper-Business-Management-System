@@ -1094,6 +1094,19 @@ noted for Session 10.
 
 ## ADR-42: Storybook is adopted as the kit's isolation / visual-regression / a11y harness (Session 9)
 
+> **SUPERSEDED (2026-09).** The kit is now frozen and feature work
+> composes from it against sibling-screen patterns rather than extending
+> it, so a per-component isolation + visual-regression + a11y gate no
+> longer pays for its upkeep. The Storybook harness was deleted:
+> `.storybook/`, every `*.stories.tsx`, `tests/visual/__screenshots__/`
+> (168 baselines), the `test:visual` / `test:a11y` scripts, and the
+> `@storybook/*` + `axe-playwright` + `jest-image-snapshot` dependencies.
+> `design-principles.md §9` remains the written interaction contract; it
+> is now upheld by the kit components themselves + the per-screen jsdom
+> specs, not a CDP pseudo-state probe. See `docs/sdlc.md` Phase 3 and
+> `docs/design/export-workflow.md`. The rest of this ADR is kept for
+> history.
+
 **Context.** Sessions 3–4 built `components/kit/*` by `get_jsx`
 transcription of static Paper artboards, which have no hover / focus /
 pressed / loading state to capture. The result was pixel-faithful
