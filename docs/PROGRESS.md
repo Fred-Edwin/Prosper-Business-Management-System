@@ -64,12 +64,19 @@ mock to copy. Applied:
 - **Gate after teardown:** `pnpm typecheck` 0 · `pnpm test:unit`
   258/258 green.
 
-**Next:** first feature under the new workflow — Catalog location column +
-location filter (`admin/catalog`): backend adds each product's assigned
-locations (from `ProductLocation`) to `GET /api/products` + a `?locationId=`
-filter; frontend adds a Locations column + a location filter control,
-composed from the kit. Scope note: this is the product's *assigned
-locations*, not stock-on-hand.
+**First feature under the new workflow — Catalog location column + filter
+— DONE (owner walkthrough owed).** Backend: `listProducts` gains a
+`locationId` filter (active `ProductLocation` only — assignment, not
+stock-on-hand); `GET /api/products?locationId=` forwards it; empty string
+treated as absent. Frontend: a "Locations" column (neutral chips) in the
+desktop table + mobile card, and a "Filter by location" `<Select>` in the
+toolbar ("All locations" default); the filtered EmptyState clears search +
+location together. Composed from the frozen kit against the existing
+catalog structure — no design step. Tests: `list-products.test.ts` (5
+cases) + 2 new `catalog.screen.test.tsx` cases. Gate: `pnpm typecheck` 0 ·
+`pnpm test` 583/583 · `pnpm build` clean. Branch
+`chore/streamline-workflow-catalog-locations` (workflow change + feature,
+two commits — not merged; hand back for the walkthrough).
 
 ---
 
