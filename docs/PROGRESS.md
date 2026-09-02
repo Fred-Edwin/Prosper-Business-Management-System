@@ -35,9 +35,19 @@ correct (SM reading the Restaurant returns Chapati 120, etc.). **Fix:**
 "Available: 1" when the balance location fails to resolve) is noted in
 `m2-followups.md` as optional.
 
-**Not fixed this session (flagged):** the dev DB is shared with the test
-suite, so a test run can silently corrupt it. Isolating `test:db` onto a
-throwaway database is the durable fix — deferred.
+**Recurrence found + root-caused (same session).** After the workflow
+teardown's `pnpm test` run, the Restaurant was `active: false` again. Real
+cause: **Prisma 7 + `@prisma/adapter-pg` does not escape `_` / `%` in
+`startsWith`/`contains`/`endsWith`** — `orders/route.test.ts`'s
+`updateMany({ where: { …, name: { startsWith: "__" } }, data: { active:
+false } })` compiled to `LIKE '__%'` and matched `seed-location-restaurant`
+on every full-suite run. **Fixed** (`app/api/orders/route.test.ts`): select
+the *other* active restaurants by id (no name wildcard), deactivate those,
+restore them in `afterAll`. Full suite now leaves all three seed locations
+`active: true`. The unescaped-wildcard behaviour also affects the
+catalog/customers/assets `{ contains: search }` filters — logged as
+`m2-followups.md` #18, low severity, not fixed. Isolating `test:db` onto a
+throwaway DB (#17) is still the durable fix.
 
 **Workflow change (owner directive).** The per-feature ceremony —
 mandatory Design Sprint in Paper, per-feature kit extension, Storybook

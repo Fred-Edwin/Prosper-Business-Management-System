@@ -111,10 +111,21 @@ touch-up; none needs a new milestone plan.
     balance hooks into `loading` / `error`; apply the `,1` floor only to
     a selected row.
 
-17. **Dev DB shared with the test suite.** Several `route.test.ts` specs
-    run `prisma.location.updateMany({ data: { active: false } })` against
-    `DATABASE_URL`, which is the dev DB — one such run deactivated the
-    Restaurant and broke three screens. Point the `test:db` lane at a
-    throwaway database (or have every such spec restore `active: true` in
-    `afterAll` and scope the "deactivate competing restaurants" query by
-    test-prefix name so it can never touch `seed-location-*`).
+17. **Dev DB shared with the test suite.** `route.test.ts` specs mutate
+    `DATABASE_URL` (the dev DB) directly. `orders/route.test.ts`
+    deactivated `seed-location-restaurant` on every run (fixed 2026-09-02
+    — see #18); the durable fix is still to point the `test:db` lane at a
+    throwaway database so no spec can touch dev data.
+
+18. **Prisma 7 + `@prisma/adapter-pg` does not escape `_` / `%` in
+    `startsWith` / `contains` / `endsWith`.** `startsWith: "__"` compiles
+    to `LIKE '__%'` and matches everything. Confirmed: `startsWith:
+    "St_re"` matches `Store`, `startsWith: "S%"` matches `Store`. Impact:
+    (a) `orders/route.test.ts` deactivated the real Restaurant — fixed by
+    filtering on id, not a name wildcard; (b) the catalog / customers /
+    assets search filters (`{ contains: userInput }`) treat a typed `_` or
+    `%` as a wildcard — low severity, not yet fixed. If Prisma doesn't
+    patch this, wrap search input with a `_`/`%`/`\` escaper before
+    passing it to `contains`. Test-helper `deleteMany({ where: { name:
+    { startsWith: prefix } } })` calls are mostly safe — the literal tail
+    of a real prefix (`__catalog_test__list__`) still scopes them.
