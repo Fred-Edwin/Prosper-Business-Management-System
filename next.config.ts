@@ -16,6 +16,13 @@ const nextConfig: NextConfig = {
         destination: "/admin/sales?tab=derived",
         permanent: true,
       },
+      // M3 S3: the Handovers reconciliation view is a tab of
+      // /admin/financials (owner call), not a standalone route.
+      {
+        source: "/admin/handovers",
+        destination: "/admin/financials?tab=handovers",
+        permanent: true,
+      },
     ];
   },
 };

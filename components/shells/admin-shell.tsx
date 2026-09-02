@@ -131,14 +131,17 @@ const NAV_GROUPS: AdminNavGroupDef[] = [
       // "Derived sales" nav link is gone; /admin/orders and
       // /admin/canteen/derived-sales redirect to /admin/sales.
       { key: "sales", label: "Sales", href: "/admin/sales", icon: ICON_SALES },
-      { key: "handovers", label: "Handovers", href: "/admin/handovers", icon: ICON_HANDOVERS },
     ],
   },
   {
     label: "People & Money",
     items: [
       { key: "customers", label: "Customers", href: "/admin/customers", icon: ICON_CUSTOMERS },
+      // M3 S3: Handovers reconciliation is a tab of /admin/financials
+      // (owner call). The old standalone /admin/handovers route (never
+      // built) redirects there.
       { key: "financials", label: "Financials", href: "/admin/financials", icon: ICON_FINANCIALS },
+      { key: "handovers", label: "Handovers", href: "/admin/financials?tab=handovers", icon: ICON_HANDOVERS },
     ],
   },
   {

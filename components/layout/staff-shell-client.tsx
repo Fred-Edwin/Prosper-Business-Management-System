@@ -3,7 +3,7 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { LayoutGrid, Boxes, ShoppingBag, Home, MessageSquare } from "lucide-react";
+import { LayoutGrid, Boxes, ShoppingBag, Home, MessageSquare, Wallet } from "lucide-react";
 import { StaffShell } from "@/components/shells/staff-shell";
 import { ToastProvider } from "@/components/kit/toast";
 import type { BottomNavItem } from "@/components/kit/bottom-nav";
@@ -44,6 +44,9 @@ export const NAV_DEFS_BY_BASE: Record<string, StaffNavDef[]> = {
     // The real route is /cashier/orders/new, not /cashier/new-order.
     { key: "new-order", label: "New Order", icon: ShoppingBag, href: "/cashier/orders/new" },
     { key: "customers", label: "Customers", icon: MessageSquare },
+    // M3 S3: end-of-day cash/M-Pesa declaration. Route = /cashier/handover
+    // (matches the key, so no explicit href — F2 guard: verified it resolves).
+    { key: "handover", label: "Handover", icon: Wallet },
   ],
   "/store-manager": [
     { key: "hub", label: "Hub", icon: LayoutGrid },
@@ -52,6 +55,8 @@ export const NAV_DEFS_BY_BASE: Record<string, StaffNavDef[]> = {
   "/canteen": [
     { key: "hub", label: "Hub", icon: LayoutGrid },
     { key: "stock", label: "Stock", icon: Boxes },
+    // M3 S3: end-of-day cash/M-Pesa declaration. Route = /canteen/handover.
+    { key: "handover", label: "Handover", icon: Wallet },
   ],
 };
 

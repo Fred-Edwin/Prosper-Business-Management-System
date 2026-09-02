@@ -60,6 +60,19 @@ export function AdminShellClient({
   const pathname = usePathname();
   const router = useRouter();
 
+  // M3 S3: Financials + Handovers are two nav rows on one route
+  // (/admin/financials, split by ?tab=). usePathname() drops the query and
+  // useSearchParams() would force a Suspense boundary on the whole admin
+  // tree — so read the tab from the URL client-side instead.
+  const [tabParam, setTabParam] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const read = () =>
+      setTabParam(new URLSearchParams(window.location.search).get("tab"));
+    read();
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
+  }, [pathname]);
+
   // Start expanded for SSR/first paint parity, then hydrate from storage.
   const [collapsed, setCollapsed] = React.useState(false);
   React.useEffect(() => {
@@ -74,7 +87,10 @@ export function AdminShellClient({
     });
   }, []);
 
-  const activeNavKey = activeNavKeyFromPathname(pathname);
+  let activeNavKey = activeNavKeyFromPathname(pathname);
+  if (activeNavKey === "financials" && tabParam === "handovers") {
+    activeNavKey = "handovers";
+  }
   const navigate = React.useCallback(
     (href: string) => router.push(href),
     [router],

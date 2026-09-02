@@ -15,6 +15,190 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 3 Session 3 — Handover UI (Admin reconciliation tab + staff declare screens) (Developer — 2026-09-03) — DONE
+
+**Shipped.**
+
+- **`/admin/financials` rebuilt: one screen, one shared business-date
+  picker, ONE inner tab row over transaction types.**
+  `financials-client.tsx` (was 1,034 lines) is now a ~150-line shell:
+  toolbar = title + kit `<DatePicker>` (defaults to today, `maxDate =
+  today`, Admin may view past dates) + a "Record Payment" button (Stock
+  Purchases tab only). Body = one `<Tabs>` row —
+  **Stock Purchases · Deliveries · Handovers** — over `transactions-tab.tsx`.
+  Change the date → every tab re-fetches for that Africa/Nairobi business
+  day. Expenses / owner draws (S4) slot in as more inner tabs under the
+  same date. `?tab=` (`purchases`|`deliveries`|`handovers`) deep-links.
+  * `transactions-tab.tsx` — owns the fetch for the active tab.
+    Stock Purchases / Deliveries: one kit `<SimpleTable>` each,
+    **date-scoped** via `stockApi.listMovements({ movementType, date })`
+    (the old body called `listMovements` with no date — it showed *all
+    time*). The **KPI strip** sits above the table, on every tab (markup
+    + `TODO(mock)` kept — S4 owns wiring it).
+  * `kpi-strip.tsx` — the KPI markup + `TODO(mock)`, extracted.
+  * **The ADR-46 "Reconciliation" table is GONE.** Its four states folded
+    into a **Status column**: Stock Purchases → Awaiting delivery /
+    Delivered / Flagged (from `outstanding.awaitingReceipt` + a
+    "variance" note); Deliveries → Matched / Unmatched, and an Unmatched
+    receipt carries an inline "Record payment" link. One table language,
+    the kit `<SimpleTable>` — no bespoke second table, no cross-reference.
+- **Handovers tab** (`HandoversView` in `handovers-tab.tsx` +
+  `use-handovers.ts`) — the third inner tab; consumes
+  `GET /api/handovers/reconciliation?date=` for the toolbar date (no own
+  picker). Columns (owner-specified): **Staff · Declared · Received ·
+  Variance · Status · Note · action** — Location + Time dropped
+  (Location is redundant with Staff; declaration time isn't useful at day
+  granularity). Declared / Received / Variance each a right-aligned
+  `Cash <n>` / `M-Pesa <n>` labelled stack (not a `c / m` slash pair —
+  that was cramped and its 4-line Staff-cell pile-up overflowed the
+  fixed row height, the bug in the first screenshot). Variance is the
+  only coloured column (exact = neutral, short = `text-danger`, over =
+  `text-success`). Note is its own wrapping column (the shortfall note
+  was truncated to "…" under Status before). `isToday` gates the primary
+  **"Record receipt"** on un-received rows; a past date shows "Not
+  received" instead (staff can't declare/receive for past days, ADR-53).
+  Received rows carry **"Correct"** on any date (Admin corrections aren't
+  day-gated). Totals strip below, rendered from the endpoint's pre-summed
+  `totals`. Mobile = stacked cards.
+- **Receipt drawer** (`receipt-drawer.tsx`) — kit rail `<Drawer>` +
+  `<TextInput startAdornment="KES">` ×2 + `<Textarea>` +
+  `<CalculatedImpactBanner>`. Live per-channel variance preview. When
+  either received figure is below declared, the note field flags as
+  required **and** the drawer surfaces the server `VALIDATION_ERROR` on
+  field `shortfallNote` inline (submission is not blocked client-side
+  only — the server is the gate). Fires a toast on success.
+- **Correction drawer** (`handover-correction-drawer.tsx`) — follows
+  `app/admin/stock/correction-drawer.tsx`. A `<SegmentedControl>` picks
+  the discriminated `target` ("The receipt" / "The declaration"); the
+  form submits corrected **absolute** figures (never a delta — the domain
+  computes it). `target: "receipt"` keeps the shortfall-note requirement.
+  Defaults to correcting the receipt when one exists.
+- **Nav** — the `handovers` admin nav item (a standalone `/admin/handovers`
+  route that was never built) now deep-links `/admin/financials?tab=handovers`
+  and moved to the "People & Money" group next to Financials. A 308
+  redirect `/admin/handovers → /admin/financials?tab=handovers` added in
+  `next.config.ts`. The admin shell reads `?tab=` from `window.location`
+  in an effect (not `useSearchParams` — that would force a Suspense
+  boundary on the whole admin tree) so the "Handovers" item highlights.
+- **`/cashier/handover` + `/canteen/handover`** — one shared
+  `HandoverClient` (in `app/cashier/handover/`, imported by the canteen
+  page — the `derived-tab` cross-role-import precedent) + `use-my-handover.ts`.
+  Today's declaration is a 2-field form (cash + M-Pesa); if one exists
+  it renders pre-filled and editable ("Update handover"). Once a receipt
+  exists the form renders **locked** with "Already received — ask an
+  administrator to correct it."; a `CONFLICT` thrown on submit (Admin
+  receives between load and submit) shows the same message, not a generic
+  error. Own history below (declared / received / variance, read-only).
+  **No date picker** (staff are today-only, ADR-53). Both routes added to
+  the staff bottom nav as `handover` — the key matches the route segment
+  (F2 guard); `staff-nav-routes.screen.test.tsx` covers both automatically.
+
+**Screen specs** (`tests/screens/`):
+
+- `financials.screen.test.tsx` — **rewritten** for the new structure
+  (toolbar date + 3 inner tabs + status-column fold). Asserts: toolbar
+  date picker + the 3 tabs; `listMovements` scoped to today; KPI strip
+  still `—`/M3; date-scoped empty states; the folded status chips
+  (Awaiting delivery / Delivered / Matched / Unmatched + inline "Record
+  payment"); payment drawer excludes Dishes + records + toasts; the
+  Handovers tab renders the reconciliation table + totals for the
+  toolbar date.
+- `admin-handovers.screen.test.tsx` (3) — drives `<HandoversView date …
+  isToday />` directly: receipt drawer exact-match submit + toast;
+  shortfall → server `VALIDATION_ERROR` field `shortfallNote` surfaced
+  inline, drawer stays open; correction drawer submits corrected absolute
+  declared figures (`target: "handover"`).
+- `staff-handover.screen.test.tsx` (3) — declare posts
+  `{ cashDeclared, mpesaDeclared }`; a receipt on the loaded view locks
+  the form with the CONFLICT copy; a `CONFLICT` on submit shows the same
+  copy.
+
+**Owner walkthrough (`pnpm dev`, all three roles via the real HTTP API).**
+Cashier + Canteen declare; Cashier edits own pre-receipt (200). Admin
+reconciliation lists both with pre-summed totals. Exact-match receipt
+(201); shortfall-without-note → 400 `field: shortfallNote`;
+shortfall-with-note → 201. Cashier edit post-receipt → 409 CONFLICT.
+Admin corrects the receipt then the declaration with absolute values →
+final derived declared / stored variance / shortfall notes fold in.
+Cashier hitting `GET /api/handovers/reconciliation` → 403. `/admin/handovers`
+→ 308. `/cashier/handover` + `/canteen/handover` → 200. **The dev DB was
+reseeded afterward** (`pnpm prisma:seed`) — the walkthrough left extra
+handover rows on today's date that broke `handovers.test.ts`'s
+"length 2" reconciliation assertions (shared-dev-DB pollution, not a code
+regression; suite green after reseed).
+
+**Deltas from plan / handoff.**
+
+- **The handoff's refactor premise was stale**, and the first cut of the
+  fix was revised by the owner mid-session. The handoff said "split each
+  tab of `financials-client.tsx`, add a fourth tab" — but the file had
+  **no top-level tabs** (KPI strip + an inner Purchases/Deliveries
+  `<Tabs>` + a separate Reconciliation section), and the nav already
+  routed `Handovers` at a never-built `/admin/handovers`. First cut:
+  outer "Purchases | Handovers" tabs. **Owner then specified the real
+  shape:** ONE screen, ONE toolbar business-date picker shared across
+  **Stock Purchases · Deliveries · Handovers** inner tabs; the separate
+  ADR-46 Reconciliation table folded into a Status column; KPI strip
+  above the table. `financials-client.tsx` → shell (`transactions-tab.tsx`
+  holds the bodies; `handovers-tab.tsx` exports `HandoversView`).
+  `purchases-tab.tsx` was created then deleted in the same session.
+- **Handovers table columns** were owner-specified after a first render
+  overflowed: **Staff · Declared · Received · Variance · Status · Note ·
+  action**. Dropped Location (redundant with Staff) and Time (not useful
+  at day granularity). Money cells are labelled `Cash <n>` / `M-Pesa <n>`
+  stacks, not `c / m` slash pairs; Note is its own wrapping column.
+- **`listMovements` is now date-scoped** on the Purchases/Deliveries tabs
+  (`{ movementType, date }`) — the old body fetched with no date and
+  showed all-time rows, with the "Delivered" reconciliation window hacked
+  to today-only in code. Gone.
+- No `milestone-3-plan.md` created (per handoff).
+- The KPI-tile `TODO(mock)` moved into `kpi-strip.tsx`, otherwise
+  byte-identical — still owned by S4 Financials.
+
+**For Session 4 (Financials) — API contract notes.**
+
+- `GET /api/handovers/reconciliation` fit the Admin tab cleanly. One
+  gap: the row has no `handoverOccurredAt`-vs-`receiptOccurredAt` split
+  and no `correctedAt` marker, so the tab can't show "declared at X,
+  received at Y, corrected at Z" — it shows the handover `occurredAt`
+  only. Fine for the reconciliation view; the **audit-trail screen**
+  (later) will need the receipt/ correction timestamps, which today live
+  only on the `HandoverView.receipts[]` rows (not in the reconciliation
+  payload).
+- `correctReceipt` appends a second `ReceiptOfHandover` row; the
+  reconciliation `receiptId` / variance / notes correctly take the
+  latest, but a `HandoverView` returned from the correct endpoint has
+  `receipts.length === 2`. The staff history card uses `receipts.at(-1)`
+  for the same reason. If S4 ever sums receipts it must dedupe to the
+  latest per handover.
+- **ADR-54 stands:** a receipt still writes no `MoneyMovement`. If S4
+  introduces a till/hand account split, wire the paired
+  `sourceType: "handover_receipt"` movement then (the enum value is
+  reserved).
+
+**Kit.** No kit change. The old bespoke `ReconTable` was **deleted**
+(status folded into a `<SimpleTable>` column). One mapper remains: the
+Handovers totals strip (a `<SimpleTable>` has no footer slot) — hand-laid
+`<div>`s whose column widths track the `columns` array. Possible kit gaps
+noted: no `rowClassName` / footer slot on `<SimpleTable>`; a labelled
+two-line money cell (`Cash <n>` / `M-Pesa <n>`) is a local `<Stack>`
+helper — a candidate if a third screen needs it.
+
+**Owner should look at** — the Handovers table column set + the
+`Cash`/`M-Pesa` stacked cells were tuned live with the owner; a Paper
+pass could still refine the totals strip (sticky footer?) and the mobile
+card hierarchy. The staff declare screen is deliberately plain (mirrors
+cashier-today) — worth a look for whether the "past handovers" list
+earns its place or should be a separate view.
+
+**Gate state.** `pnpm tsc --noEmit` **0**. `pnpm build` **clean**.
+`pnpm test` green after the post-walkthrough reseed (the 3 transient
+`handovers.test.ts` failures were dev-DB pollution from the manual drive,
+not code — see Deltas). `grep TODO(mock)` in new files → only the
+pre-existing KPI one (S4).
+
+---
+
 ## Milestone 3 Session 2 — Handovers & Reconciliation backend + staff "today only" gate (Developer — 2026-09-03) — DONE
 
 **Shipped.**
