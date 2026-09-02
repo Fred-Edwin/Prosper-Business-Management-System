@@ -2178,3 +2178,80 @@ marks a dispatch accepted, and only the `+q` row may claim it.
 so the TOTAL reconciles. A column of its own is the better home but
 requires editing the frozen `<DenseLedger>`; raised with the owner rather
 than forked (CLAUDE.md: never change the kit unprompted).
+
+---
+
+## ADR-52: Day Close is a reversible seal — low-friction reopen, `AuditLog` is the history; one shared guard in `lib/domain/audit` (Developer, Milestone 3 Session 1, 2026-09-02)
+
+**Context.** M2 shipped with day-close as a *soft* check — "is this row's
+business date today?" — sprinkled inline in the few write paths that
+cared (`editOwnOrder`, `voidStockCount`, `correctMovement`). M3 needs a
+real seal: the Admin freezes a business date so its cash, variance and
+profit figures stop moving and daily reconciliation (and later
+reporting) is trustworthy. The `DayClose` model already existed
+(`date @unique @db.Date`, `closedBy`, `closedAt`); nothing enforced it
+except `correctMovement`'s inline `tx.dayClose.findUnique`.
+
+**Decision — reopening is permitted and deliberately low-friction.** The
+Admin can reopen *any* previously closed date, including historical ones,
+with a single toggle. No type-to-confirm, no multi-step dialog. The owner
+wants full control over their own data and does not want friction they
+did not ask for.
+
+**Decision — the audit trail is the safety mechanism.** Because reopening
+is permissive, history is preserved by `AuditLog`, not by making the seal
+hard to undo. Every close writes an `AuditLog` row (`action: "day_close"`)
+and every reopen writes one (`action: "day_reopen"`) — who, when, which
+date. Two new `AuditAction` enum values; additive migration
+(`20260903120000_add_day_close_audit_actions`). This is non-negotiable:
+it is what makes the full-control model sound.
+
+**Decision — one shared guard, in `lib/domain/audit`.** `CONVENTIONS.md`
+§1 already names `lib/domain/audit` as the home of "AuditLog, DayClose",
+and §5 already points day-boundary logic there. So the guard lives there,
+not in `lib/time` (which stays pure date math). `lib/domain/audit` is now
+a real module (was an empty dir). It exports:
+
+- `isDayClosed(dateOrBusinessDate, tx?)` — boolean.
+- `assertDayOpen(dateOrBusinessDate, tx?)` — throws `FORBIDDEN` if sealed.
+  Used by every **create** path: `createOrder`, `recordStockCount`,
+  `recordRepayment`, `setOpeningStock`, `recordPurchasePayment`, and the
+  `writeMovementLine` chokepoint (all 8 stock movement fns + their
+  batches). No actor argument — **nobody** writes a fresh primary row on
+  a sealed date, Admin included; the Admin's route in is a correction.
+- `assertActorMayCorrectOnDate(dateOrBusinessDate, actor, originalRecordedById, tx?)`
+  — the **correction** gate (`CONVENTIONS.md` §4.6): closed day → admin
+  only; open day → admin or the original recorder. Replaces the inline
+  block in `correctMovement`; `editOwnOrder` / `voidStockCount` use the
+  simpler `isDayClosed` (they are staff same-day actions, never Admin
+  corrections).
+- `closeDay` / `reopenDay` / `listDayCloses` / `getDayStatus` domain fns.
+
+**Consequences / notes.**
+
+- **`correctOrder` and `acceptTransfer` are deliberately NOT gated.**
+  `correctOrder` *is* the sanctioned append-only correction path and must
+  work on closed days (that is the point). `acceptTransfer` /
+  `flagTransfer` stamp `occurredAt = now` and complete an *in-flight*
+  operation — gating them would strand a dispatched transfer the moment a
+  day closes. Both write via `tx.stockMovement.create` directly, not
+  `writeMovementLine`, so the chokepoint gate does not catch them either
+  — that is by design, not an oversight.
+- **Behaviour change vs M2:** the old "is the business date today?"
+  heuristic rejected *any* backdated edit even when that day was never
+  closed. The real gate only rejects on an actual `DayClose` row. Three
+  domain tests that asserted the heuristic were rewritten to seal the
+  date first (`edit-own-order`, `record-stock-count`, `qa-m2-session-7`).
+- **`DayClose.date` has no scope column.** It is `@unique`, so test
+  suites that seal a date must clean it up; `cleanupSalesTestData` and
+  the new `lib/domain/audit` test-helper delete `dayClose` rows by
+  `closedBy IN (suite user ids)`. Audit-domain tests use fixed 2019-…
+  dates well outside any other suite's range.
+- **API:** `app/api/day-close` — `GET` (today's status + recent closes),
+  `POST` (close → 201, `CONFLICT` if already closed), `DELETE` (reopen →
+  `NOT_FOUND` if not closed). Admin-only, all verbs.
+- **UI:** one card on the existing `/admin` dashboard page (was an
+  `EmptyState` placeholder) — today's status, a close/reopen
+  `ToggleSwitch`, and a `SimpleTable` of recent closed dates each with a
+  one-tap **Reopen**. Composed from the frozen kit; no new route, no kit
+  changes.

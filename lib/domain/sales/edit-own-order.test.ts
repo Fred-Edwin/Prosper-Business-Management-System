@@ -147,7 +147,7 @@ describe("editOwnOrder", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("editing an order dated to a previous business day → FORBIDDEN (closed)", async () => {
+  it("editing an order whose business day is closed → FORBIDDEN", async () => {
     const [chapati] = ctx.products;
     const order = await createOrder(
       {
@@ -158,6 +158,11 @@ describe("editOwnOrder", () => {
       },
       cashierA,
     );
+    // M3 real gate: a DayClose row for that business date, not a
+    // "not today" heuristic.
+    await prisma.dayClose.create({
+      data: { date: new Date("2026-08-01T00:00:00Z"), closedBy: ctx.adminId },
+    });
     await expect(
       editOwnOrder(
         order.id,

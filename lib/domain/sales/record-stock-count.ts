@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { toBusinessDate } from "@/lib/time";
+import { assertDayOpen, isDayClosed } from "@/lib/domain/audit";
 import { recordMoneyMovement } from "@/lib/domain/financials";
 import type {
   ActorContext,
@@ -67,6 +67,10 @@ export async function recordStockCount(
   const occurredAt = input.occurredAt ?? new Date();
 
   const result = await prisma.$transaction(async (tx) => {
+    // Day-close gate (ADR-52) — a count is a fresh primary entry; a
+    // sealed date is off-limits to staff and Admin alike.
+    await assertDayOpen(occurredAt, tx);
+
     // The ONE derivation — read on `tx` so two concurrent counts can't
     // both pass a stale balance read.
     const d = await deriveStockCount(tx, {
@@ -200,15 +204,14 @@ export async function voidStockCount(
     if (count.countedById !== ctx.userId || count.locationId !== ctx.locationId) {
       throw new DomainError("FORBIDDEN", "You can only undo your own stock counts.");
     }
-    if (toBusinessDate(count.occurredAt) !== toBusinessDate(new Date())) {
+    if (await isDayClosed(count.occurredAt, tx)) {
       throw new DomainError(
         "FORBIDDEN",
         "This day is closed — ask an administrator to correct this count.",
       );
     }
 
-    // M3 swaps this business-date equality check for a real `DayClose`
-    // gate; the delete cascade below is unchanged.
+    // The delete cascade below is unchanged.
     await tx.moneyMovement.deleteMany({
       where: { sourceType: "canteen_sale", sourceId: countId },
     });

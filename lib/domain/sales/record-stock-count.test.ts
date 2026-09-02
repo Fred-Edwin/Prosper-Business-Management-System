@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, afterEach, describe, expect, it } from "vitest";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { toBusinessDate, businessDateOnly } from "@/lib/time";
 import { getDerivedStockBalance } from "@/lib/domain/stock/derived-balance";
 import { listMovements } from "@/lib/domain/stock/list-movements";
 import { recordStockCount, voidStockCount } from "./record-stock-count";
@@ -482,7 +483,7 @@ describe("voidStockCount", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("a count dated to a previous day → FORBIDDEN (day closed)", async () => {
+  it("voiding a count whose day was closed after the fact → FORBIDDEN", async () => {
     const [soda] = ctx.products;
     const yesterday = new Date(Date.now() - 26 * 60 * 60 * 1000);
     await seedMovement(ctx, {
@@ -491,10 +492,18 @@ describe("voidStockCount", () => {
       quantity: "100",
       occurredAt: new Date(yesterday.getTime() - 60_000),
     });
+    // Recorded while the day was still open.
     const { count } = await recordStockCount(
       { productId: soda.id, countedQuantity: "80", occurredAt: yesterday },
       attendantCtx,
     );
+    // Admin then seals that business date (M3 real gate).
+    await prisma.dayClose.create({
+      data: {
+        date: businessDateOnly(toBusinessDate(yesterday)),
+        closedBy: ctx.adminId,
+      },
+    });
     await expect(voidStockCount(count.id, attendantCtx)).rejects.toMatchObject({
       code: "FORBIDDEN",
     });

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { businessDateStartUtc } from "@/lib/time";
+import { assertDayOpen } from "@/lib/domain/audit";
 import type { SetOpeningStockInput, StockMovementView } from "./types";
 import { toMagnitude, toMovementView } from "./internal";
 import { assertLocationExists, assertProductExists } from "./guards";
@@ -30,6 +31,9 @@ export async function setOpeningStock(
   const occurredAt = businessDateStartUtc(input.businessDate);
 
   const row = await prisma.$transaction(async (tx) => {
+    // Day-close gate (ADR-52) — opening stock is the day's boundary
+    // figure; once the date is sealed it can only change by reopening it.
+    await assertDayOpen(input.businessDate, tx);
     await assertProductExists(tx, input.productId);
     await assertLocationExists(tx, input.locationId);
 

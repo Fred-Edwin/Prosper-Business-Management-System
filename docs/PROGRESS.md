@@ -15,6 +15,82 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 3 Session 1 — Day Close foundation (Developer — 2026-09-02) — DONE
+
+**Shipped.**
+
+- **`lib/domain/audit`** is now a real module (was an empty dir). One
+  shared day-close guard — `isDayClosed` / `assertDayOpen` /
+  `assertActorMayCorrectOnDate` (`day-close-guard.ts`) — plus `closeDay`
+  / `reopenDay` / `listDayCloses` / `getDayStatus` (`close-day.ts`,
+  `list-day-closes.ts`). Both close and reopen write an `AuditLog` row.
+- **Schema:** `day_close` + `day_reopen` added to the `AuditAction` enum
+  (additive migration `20260903120000_add_day_close_audit_actions`). No
+  table change; `DayClose` model was already present.
+- **Every ledger write path retrofitted** to the shared guard:
+  - `correctMovement` — inline `tx.dayClose.findUnique` **replaced** with
+    `assertActorMayCorrectOnDate` (the single implementation now).
+  - `createOrder`, `recordStockCount`, `recordRepayment`,
+    `setOpeningStock`, `recordPurchasePayment`, and the
+    `writeMovementLine` chokepoint (all 8 stock movement fns + batches) —
+    `assertDayOpen` on the entry's business date.
+  - `editOwnOrder`, `voidStockCount` — `isDayClosed` (staff same-day
+    actions; the old "is it today?" heuristic is gone).
+- **API:** `app/api/day-close` — `GET` (today's status + recent closes),
+  `POST` (close), `DELETE` (reopen). Admin-only, all verbs, thin
+  handlers. `lib/validation/day-close.ts`.
+- **UI:** the `/admin` dashboard page (was an `EmptyState` placeholder)
+  now renders the **Day Close card** — today's status, a close/reopen
+  `ToggleSwitch`, and a `SimpleTable` of recent closed dates each with a
+  one-tap Reopen. `app/admin/day-close/` (`use-day-close.ts` +
+  `day-close-client.tsx`). Composed from the frozen kit; no new route, no
+  kit change.
+
+**Owner decisions carried in (ADR-52).**
+
+- **Reopening is permitted and low-friction** — a plain toggle, any date
+  incl. historical, no type-to-confirm. The **audit trail** (`day_close`
+  / `day_reopen` rows) is the history-preservation mechanism, not a hard
+  seal.
+- Guard placed in `lib/domain/audit` (not `lib/time`) — `CONVENTIONS.md`
+  §1/§5 already name it as the home for DayClose + day-boundary logic.
+
+**Deltas from plan.**
+
+- No `milestone-3-plan.md` yet (per handoff — not created).
+- **`correctOrder` and `acceptTransfer`/`flagTransfer` deliberately left
+  ungated.** `correctOrder` *is* the sanctioned correction path and must
+  work on closed days. `acceptTransfer` completes an in-flight transfer
+  at `occurredAt = now` — gating it would strand a dispatched transfer
+  when a day closes. Both write via `tx.stockMovement.create` directly
+  (not `writeMovementLine`), so the chokepoint doesn't catch them — by
+  design. **Sessions 2–5 (handovers, financials) should assume the same
+  rule:** gate *create* paths with `assertDayOpen`; leave append-only
+  *correction* paths to enforce admin-only themselves.
+- 3 sibling domain tests rewrote their day-close assertion from the M2
+  "not today" heuristic to sealing an actual `DayClose` row
+  (`edit-own-order`, `record-stock-count`, `qa-m2-session-7`).
+- `DayClose.date` is `@unique` with no scope column — suites that seal a
+  date now clean up `dayClose` by `closedBy IN (suite users)`
+  (`cleanupSalesTestData` + the new audit test-helper). Audit-domain
+  tests use fixed 2019-… dates.
+
+**Verification.**
+
+- `pnpm test` **635/635** green (was 621 — +9 audit domain suite, +5
+  day-close route, rest from modified sibling tests). `pnpm typecheck`
+  clean. `pnpm build` clean.
+- Manual drive on `pnpm dev` (Admin + Store Manager sessions): SM `GET
+  /api/day-close` → 403; Admin close today → 201; second close → 409;
+  **SM records stock on the closed day → FORBIDDEN**; Admin reopen → 200;
+  **SM records stock after reopen → 201**. `/admin` card renders.
+
+**Blocked / follow-ups.** None. M1 known follow-ups (2-phase transfer
+receiver visibility, seed `update: {}` hardening, migration-history) still
+open, unchanged.
+
+---
+
 ## Post-M2 — quantity audit fixes: 7 of 10 findings closed (Developer — 2026-09-02) — DONE
 
 Second half of the audit handover (`docs/sprints/handovers/SESSION-seed-rebuild-and-quantity-fixes.md`

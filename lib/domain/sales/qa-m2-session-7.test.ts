@@ -40,7 +40,7 @@ import {
   type CanteenTestCtx,
   type SalesTestCtx,
 } from "./test-helpers";
-import { toBusinessDate } from "@/lib/time";
+import { toBusinessDate, businessDateOnly } from "@/lib/time";
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -443,7 +443,7 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
     expect(after.lines[0].quantity.toFixed(4)).toBe("3.0000");
   });
 
-  it("G — day boundary: an order created at 23:30 Nairobi is editable; the same order after 00:30 next day is not", async () => {
+  it("G — day close: an order is editable while its day is open; once the Admin seals that date the edit is FORBIDDEN", async () => {
     const [chapati] = ctx.products;
 
     // 23:30 Africa/Nairobi (UTC+3) == 20:30 UTC — today's business date.
@@ -470,16 +470,18 @@ describe("QA-S7 · Restaurant orders — money ledger, corrections, credit", () 
     );
     expect(edited.total).toBe("40.00");
 
-    // Now backdate the order's occurredAt to yesterday's Nairobi day and
-    // retry the edit — the soft "is the business day today?" gate must fail.
+    // Backdate the order to yesterday's Nairobi day, then seal that date
+    // (M3 real `DayClose` gate — ADR-52). The edit must now fail: a sealed
+    // date is Admin-correction-only.
     const yesterdayBiz = toBusinessDate(
       new Date(Date.now() - 24 * 60 * 60 * 1000),
     );
-    // 12:00 UTC == 15:00 Africa/Nairobi — unambiguously still yesterday's
-    // business day (unlike 21:30 UTC, which is 00:30 the next day in +03:00).
     await prisma.order.update({
       where: { id: order.id },
       data: { occurredAt: new Date(`${yesterdayBiz}T12:00:00.000Z`) },
+    });
+    await prisma.dayClose.create({
+      data: { date: businessDateOnly(yesterdayBiz), closedBy: ctx.adminId },
     });
     await expect(
       editOwnOrder(

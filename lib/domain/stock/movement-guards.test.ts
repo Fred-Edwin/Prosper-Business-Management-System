@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
+import { toBusinessDate, businessDateOnly } from "@/lib/time";
 import { recordNonSaleConsumption } from "./consumption";
 import { recordProduction } from "./issue-production";
 import { recordPurchaseReceipt } from "./purchases";
@@ -147,6 +148,49 @@ describe("stock movement guards", () => {
     expect(openingRows).toHaveLength(2);
     const sum = openingRows.reduce((s, r) => s + Number(r.quantity), 0);
     expect(sum).toBeCloseTo(95, 4);
+  });
+
+  it("day-close gate (ADR-52): a new movement on a sealed day → FORBIDDEN", async () => {
+    // setOpeningStock takes a business date, so a fixed historical one can
+    // be sealed without touching "today".
+    const businessDate = "2019-05-20";
+    await prisma.dayClose.create({
+      data: { date: new Date(`${businessDate}T00:00:00Z`), closedBy: ctx.adminId },
+    });
+    try {
+      await expect(
+        setOpeningStock({
+          productId: ctx.productId,
+          locationId: ctx.locationIds.store,
+          businessDate,
+          quantity: "5",
+          recordedById: ctx.recorderId,
+        }),
+      ).rejects.toMatchObject({ constructor: DomainError, code: "FORBIDDEN" });
+    } finally {
+      await prisma.dayClose.deleteMany({
+        where: { date: new Date(`${businessDate}T00:00:00Z`) },
+      });
+    }
+
+    // And a "today" write via the shared `writeMovementLine` chokepoint:
+    // seal today (Africa/Nairobi), attempt a receipt, expect FORBIDDEN.
+    const todayOnly = businessDateOnly(toBusinessDate(new Date()));
+    await prisma.dayClose.create({
+      data: { date: todayOnly, closedBy: ctx.adminId },
+    });
+    try {
+      await expect(
+        recordPurchaseReceipt({
+          productId: ctx.productId,
+          locationId: ctx.locationIds.store,
+          quantity: "10",
+          recordedById: ctx.recorderId,
+        }),
+      ).rejects.toMatchObject({ constructor: DomainError, code: "FORBIDDEN" });
+    } finally {
+      await prisma.dayClose.deleteMany({ where: { date: todayOnly } });
+    }
   });
 
   it("rejects a zero / negative magnitude", async () => {

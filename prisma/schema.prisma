@@ -110,6 +110,8 @@ enum AuditAction {
   soft_delete
   hard_delete
   login
+  day_close
+  day_reopen
 }
 
 // ── Identity & Access ───────────────────────────────────────────────────

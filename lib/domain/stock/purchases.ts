@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { recordMoneyMovement } from "@/lib/domain/financials";
+import { assertDayOpen } from "@/lib/domain/audit";
 import type {
   RecordPurchasePaymentInput,
   RecordPurchaseReceiptInput,
@@ -73,6 +74,9 @@ export async function recordPurchasePayment(
   }
 
   const row = await prisma.$transaction(async (tx) => {
+    // Day-close gate (ADR-52) — a purchase payment lands today; blocked
+    // only if today itself is sealed.
+    await assertDayOpen(new Date(), tx);
     await assertProductExists(tx, input.productId);
     await assertLocationExists(tx, input.locationId);
 

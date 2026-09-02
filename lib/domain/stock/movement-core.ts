@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import type { MovementType } from "@prisma/client";
+import { assertDayOpen } from "@/lib/domain/audit";
 import { DomainError } from "./errors";
 import { toMagnitude } from "./internal";
 
@@ -76,6 +77,15 @@ export async function writeMovementLine(
   data: Prisma.StockMovementUncheckedCreateInput & { movementType: MovementType },
   audit: LineAuditMeta,
 ) {
+  // Day-close gate (ADR-52) — a new movement on a sealed date is off-limits
+  // to everyone; the Admin's route back in is `correctMovement`. `data`
+  // carries an explicit `occurredAt` for every batch/backdated write; when
+  // omitted the row lands now.
+  await assertDayOpen(
+    data.occurredAt ? new Date(data.occurredAt) : new Date(),
+    tx,
+  );
+
   const row = await tx.stockMovement.create({ data });
   await tx.auditLog.create({
     data: {

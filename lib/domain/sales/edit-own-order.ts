@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { toBusinessDate } from "@/lib/time";
+import { isDayClosed } from "@/lib/domain/audit";
 import { DomainError } from "./errors";
 import { toOrderView } from "./internal";
 import { validateOrder, writeOrderEffects } from "./order-effects";
@@ -40,8 +40,10 @@ export async function editOwnOrder(
     if (order.cashierId !== ctx.userId) {
       throw new DomainError("FORBIDDEN", "You can only edit your own orders.");
     }
-    // M3: replace with a real `DayClose` lookup for the order's business date.
-    if (toBusinessDate(order.occurredAt) !== toBusinessDate(new Date())) {
+    // A true edit is a staff same-day action — once the order's business
+    // date is sealed (ADR-52) the only way back in is an Admin correction
+    // row via `correctOrder`.
+    if (await isDayClosed(order.occurredAt, tx)) {
       throw new DomainError(
         "FORBIDDEN",
         "This day is closed — ask an administrator to correct it.",

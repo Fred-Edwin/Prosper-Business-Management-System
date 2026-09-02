@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { assertDayOpen } from "@/lib/domain/audit";
 import { toOrderView } from "./internal";
 import { validateOrder, writeOrderEffects } from "./order-effects";
 import { resolveRestaurantId } from "./restaurant-location";
@@ -30,6 +31,11 @@ export async function createOrder(
     const restaurantId = ctx.restaurantId ?? (await resolveRestaurantId(tx));
 
     const resolved = await validateOrder({ input, restaurantId, tx });
+
+    // Day-close gate (ADR-52) — a new order on a sealed date is off-limits;
+    // an Admin correction (`correctOrder`) is the only way to touch a
+    // closed day.
+    await assertDayOpen(resolved.occurredAt, tx);
 
     const order = await tx.order.create({
       data: {

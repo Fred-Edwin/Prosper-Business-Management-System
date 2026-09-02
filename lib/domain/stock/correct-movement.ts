@@ -3,7 +3,7 @@ import type { ActorContext } from "./types";
 import type { CorrectMovementInput, StockMovementView } from "./types";
 import { toQuantity, toMovementView } from "./internal";
 import { DomainError } from "./errors";
-import { toBusinessDate, businessDateOnly } from "@/lib/time";
+import { assertActorMayCorrectOnDate } from "@/lib/domain/audit";
 
 /**
  * Correct a stock movement (ADR-15 / CONVENTIONS §4).
@@ -61,28 +61,14 @@ export async function correctMovement(
       );
     }
 
-    const businessDate = toBusinessDate(original.occurredAt);
-    const dayClose = await tx.dayClose.findUnique({
-      where: { date: businessDateOnly(businessDate) },
-      select: { id: true },
-    });
-
-    const isAdmin = actor.role === "admin";
-    const isOriginalRecorder = actor.userId === original.recordedById;
-
-    if (dayClose) {
-      if (!isAdmin) {
-        throw new DomainError(
-          "FORBIDDEN",
-          "This day is closed — only an administrator can correct it.",
-        );
-      }
-    } else if (!isAdmin && !isOriginalRecorder) {
-      throw new DomainError(
-        "FORBIDDEN",
-        "Only the person who recorded this movement, or an administrator, can correct it.",
-      );
-    }
+    // Day-close gate — the ONE shared implementation (ADR-52). Closed day
+    // → admin only; open day → admin or the original recorder.
+    await assertActorMayCorrectOnDate(
+      original.occurredAt,
+      actor,
+      original.recordedById,
+      tx,
+    );
 
     // Measure against the *current derived value* of this movement — the
     // original plus every correction delta already applied to it — so a

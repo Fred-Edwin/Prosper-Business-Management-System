@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { recordMoneyMovement } from "@/lib/domain/financials";
+import { assertDayOpen } from "@/lib/domain/audit";
 import { DomainError } from "./errors";
 import { moneyString } from "./internal";
 import type { CustomerContext, RecordRepaymentInput, Repayment } from "./types";
@@ -68,6 +69,10 @@ export async function recordRepayment(
   const occurredAt = input.occurredAt ?? new Date();
 
   const row = await prisma.$transaction(async (tx) => {
+    // Day-close gate (ADR-52) — a repayment is a fresh money-ledger entry;
+    // a sealed date needs an Admin correction, not a new row.
+    await assertDayOpen(occurredAt, tx);
+
     const repayment = await tx.repayment.create({
       data: {
         customerId: input.customerId,

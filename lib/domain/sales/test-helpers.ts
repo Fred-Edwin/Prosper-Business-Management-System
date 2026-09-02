@@ -346,6 +346,9 @@ export async function cleanupSalesTestData(scope: string): Promise<void> {
   }
 
   if (userIds.length > 0) {
+    // Day Close rows this suite's admin sealed (M3-S1) — `date` is
+    // `@unique`, so a leftover would collide with another suite's close.
+    await prisma.dayClose.deleteMany({ where: { closedBy: { in: userIds } } });
     await prisma.auditLog.deleteMany({ where: { userId: { in: userIds } } });
   }
   await prisma.user.deleteMany({ where: { name: { startsWith: prefix } } });
