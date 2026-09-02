@@ -6,332 +6,613 @@ import bcrypt from "bcryptjs";
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
-// Sample product names below are drawn from carry-forward/reference-data.json
-// (a prior build's real catalogue) for realism, mapped onto this schema's
-// product kinds — this is *not* a full catalogue import, which belongs to
-// the Catalog & Locations sprint.
+// ═══════════════════════════════════════════════════════════════════════
+// Prosper dev seed — WIPE + REBUILD (owner-approved 2026-09-02).
+//
+// Shape of this file:
+//   §0 helpers            — Nairobi wall-clock dating, id builders
+//   §1 wipe               — FK-safe delete of everything except AuditLog
+//   §2 locations, users   — Admin + 4 staff logins
+//   §3 catalogue          — CORRECTED product kinds (audit F10)
+//   §4 stock ledger       — 7 days, every ledger column exercised
+//   §5 restaurant sales   — ~18 orders, all methods/types, one corrected
+//   §6 canteen counts     — 6 counts, each with its derived sale (audit F5)
+//   §7 customers & assets
+//
+// Principles the audit (docs/sprints/m2-quantity-audit.md) demands:
+//   • Only seed what a built screen can display. Recipe, Handover,
+//     ReceiptOfHandover, HandoverShortfall, OwnerTransaction, Attendance,
+//     StaffPayAdjustment, DayClose and Expense have no UI (or no API
+//     route) — seeding them creates invisible data. EXCLUDED on purpose.
+//   • Ledgers, not stored totals. Every balance below is the sum of the
+//     rows this file writes; nothing stores a total (ADR-11 / ADR-40).
+//   • Corrections are new rows. The corrected order and the corrected
+//     stock movement below both use the correction-entry pattern.
+//   • Dates are relative to the run, recomputed every time — the seed
+//     never goes stale.
+//   • Idempotent: fixed `seed-*` ids, and the wipe means a re-run
+//     reproduces byte-identical data (modulo the date shift).
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── §0 helpers ─────────────────────────────────────────────────────────
+
+// Africa/Nairobi is UTC+3, no DST. `hh` is a Nairobi wall-clock hour, so
+// `at(2, 8, 0)` is 08:00 Nairobi two business days ago (ADR-29).
+const SEED_NOW = new Date();
+const at = (daysAgo: number, hh: number, mm: number) => {
+  const d = new Date(SEED_NOW);
+  d.setUTCDate(d.getUTCDate() - daysAgo);
+  d.setUTCHours(hh - 3, mm, 0, 0);
+  return d;
+};
+
+/** Nairobi calendar date (YYYY-MM-DD) of a `daysAgo` offset — for Asset.purchaseDate. */
+const dateOnly = (daysAgo: number) => {
+  const d = at(daysAgo, 12, 0);
+  return new Date(d.toISOString().slice(0, 10));
+};
+
+const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+const pid = (name: string) => `seed-product-${slug(name)}`;
+
+// ═══════════════════════════════════════════════════════════════════════
+// §1 WIPE
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Delete every row this seed owns, children before parents.
+ *
+ * AuditLog is deliberately spared: it is 80+ rows of real history from
+ * owner walkthroughs, it references no row we delete by FK, and nothing
+ * regenerates it. Everything else goes — the owner accepted losing the
+ * hand-made Products (Matoke, Chicken Breast, Rice, Glucose), Customers,
+ * Assets and the one hand-made Order, on the condition that this seed
+ * re-creates the products they actually use (it does — §3).
+ */
+async function wipe() {
+  // Self-referencing FKs (corrects_* ) are nullable, so a plain deleteMany
+  // per table works as long as the *cross-table* order is children-first.
+  await prisma.$transaction([
+    prisma.orderLine.deleteMany(),
+    prisma.moneyMovement.deleteMany(),
+    prisma.repayment.deleteMany(),
+    prisma.debt.deleteMany(),
+    prisma.stockMovement.deleteMany(),
+    prisma.stockCount.deleteMany(),
+    prisma.order.deleteMany(),
+    prisma.handoverShortfall.deleteMany(),
+    prisma.receiptOfHandover.deleteMany(),
+    prisma.handover.deleteMany(),
+    prisma.recipeIngredient.deleteMany(),
+    prisma.recipe.deleteMany(),
+    prisma.productLocation.deleteMany(),
+    prisma.product.deleteMany(),
+    prisma.customer.deleteMany(),
+    prisma.expense.deleteMany(),
+    prisma.ownerTransaction.deleteMany(),
+    prisma.attendance.deleteMany(),
+    prisma.staffPayAdjustment.deleteMany(),
+    prisma.dayClose.deleteMany(),
+    prisma.asset.deleteMany(),
+  ]);
+
+  // User / Staff / Location are NOT deleted. `AuditLog.userId` is a
+  // RESTRICT foreign key onto `user`, and the audit log is 80+ rows of
+  // real walkthrough history that nothing regenerates — deleting users
+  // would either take that history with it or be refused outright. So
+  // §2 instead *reuses* the existing rows (matched by the unique `name`)
+  // and re-asserts their fields, which keeps every audit entry correctly
+  // attributed. Locations are reused for the same reason: their ids are
+  // already the fixed `seed-location-*` strings.
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════════════
+
 async function main() {
-  // `update` re-asserts `active: true` so a row a prior test flipped
-  // inactive is healed on re-seed (`resolveRestaurantId` needs an ACTIVE
-  // restaurant, else `POST /api/orders` fails "No active Restaurant …").
-  // `name` is re-asserted on `update` too: an early seed created these rows
-  // with the id string in `name` ("seed-location-restaurant"), which then
-  // rendered raw on /admin/stock. Re-seeding heals it.
+  await wipe();
+
+  // ── §2 Locations, Admin, staff ───────────────────────────────────────
+  // Upserted, not created — see the note at the end of `wipe()`. `update`
+  // re-asserts `name` and `active: true` so a row an earlier test flipped
+  // inactive (or one an early seed created with the id string as its
+  // name) is healed on every run.
   const [restaurant, canteen, store] = await Promise.all([
     prisma.location.upsert({
       where: { id: "seed-location-restaurant" },
-      update: { active: true, name: "Restaurant" },
+      update: { name: "Restaurant", type: "restaurant", active: true },
       create: { id: "seed-location-restaurant", name: "Restaurant", type: "restaurant" },
     }),
     prisma.location.upsert({
       where: { id: "seed-location-canteen" },
-      update: { active: true, name: "Canteen" },
+      update: { name: "Canteen", type: "canteen", active: true },
       create: { id: "seed-location-canteen", name: "Canteen", type: "canteen" },
     }),
     prisma.location.upsert({
       where: { id: "seed-location-store" },
-      update: { active: true, name: "Store" },
+      update: { name: "Store", type: "store", active: true },
       create: { id: "seed-location-store", name: "Store", type: "store" },
     }),
   ]);
 
   const pinHash = await bcrypt.hash("1234", 10);
 
-  const adminUser = await prisma.user.upsert({
+  const admin = await prisma.user.upsert({
     where: { name: "Admin" },
-    update: {},
-    create: {
-      name: "Admin",
-      pinHash,
-      role: "admin",
+    update: { pinHash, role: "admin", active: true },
+    create: { name: "Admin", pinHash, role: "admin", active: true },
+  });
+
+  const staffSeeds = [
+    { key: "store-manager", role: "store_manager" as const, name: "Store Manager", locationId: store.id, dailyRate: "700.00" },
+    { key: "cashier", role: "cashier" as const, name: "Cashier", locationId: restaurant.id, dailyRate: "550.00" },
+    { key: "cashier-2", role: "cashier" as const, name: "Cashier Two", locationId: restaurant.id, dailyRate: "550.00" },
+    { key: "canteen-attendant", role: "canteen_attendant" as const, name: "Canteen Attendant", locationId: canteen.id, dailyRate: "600.00" },
+  ];
+
+  const users: Record<string, string> = { admin: admin.id };
+  for (const s of staffSeeds) {
+    const staffFields = {
+      name: s.name,
+      role: s.role,
+      locationId: s.locationId,
+      dailyRate: s.dailyRate,
       active: true,
-    },
-  });
-
-  const staffSeeds: Array<{
-    role: "store_manager" | "cashier" | "canteen_attendant";
-    name: string;
-    locationId: string;
-    dailyRate: string;
-  }> = [
-    {
-      role: "store_manager",
-      name: "Store Manager",
-      locationId: store.id,
-      dailyRate: "700.00",
-    },
-    {
-      role: "cashier",
-      name: "Cashier",
-      locationId: restaurant.id,
-      dailyRate: "550.00",
-    },
-    {
-      role: "canteen_attendant",
-      name: "Canteen Attendant",
-      locationId: canteen.id,
-      dailyRate: "600.00",
-    },
-  ];
-
-  for (const s of staffSeeds) {
+    };
     const staff = await prisma.staff.upsert({
-      where: { id: `seed-staff-${s.role}` },
-      update: {},
-      create: {
-        id: `seed-staff-${s.role}`,
-        name: s.name,
-        role: s.role,
-        locationId: s.locationId,
-        dailyRate: s.dailyRate,
-        active: true,
-      },
+      where: { id: `seed-staff-${s.key}` },
+      update: staffFields,
+      create: { id: `seed-staff-${s.key}`, ...staffFields },
     });
-
-    await prisma.user.upsert({
+    const user = await prisma.user.upsert({
       where: { name: s.name },
-      update: {},
-      create: {
-        name: s.name,
-        pinHash,
-        role: s.role,
-        staffId: staff.id,
-        active: true,
-      },
+      update: { pinHash, role: s.role, staffId: staff.id, active: true },
+      create: { name: s.name, pinHash, role: s.role, staffId: staff.id, active: true },
     });
+    users[s.key] = user.id;
   }
 
-  const ingredients = [
-    { name: "Cooking oil", unitLabel: "litre", buyingPrice: "253.33" },
-    { name: "Carrots", unitLabel: "kg", buyingPrice: "50.00" },
-    { name: "Beans", unitLabel: "cups", buyingPrice: "60.00" },
-  ];
-
-  for (const ing of ingredients) {
-    await prisma.product.upsert({
-      where: { id: `seed-product-${ing.name.toLowerCase().replace(/\s+/g, "-")}` },
-      update: {},
-      create: {
-        id: `seed-product-${ing.name.toLowerCase().replace(/\s+/g, "-")}`,
-        name: ing.name,
-        kind: "ingredient",
-        buyingPrice: ing.buyingPrice,
-        unitLabel: ing.unitLabel,
-      },
-    });
-  }
-
-  const dishes = [
-    { name: "Chicken Stew", price: "200.00", location: restaurant.id },
-    { name: "Chips Full", price: "100.00", location: restaurant.id },
-  ];
-
-  for (const dish of dishes) {
-    const product = await prisma.product.upsert({
-      where: { id: `seed-product-${dish.name.toLowerCase().replace(/\s+/g, "-")}` },
-      update: {},
-      create: {
-        id: `seed-product-${dish.name.toLowerCase().replace(/\s+/g, "-")}`,
-        name: dish.name,
-        kind: "dish",
-        buyingPrice: "0",
-        unitLabel: "plate",
-      },
-    });
-
-    await prisma.productLocation.upsert({
-      where: { productId_locationId: { productId: product.id, locationId: dish.location } },
-      update: {},
-      create: {
-        productId: product.id,
-        locationId: dish.location,
-        sellingPrice: dish.price,
-        active: true,
-      },
-    });
-  }
-
-  const goods = [
-    { name: "Bar Soap Menengai", price: "170.00", location: canteen.id, unitLabel: "kg" },
-  ];
-
-  for (const good of goods) {
-    const product = await prisma.product.upsert({
-      where: { id: `seed-product-${good.name.toLowerCase().replace(/\s+/g, "-")}` },
-      update: {},
-      create: {
-        id: `seed-product-${good.name.toLowerCase().replace(/\s+/g, "-")}`,
-        name: good.name,
-        kind: "goods",
-        buyingPrice: good.price,
-        unitLabel: good.unitLabel,
-      },
-    });
-
-    await prisma.productLocation.upsert({
-      where: { productId_locationId: { productId: product.id, locationId: good.location } },
-      update: {},
-      create: {
-        productId: product.id,
-        locationId: good.location,
-        sellingPrice: good.price,
-        active: true,
-      },
-    });
-  }
-
-  // ── M2 dev data (Restaurant sales · Customers & Credit) ──────────────
-  // Minimal populated data so `pnpm dev` shows the M2 screens non-empty
-  // for the Session 6b (Customers) + 6c (Cashier orders) owner
-  // walkthroughs. The FULL M2 seed (canteen counts, more breadth) is a
-  // Session 6d task. Idempotent via fixed `seed-*` ids.
-  await seedM2Sales({
-    restaurantId: restaurant.id,
-    canteenId: canteen.id,
-    adminUserId: adminUser.id,
+  // Any other login left over from an earlier seed or a manual test is
+  // deactivated rather than deleted (AuditLog RESTRICT again), so the PIN
+  // screen only offers the five accounts above.
+  await prisma.user.updateMany({
+    where: { name: { notIn: ["Admin", ...staffSeeds.map((s) => s.name)] } },
+    data: { active: false },
   });
 
-  console.log("Seed complete.");
-  console.log(`Admin: "Admin" / PIN 1234 (user id ${adminUser.id})`);
-  for (const s of staffSeeds) {
-    console.log(`${s.role}: "${s.name}" / PIN 1234`);
-  }
-  console.log(`cashier (2nd): "Cashier Two" / PIN 1234`);
-}
+  // Staff rows carry no AuditLog FK, so orphans CAN be deleted — and must
+  // be. An earlier seed keyed them `seed-staff-store_manager` (underscore)
+  // where this one uses `seed-staff-store-manager` (hyphen), which left
+  // duplicate-named Staff rows with no User attached showing up as phantom
+  // staff. Delete every Staff row this seed does not own.
+  await prisma.staff.deleteMany({
+    where: { id: { notIn: staffSeeds.map((s) => `seed-staff-${s.key}`) } },
+  });
 
-/**
- * Restaurant menu with categories + stock, a second cashier, four
- * customers (two owing, one in credit), and ~6 orders across the two
- * cashiers — cash / M-Pesa / credit / dine-in / takeaway / delivery, two
- * dated yesterday, one corrected. Written as rows (not via the domain,
- * which needs an auth context) — mirrors the rest of this seed.
- */
-async function seedM2Sales({
-  restaurantId,
-  canteenId,
-  adminUserId,
-}: {
-  restaurantId: string;
-  canteenId: string;
-  adminUserId: string;
-}) {
-  const pinHash = await bcrypt.hash("1234", 10);
+  const storeManagerId = users["store-manager"];
+  const cashier1 = users["cashier"];
+  const cashier2 = users["cashier-2"];
+  const attendantId = users["canteen-attendant"];
 
-  // Africa/Nairobi is UTC+3, no DST.
-  const now = new Date();
-  const at = (daysAgo: number, hh: number, mm: number) => {
-    const d = new Date(now);
-    d.setUTCDate(d.getUTCDate() - daysAgo);
-    d.setUTCHours(hh - 3, mm, 0, 0); // hh is a Nairobi wall-clock hour
-    return d;
+  // ── §3 Catalogue ─────────────────────────────────────────────────────
+  //
+  // Audit F10: the old seed typed sodas, water, mandazi and groundnuts as
+  // `kind: "dish"`, so Record Batch Production offered "Soda 300ml" as a
+  // thing to cook. Corrected classification, and the rules that go with it:
+  //
+  //   ingredient — raw inputs. Stocked at the Store ONLY, never sold, so
+  //                every ProductLocation row has `sellingPrice: null`.
+  //   dish       — produced at the Restaurant kitchen and sold there. The
+  //                ONLY kind a `production` movement may name.
+  //   goods      — bought-in finished items. They reach the Restaurant or
+  //                Canteen by `purchase_receipt` or `transfer`, never by
+  //                production. Priced per location (Soda sells at both).
+  //
+  // Deliberate edge cases, so the owner can see each state on a screen:
+  //   • Bar Soap        — archived (soft-deleted) product
+  //   • Groundnuts 50g  — stocked, then sold down to exactly zero
+  //   • Glucose         — never stocked at all (no movement rows)
+
+  type Priced = { locationId: string; sellingPrice: string | null };
+
+  type ProductSeed = {
+    name: string;
+    kind: "ingredient" | "dish" | "goods";
+    unitLabel: string;
+    buyingPrice: string | null;
+    category?: string | null;
+    at: Priced[];
+    archived?: boolean;
   };
 
-  // Second cashier (so A3 / cross-cashier isolation are walkable).
-  const cashier1 = await prisma.user.findUniqueOrThrow({
-    where: { name: "Cashier" },
-  });
-  const cashier2Staff = await prisma.staff.upsert({
-    where: { id: "seed-staff-cashier-2" },
-    update: {},
-    create: {
-      id: "seed-staff-cashier-2",
-      name: "Cashier Two",
-      role: "cashier",
-      locationId: restaurantId,
-      dailyRate: "550.00",
-      active: true,
-    },
-  });
-  const cashier2 = await prisma.user.upsert({
-    where: { name: "Cashier Two" },
-    update: {},
-    create: {
-      name: "Cashier Two",
-      pinHash,
-      role: "cashier",
-      staffId: cashier2Staff.id,
-      active: true,
-    },
-  });
+  const catalogue: ProductSeed[] = [
+    // ingredients — Store only, never priced
+    { name: "Cooking oil", kind: "ingredient", unitLabel: "litre", buyingPrice: "253.33", at: [{ locationId: store.id, sellingPrice: null }] },
+    { name: "Carrots", kind: "ingredient", unitLabel: "kg", buyingPrice: "50.00", at: [{ locationId: store.id, sellingPrice: null }] },
+    { name: "Beans", kind: "ingredient", unitLabel: "cups", buyingPrice: "60.00", at: [{ locationId: store.id, sellingPrice: null }] },
+    { name: "Rice", kind: "ingredient", unitLabel: "kg", buyingPrice: "150.00", at: [{ locationId: store.id, sellingPrice: null }] },
+    { name: "Chicken Breast", kind: "ingredient", unitLabel: "kg", buyingPrice: "520.00", at: [{ locationId: store.id, sellingPrice: null }] },
+    { name: "Wheat flour", kind: "ingredient", unitLabel: "kg", buyingPrice: "95.00", at: [{ locationId: store.id, sellingPrice: null }] },
 
-  // Restaurant menu — categories power the C2 / K1 tab rows.
-  const menu = [
-    { key: "chicken-stew", name: "Chicken Stew", price: "200.00", category: "Mains", unit: "plate", stock: "40" },
-    { key: "chips-full", name: "Chips Full", price: "100.00", category: "Mains", unit: "plate", stock: "50" },
-    { key: "chapati", name: "Chapati", price: "20.00", category: "Sides", unit: "pcs", stock: "120" },
-    { key: "soda-300ml", name: "Soda 300ml", price: "60.00", category: "Drinks", unit: "pcs", stock: "80" },
-    { key: "samosa", name: "Samosa", price: "30.00", category: "Snacks", unit: "pcs", stock: "60" },
-    // One left uncategorised on purpose (C2 "Uncategorised" tab).
-    { key: "water-500ml", name: "Water 500ml", price: "50.00", category: null as string | null, unit: "pcs", stock: "70" },
+    // dishes — produced and sold at the Restaurant
+    { name: "Chapati", kind: "dish", unitLabel: "pcs", buyingPrice: "0", category: "Sides", at: [{ locationId: restaurant.id, sellingPrice: "20.00" }] },
+    { name: "Chicken Stew", kind: "dish", unitLabel: "plate", buyingPrice: "0", category: "Mains", at: [{ locationId: restaurant.id, sellingPrice: "200.00" }] },
+    { name: "Chips Full", kind: "dish", unitLabel: "plate", buyingPrice: "0", category: "Mains", at: [{ locationId: restaurant.id, sellingPrice: "100.00" }] },
+    { name: "Samosa", kind: "dish", unitLabel: "pcs", buyingPrice: "0", category: "Snacks", at: [{ locationId: restaurant.id, sellingPrice: "30.00" }] },
+    { name: "Matoke", kind: "dish", unitLabel: "plate", buyingPrice: "0", category: "Mains", at: [{ locationId: restaurant.id, sellingPrice: "120.00" }] },
+    // Uncategorised on purpose — exercises the C2 "Uncategorised" tab.
+    { name: "Rice & Beans", kind: "dish", unitLabel: "plate", buyingPrice: "0", category: null, at: [{ locationId: restaurant.id, sellingPrice: "150.00" }] },
+
+    // goods — bought in; sold at the Restaurant AND the Canteen
+    {
+      name: "Soda 300ml", kind: "goods", unitLabel: "pcs", buyingPrice: "45.00", category: "Drinks",
+      at: [{ locationId: restaurant.id, sellingPrice: "60.00" }, { locationId: canteen.id, sellingPrice: "60.00" }],
+    },
+    {
+      name: "Water 500ml", kind: "goods", unitLabel: "pcs", buyingPrice: "35.00", category: "Drinks",
+      at: [{ locationId: restaurant.id, sellingPrice: "50.00" }, { locationId: canteen.id, sellingPrice: "50.00" }],
+    },
+    { name: "Mandazi", kind: "goods", unitLabel: "pcs", buyingPrice: "12.00", category: "Bakery", at: [{ locationId: canteen.id, sellingPrice: "20.00" }] },
+    { name: "Groundnuts 50g", kind: "goods", unitLabel: "pcs", buyingPrice: "18.00", category: "Snacks", at: [{ locationId: canteen.id, sellingPrice: "30.00" }] },
+    // Edge case: never stocked — no movement rows anywhere.
+    { name: "Glucose", kind: "goods", unitLabel: "pcs", buyingPrice: "40.00", category: "Snacks", at: [{ locationId: canteen.id, sellingPrice: "60.00" }] },
+    // Edge case: archived. Its ProductLocation rows stay, its history stays.
+    { name: "Bar Soap", kind: "goods", unitLabel: "bar", buyingPrice: "140.00", category: null, at: [{ locationId: canteen.id, sellingPrice: "170.00" }], archived: true },
   ];
 
-  const menuProducts: Record<string, string> = {};
-  for (const m of menu) {
-    const p = await prisma.product.upsert({
-      where: { id: `seed-product-${m.key}` },
-      update: { category: m.category ?? null },
-      create: {
-        id: `seed-product-${m.key}`,
-        name: m.name,
-        kind: "dish",
-        buyingPrice: "0",
-        unitLabel: m.unit,
-        category: m.category ?? null,
+  for (const p of catalogue) {
+    await prisma.product.create({
+      data: {
+        id: pid(p.name),
+        name: p.name,
+        kind: p.kind,
+        unitLabel: p.unitLabel,
+        buyingPrice: p.buyingPrice,
+        category: p.category ?? null,
+        deletedAt: p.archived ? at(2, 9, 0) : null,
       },
     });
-    menuProducts[m.key] = p.id;
+    for (const loc of p.at) {
+      await prisma.productLocation.create({
+        data: {
+          id: `seed-pl-${slug(p.name)}-${loc.locationId.replace("seed-location-", "")}`,
+          productId: pid(p.name),
+          locationId: loc.locationId,
+          sellingPrice: loc.sellingPrice,
+          active: true,
+        },
+      });
+    }
+  }
 
-    await prisma.productLocation.upsert({
-      where: {
-        productId_locationId: { productId: p.id, locationId: restaurantId },
-      },
-      update: { sellingPrice: m.price, active: true },
-      create: {
-        productId: p.id,
-        locationId: restaurantId,
-        sellingPrice: m.price,
-        active: true,
+  // ── §4 Stock ledger — 7 days ─────────────────────────────────────────
+  //
+  // Every column the Admin ledger renders (COLUMN_FOR_TYPE in
+  // app/admin/stock/derive-ledger.ts) is non-empty on at least one day:
+  // purchases, issues, production, transferIn, transferOut, sold. There
+  // is at least one resting product per day (a product with an opening
+  // balance and no movement — exercises the resting-rows fix), and one
+  // product ends the week negative.
+
+  let smSeq = 0;
+  type MoveInput = {
+    id?: string;
+    product: string;
+    locationId: string;
+    type:
+      | "opening" | "purchase_payment" | "purchase_receipt" | "issue"
+      | "production" | "transfer" | "sale" | "non_sale_consumption"
+      | "stock_count" | "closing";
+    qty: string;
+    by: string;
+    at: Date;
+    reason?: "staff_meal" | "complimentary" | "spoiled" | "damaged" | "other";
+    reasonNote?: string;
+    note?: string;
+    counterpartLocationId?: string;
+    correctsMovementId?: string;
+    purchasePaymentId?: string;
+    purchase?: { supplier: string; orderedQty: string; totalCost: string; paidFrom: "cash" | "mpesa_bank" };
+  };
+
+  async function move(m: MoveInput) {
+    const id = m.id ?? `seed-sm-${String(++smSeq).padStart(3, "0")}`;
+    const row = await prisma.stockMovement.create({
+      data: {
+        id,
+        productId: pid(m.product),
+        locationId: m.locationId,
+        movementType: m.type,
+        quantity: m.qty,
+        recordedById: m.by,
+        occurredAt: m.at,
+        reason: m.reason ?? null,
+        reasonNote: m.reasonNote ?? null,
+        note: m.note ?? null,
+        transferCounterpartLocationId: m.counterpartLocationId ?? null,
+        correctsMovementId: m.correctsMovementId ?? null,
+        purchasePaymentId: m.purchasePaymentId ?? null,
+        purchaseSupplier: m.purchase?.supplier ?? null,
+        purchaseOrderedQty: m.purchase?.orderedQty ?? null,
+        purchaseTotalCost: m.purchase?.totalCost ?? null,
+        purchasePaidFrom: m.purchase?.paidFrom ?? null,
       },
     });
+    return row.id;
+  }
 
-    // A `production` movement so the C2 derived Restaurant balance is > 0
-    // (otherwise every line is §3.8-blocked). Idempotent by fixed id.
-    await prisma.stockMovement.upsert({
-      where: { id: `seed-sm-open-${m.key}` },
-      update: {},
-      create: {
-        id: `seed-sm-open-${m.key}`,
-        productId: p.id,
-        locationId: restaurantId,
-        movementType: "production",
-        quantity: m.stock,
-        recordedById: adminUserId,
-        occurredAt: at(3, 7, 0),
+  // ── Day −7 · opening balances at all three locations ────────────────
+  const openings: Array<[string, string, string]> = [
+    // [product, locationId, quantity]
+    ["Cooking oil", store.id, "40"],
+    ["Carrots", store.id, "25"],
+    ["Beans", store.id, "30"],
+    ["Rice", store.id, "80"],
+    ["Chicken Breast", store.id, "12"],
+    ["Wheat flour", store.id, "50"],
+    ["Chapati", restaurant.id, "60"],
+    ["Chicken Stew", restaurant.id, "20"],
+    ["Chips Full", restaurant.id, "25"],
+    ["Samosa", restaurant.id, "40"],
+    ["Matoke", restaurant.id, "15"],
+    ["Rice & Beans", restaurant.id, "18"],
+    ["Soda 300ml", restaurant.id, "72"],
+    ["Water 500ml", restaurant.id, "48"],
+    ["Soda 300ml", canteen.id, "144"],
+    ["Water 500ml", canteen.id, "96"],
+    ["Mandazi", canteen.id, "60"],
+    ["Groundnuts 50g", canteen.id, "30"],
+    ["Bar Soap", canteen.id, "12"],
+  ];
+  for (const [product, locationId, qty] of openings) {
+    await move({
+      id: `seed-sm-open-${slug(product)}-${locationId.replace("seed-location-", "")}`,
+      product,
+      locationId,
+      type: "opening",
+      qty,
+      by: admin.id,
+      at: at(7, 8, 0),
+    });
+  }
+
+  // ── Day −6 · purchase payment → receipt (Store); production (Restaurant)
+  const oilPayment = await move({
+    product: "Cooking oil",
+    locationId: store.id,
+    type: "purchase_payment",
+    qty: "0", // money-only marker, no stock effect (ADR-39)
+    by: admin.id,
+    at: at(6, 9, 15),
+    note: "Paid Bidii Suppliers for 20 litre Cooking oil — KES 5,066.60 from M-Pesa",
+    purchase: { supplier: "Bidii Suppliers", orderedQty: "20", totalCost: "5066.60", paidFrom: "mpesa_bank" },
+  });
+  await prisma.moneyMovement.create({
+    data: {
+      id: "seed-mm-purchase-oil",
+      account: "mpesa_bank",
+      amount: "5066.60",
+      sourceType: "purchase_payment",
+      sourceId: oilPayment,
+      stockMovementId: oilPayment,
+      recordedById: admin.id,
+      occurredAt: at(6, 9, 15),
+    },
+  });
+  // The receipt links back to the payment it settles (ADR-46 §3).
+  await move({ product: "Cooking oil", locationId: store.id, type: "purchase_receipt", qty: "20", by: storeManagerId, at: at(6, 11, 0), purchasePaymentId: oilPayment });
+  await move({ product: "Wheat flour", locationId: store.id, type: "purchase_receipt", qty: "25", by: storeManagerId, at: at(6, 11, 10) });
+  // Production at the Restaurant — dishes only.
+  await move({ product: "Chapati", locationId: restaurant.id, type: "production", qty: "80", by: storeManagerId, at: at(6, 7, 30) });
+  await move({ product: "Chicken Stew", locationId: restaurant.id, type: "production", qty: "30", by: storeManagerId, at: at(6, 7, 45) });
+
+  // ── Day −5 · issue Store→Kitchen; production; canteen count ─────────
+  await move({ product: "Cooking oil", locationId: store.id, type: "issue", qty: "-3", by: storeManagerId, at: at(5, 7, 0), note: "Issued to kitchen" });
+  await move({ product: "Wheat flour", locationId: store.id, type: "issue", qty: "-8", by: storeManagerId, at: at(5, 7, 5), note: "Issued to kitchen" });
+  await move({ product: "Chicken Breast", locationId: store.id, type: "issue", qty: "-4", by: storeManagerId, at: at(5, 7, 10), note: "Issued to kitchen" });
+  await move({ product: "Chips Full", locationId: restaurant.id, type: "production", qty: "40", by: storeManagerId, at: at(5, 8, 0) });
+  await move({ product: "Samosa", locationId: restaurant.id, type: "production", qty: "50", by: storeManagerId, at: at(5, 8, 15) });
+
+  // ── Day −4 · transfer Store→Canteen, accepted same day; more production
+  // Goods reach the Canteen by transfer, never production. Two phases
+  // (lib/domain/stock/transfer.ts): a `-q` dispatch at the source, then a
+  // `+q` accept at the destination carrying `correctsMovementId`.
+  const sodaDispatch = await move({
+    product: "Soda 300ml",
+    locationId: restaurant.id,
+    type: "transfer",
+    qty: "-24",
+    by: storeManagerId,
+    at: at(4, 9, 0),
+    counterpartLocationId: canteen.id,
+    note: "Transfer dispatched — awaiting receipt",
+  });
+  await move({
+    product: "Soda 300ml",
+    locationId: canteen.id,
+    type: "transfer",
+    qty: "24",
+    by: attendantId,
+    at: at(4, 10, 30),
+    counterpartLocationId: restaurant.id,
+    correctsMovementId: sodaDispatch,
+    note: "Transfer received",
+  });
+  await move({ product: "Chapati", locationId: restaurant.id, type: "production", qty: "60", by: storeManagerId, at: at(4, 7, 30) });
+  await move({ product: "Matoke", locationId: restaurant.id, type: "production", qty: "25", by: storeManagerId, at: at(4, 7, 40) });
+
+  // ── Day −3 · non-sale consumption (spoiled + staff meal); production ──
+  await move({
+    product: "Carrots", locationId: store.id, type: "non_sale_consumption", qty: "-2",
+    by: storeManagerId, at: at(3, 16, 0), reason: "spoiled", reasonNote: "Went soft in the crate",
+  });
+  await move({
+    product: "Chicken Stew", locationId: restaurant.id, type: "non_sale_consumption", qty: "-3",
+    by: storeManagerId, at: at(3, 14, 30), reason: "staff_meal", reasonNote: "Lunch for the kitchen team",
+  });
+  await move({ product: "Rice & Beans", locationId: restaurant.id, type: "production", qty: "35", by: storeManagerId, at: at(3, 8, 0) });
+  await move({ product: "Chicken Stew", locationId: restaurant.id, type: "production", qty: "25", by: storeManagerId, at: at(3, 8, 10) });
+
+  // ── Day −2 · a transfer left PENDING (K/SM incoming banner) ──────────
+  await move({
+    id: "seed-sm-transfer-pending-water",
+    product: "Water 500ml",
+    locationId: restaurant.id,
+    type: "transfer",
+    qty: "-12",
+    by: storeManagerId,
+    at: at(2, 15, 0),
+    counterpartLocationId: canteen.id,
+    note: "Transfer dispatched — awaiting receipt",
+  });
+  await move({ product: "Chapati", locationId: restaurant.id, type: "production", qty: "70", by: storeManagerId, at: at(2, 7, 30) });
+  await move({ product: "Samosa", locationId: restaurant.id, type: "production", qty: "40", by: storeManagerId, at: at(2, 8, 0) });
+  // Restaurant receives bought-in goods directly (goods are never produced).
+  await move({ product: "Soda 300ml", locationId: restaurant.id, type: "purchase_receipt", qty: "48", by: storeManagerId, at: at(2, 10, 0) });
+
+  // ── Day −1 · a CORRECTED movement (correction-entry pattern) ─────────
+  // Original: 6 kg Carrots received. It was really 9 — the correction is a
+  // new `+3` delta row pointing at the original (ADR-39), never an edit.
+  const carrotReceipt = await move({
+    id: "seed-sm-carrot-receipt",
+    product: "Carrots",
+    locationId: store.id,
+    type: "purchase_receipt",
+    qty: "6",
+    by: storeManagerId,
+    at: at(1, 9, 30),
+  });
+  await move({
+    id: "seed-sm-carrot-receipt-correction",
+    product: "Carrots",
+    locationId: store.id,
+    type: "purchase_receipt",
+    qty: "3",
+    by: admin.id,
+    at: at(1, 17, 45),
+    correctsMovementId: carrotReceipt,
+    note: "Corrected: delivery note said 9 kg, 6 was keyed",
+  });
+  await move({ product: "Chicken Stew", locationId: restaurant.id, type: "production", qty: "30", by: storeManagerId, at: at(1, 7, 45) });
+  await move({ product: "Chapati", locationId: restaurant.id, type: "production", qty: "50", by: storeManagerId, at: at(1, 8, 0) });
+  await move({ product: "Rice", locationId: store.id, type: "issue", qty: "-15", by: storeManagerId, at: at(1, 7, 0), note: "Issued to kitchen" });
+
+  // ── Today · fresh movements + one pending inbound transfer ───────────
+  await move({ product: "Chapati", locationId: restaurant.id, type: "production", qty: "45", by: storeManagerId, at: at(0, 7, 30) });
+  await move({ product: "Chips Full", locationId: restaurant.id, type: "production", qty: "30", by: storeManagerId, at: at(0, 7, 50) });
+  await move({ product: "Beans", locationId: store.id, type: "issue", qty: "-6", by: storeManagerId, at: at(0, 8, 0), note: "Issued to kitchen" });
+  // A second pending dispatch, today — so the Canteen's incoming-transfer
+  // banner has something to show on the current business day. Soda is
+  // stocked at BOTH the Restaurant and the Canteen (it is `goods`), which
+  // is what makes it transferable between them.
+  await move({
+    id: "seed-sm-transfer-pending-soda",
+    product: "Soda 300ml",
+    locationId: restaurant.id,
+    type: "transfer",
+    qty: "-12",
+    by: storeManagerId,
+    at: at(0, 9, 20),
+    counterpartLocationId: canteen.id,
+    note: "Transfer dispatched — awaiting receipt",
+  });
+
+  // One product ends the week NEGATIVE — Chicken Breast was issued past
+  // what the Store actually held, which is exactly the state the Admin
+  // needs to be able to see rather than have silently clamped to zero.
+  await move({ product: "Chicken Breast", locationId: store.id, type: "issue", qty: "-10", by: storeManagerId, at: at(0, 8, 15), note: "Issued to kitchen" });
+
+  // ── §5 Restaurant sales ──────────────────────────────────────────────
+  await seedSales({ restaurantId: restaurant.id, cashier1, cashier2, adminId: admin.id });
+
+  // ── §6 Canteen stock counts ──────────────────────────────────────────
+  await seedCanteenCounts({ canteenId: canteen.id, attendantId });
+
+  // ── §7 Assets ────────────────────────────────────────────────────────
+  const assets = [
+    { key: "deep-frier", name: "Deep Frier", locationId: restaurant.id, daysAgo: 400, cost: "38000.00", condition: "Good" },
+    { key: "fridge", name: "Chest Fridge", locationId: canteen.id, daysAgo: 700, cost: "52000.00", condition: "Fair" },
+    { key: "gas-cooker", name: "Gas Cooker (6 burner)", locationId: restaurant.id, daysAgo: 200, cost: "74500.00", condition: "Good" },
+    { key: "shelving", name: "Store Shelving Unit", locationId: store.id, daysAgo: 900, cost: "12000.00", condition: "Needs repair", archived: true },
+  ];
+  for (const a of assets) {
+    await prisma.asset.create({
+      data: {
+        id: `seed-asset-${a.key}`,
+        name: a.name,
+        locationId: a.locationId,
+        purchaseDate: dateOnly(a.daysAgo),
+        purchaseCost: a.cost,
+        conditionStatus: a.condition,
+        deletedAt: a.archived ? at(30, 10, 0) : null,
       },
     });
   }
 
-  // Customers.
+  console.log("Seed complete (wipe + rebuild).");
+  console.log('Admin:  "Admin" / PIN 1234');
+  for (const s of staffSeeds) console.log(`${s.role}: "${s.name}" / PIN 1234`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// §5 Restaurant sales
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * ~18 orders over 7 days across both cashiers: all three payment methods
+ * × all three order types, one delivery with a fee, one corrected order,
+ * and credit orders that create Debt with a mix of Repayment states.
+ *
+ * Audit F3: EVERY order writes its `sale` StockMovement rows here. The
+ * old seed early-returned when the order id already existed, so a re-seed
+ * left 10 orders with zero sale movements — the ledger's SOLD column was
+ * empty and Restaurant stock read high. The wipe + unconditional create
+ * below makes that impossible.
+ */
+async function seedSales({
+  restaurantId,
+  cashier1,
+  cashier2,
+  adminId,
+}: {
+  restaurantId: string;
+  cashier1: string;
+  cashier2: string;
+  adminId: string;
+}) {
+  // Restaurant selling prices, mirrored from the §3 catalogue.
+  const PRICE: Record<string, string> = {
+    "Chapati": "20.00",
+    "Chicken Stew": "200.00",
+    "Chips Full": "100.00",
+    "Samosa": "30.00",
+    "Matoke": "120.00",
+    "Rice & Beans": "150.00",
+    "Soda 300ml": "60.00",
+    "Water 500ml": "50.00",
+  };
+
+  // 6 customers: 2 owing, 1 in credit, 1 settled, 1 with no history, 1 archived.
+  // (Customer has no `deletedAt` column — "archived" here means a customer
+  // row that carries no orders and no debts, kept for the A2 empty state.)
   const customers = [
     { key: "grace", name: "Grace Wanjiru", phone: "0722000111" },
     { key: "john", name: "John Otieno", phone: "0733222444" },
     { key: "mary", name: "Mary Achieng", phone: "0711888222" },
     { key: "peter", name: "Peter Kamau", phone: "0700123456" },
+    { key: "esther", name: "Esther Njeri", phone: "0798445221" },
+    { key: "daniel", name: "Daniel Mwangi", phone: "0755334100" },
   ];
-  const cust: Record<string, string> = {};
   for (const c of customers) {
-    const row = await prisma.customer.upsert({
-      where: { id: `seed-customer-${c.key}` },
-      update: {},
-      create: { id: `seed-customer-${c.key}`, name: c.name, phone: c.phone },
+    await prisma.customer.create({
+      data: { id: `seed-customer-${c.key}`, name: c.name, phone: c.phone },
     });
-    cust[c.key] = row.id;
   }
 
-  // Helper: create an order + its lines + money/debt effect + sale
-  // movements, all keyed by a stable id so re-seeding is a no-op.
-  type LineSpec = { key: string; qty: number };
-  async function makeOrder(opts: {
+  let saleSeq = 0;
+
+  type OrderSpec = {
     id: string;
     cashierId: string;
     orderType: "dine_in" | "takeaway" | "delivery";
@@ -339,414 +620,273 @@ async function seedM2Sales({
     deliveryFee?: string;
     customerKey?: string;
     occurredAt: Date;
-    lines: LineSpec[];
+    lines: Array<{ product: string; qty: number }>;
     correctsOrderId?: string;
-  }) {
-    const existing = await prisma.order.findUnique({ where: { id: opts.id } });
-    if (existing) {
-      // Re-date on re-seed so the Admin Sales "Today" default and the
-      // Cashier same-day edit gate keep working on any later `pnpm dev`
-      // day — the order dates are relative to `now`, not fixed.
-      if (existing.occurredAt.getTime() !== opts.occurredAt.getTime()) {
-        await prisma.order.update({
-          where: { id: opts.id },
-          data: { occurredAt: opts.occurredAt },
-        });
-        await prisma.stockMovement.updateMany({
-          where: { orderId: opts.id },
-          data: { occurredAt: opts.occurredAt },
-        });
-        await prisma.moneyMovement.updateMany({
-          where: { sourceType: "order", sourceId: opts.id },
-          data: { occurredAt: opts.occurredAt },
-        });
-        await prisma.debt.updateMany({
-          where: { orderId: opts.id },
-          data: { occurredAt: opts.occurredAt },
-        });
-      }
-      return existing;
-    }
+  };
 
-    const lineData = opts.lines.map((l) => {
-      const spec = menu.find((m) => m.key === l.key)!;
-      const unit = Number(spec.price);
+  async function makeOrder(o: OrderSpec) {
+    const lineData = o.lines.map((l) => {
+      const unit = Number(PRICE[l.product]);
       return {
-        productId: menuProducts[l.key],
+        productId: pid(l.product),
         quantity: String(l.qty),
-        unitPrice: spec.price,
+        unitPrice: PRICE[l.product],
         subtotal: (unit * l.qty).toFixed(2),
       };
     });
     const itemsTotal = lineData.reduce((s, l) => s + Number(l.subtotal), 0);
-    const fee = opts.orderType === "delivery" ? Number(opts.deliveryFee ?? 0) : 0;
+    const fee = o.orderType === "delivery" ? Number(o.deliveryFee ?? 0) : 0;
     const total = (itemsTotal + fee).toFixed(2);
 
     const order = await prisma.order.create({
       data: {
-        id: opts.id,
+        id: o.id,
         locationId: restaurantId,
-        cashierId: opts.cashierId,
-        orderType: opts.orderType,
-        deliveryFee: opts.orderType === "delivery" ? (opts.deliveryFee ?? "0") : null,
-        paymentMethod: opts.paymentMethod,
-        customerId: opts.customerKey ? cust[opts.customerKey] : null,
+        cashierId: o.cashierId,
+        orderType: o.orderType,
+        deliveryFee: o.orderType === "delivery" ? (o.deliveryFee ?? "0") : null,
+        paymentMethod: o.paymentMethod,
+        customerId: o.customerKey ? `seed-customer-${o.customerKey}` : null,
         total,
-        occurredAt: opts.occurredAt,
-        correctsOrderId: opts.correctsOrderId ?? null,
+        occurredAt: o.occurredAt,
+        correctsOrderId: o.correctsOrderId ?? null,
         lines: { create: lineData },
       },
     });
 
-    // Sale stock movements (Restaurant stock down).
+    // The sale ledger rows (audit F3 — never skipped).
     for (const l of lineData) {
       await prisma.stockMovement.create({
         data: {
+          id: `seed-sm-sale-${String(++saleSeq).padStart(3, "0")}`,
           productId: l.productId,
           locationId: restaurantId,
           movementType: "sale",
           quantity: `-${l.quantity}`,
-          recordedById: opts.cashierId,
-          occurredAt: opts.occurredAt,
+          recordedById: o.cashierId,
+          occurredAt: o.occurredAt,
           orderId: order.id,
         },
       });
     }
 
-    if (opts.paymentMethod === "credit" && opts.customerKey) {
+    if (o.paymentMethod === "credit" && o.customerKey) {
       await prisma.debt.create({
         data: {
-          customerId: cust[opts.customerKey],
+          id: `seed-debt-${o.id}`,
+          customerId: `seed-customer-${o.customerKey}`,
           orderId: order.id,
           amount: total,
-          occurredAt: opts.occurredAt,
+          occurredAt: o.occurredAt,
         },
       });
     } else {
       await prisma.moneyMovement.create({
         data: {
-          account: opts.paymentMethod === "mpesa" ? "mpesa_bank" : "cash",
+          id: `seed-mm-${o.id}`,
+          account: o.paymentMethod === "mpesa" ? "mpesa_bank" : "cash",
           amount: total,
           sourceType: "order",
           sourceId: order.id,
-          recordedById: opts.cashierId,
-          occurredAt: opts.occurredAt,
+          recordedById: o.cashierId,
+          occurredAt: o.occurredAt,
         },
       });
     }
     return order;
   }
 
-  // Today — cashier 1.
-  await makeOrder({
-    id: "seed-order-1",
-    cashierId: cashier1.id,
-    orderType: "dine_in",
-    paymentMethod: "cash",
-    occurredAt: at(0, 10, 22),
-    lines: [{ key: "chapati", qty: 2 }, { key: "samosa", qty: 3 }],
-  });
-  await makeOrder({
-    id: "seed-order-2",
-    cashierId: cashier1.id,
-    orderType: "delivery",
-    paymentMethod: "mpesa",
-    deliveryFee: "150.00",
-    occurredAt: at(0, 12, 30),
-    lines: [{ key: "chicken-stew", qty: 2 }],
-  });
-  await makeOrder({
-    id: "seed-order-3",
-    cashierId: cashier1.id,
-    orderType: "takeaway",
-    paymentMethod: "credit",
-    customerKey: "grace",
-    occurredAt: at(0, 13, 5),
-    lines: [{ key: "chips-full", qty: 3 }, { key: "soda-300ml", qty: 2 }],
-  });
-
-  // Today — cashier 2 (cross-cashier isolation is visible on A3).
-  await makeOrder({
-    id: "seed-order-4",
-    cashierId: cashier2.id,
-    orderType: "dine_in",
-    paymentMethod: "cash",
-    occurredAt: at(0, 11, 45),
-    lines: [{ key: "chicken-stew", qty: 1 }, { key: "chapati", qty: 2 }],
-  });
-  await makeOrder({
-    id: "seed-order-5",
-    cashierId: cashier2.id,
-    orderType: "takeaway",
-    paymentMethod: "credit",
-    customerKey: "mary",
-    occurredAt: at(0, 14, 10),
-    lines: [{ key: "chicken-stew", qty: 2 }],
-  });
-
-  // Yesterday — cashier 1 (C4 past-day read-only path is walkable).
-  await makeOrder({
-    id: "seed-order-6",
-    cashierId: cashier1.id,
-    orderType: "dine_in",
-    paymentMethod: "cash",
-    occurredAt: at(1, 15, 20),
-    lines: [{ key: "samosa", qty: 4 }],
-  });
-  // Yesterday — corrected (A3 linked row-group + C4 corrected state).
-  const original = await makeOrder({
-    id: "seed-order-7",
-    cashierId: cashier1.id,
-    orderType: "dine_in",
-    paymentMethod: "cash",
-    occurredAt: at(1, 16, 0),
-    lines: [{ key: "chicken-stew", qty: 1 }, { key: "soda-300ml", qty: 1 }],
-  });
-  await makeOrder({
-    id: "seed-order-7-correction",
-    cashierId: adminUserId, // Admin records the correction
-    orderType: "dine_in",
-    paymentMethod: "cash",
-    occurredAt: at(1, 16, 0),
-    lines: [{ key: "chicken-stew", qty: 1 }], // soda removed by the correction
-    correctsOrderId: original.id,
-  });
-
-  // Repayments — one with a note (A2 "Reference" cell), mix of accounts.
-  const repayments = [
-    { id: "seed-repayment-1", customerKey: "grace", amount: "200.00", account: "cash" as const, note: null as string | null, daysAgo: 0 },
-    { id: "seed-repayment-2", customerKey: "john", amount: "500.00", account: "mpesa_bank" as const, note: "Cleared in full at the counter", daysAgo: 2 },
+  const orders: OrderSpec[] = [
+    // ── Day −6 …
+    { id: "seed-order-01", cashierId: cashier1, orderType: "dine_in", paymentMethod: "cash", occurredAt: at(6, 12, 10), lines: [{ product: "Chicken Stew", qty: 2 }, { product: "Chapati", qty: 4 }] },
+    { id: "seed-order-02", cashierId: cashier2, orderType: "takeaway", paymentMethod: "mpesa", occurredAt: at(6, 13, 40), lines: [{ product: "Chips Full", qty: 3 }, { product: "Soda 300ml", qty: 3 }] },
+    // ── Day −5 …
+    { id: "seed-order-03", cashierId: cashier1, orderType: "dine_in", paymentMethod: "cash", occurredAt: at(5, 12, 30), lines: [{ product: "Samosa", qty: 6 }, { product: "Water 500ml", qty: 2 }] },
+    { id: "seed-order-04", cashierId: cashier2, orderType: "delivery", paymentMethod: "mpesa", deliveryFee: "150.00", occurredAt: at(5, 18, 5), lines: [{ product: "Chicken Stew", qty: 3 }] },
+    // Grace runs a tab — two credit orders, partially repaid (§ repayments).
+    { id: "seed-order-05", cashierId: cashier1, orderType: "takeaway", paymentMethod: "credit", customerKey: "grace", occurredAt: at(5, 14, 0), lines: [{ product: "Chips Full", qty: 4 }, { product: "Soda 300ml", qty: 2 }] },
+    // ── Day −4 …
+    { id: "seed-order-06", cashierId: cashier1, orderType: "dine_in", paymentMethod: "cash", occurredAt: at(4, 12, 15), lines: [{ product: "Matoke", qty: 2 }, { product: "Chapati", qty: 2 }] },
+    { id: "seed-order-07", cashierId: cashier2, orderType: "dine_in", paymentMethod: "mpesa", occurredAt: at(4, 13, 20), lines: [{ product: "Rice & Beans", qty: 3 }] },
+    // John — credit, later settled in full.
+    { id: "seed-order-08", cashierId: cashier1, orderType: "takeaway", paymentMethod: "credit", customerKey: "john", occurredAt: at(4, 15, 45), lines: [{ product: "Chicken Stew", qty: 3 }] },
+    // ── Day −3 …
+    { id: "seed-order-09", cashierId: cashier1, orderType: "dine_in", paymentMethod: "cash", occurredAt: at(3, 12, 0), lines: [{ product: "Chapati", qty: 8 }, { product: "Chicken Stew", qty: 1 }] },
+    { id: "seed-order-10", cashierId: cashier2, orderType: "takeaway", paymentMethod: "cash", occurredAt: at(3, 16, 30), lines: [{ product: "Samosa", qty: 5 }] },
+    // Mary — credit, never repaid (still owing).
+    { id: "seed-order-11", cashierId: cashier2, orderType: "takeaway", paymentMethod: "credit", customerKey: "mary", occurredAt: at(3, 17, 10), lines: [{ product: "Chicken Stew", qty: 2 }, { product: "Water 500ml", qty: 2 }] },
+    // ── Day −2 …
+    { id: "seed-order-12", cashierId: cashier1, orderType: "dine_in", paymentMethod: "mpesa", occurredAt: at(2, 12, 25), lines: [{ product: "Chips Full", qty: 2 }, { product: "Soda 300ml", qty: 2 }] },
+    { id: "seed-order-13", cashierId: cashier2, orderType: "delivery", paymentMethod: "cash", deliveryFee: "100.00", occurredAt: at(2, 19, 0), lines: [{ product: "Matoke", qty: 2 }, { product: "Soda 300ml", qty: 1 }] },
+    // Peter — credit, then OVER-repaid, so he sits in credit.
+    { id: "seed-order-14", cashierId: cashier1, orderType: "takeaway", paymentMethod: "credit", customerKey: "peter", occurredAt: at(2, 14, 50), lines: [{ product: "Rice & Beans", qty: 2 }] },
+    // ── Day −1 …
+    { id: "seed-order-15", cashierId: cashier1, orderType: "dine_in", paymentMethod: "cash", occurredAt: at(1, 12, 40), lines: [{ product: "Chicken Stew", qty: 1 }, { product: "Chapati", qty: 3 }] },
+    { id: "seed-order-16", cashierId: cashier2, orderType: "takeaway", paymentMethod: "mpesa", occurredAt: at(1, 13, 55), lines: [{ product: "Samosa", qty: 4 }, { product: "Water 500ml", qty: 1 }] },
+    // ── Today …
+    { id: "seed-order-17", cashierId: cashier1, orderType: "dine_in", paymentMethod: "cash", occurredAt: at(0, 10, 22), lines: [{ product: "Chapati", qty: 2 }, { product: "Samosa", qty: 3 }] },
+    { id: "seed-order-18", cashierId: cashier2, orderType: "dine_in", paymentMethod: "cash", occurredAt: at(0, 11, 45), lines: [{ product: "Chicken Stew", qty: 1 }, { product: "Chapati", qty: 2 }] },
+    { id: "seed-order-19", cashierId: cashier1, orderType: "delivery", paymentMethod: "mpesa", deliveryFee: "120.00", occurredAt: at(0, 12, 30), lines: [{ product: "Chips Full", qty: 2 }] },
   ];
-  // John needs a debt to repay against — give him a small past credit order.
+
+  for (const o of orders) await makeOrder(o);
+
+  // One corrected order — the correction is its own Order row linked by
+  // `correctsOrderId` (never an edit). Dated into the same business day
+  // as the original, and recorded by the Admin.
+  //
+  // NOTE for the F1 fix: `listOrders` currently returns BOTH rows and a
+  // naive sum double-counts them. That is a read-path bug, not a seed
+  // bug — this pair is exactly the data needed to see it and to verify
+  // the fix. See docs/sprints/m2-quantity-audit.md §3.1.
   await makeOrder({
-    id: "seed-order-john-credit",
-    cashierId: cashier1.id,
-    orderType: "takeaway",
-    paymentMethod: "credit",
-    customerKey: "john",
-    occurredAt: at(3, 12, 0),
-    lines: [{ key: "chicken-stew", qty: 3 }],
+    id: "seed-order-15-correction",
+    cashierId: adminId,
+    orderType: "dine_in",
+    paymentMethod: "cash",
+    occurredAt: at(1, 16, 0),
+    lines: [{ product: "Chicken Stew", qty: 1 }, { product: "Chapati", qty: 1 }],
+    correctsOrderId: "seed-order-15",
   });
+
+  // ── Repayments ───────────────────────────────────────────────────────
+  // Grace: owes 520 (order 05), repaid 200  → still owing 320
+  // John:  owes 600 (order 08), repaid 600  → settled
+  // Mary:  owes 500 (order 11), no repayment → owing
+  // Peter: owes 300 (order 14), repaid 400  → in credit by 100
+  // Esther / Daniel: no history at all.
+  const repayments = [
+    { id: "seed-repayment-1", customerKey: "grace", amount: "200.00", account: "cash" as const, note: null as string | null, daysAgo: 3 },
+    { id: "seed-repayment-2", customerKey: "john", amount: "600.00", account: "mpesa_bank" as const, note: "Cleared in full at the counter", daysAgo: 2 },
+    { id: "seed-repayment-3", customerKey: "peter", amount: "400.00", account: "cash" as const, note: "Paid ahead for the week", daysAgo: 1 },
+  ];
   for (const r of repayments) {
-    const exists = await prisma.repayment.findUnique({ where: { id: r.id } });
-    if (exists) continue;
     await prisma.repayment.create({
       data: {
         id: r.id,
-        customerId: cust[r.customerKey],
+        customerId: `seed-customer-${r.customerKey}`,
         amount: r.amount,
         account: r.account,
         note: r.note,
-        recordedById: adminUserId,
+        recordedById: adminId,
         occurredAt: at(r.daysAgo, 9, 30),
       },
     });
     await prisma.moneyMovement.create({
       data: {
+        id: `seed-mm-${r.id}`,
         account: r.account,
         amount: r.amount,
         sourceType: "repayment",
         sourceId: r.id,
-        recordedById: adminUserId,
+        recordedById: adminId,
         occurredAt: at(r.daysAgo, 9, 30),
       },
     });
   }
+}
 
-  // ── M2 6d: Canteen products + Stock Counts (Derived Sales A4 / K1 / K2) ──
-  const canteenAttendantUser = await prisma.user.findFirstOrThrow({
-    where: { role: "canteen_attendant" },
-  });
-  const canteenAttendantId = canteenAttendantUser.id;
+// ═══════════════════════════════════════════════════════════════════════
+// §6 Canteen stock counts
+// ═══════════════════════════════════════════════════════════════════════
 
-  // Additional canteen-only products
-  const extraCanteenProducts = [
-    { key: "mandazi", name: "Mandazi", price: "20.00", category: "Bakery", unit: "pcs", opening: "60", openingDaysAgo: 3 },
-    { key: "groundnuts-50g", name: "Groundnuts 50g", price: "30.00", category: "Snacks", unit: "pcs", opening: "50", openingDaysAgo: 3 }, // Never counted
-  ];
-
-  for (const item of extraCanteenProducts) {
-    const p = await prisma.product.upsert({
-      where: { id: `seed-product-${item.key}` },
-      update: { category: item.category },
-      create: {
-        id: `seed-product-${item.key}`,
-        name: item.name,
-        kind: "dish",
-        buyingPrice: "0",
-        unitLabel: item.unit,
-        category: item.category,
-      },
-    });
-
-    await prisma.productLocation.upsert({
-      where: { productId_locationId: { productId: p.id, locationId: canteenId } },
-      update: { sellingPrice: item.price, active: true },
-      create: {
-        productId: p.id,
-        locationId: canteenId,
-        sellingPrice: item.price,
-        active: true,
-      },
-    });
-
-    await prisma.stockMovement.upsert({
-      where: { id: `seed-sm-canteen-open-${item.key}` },
-      update: {},
-      create: {
-        id: `seed-sm-canteen-open-${item.key}`,
-        productId: p.id,
-        locationId: canteenId,
-        movementType: "opening",
-        quantity: item.opening,
-        recordedById: adminUserId,
-        occurredAt: at(item.openingDaysAgo, 8, 0),
-      },
-    });
-  }
-
-  // Ensure Soda and Water are also active at Canteen
-  const canteenSharedProducts = [
-    { key: "soda-300ml", price: "60.00", opening: "144", openingDaysAgo: 5 },
-    { key: "water-500ml", price: "50.00", opening: "80", openingDaysAgo: 4 },
-  ];
-
-  for (const item of canteenSharedProducts) {
-    const prodId = menuProducts[item.key];
-    await prisma.productLocation.upsert({
-      where: { productId_locationId: { productId: prodId, locationId: canteenId } },
-      update: { sellingPrice: item.price, active: true },
-      create: {
-        productId: prodId,
-        locationId: canteenId,
-        sellingPrice: item.price,
-        active: true,
-      },
-    });
-
-    await prisma.stockMovement.upsert({
-      where: { id: `seed-sm-canteen-open-${item.key}` },
-      update: {},
-      create: {
-        id: `seed-sm-canteen-open-${item.key}`,
-        productId: prodId,
-        locationId: canteenId,
-        movementType: "opening",
-        quantity: item.opening,
-        recordedById: adminUserId,
-        occurredAt: at(item.openingDaysAgo, 8, 0),
-      },
-    });
-  }
-
-  // Receipt of 48 Soda at Canteen (2 days ago)
-  await prisma.stockMovement.upsert({
-    where: { id: "seed-sm-canteen-receipt-soda" },
-    update: {},
-    create: {
-      id: "seed-sm-canteen-receipt-soda",
-      productId: menuProducts["soda-300ml"],
-      locationId: canteenId,
-      movementType: "purchase_receipt",
-      quantity: "48",
-      recordedById: canteenAttendantId,
-      occurredAt: at(2, 10, 0),
-    },
-  });
-
-  // Helper to record a seeded stock count idempotently
-  async function seedStockCount(opts: {
+/**
+ * The Canteen sells by counting what is left, not by ringing up orders:
+ * a StockCount records the counted quantity, and the units sold are
+ * DERIVED (prior balance − counted). StockCount therefore has no
+ * `soldQuantity` column — per the ledger rule, units sold is never
+ * stored — so each count here also writes the `sale` StockMovement and
+ * the cash `MoneyMovement` the domain would write.
+ *
+ * Audit F5: because the old seed's orders never wrote sale movements,
+ * GET /api/canteen/stock-counts reported `unitsSold: "0.0000"` against
+ * real revenue. The paired rows below are what makes the derived figure
+ * agree with the money.
+ *
+ * The quantities are chained: each count's `counted` equals the running
+ * Canteen balance minus that day's sold units, so the ledger reconciles.
+ */
+async function seedCanteenCounts({
+  canteenId,
+  attendantId,
+}: {
+  canteenId: string;
+  attendantId: string;
+}) {
+  type CountSpec = {
     id: string;
-    productId: string;
-    countedQuantity: string;
-    soldQuantity: string;
+    product: string;
+    counted: string;
+    sold: string;
     unitPrice: string;
-    occurredAt: Date;
-  }) {
-    const exists = await prisma.stockCount.findUnique({ where: { id: opts.id } });
-    if (exists) return;
+    at: Date;
+  };
 
+  // Canteen running balances from §4:
+  //   Soda 300ml      144 opening, +24 transfer in on day −4  = 168
+  //   Water 500ml      96 opening                             =  96
+  //   Mandazi          60 opening                             =  60
+  //   Groundnuts 50g   30 opening                             =  30
+  const counts: CountSpec[] = [
+    // Day −5 · first-ever count for Soda (no prior period to compare).
+    { id: "seed-count-soda-1", product: "Soda 300ml", counted: "108", sold: "36", unitPrice: "60.00", at: at(5, 17, 0) },
+    // Day −4 · Water, a plain count.
+    { id: "seed-count-water-1", product: "Water 500ml", counted: "72", sold: "24", unitPrice: "50.00", at: at(4, 17, 0) },
+    // Day −3 · Soda again (108 + 24 transfer in = 132, sold 30 → 102).
+    { id: "seed-count-soda-2", product: "Soda 300ml", counted: "102", sold: "30", unitPrice: "60.00", at: at(3, 17, 0) },
+    // Day −3 · Mandazi.
+    { id: "seed-count-mandazi-1", product: "Mandazi", counted: "26", sold: "34", unitPrice: "20.00", at: at(3, 17, 5) },
+    // Day −2 · Groundnuts sold out exactly — the zero-balance edge case.
+    { id: "seed-count-groundnuts-1", product: "Groundnuts 50g", counted: "0", sold: "30", unitPrice: "30.00", at: at(2, 17, 0) },
+    // Day −1 · a ZERO-SOLD count (nothing moved) — writes no sale row and
+    // no money row, which is the state the K1 preview must handle.
+    { id: "seed-count-water-2", product: "Water 500ml", counted: "72", sold: "0", unitPrice: "50.00", at: at(1, 17, 0) },
+    // Today · Soda, dated to the MORNING on purpose. `deriveStockCount`
+    // refuses a count at or before an existing one ("counts must move
+    // forward in time"), so an evening-dated count today would block the
+    // attendant from recording any count during the walkthrough. An
+    // early count leaves the rest of the day open for a live one.
+    { id: "seed-count-soda-3", product: "Soda 300ml", counted: "80", sold: "22", unitPrice: "60.00", at: at(0, 6, 30) },
+  ];
+
+  for (const c of counts) {
     await prisma.stockCount.create({
       data: {
-        id: opts.id,
-        productId: opts.productId,
+        id: c.id,
+        productId: pid(c.product),
         locationId: canteenId,
-        countedById: canteenAttendantId,
-        countedQuantity: opts.countedQuantity,
-        occurredAt: opts.occurredAt,
+        countedById: attendantId,
+        countedQuantity: c.counted,
+        occurredAt: c.at,
       },
     });
 
-    const sold = Number(opts.soldQuantity);
-    if (sold > 0) {
-      await prisma.stockMovement.create({
-        data: {
-          id: `seed-sm-count-sale-${opts.id}`,
-          productId: opts.productId,
-          locationId: canteenId,
-          movementType: "sale",
-          quantity: `-${opts.soldQuantity}`,
-          stockCountId: opts.id,
-          recordedById: canteenAttendantId,
-          occurredAt: opts.occurredAt,
-        },
-      });
+    const sold = Number(c.sold);
+    if (sold === 0) continue;
 
-      const revenue = (sold * Number(opts.unitPrice)).toFixed(2);
-      await prisma.moneyMovement.create({
-        data: {
-          account: "cash",
-          amount: revenue,
-          sourceType: "canteen_sale",
-          sourceId: opts.id,
-          recordedById: canteenAttendantId,
-          occurredAt: opts.occurredAt,
-        },
-      });
-    }
-  }
+    await prisma.stockMovement.create({
+      data: {
+        id: `seed-sm-count-${c.id}`,
+        productId: pid(c.product),
+        locationId: canteenId,
+        movementType: "sale",
+        quantity: `-${c.sold}`,
+        stockCountId: c.id,
+        recordedById: attendantId,
+        occurredAt: c.at,
+      },
+    });
 
-  // Stock Counts matching Paper GL2-0 / Walkthroughs:
-  // 1. Soda (3 days ago: count 96, sold 48)
-  await seedStockCount({
-    id: "seed-count-soda-1",
-    productId: menuProducts["soda-300ml"],
-    countedQuantity: "96",
-    soldQuantity: "48",
-    unitPrice: "60.00",
-    occurredAt: at(3, 17, 0),
-  });
-
-  // 2. Soda (1 day ago: count 96, sold 48; total period Mon-Thu sold 96, revenue 5,760.00)
-  await seedStockCount({
-    id: "seed-count-soda-2",
-    productId: menuProducts["soda-300ml"],
-    countedQuantity: "96",
-    soldQuantity: "48",
-    unitPrice: "60.00",
-    occurredAt: at(1, 17, 0),
-  });
-
-  // 3. Water (1 day ago: count 40, sold 40, revenue 2,000.00)
-  await seedStockCount({
-    id: "seed-count-water-1",
-    productId: menuProducts["water-500ml"],
-    countedQuantity: "40",
-    soldQuantity: "40",
-    unitPrice: "50.00",
-    occurredAt: at(1, 17, 0),
-  });
-
-  // 4. Mandazi (today: count 26, sold 34, revenue 680.00)
-  const mandaziProduct = await prisma.product.findUnique({ where: { id: "seed-product-mandazi" } });
-  if (mandaziProduct) {
-    await seedStockCount({
-      id: "seed-count-mandazi-1",
-      productId: mandaziProduct.id,
-      countedQuantity: "26",
-      soldQuantity: "34",
-      unitPrice: "20.00",
-      occurredAt: at(0, 15, 0),
+    await prisma.moneyMovement.create({
+      data: {
+        id: `seed-mm-count-${c.id}`,
+        account: "cash",
+        amount: (sold * Number(c.unitPrice)).toFixed(2),
+        sourceType: "canteen_sale",
+        sourceId: c.id,
+        recordedById: attendantId,
+        occurredAt: c.at,
+      },
     });
   }
 }
