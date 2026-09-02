@@ -67,6 +67,13 @@ export type ListProductsFilter = {
   includeArchived?: boolean;
   /** Exact-match on the menu category (used by C2's category tab row). */
   category?: string;
+  /**
+   * Restrict to products that have an **active** `ProductLocation` at this
+   * location — the Catalog's "show products assigned to {location}"
+   * filter. Assignment, not stock-on-hand; an inactive ProductLocation
+   * (location dropped for the product) does not match.
+   */
+  locationId?: string;
 };
 
 export type ActorContext = {

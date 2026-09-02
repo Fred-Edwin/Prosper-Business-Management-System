@@ -53,6 +53,8 @@ export type CatalogListFilter = {
   kind?: "ingredient" | "dish" | "goods";
   search?: string;
   includeArchived?: boolean;
+  /** Restrict to products assigned (active ProductLocation) to this location. */
+  locationId?: string;
 };
 
 export function useCatalog(filter: CatalogListFilter) {
@@ -61,7 +63,7 @@ export function useCatalog(filter: CatalogListFilter) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  const { kind, search, includeArchived } = filter;
+  const { kind, search, includeArchived, locationId } = filter;
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -71,6 +73,8 @@ export function useCatalog(filter: CatalogListFilter) {
       if (kind) params.set("kind", kind);
       if (search && search.trim() !== "") params.set("search", search.trim());
       if (includeArchived) params.set("includeArchived", "true");
+      if (locationId && locationId.trim() !== "")
+        params.set("locationId", locationId.trim());
 
       const [prods, locs] = await Promise.all([
         request<ProductWithLocations[]>(`/api/products?${params.toString()}`),
@@ -83,7 +87,7 @@ export function useCatalog(filter: CatalogListFilter) {
     } finally {
       setLoading(false);
     }
-  }, [kind, search, includeArchived]);
+  }, [kind, search, includeArchived, locationId]);
 
   React.useEffect(() => {
     void refresh();
