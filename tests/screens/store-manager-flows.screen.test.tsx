@@ -510,6 +510,104 @@ describe("SM — Transfer Stock", () => {
   });
 });
 
+// ── Zero balances + the balance-read lifecycle (2026-09-02) ─────────
+//
+// m2-followups #16. The picker used to pass `Math.max(onHand, lineQty, 1)`
+// as an additive row's `available`, so a true balance of 0 read
+// "On hand: 1" — fabricated stock. It also ignored `useStockLevels`
+// loading / error, so a slow or failed balances read settled into a
+// screen of honest-looking zeros instead of skeletons then <ErrorState>.
+describe("SM movement flows — a zero balance reads honestly", () => {
+  it("additive (Receive): a 0-balance row shows On hand: 0, never a fabricated 1", () => {
+    levels.rows = LEVELS.map((l) =>
+      l.productId === "p-oil" ? { ...l, quantity: "0.0000" } : l,
+    );
+    renderFlow(<MovementPickerFlow mode="receive" />);
+
+    expect(
+      screen.getByRole("group", { name: /^Cooking Oil, On hand: 0 L/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: /^Cooking Oil, On hand: 1 L/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("additive: a 0-balance row stays selectable and submits", async () => {
+    levels.rows = LEVELS.map((l) =>
+      l.productId === "p-oil" ? { ...l, quantity: "0.0000" } : l,
+    );
+    renderFlow(<MovementPickerFlow mode="receive" />);
+    const user = userEvent.setup();
+
+    // The kit would have muted this row (`available === 0` ⇒ inert);
+    // the additive wrapper keeps `+ Select` live.
+    await pickRow(user, "Cooking Oil", "12");
+
+    // Still honest after selection — the readout is not the quantity.
+    expect(
+      screen.getByRole("group", { name: /^Cooking Oil, On hand: 0 L/ }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /Confirm Receipt \(\+12 L\)/ }),
+    );
+    await waitFor(() =>
+      expect(api.receiptBatch).toHaveBeenCalledWith({
+        locationId: "loc-store",
+        lines: [{ productId: "p-oil", quantity: "12", purchasePaymentId: null }],
+      }),
+    );
+  });
+
+  it("additive (Production): a never-produced dish is selectable at 0", async () => {
+    levels.rows = LEVELS.map((l) =>
+      l.productId === "p-stew" ? { ...l, quantity: "0.0000" } : l,
+    );
+    renderFlow(<MovementPickerFlow mode="production" />);
+    const user = userEvent.setup();
+
+    expect(
+      screen.getByRole("group", { name: /^Beef Stew, Available: 0 pcs/ }),
+    ).toBeInTheDocument();
+
+    await pickRow(user, "Beef Stew", "24");
+    expect(
+      screen.getByRole("button", { name: /Log Batch Production \(\+24 pcs\)/ }),
+    ).toBeEnabled();
+  });
+
+  it("spend (Issue): a 0-balance row still reads None on hand and stays inert", () => {
+    levels.rows = LEVELS.map((l) =>
+      l.productId === "p-oil" ? { ...l, quantity: "0.0000" } : l,
+    );
+    renderFlow(<MovementPickerFlow mode="issue" />);
+
+    const row = screen.getByRole("group", { name: /^Cooking Oil, None on hand/ });
+    expect(within(row).getByRole("button", { name: "+ Select" })).toBeDisabled();
+  });
+
+  it("a pending balance read shows skeletons, not a screen of zeros", () => {
+    levels.loading = true;
+    levels.rows = [];
+    renderFlow(<MovementPickerFlow mode="issue" />);
+
+    expect(
+      screen.queryByRole("group", { name: /^Beef Fillet,/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("a failed balance read shows ErrorState, not a screen of zeros", () => {
+    levels.error = "Failed to load stock levels.";
+    levels.rows = [];
+    renderFlow(<MovementPickerFlow mode="issue" />);
+
+    expect(screen.getByText("Couldn't load Store stock")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: /^Beef Fillet,/ }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 // ── Non-sale ────────────────────────────────────────────────────────
 describe("SM — Log Non-Sale", () => {
   it("reason + note; 'Other' makes the note required and blocks submit", async () => {

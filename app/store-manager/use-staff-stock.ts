@@ -503,6 +503,12 @@ export function useStockLevels(locationId: string | undefined) {
           // Products with no stock at this location are noise on a
           // levels view — hide a clean zero (a negative balance is a
           // real signal and stays).
+          //
+          // NOTE (2026-09-02): the movement picker also reads this hook
+          // and then does `availableById.get(p.id) ?? 0`, so a filtered-
+          // out clean zero lands back on 0 anyway — no bug, but the
+          // picker doesn't actually need the filtering and could read
+          // `stockApi.balances` directly. Left as-is; not worth the churn.
           .filter((r) => Number.parseFloat(r.quantity) !== 0),
       );
     } catch (e) {
@@ -515,6 +521,162 @@ export function useStockLevels(locationId: string | undefined) {
       setLoading(false);
     }
   }, [locationId]);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { rows, loading, error, refresh };
+}
+
+// ── Hook: the stock-card view (opening → movements → closing) ─────────
+
+/**
+ * `previousBusinessDate("2026-09-02")` → `"2026-09-01"`. Date-only, so no
+ * timezone math is needed — the business date itself is already resolved
+ * in `Africa/Nairobi` by the caller / the API.
+ */
+export function previousBusinessDate(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** One product's stock card for a business day, at a single location. */
+export type StockCardRow = {
+  productId: string;
+  name: string;
+  unitLabel: string;
+  /** Carried forward: the prior business day's closing. Decimal string. */
+  opening: string;
+  /** Signed sum of the day's movements that change stock. Decimal string. */
+  movements: string;
+  /** `opening + movements`. Decimal string. */
+  closing: string;
+  /** `true` when nothing moved — the row is a pure carry-forward. */
+  resting: boolean;
+};
+
+/**
+ * Movement types that do NOT change the on-hand figure, and so must not be
+ * summed into the day's movement total. Mirrors the Admin ledger's
+ * `COLUMN_FOR_TYPE` nulls (`app/admin/stock/derive-ledger.ts`):
+ *   - `opening` / `closing` are derived views, never stock deltas here;
+ *   - `purchase_payment` is money-only (quantity is always 0);
+ *   - `stock_count` records a count, not a movement (the Canteen
+ *     derived-sale path writes the resulting delta as its own row).
+ */
+const NON_STOCK_MOVEMENT: ReadonlySet<MovementType> = new Set<MovementType>([
+  "opening",
+  "closing",
+  "purchase_payment",
+  "stock_count",
+]);
+
+/**
+ * The mobile stock card for `locationId` on business `date`.
+ *
+ * Same ledger rule as the Admin grid (ADR-11 / ADR-40, CLAUDE.md "ledgers,
+ * not stored totals"): **opening is derived, never stored** — it is the
+ * running ledger sum evaluated at the end of the previous business day.
+ * Closing is `opening + Σ(this day's stock-changing movements)`, which is
+ * also exactly the "as of now" balance for today.
+ *
+ * A product with stock but no movement on `date` is a REAL row —
+ * "Opening 40 · — · Closing 40" — not an omission. That was the owner's
+ * 2026-09-02 report: the mobile view showed a bare current balance with no
+ * day framing, and the Admin grid dropped resting products entirely.
+ *
+ * Candidate products come from the catalogue's ProductLocation set for
+ * this location (where a product is actually stocked) plus anything that
+ * moved today; a pair with a 0 opening AND no movement is dropped, so a
+ * never-stocked product doesn't clutter the list.
+ */
+export function useStockCard(
+  locationId: string | undefined,
+  date: string | undefined,
+) {
+  const [rows, setRows] = React.useState<StockCardRow[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const refresh = React.useCallback(async () => {
+    if (!locationId || !date) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const [products, movements] = await Promise.all([
+        stockApi.listProducts(),
+        stockApi.listMovements({ locationId, date }),
+      ]);
+
+      // Every product stocked at this location, plus anything that moved
+      // here today (a transfer counterpart can name a product with no
+      // ProductLocation row).
+      const candidates = new Set<string>();
+      for (const p of products) {
+        if (p.deletedAt) continue;
+        if (p.locations.some((l) => l.locationId === locationId)) {
+          candidates.add(p.id);
+        }
+      }
+      for (const m of movements) candidates.add(m.productId);
+
+      const ids = [...candidates];
+      const opening = await stockApi.balances(
+        ids,
+        locationId,
+        previousBusinessDate(date),
+      );
+      const openingById = new Map(opening.map((b) => [b.productId, b.quantity]));
+
+      // Signed day total per product — the domain already signs each row
+      // from this location's point of view.
+      const movedById = new Map<string, number>();
+      for (const m of movements) {
+        if (NON_STOCK_MOVEMENT.has(m.movementType)) continue;
+        movedById.set(
+          m.productId,
+          (movedById.get(m.productId) ?? 0) + Number.parseFloat(m.quantity),
+        );
+      }
+
+      const productById = new Map(products.map((p) => [p.id, p]));
+      const next: StockCardRow[] = [];
+      for (const id of ids) {
+        const product = productById.get(id);
+        if (!product) continue;
+        const open = Number.parseFloat(openingById.get(id) ?? "0");
+        const moved = movedById.get(id) ?? 0;
+        // Never stocked, nothing moved — not a row.
+        if (open === 0 && moved === 0) continue;
+        next.push({
+          productId: id,
+          name: product.name,
+          unitLabel: product.unitLabel,
+          opening: String(open),
+          movements: String(moved),
+          closing: String(open + moved),
+          resting: moved === 0,
+        });
+      }
+      next.sort((a, b) => a.name.localeCompare(b.name));
+      setRows(next);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Failed to load stock levels. Check your connection and try again.",
+      );
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [locationId, date]);
 
   React.useEffect(() => {
     void refresh();

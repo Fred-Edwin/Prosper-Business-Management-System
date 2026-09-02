@@ -7,8 +7,13 @@
 // Composition: <DenseSummaryStrip> (line-count + total-units totals) +
 // <PillFilter> + a mobile card list (kit <Card>-style rows with a mono
 // qty) + <EmptyState> / <EmptyState variant="filtered"> / <ErrorState>.
-// Fed by useStockLevels → GET /api/stock-movements/balances (ADR-40); the
-// client renders the signed derived balance as-is.
+// Fed by useStockCard → GET /api/stock-movements (the day's rows) +
+// GET /api/stock-movements/balances at the PRIOR business date (ADR-40).
+// Each row is a stock card: opening (carried forward, derived — never
+// stored) → the day's signed movement → closing. A product holding stock
+// that didn't move today is still a row ("Open 40 · — · Close 40"), which
+// is what a physical stock card shows and what the bare-balance version
+// of this screen hid (owner report 2026-09-02).
 //
 // M2-3d: the filter pill set is a PROP (fidelity-audit-m1 §"Canteen —
 // Stock levels" item 4 / flow doc §"Stock Levels"). The Store Manager
@@ -27,7 +32,8 @@ import { PillFilter } from "@/components/kit/pill-filter";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
 import { Spinner } from "@/components/kit/spinner";
-import { useStockLevels, stockApi } from "@/app/store-manager/use-staff-stock";
+import { useStockCard, stockApi } from "@/app/store-manager/use-staff-stock";
+import { toBusinessDate } from "@/lib/time";
 import { trimQty } from "@/app/store-manager/staff-stock-format";
 
 /** One filter pill. `match` omitted ⇒ the "All" pill (matches every row). */
@@ -102,7 +108,13 @@ export function StockLevelsView({
     };
   }, [locationType]);
 
-  const { rows, loading, error, refresh } = useStockLevels(locationId);
+  // The day this card frames. `Africa/Nairobi` via lib/time — never
+  // server-local (CLAUDE.md "day boundaries use the fixed constant").
+  const businessDate = React.useMemo(() => toBusinessDate(new Date()), []);
+  const { rows, loading, error, refresh } = useStockCard(
+    locationId,
+    businessDate,
+  );
   const [productById, setProductById] = React.useState<
     Map<string, ProductWithLocations>
   >(new Map());
@@ -127,10 +139,13 @@ export function StockLevelsView({
           return product ? activePill.match!(product) : false;
         });
 
+  // Totals read the day's CLOSING — what is on hand at the end of the
+  // day being shown, which for today is "as of now".
   const totalUnits = filtered.reduce(
-    (sum, r) => sum + Number.parseFloat(r.quantity),
+    (sum, r) => sum + Number.parseFloat(r.closing),
     0,
   );
+  const movedCount = filtered.filter((r) => !r.resting).length;
 
   if (error) {
     return (
@@ -151,13 +166,14 @@ export function StockLevelsView({
           Stock Levels
         </div>
         <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
-          {locationLabel} · as of today
+          {locationLabel} · opening → today → closing
         </div>
       </div>
 
       <DenseSummaryStrip
         items={[
           { label: "Lines", value: String(filtered.length) },
+          { label: "Moved", value: String(movedCount) },
           {
             label: "Total units",
             value: trimQty(String(totalUnits)),
@@ -203,32 +219,52 @@ export function StockLevelsView({
       ) : (
         <ul className="flex flex-col list-none">
           {filtered.map((r, i) => {
-            const n = Number.parseFloat(r.quantity);
+            const closing = Number.parseFloat(r.closing);
+            const moved = Number.parseFloat(r.movements);
             return (
               <li
                 key={r.productId}
                 className={
-                  "flex items-center justify-between gap-(--sp-4) py-(--sp-5)" +
+                  "flex flex-col gap-(--sp-2) py-(--sp-5)" +
                   (i < filtered.length - 1
                     ? " border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
                     : "")
                 }
               >
-                <div className="flex flex-col gap-[2px] min-w-0">
-                  <div className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm truncate">
+                <div className="flex items-center justify-between gap-(--sp-4)">
+                  <div className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm truncate min-w-0">
                     {r.name}
                   </div>
-                  <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
-                    {r.unitLabel}
+                  <div
+                    className={
+                      "font-mono font-(--weight-semibold) shrink-0 text-sm/micro " +
+                      (closing < 0 ? "text-danger" : "[color:var(--text-primary)]")
+                    }
+                  >
+                    {trimQty(r.closing)} {r.unitLabel}
                   </div>
                 </div>
-                <div
-                  className={
-                    "font-mono font-(--weight-semibold) shrink-0 text-sm/micro " +
-                    (n < 0 ? "text-danger" : "[color:var(--text-primary)]")
-                  }
-                >
-                  {trimQty(r.quantity)} {r.unitLabel}
+
+                {/* The stock card: opening → the day's movement → closing.
+                    A resting product (nothing moved today) still shows the
+                    full line with a "—" in the middle, so the carried-
+                    forward balance is legible rather than implied. */}
+                <div className="flex items-center gap-(--sp-2) font-mono [color:var(--text-tertiary)] text-caption/micro">
+                  <span>Open {trimQty(r.opening)}</span>
+                  <span aria-hidden="true">·</span>
+                  {r.resting ? (
+                    <span>—</span>
+                  ) : (
+                    <span
+                      className={moved < 0 ? "text-danger" : "text-success"}
+                    >
+                      {moved > 0 ? `+${trimQty(r.movements)}` : trimQty(r.movements)}
+                    </span>
+                  )}
+                  <span aria-hidden="true">·</span>
+                  <span>Close {trimQty(r.closing)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{r.unitLabel}</span>
                 </div>
               </li>
             );

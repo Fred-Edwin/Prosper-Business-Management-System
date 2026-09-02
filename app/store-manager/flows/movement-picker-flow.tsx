@@ -29,6 +29,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { NonSaleReason, StockMovementView } from "@/lib/domain/stock";
+import { Button } from "@/components/kit/button";
 import { SearchInput } from "@/components/kit/search-input";
 import { Tabs } from "@/components/kit/tabs";
 import { SelectableProductRow } from "@/components/kit/selectable-product-row";
@@ -228,6 +229,246 @@ const CATEGORY_TABS = [
   { key: "Shop Goods", label: "Shop Goods" },
 ];
 
+// ── Additive-flow row (screen-local, no kit change) ───────────────────
+//
+// `SelectableProductRow` is drawn for the SPEND flows: `available` is the
+// balance you may draw down, `quantity > available` paints the §9.8 BLOCK,
+// and `available === 0` makes the whole row inert ("None on hand", `+
+// Select` disabled). All correct for Issue / Transfer / Non-sale.
+//
+// The additive flows (Receive, Production) invert that: you are ADDING to
+// the balance, so on-hand is a readout, never a ceiling, and a 0-stock
+// product must stay selectable — receiving the first-ever delivery of a
+// product, or producing a dish that has never been produced, are the
+// normal cases, not error states.
+//
+// The previous interim passed `Math.max(onHand, lineQty, 1)` as
+// `available` to dodge both kit behaviours. That worked, but the `, 1`
+// floor FABRICATED stock: a product with a true balance of 0 read
+// "On hand: 1" — which is how the inactive-Restaurant bug presented as a
+// screen of fake `1`s (m2-followups #16), and what the owner hit on
+// Carrots at the Store on the 2026-09-02 walkthrough.
+//
+// So: pass the TRUE `onHand` to the kit and let it render honestly. The
+// kit's inert branch is the only thing that needs intercepting, and only
+// for an unselected 0-on-hand row — this wrapper renders that one case
+// locally (same markup as the kit's unselected row, minus the muting) and
+// delegates every other state to the kit unchanged. `max={Infinity}`
+// keeps the stepper's `+` unbounded, and `blocked` never fires because
+// the kit only blocks when `quantity > available` with `available` used
+// as the ceiling — which for a selected row here is still the true
+// on-hand, so `handleBlockedChange`'s additive no-op remains the guard.
+//
+// A kit `neverBlocks` / `additive` prop (m2-followups #1) would delete
+// this wrapper. Not taken here: it needs owner sign-off and the kit is
+// frozen (CONVENTIONS §"never fork the kit").
+function AdditiveProductRow({
+  productId,
+  name,
+  unit,
+  onHand,
+  selected,
+  quantity,
+  onSelect,
+  onDeselect,
+  onQuantityChange,
+  availableLabelPrefix,
+}: {
+  productId: string;
+  name: string;
+  unit: string;
+  onHand: number;
+  selected: boolean;
+  quantity: number;
+  onSelect: (productId: string) => void;
+  onDeselect: (productId: string) => void;
+  onQuantityChange: (productId: string, next: number) => void;
+  availableLabelPrefix: string;
+}) {
+  // A non-zero balance is the kit's own territory — delegate untouched.
+  // `available` is the TRUE on-hand (an honest readout); `max={Infinity}`
+  // lifts the stepper ceiling, since an additive quantity is not bounded
+  // by what is already there.
+  if (onHand !== 0) {
+    return (
+      <SelectableProductRow
+        productId={productId}
+        name={name}
+        unit={unit}
+        available={onHand}
+        selected={selected}
+        quantity={quantity}
+        max={Infinity}
+        onSelect={onSelect}
+        onDeselect={onDeselect}
+        onQuantityChange={onQuantityChange}
+        availableLabelPrefix={availableLabelPrefix}
+      />
+    );
+  }
+
+  // on-hand 0. The kit's `available === 0` branch fires ahead of both its
+  // unselected and selected branches, so it would mute the row and drop
+  // the stepper entirely. Render the row here instead — same markup and
+  // the same stepper interaction contract, with the readout telling the
+  // truth ("On hand: 0") and the row fully live.
+  const availLabel = `${availableLabelPrefix} 0 ${unit}`;
+
+  if (!selected) {
+    return (
+      <div
+        role="group"
+        aria-label={`${name}, ${availLabel}`}
+        className="[font-synthesis:none] antialiased flex items-center w-full min-h-[56px] py-[12px] px-[14px] rounded-lg gap-[12px] bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]"
+      >
+        <span className="grow min-w-0 font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/body line-clamp-1">
+          {name}
+        </span>
+        <span className="shrink-0 basis-[96px] text-right whitespace-nowrap font-mono [font-feature-settings:'tnum'] [color:var(--text-secondary)] text-caption/micro">
+          {availLabel}
+        </span>
+        <span className="shrink-0 basis-[108px] flex justify-end">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onSelect(productId)}
+          >
+            + Select
+          </Button>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <ZeroStockAdditiveStepperRow
+      productId={productId}
+      name={name}
+      unit={unit}
+      availLabel={availLabel}
+      quantity={quantity}
+      onDeselect={onDeselect}
+      onQuantityChange={onQuantityChange}
+    />
+  );
+}
+
+/**
+ * The selected half of `AdditiveProductRow`'s on-hand-0 case. Mirrors the
+ * kit's selected row (tint + accent border + the compact `− [n] +`
+ * stepper, ADR-43 / ADR-48 interaction contract: tap-to-type, commit on
+ * blur / Enter, ↑ / ↓ step, stepping to 0 deselects) with two additive
+ * differences: the readout stays "On hand: 0" rather than the kit's
+ * "None on hand", and there is no ceiling — you are adding stock, so
+ * nothing here can be "over available" and the §9.8 block never applies.
+ */
+function ZeroStockAdditiveStepperRow({
+  productId,
+  name,
+  unit,
+  availLabel,
+  quantity,
+  onDeselect,
+  onQuantityChange,
+}: {
+  productId: string;
+  name: string;
+  unit: string;
+  availLabel: string;
+  quantity: number;
+  onDeselect: (productId: string) => void;
+  onQuantityChange: (productId: string, next: number) => void;
+}) {
+  const [editing, setEditing] = React.useState<string | null>(null);
+  const display = editing ?? formatQty(quantity);
+
+  function commit(raw: string) {
+    const n = Number.parseFloat(raw);
+    if (Number.isNaN(n)) {
+      setEditing(null);
+      return;
+    }
+    if (n <= 0) onDeselect(productId);
+    else onQuantityChange(productId, n);
+    setEditing(null);
+  }
+
+  function step_(delta: number) {
+    const next = quantity + delta;
+    if (next <= 0) onDeselect(productId);
+    else onQuantityChange(productId, next);
+  }
+
+  return (
+    <div
+      role="group"
+      aria-label={`${name}, ${availLabel}, quantity ${formatQty(quantity)} ${unit}`}
+      data-selected
+      className="[font-synthesis:none] antialiased flex flex-col w-full min-h-[56px] p-[12px] rounded-lg gap-[6px] border border-solid bg-(--surface-selected) border-accent"
+    >
+      <div className="flex items-center gap-[8px]">
+        <span className="grow min-w-0 font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/body line-clamp-1">
+          {name}
+        </span>
+        <span className="shrink-0 basis-[96px] text-right whitespace-nowrap font-mono [font-feature-settings:'tnum'] [color:var(--text-secondary)] text-micro/micro">
+          {availLabel}
+        </span>
+        <span className="shrink-0 basis-[108px] flex justify-end">
+          <div className="flex items-center h-[32px] rounded-md overflow-clip shrink-0 bg-(--surface-page) border border-solid [border-color:var(--border-strong)]">
+            <button
+              type="button"
+              disabled={quantity <= 0}
+              onClick={() => step_(-1)}
+              aria-label="Decrease"
+              tabIndex={-1}
+              className="flex items-center justify-center w-[30px] h-[30px] shrink-0 kit-interactive kit-focus-ring font-ui font-(--weight-medium) [color:var(--text-primary)] text-h2/body"
+            >
+              −
+            </button>
+            <span className="flex items-center justify-center min-w-[48px] h-[30px] px-[4px] shrink-0 border-x border-x-solid [border-color:var(--border-subtle)]">
+              <input
+                type="text"
+                inputMode="decimal"
+                role="spinbutton"
+                aria-label={`${name} quantity`}
+                aria-valuenow={quantity}
+                aria-valuemin={0}
+                aria-valuetext={`${formatQty(quantity)} ${unit}`}
+                value={display}
+                onChange={(e) => setEditing(e.target.value)}
+                onBlur={(e) => commit(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    step_(1);
+                  } else if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    step_(-1);
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    commit((e.target as HTMLInputElement).value);
+                  }
+                }}
+                className="w-max min-w-0 bg-transparent outline-none text-center font-mono font-(--weight-medium) [font-feature-settings:'tnum'] text-sm/micro [color:var(--text-primary)]"
+                style={{ width: `${Math.max(display.length, 2)}ch` }}
+              />
+            </span>
+            <button
+              type="button"
+              onClick={() => step_(1)}
+              aria-label="Increase"
+              tabIndex={-1}
+              className="flex items-center justify-center w-[30px] h-[30px] shrink-0 kit-interactive kit-focus-ring font-ui font-(--weight-medium) [color:var(--text-primary)] text-h2/body"
+            >
+              +
+            </button>
+          </div>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── Batch total helpers ───────────────────────────────────────────────
 
 type Line = { productId: string; quantity: number };
@@ -296,16 +537,28 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   // loading / error into the screen's so it shows skeletons / <ErrorState>
   // the same way, and never flashes an "empty" state mid-fetch.
   const canteenLoading = isCanteenScoped && canteen.loading;
-  const loading =
-    stockLoading || canteenLoading || (isMultiSource && transferLevels.loading);
-  const error =
-    stockError ??
-    (isCanteenScoped ? canteen.error : null) ??
-    (isMultiSource ? transferLevels.error : null);
 
-  const { rows: levelRows } = useStockLevels(
+  // The single-source flows read their row `available` from this hook.
+  // `undefined` for the multi-source `transfer` mode, which resolves a
+  // per-product source balance through `transferLevels` instead.
+  const stockLevels = useStockLevels(
     isMultiSource ? undefined : balanceLocationId || undefined,
   );
+  const levelRows = stockLevels.rows;
+
+  // The balance read is not optional chrome — it IS the row readout. A
+  // slow or failed GET /api/stock-movements/balances used to settle into a
+  // screen of honest-looking zeros; fold it into the screen's loading /
+  // error the same way `transferLevels` / `canteen` already are, so it
+  // shows skeletons then <ErrorState> instead.
+  const balanceLoading = isMultiSource
+    ? transferLevels.loading
+    : stockLevels.loading;
+  const balanceError = isMultiSource ? transferLevels.error : stockLevels.error;
+
+  const loading = stockLoading || canteenLoading || balanceLoading;
+  const error =
+    stockError ?? (isCanteenScoped ? canteen.error : null) ?? balanceError;
   const availableById = React.useMemo(() => {
     const m = new Map<string, number>();
     if (isMultiSource) {
@@ -687,33 +940,31 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
               visibleProducts.map((p) => {
                 const line = lineByProduct.get(p.id);
                 const onHand = availableById.get(p.id) ?? 0;
-                // ── KIT GAP (flagged to orchestrator) ─────────────────
-                // SelectableProductRow hard-wires `blocked = quantity >
-                // available` and `available === 0 ⇒ row inert`, with no
-                // additive mode. The two additive flows (Receive,
-                // Production — flow doc §"Cross-cutting" rule 3) must NOT
-                // block on over-on-hand, and Production must allow
-                // selecting a 0-stock (never-produced) dish.
-                //
-                // Interim (no kit change): additive flows pass
-                // `max(onHand, thisLineQty)` as `available`, so the kit
-                // never paints the §9.8 block and never treats the row as
-                // inert, while the readout still shows the true on-hand
-                // for every realistic entry (qty ≤ on-hand). Spend flows
-                // pass the real balance and use the kit block as drawn.
-                // `handleBlockedChange` also no-ops for additive flows.
-                // A kit `additive` / `neverBlocks` prop removes all of it.
                 const lineQty = line?.quantity ?? 0;
-                const rowAvailable = cfg.spend
-                  ? onHand
-                  : Math.max(onHand, lineQty, 1);
+                if (!cfg.spend) {
+                  return (
+                    <AdditiveProductRow
+                      key={p.id}
+                      productId={p.id}
+                      name={p.name}
+                      unit={p.unitLabel}
+                      onHand={onHand}
+                      selected={line != null}
+                      quantity={lineQty}
+                      onSelect={select}
+                      onDeselect={deselect}
+                      onQuantityChange={setQuantity}
+                      availableLabelPrefix={cfg.availPrefix}
+                    />
+                  );
+                }
                 return (
                   <SelectableProductRow
                     key={p.id}
                     productId={p.id}
                     name={p.name}
                     unit={p.unitLabel}
-                    available={rowAvailable}
+                    available={onHand}
                     selected={line != null}
                     quantity={lineQty}
                     onSelect={select}

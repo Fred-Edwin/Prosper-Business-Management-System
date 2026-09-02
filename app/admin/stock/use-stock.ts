@@ -215,17 +215,37 @@ export function useLedger(date: string, locationId?: string) {
         stockApi.listLocations(),
       ]);
 
-      // Opening = prior day's closing. Derive it only for the
-      // (product, location) pairs that actually appear on this day's
-      // ledger, batched per location.
+      // Opening = prior day's closing, batched per location.
+      //
+      // The candidate (product, location) pairs are NOT just the ones that
+      // moved today. A product resting untouched — stock on hand, no
+      // movement on the selected day — still belongs on the ledger, with
+      // its carried-forward opening equal to its closing. That is the
+      // whole point of `deriveLedgerRows`' opening-only branch, and it
+      // could never fire while this map was seeded from `movements`
+      // alone: a resting product got no `priorClosing` entry, so it got
+      // no row, so the Store's stocked ingredients vanished from every
+      // day on which they happened not to move (owner report 2026-09-02).
+      //
+      // So seed the pairs from the catalogue's ProductLocation set — every
+      // place a product is actually stocked — plus today's movements
+      // (which can name a pair with no ProductLocation row, e.g. a
+      // transfer's counterpart leg). `deriveLedgerRows` then drops the
+      // pairs whose opening is 0 AND which had no movement, so a product
+      // that has never been stocked anywhere still doesn't clutter the
+      // grid.
       const prevDate = previousBusinessDate(date);
       const pairsByLocation = new Map<string, Set<string>>();
-      for (const m of movements) {
-        if (!pairsByLocation.has(m.locationId)) {
-          pairsByLocation.set(m.locationId, new Set());
-        }
-        pairsByLocation.get(m.locationId)!.add(m.productId);
+      const addPair = (loc: string, productId: string) => {
+        if (locationId && loc !== locationId) return;
+        if (!pairsByLocation.has(loc)) pairsByLocation.set(loc, new Set());
+        pairsByLocation.get(loc)!.add(productId);
+      };
+      for (const p of products) {
+        if (p.deletedAt) continue;
+        for (const pl of p.locations) addPair(pl.locationId, p.id);
       }
+      for (const m of movements) addPair(m.locationId, m.productId);
 
       const priorClosing = new Map<string, string>();
       await Promise.all(

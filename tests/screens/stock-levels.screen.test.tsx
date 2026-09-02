@@ -2,20 +2,25 @@
 // Per-screen gate — the mobile Stock Levels view (shared by
 // /store-manager/stock and /canteen/stock) composed from the kit:
 // <DenseSummaryStrip> + <PillFilter> + card list + <EmptyState> /
-// <ErrorState>. useStockLevels + stockApi mocked; no server / DB.
+// <ErrorState>. useStockCard + stockApi mocked; no server / DB.
+//
+// 2026-09-02: the view now renders a stock CARD per product —
+// opening (prior day's closing, carried forward) → the day's signed
+// movement → closing — instead of a bare current balance, so a product
+// that didn't move today still reads "Open 40 · — · Close 40".
 //
 // M2-3d: the filter pill set is a prop. SM keeps the kind-based
 // `All · Ingredients · Goods · Dishes`; the Canteen passes
 // `All · Beverages · Goods` (no dead "Dishes" pill) with category-based
 // matchers. Location scoping is server-side — the mocked
-// `useStockLevels` only ever returns the rows for the resolved location.
+// `useStockCard` only ever returns the rows for the resolved location.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { StockLevelRow } from "@/app/store-manager/use-staff-stock";
+import type { StockCardRow } from "@/app/store-manager/use-staff-stock";
 
 const levels = vi.hoisted(() => ({
-  rows: [] as StockLevelRow[],
+  rows: [] as StockCardRow[],
   loading: false,
   error: null as string | null,
   refresh: vi.fn(),
@@ -44,7 +49,7 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
   >("@/app/store-manager/use-staff-stock");
   return {
     ...actual,
-    useStockLevels: () => levels,
+    useStockCard: () => levels,
     stockApi: { ...actual.stockApi, listProducts, listLocations },
   };
 });
@@ -73,8 +78,8 @@ beforeEach(() => {
   levels.loading = false;
   levels.error = null;
   levels.rows = [
-    { productId: "p-beef", name: "Beef Fillet", unitLabel: "kg", quantity: "46.5000" },
-    { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", quantity: "144.0000" },
+    { productId: "p-beef", name: "Beef Fillet", unitLabel: "kg", opening: "46.5", movements: "0", closing: "46.5", resting: true },
+    { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", opening: "144", movements: "0", closing: "144", resting: true },
   ];
 });
 
@@ -86,9 +91,11 @@ describe("Stock Levels — kit composition", () => {
     expect(screen.getByText("46.5 kg")).toBeInTheDocument();
   });
 
-  it("the sub-line reads 'as of today', not 'as of now'", () => {
+  it("the sub-line names the day framing, not a bare 'as of now'", () => {
     renderSM();
-    expect(screen.getByText(/Store · as of today/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Store · opening → today → closing/),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/as of now/)).not.toBeInTheDocument();
   });
 
@@ -113,11 +120,70 @@ describe("Stock Levels — kit composition", () => {
 
   it("renders a negative balance in the danger tone", () => {
     levels.rows = [
-      { productId: "p-beef", name: "Beef Fillet", unitLabel: "kg", quantity: "-3.0000" },
+      { productId: "p-beef", name: "Beef Fillet", unitLabel: "kg", opening: "-3", movements: "0", closing: "-3", resting: true },
     ];
     renderSM();
     const qty = screen.getByText("-3 kg");
     expect(qty.className).toMatch(/text-danger/);
+  });
+});
+
+describe("Stock Levels — the stock card (opening → movements → closing)", () => {
+  it("a resting product reads Open N · — · Close N", () => {
+    levels.rows = [
+      { productId: "p-beef", name: "Beef Fillet", unitLabel: "kg", opening: "40", movements: "0", closing: "40", resting: true },
+    ];
+    renderSM();
+    expect(screen.getByText("Open 40")).toBeInTheDocument();
+    expect(screen.getByText("Close 40")).toBeInTheDocument();
+    // The middle slot is a dash, not a fabricated movement figure.
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("a product that moved shows the signed delta in the semantic tone", () => {
+    levels.rows = [
+      { productId: "p-beef", name: "Beef Fillet", unitLabel: "kg", opening: "40", movements: "10", closing: "50", resting: false },
+      { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", opening: "20", movements: "-5", closing: "15", resting: false },
+    ];
+    renderSM();
+
+    const up = screen.getByText("+10");
+    expect(up.className).toMatch(/text-success/);
+    const down = screen.getByText("-5");
+    expect(down.className).toMatch(/text-danger/);
+
+    expect(screen.getByText("Open 40")).toBeInTheDocument();
+    expect(screen.getByText("Close 50")).toBeInTheDocument();
+  });
+
+  it("the headline figure is the day's CLOSING, not the opening", () => {
+    levels.rows = [
+      { productId: "p-beef", name: "Beef Fillet", unitLabel: "kg", opening: "40", movements: "10", closing: "50", resting: false },
+    ];
+    renderSM();
+    expect(screen.getByText("50 kg")).toBeInTheDocument();
+  });
+
+  it("totals sum closing balances and count how many products moved", () => {
+    levels.rows = [
+      { productId: "p-beef", name: "Beef Fillet", unitLabel: "kg", opening: "40", movements: "10", closing: "50", resting: false },
+      { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", opening: "20", movements: "0", closing: "20", resting: true },
+    ];
+    renderSM();
+    // 50 + 20 = 70 total units; 1 of the 2 lines moved today.
+    expect(screen.getByText("70")).toBeInTheDocument();
+    const movedItem = screen.getByText("Moved").parentElement!;
+    expect(within(movedItem).getByText("1")).toBeInTheDocument();
+    const linesItem = screen.getByText("Lines").parentElement!;
+    expect(within(linesItem).getByText("2")).toBeInTheDocument();
+  });
+
+  it("a negative closing still reads in the danger tone", () => {
+    levels.rows = [
+      { productId: "p-beef", name: "Beef Fillet", unitLabel: "kg", opening: "2", movements: "-5", closing: "-3", resting: false },
+    ];
+    renderSM();
+    expect(screen.getByText("-3 kg").className).toMatch(/text-danger/);
   });
 });
 
@@ -172,8 +238,8 @@ describe("Stock Levels — the pill set is a prop (M2-3d)", () => {
 
   it("Canteen 'Beverages' filters by category (soda/drink), 'Goods' is the rest", async () => {
     levels.rows = [
-      { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", quantity: "144.0000" },
-      { productId: "p-mandazi", name: "Mandazi", unitLabel: "pcs", quantity: "60.0000" },
+      { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", opening: "144", movements: "0", closing: "144", resting: true },
+      { productId: "p-mandazi", name: "Mandazi", unitLabel: "pcs", opening: "60", movements: "0", closing: "60", resting: true },
     ];
     renderCanteen();
     const user = userEvent.setup();
@@ -200,12 +266,12 @@ describe("Stock Levels — the pill set is a prop (M2-3d)", () => {
     ).toBeInTheDocument();
   });
 
-  it("Canteen shows only the rows useStockLevels returns (server-scoped) — no Store rows", () => {
+  it("Canteen shows only the rows useStockCard returns (server-scoped) — no Store rows", () => {
     // The Canteen-scoped hook only ever returns canteen products; assert
     // the view renders exactly those and never a Store-only product.
     levels.rows = [
-      { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", quantity: "144.0000" },
-      { productId: "p-water", name: "Water 500ml", unitLabel: "pcs", quantity: "96.0000" },
+      { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", opening: "144", movements: "0", closing: "144", resting: true },
+      { productId: "p-water", name: "Water 500ml", unitLabel: "pcs", opening: "96", movements: "0", closing: "96", resting: true },
     ];
     renderCanteen();
     expect(screen.getByText("Soda 300ml")).toBeInTheDocument();
