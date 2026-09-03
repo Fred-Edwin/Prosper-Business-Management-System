@@ -2627,3 +2627,83 @@ that it is doing so.
 - `API.md` "Financials" updated: the summary's `consolidated` balance
   fields are documented as "as of the end of `to`".
 - No schema change. No `TODO(mock)`.
+
+---
+
+## ADR-58: Attendance is NOT day-close gated — a record about a day, not a ledger entry (Developer, Milestone 4 Session 8A [Staff & Pay backend], 2026-09-03)
+
+**Context.** M4 adds attendance (`Attendance`: `staffId`, `date`,
+`present`, unique `[staffId, date]`). Every M3 *create* path calls
+`assertDayOpen` (ADR-52). The question for S8A: does attendance?
+
+**Decision.** **No.** `setAttendance` / `setAttendanceBulk` do **not**
+call `assertDayOpen`. They are Admin-only; that is the guard.
+
+**Why.**
+
+- Attendance is a *record about* a day (was this person here?), not a
+  stock or money ledger entry that a day-close is meant to seal. ADR-52's
+  rule protects append-only financial rows from after-the-fact edits;
+  attendance has no such row to protect.
+- The owner's decision is that the Admin **can backdate** attendance
+  (ADR-53's today-only rule is also not applied here) — and the reason to
+  backdate is precisely to correct a past day.
+- **Pay depends on it.** `getStaffPay` / `getPayrollSummary` compute
+  `daysPresent` directly from `Attendance`. If attendance were
+  day-close gated, a wrong `present` flag on a closed day could never be
+  fixed, and the payroll for that month would be permanently and silently
+  wrong. Reopening the whole day just to fix one attendance mark is
+  disproportionate.
+- The write is an **upsert on `[staffId, date]`** — idempotent by
+  construction. "Correcting" attendance is re-setting the boolean; there
+  is no new row, no double-count risk, nothing the correction-entry
+  pattern (CONVENTIONS §4) is needed for.
+
+**Contrast — pay adjustments ARE gated.** `recordPayAdjustment` writes an
+append-only `StaffPayAdjustment` row with a money `amount` and no
+correction self-relation. That is a classic create path → it calls
+`assertDayOpen(date)` inside its transaction, exactly like an expense or
+owner draw. A mistaken adjustment on a closed day is undone by recording
+the opposite type for the same amount (nets out in every sum).
+
+**Consequences.**
+
+- `Attendance` writes have one guard: `role === "admin"`.
+- No schema change. No `TODO(mock)`.
+
+---
+
+## ADR-59: Deactivating a staff member also deactivates their login `User` — in the same transaction (Developer, Milestone 4 Session 8A [Staff & Pay backend], 2026-09-03)
+
+**Context.** M4's `createStaff` writes a `Staff` row and its 1:1 login
+`User` together (owner decision: the Admin sets the PIN; no first-login
+self-service). `deactivateStaff` is the soft-delete — `Staff.active =
+false` (there is no `Staff.deletedAt`). The brief requires that a
+deactivated staff member "must not be able to log in", and to verify that
+against the auth path.
+
+**Decision.** `deactivateStaff` sets **both** `Staff.active = false` and
+`User.active = false` on the linked login, in one transaction. `createStaff`
+sets both to `true`. There is no path that leaves the two out of sync.
+
+**Why.** `lib/auth/config.ts` `authorize()` rejects a sign-in when
+`!user.active` — it checks the **`User`** row only, never `Staff.active`
+(the Staff relation isn't even loaded there). The session callback
+re-checks `User.active` on every request (ADR-5 addendum: instant
+revocation under a JWT strategy). So:
+
+- Setting only `Staff.active = false` would leave the login fully
+  functional — the "deactivated" staff member keeps signing in and any
+  live session keeps working. The guarantee the brief asks for would not
+  hold.
+- Setting `User.active = false` makes the next sign-in attempt fail and
+  drops any existing session on its very next request — no token-expiry
+  wait.
+
+**Consequences.**
+
+- Re-activation is a `updateStaff` concern if it's ever needed; S8A ships
+  only deactivate (soft). A future re-activate must flip both flags too.
+- `deactivateStaff` is idempotent — an already-inactive staff member is a
+  no-op success (no second audit row).
+- No schema change. No `TODO(mock)`.

@@ -44,6 +44,27 @@ Roles: Admin, Store Manager, Canteen Attendant (widened in Session 14 —
 the staff stock hooks consume this for the transfer destination picker).
 Returns active locations, `{ data: Location[] }`, sorted by name.
 
+### `POST /api/locations`
+Roles: **Admin only.** Body: `{ name, type: "restaurant" | "canteen" |
+"store" }`. Name is trimmed, required; a case-insensitive duplicate of an
+existing location name → `409 CONFLICT`. `201` with `{ data: Location }`
+(`active: true`).
+
+### `PATCH /api/locations/:id`
+Roles: **Admin only.** Two modes:
+
+- **Edit** (no query): body `{ name?, type?, active? }` (at least one
+  key). Rename onto another location's name → `409 CONFLICT`. `NOT_FOUND`
+  for an unknown id. A true edit, not a correction row (a location is not
+  a ledger). `200` with `{ data: Location }`.
+- **Deactivate** (`?mode=deactivate`, body ignored): soft — sets
+  `active: false` (`Location` has no `deletedAt`). Runs a referential
+  guard first — `409 CONFLICT`, nothing written, if the location still
+  has **active staff assigned**, **non-zero stock on hand** for any
+  product, or **any pending transfer** (dispatched, not yet accepted) on
+  either end. Products merely priced at the location do **not** block.
+  Idempotent — deactivating an inactive location is a `200` no-op.
+
 ### `GET /api/products`
 Roles: Admin, Store Manager, Canteen Attendant, **Cashier**. `buyingPrice`
 is stripped to `null` for every non-Admin role (they consume this for the
@@ -903,6 +924,88 @@ history — in M1 that is any `AuditLog` row with
 its count joins the guard). The client renders the delete dialog's
 blocked state, not a toast. Clean ⇒ the row is deleted. Returns
 `{ data: { deleted: true } }`.
+
+---
+
+## Staff & Pay
+
+> **Backend implemented Milestone 4 Session 8A (2026-09-03).** Screens
+> (`/admin/staff`) land in a later session. Every endpoint is **Admin
+> only**. Field names are `camelCase`. `dailyRate` and adjustment
+> `amount` are decimal strings. **A PIN is never returned or logged in
+> any read** (ADR-59 context — a `StaffView` carries no PIN/hash field).
+
+### `POST /api/staff`
+Body: `{ name, role: "store_manager" | "cashier" | "canteen_attendant",
+locationId, dailyRate, pin }` (`pin` = exactly 4 digits). Creates the
+`Staff` row **and** its linked login `User` in one transaction — the PIN
+is bcrypt-hashed exactly as the login flow expects (owner decision: the
+Admin sets the PIN; no first-login self-service). `locationId` must be an
+existing **active** location → else `400 VALIDATION_ERROR`. A login name
+already taken (`User.name` is unique) → `409 CONFLICT`. `201` with
+`{ data: StaffView }`.
+
+### `GET /api/staff`
+Query: `?search=&active=&locationId=` (all optional; `active` is
+`true`/`false`). Returns `StaffView[]`, active first then by name.
+
+### `GET /api/staff/:id`
+`{ data: StaffView }` or `404 NOT_FOUND`.
+
+### `PATCH /api/staff/:id`
+Two modes:
+
+- **Edit** (no query): body `{ name?, role?, locationId?, dailyRate?,
+  pin? }` (at least one key). `name` / `role` propagate to the linked
+  `User`; a name clash → `409 CONFLICT`. `locationId` (the field that
+  drives role-scoping) is validated against an active location. `pin`
+  resets `User.pinHash`. A true edit, not a correction row. `200` with
+  `{ data: StaffView }`.
+- **Deactivate** (`?mode=deactivate`, body ignored): soft — sets
+  `Staff.active = false` **and `User.active = false`** in one transaction
+  (ADR-59), so the staff member can no longer sign in and any live
+  session drops on its next request. Idempotent. `200` with
+  `{ data: StaffView }`.
+
+### `POST /api/attendance`
+Body: `{ staffId, date, present }` (`date` = `YYYY-MM-DD` business date).
+Upsert on `[staffId, date]` — a second call **corrects**, never
+duplicates. **Backdatable** by the Admin; **not day-close gated**
+(ADR-58 — attendance is a record about a day, and pay depends on being
+able to fix it). `200` with `{ data: { staffId, date, present } }`.
+
+`?mode=bulk` — body `{ date, entries: [{ staffId, present }, …] }`: one
+date, many staff, one transaction (how the screen marks a day). Duplicate
+`staffId` or an unknown one → `400 VALIDATION_ERROR`, nothing written.
+
+### `GET /api/attendance`
+Query: `?from=&to=&staffId=` (`from`/`to` required, inclusive
+`YYYY-MM-DD`; inverted range → `400`). Returns only the rows that
+**exist** — a staff member with no row for a date counts as **present**
+(PRD §4.8); the caller/pay treats a missing `(staffId, date)` as present.
+
+### `POST /api/pay`
+Body: `{ staffId, type: "advance" | "deduction", amount, date, note? }`.
+Records a salary advance or deduction (positive magnitude; the sign is
+implied by `type` — **both** net off gross pay). This IS a
+`StaffPayAdjustment` append-only create path → **day-close gated**
+(`assertDayOpen(date)`). Undo a mistake by recording the opposite type
+for the same amount. `201` with `{ data: PayAdjustmentView }`.
+
+### `GET /api/pay?month=YYYY-MM`
+Payroll for **every active staff member**: `{ data: PayrollSummary }` —
+`{ month, rows: StaffPay[], totals: { grossPay, advances, deductions,
+netPay } }`. Set-wise (one attendance groupBy + one adjustments query).
+
+### `GET /api/pay?month=YYYY-MM&staffId=…`
+One staff member: `{ data: StaffPay }` —
+`{ staffId, staffName, month, dailyRate, payableDays, daysPresent,
+daysAbsent, grossPay, advances, deductions, netPay, adjustments }`.
+Nothing stored; all derived. `grossPay = dailyRate × daysPresent`;
+`daysPresent = payableDays − (explicit present:false rows)`; `payableDays`
+= calendar days from the 1st through `min(month-end, today)` (a wholly
+future month → `0`). `netPay = grossPay − Σ advances − Σ deductions`.
+Handover shortfalls do **not** auto-deduct (PRD §4.8).
 
 ---
 

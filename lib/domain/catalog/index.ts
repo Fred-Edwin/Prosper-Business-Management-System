@@ -9,4 +9,12 @@ export { getProduct } from "./get-product";
 export { createProduct } from "./create-product";
 export { updateProduct } from "./update-product";
 export { archiveProduct, unarchiveProduct, hardDeleteProduct } from "./delete-product";
-export { listLocations } from "./locations";
+export {
+  listLocations,
+  createLocation,
+  updateLocation,
+  deactivateLocation,
+  type CreateLocationInput,
+  type UpdateLocationInput,
+  type LocationDeactivationBlockers,
+} from "./locations";

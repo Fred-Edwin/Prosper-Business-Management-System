@@ -15,6 +15,114 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 4 Session 8A — Locations CRUD + Staff CRUD + attendance + pay (Developer — 2026-09-03) — DONE (backend only)
+
+**Backend only. No schema change** — every table used
+(`Location`, `Staff`, `User`, `Attendance`, `StaffPayAdjustment`) already
+existed; only `Staff` / `Attendance` / `StaffPayAdjustment` had no domain
+module or route until now. A parallel session (8B) designs `/admin/staff`;
+a later session builds the screens against this API.
+
+**Shipped — Locations CRUD.** `lib/domain/catalog/locations.ts` gained
+`createLocation`, `updateLocation`, `deactivateLocation` (soft — `active:
+false`; `Location` has no `deletedAt`) alongside the existing
+`listLocations`. Case-insensitive name uniqueness on create + rename
+(`CONFLICT`). `deactivateLocation` runs a referential guard following
+`catalog/delete-product.ts` (409 on conflict):
+
+- **Hard blockers** (409, nothing written): active staff assigned to the
+  location (`Staff.locationId` is REQUIRED and drives role-scoping —
+  orphaning staff breaks their whole session); non-zero derived stock on
+  hand for any product at the location; any pending transfer (in-transit
+  `transfer` row, dispatched not accepted) on either end.
+- **Not a blocker**: products merely *priced* at the location
+  (`ProductLocation` rows) — harmless once inactive, re-pointable later;
+  reported as info only.
+
+API: `POST /api/locations` (admin) + `PATCH /api/locations/:id` (admin;
+`?mode=deactivate` runs the guard). GET unchanged — staff roles still read
+it.
+
+**Shipped — Staff CRUD with the login account.** New module
+`lib/domain/staff/` (customers-module shape: `index` / `types` / `errors`
+/ `internal` / `test-helpers` + one file per op).
+
+- `createStaff` — name, role, locationId, dailyRate, PIN → writes the
+  `Staff` row **and** its 1:1 `User` in ONE transaction. PIN is
+  `bcrypt.hash(pin, 10)` — the exact scheme `prisma/seed.ts` and
+  `lib/auth/config.ts` use; `PIN_BCRYPT_ROUNDS` is a named constant in
+  `internal.ts`. `User.name` is `@unique`, so a taken name is `CONFLICT`.
+  Admin sets the PIN; **no first-login self-service flow** (owner
+  decision).
+- `updateStaff` — name / role propagate to BOTH rows; `locationId`
+  reassignment (the role-scoping field) validated against an active
+  location; `pin` re-hashes `User.pinHash`. True edit, not a correction
+  row (a staff record is not a ledger).
+- `deactivateStaff` — soft (`Staff.active = false`) **and sets
+  `User.active = false`** in the same tx. The auth path gates sign-in on
+  `User.active` only (never `Staff.active`), and the session callback
+  re-checks it every request — so a deactivated staff member cannot log in
+  and any live session drops on its next request. Verified by test.
+- `listStaff` / `getStaff` — Admin-only. **No read ever returns or logs a
+  PIN or hash** — `toStaffView` carries neither field and the queries
+  never select `pinHash`; asserted in `staff.test.ts`.
+- API: `GET/POST /api/staff`, `GET/PATCH /api/staff/:id`
+  (`?mode=deactivate`). All `requireApiRole("admin")`.
+
+**Shipped — Attendance.** `lib/domain/staff/attendance.ts`:
+`setAttendance` (upsert on `[staffId, date]`), `setAttendanceBulk` (one
+date, many staff, one transaction — how the screen marks a day),
+`listAttendance(from, to, { staffId? })`. Admin-only.
+
+- **Default present** (PRD §4.8): a staff member with no row for a date
+  counts as present. `listAttendance` returns only the rows that exist;
+  pay treats a missing `(staffId, date)` as present. No row is required
+  per person per day.
+- **Backdatable by the Admin** — ADR-53's today-only rule is NOT applied
+  (owner decision).
+- **`assertDayOpen` deliberately NOT applied to attendance** — see ADR-58.
+
+**Shipped — Pay.** `lib/domain/staff/pay.ts`:
+
+- `recordPayAdjustment` — advance / deduction, positive magnitude stored,
+  sign implied by type. **IS a `StaffPayAdjustment` append-only create
+  path → `assertDayOpen(date)` inside the transaction** (per the S8A
+  brief). A mistaken adjustment on a closed day is undone by recording the
+  opposite type for the same amount.
+- `getStaffPay(staffId, month)` / `getPayrollSummary(month)` — nothing
+  stored; all derived. `gross = dailyRate × daysPresent`, where
+  `daysPresent = payableDays − explicit present:false rows` and
+  `payableDays` = every calendar day of the month from the 1st through
+  `min(month-end, today)` (a future day has not been worked → a wholly
+  future month has 0 payable days). `net = gross − Σ advances − Σ
+  deductions` — both types net OFF (PRD §4.8). `getPayrollSummary` is
+  set-wise (one attendance groupBy + one adjustments query across all
+  active staff), business-wide over every active staff member. Handover
+  shortfalls do **not** auto-deduct (PRD §4.8).
+- API: `GET /api/pay?month=YYYY-MM` (payroll) or `&staffId=…` (one
+  person); `POST /api/pay` (record adjustment). Admin-only.
+
+**Tests.** +42 (`pnpm test` 745 → 787, all green; typecheck + build
+clean). New suites: `lib/domain/catalog/locations.test.ts` (15 — CRUD +
+every deactivation blocker + the non-blockers),
+`lib/domain/staff/staff.test.ts` (CRUD, login-account linkage, bcrypt PIN
+round-trips the seed scheme, PIN never leaked, deactivation blocks
+login), `.../attendance.test.ts` (upsert-corrects, not-day-close-gated,
+default-present, bulk), `.../pay.test.ts` (the pay-math priority — gross,
+per-day absence, advance+deduction netting, month bounds, day-close gate,
+set-wise summary, future month = 0). All new tests scope to their own
+rows or assert internal consistency — no unscoped admin-wide "today"
+reads (per the seed-collision note).
+
+**Decisions.** ADR-58 (attendance not day-close gated) + ADR-59 (staff
+deactivation cascades to `User.active`) added to `docs/DECISIONS.md`.
+
+**Not done / for a later session.** No screens (`/admin/staff` is 8B's
+design + a later build). No `/admin/locations` screen. The known
+shared-dev-DB suite flakiness is unchanged — not addressed here.
+
+---
+
 ## Milestone 3 Session 7 — Financials redesign + date-range filtering (Developer — 2026-09-03) — DONE
 
 **Mostly frontend. One focused backend addition (`asOf` on the balance
