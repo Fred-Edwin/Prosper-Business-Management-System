@@ -3,7 +3,7 @@
 // M2 3a — Admin merged "Sales" screen.
 //
 // COMPOSED from the proven kit — no kit change:
-//   • <PageShell> + <Breadcrumb>
+//   • <PageShell> + <AdminPageHeader>
 //   • <Tabs> (underline) — "Restaurant Orders" / "Canteen Derived"
 //   • Tab 1 = <OrdersTab> (A3 — was app/admin/orders)
 //   • Tab 2 = <DerivedTab> (A4 — was app/admin/canteen/derived-sales)
@@ -18,7 +18,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/kit/page-shell";
-import { Breadcrumb } from "@/components/kit/breadcrumb";
+import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { Tabs } from "@/components/kit/tabs";
 import { OrdersTab } from "./orders-tab";
 import { DerivedTab } from "./derived-tab";
@@ -29,11 +29,6 @@ const TABS = [
   { key: "orders" as const, label: "Restaurant Orders", panelId: "sales-panel-orders" },
   { key: "derived" as const, label: "Canteen Derived", panelId: "sales-panel-derived" },
 ];
-
-const TAB_CRUMB: Record<SalesTabKey, string> = {
-  orders: "Restaurant Orders",
-  derived: "Canteen Derived",
-};
 
 export function SalesClient({ initialTab }: { initialTab: SalesTabKey }) {
   const router = useRouter();
@@ -51,18 +46,8 @@ export function SalesClient({ initialTab }: { initialTab: SalesTabKey }) {
   );
 
   return (
-    <PageShell
-      toolbar={
-        <div className="flex flex-col gap-(--sp-3) w-full">
-          <Breadcrumb
-            items={[{ label: "Sales", href: "/admin/sales" }, { label: TAB_CRUMB[tab] }]}
-          />
-          <h1 className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
-            Sales
-          </h1>
-        </div>
-      }
-    >
+    <PageShell>
+      <AdminPageHeader title="Sales" />
       {/* Tab row — kit <Tabs> (underline). 16px gap to the toolbar below
           comes from each tab panel's own pt-(--sp-6). */}
       <div className="px-(--sp-6)">

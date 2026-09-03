@@ -11,6 +11,7 @@
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
+import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { Tabs } from "@/components/kit/tabs";
 import { SearchInput } from "@/components/kit/search-input";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
@@ -257,24 +258,26 @@ export function CatalogClient() {
   ];
 
   return (
-    <PageShell
-      toolbar={
-        <>
-          <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-display/display">
-            Product Catalog
-          </div>
-          <div className="flex items-center h-[22px] px-(--sp-4) rounded-lg [background-color:var(--surface-hover)]">
-            <div className="font-ui font-(--weight-medium) [color:var(--text-secondary)] text-caption/micro">
-              {count}
+    <PageShell>
+      <AdminPageHeader
+        title={
+          <div className="flex items-center gap-(--sp-4)">
+            <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
+              Product Catalog
+            </div>
+            <div className="flex items-center h-[22px] px-(--sp-4) rounded-lg [background-color:var(--surface-hover)]">
+              <div className="font-ui font-(--weight-medium) [color:var(--text-secondary)] text-caption/micro">
+                {count}
+              </div>
             </div>
           </div>
-          <div className="grow" />
+        }
+        actions={
           <Button variant="primary" onClick={openCreate}>
             Add Product
           </Button>
-        </>
-      }
-    >
+        }
+      />
       <div className="flex flex-col grow gap-(--sp-8)">
         {/* Tabs + filters */}
         <div className="flex items-center justify-between gap-(--sp-4) flex-wrap">

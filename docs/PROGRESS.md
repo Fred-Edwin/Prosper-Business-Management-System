@@ -15,6 +15,53 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## M3 follow-up — Unify the admin header into a single toolbar row (Developer — 2026-09-03) — DONE
+
+**Frontend-only refactor. No backend, schema, routes, or domain logic touched.**
+
+**Problem.** Every admin screen rendered two stacked header rows: the
+shell's hardcoded "Prosper" + avatar row, above the page's own
+`<PageShell toolbar>` (real title, date picker, primary action). The
+sidebar already identifies the product.
+
+**Shipped.**
+
+- **New: `components/shells/admin-toolbar-context.tsx`** —
+  `AdminToolbarProvider` + `useAdminToolbarValue()` + `<AdminPageHeader
+  title=… actions=… />`. A screen renders one `<AdminPageHeader>` at the
+  top of its JSX; inside the provider it publishes title/actions into the
+  shell's one header row and renders nothing, outside a provider (screen
+  specs) it renders them inline in a `<header>`. See **ADR-56**.
+- **`AdminShell` / `MobileShellAdmin`** — dropped `toolbarTitle` /
+  `toolbarSubtitle` / `toolbarActions` props; both now read
+  `useAdminToolbarValue()`. Desktop: title · actions · avatar in the one
+  44px row (expand toggle still there when collapsed). Mobile: hamburger ·
+  title · primary action · avatar.
+- **`admin-shell-client.tsx`** — wraps both shells + `children` in
+  `<AdminToolbarProvider>`; no longer passes `toolbarTitle="Prosper"`.
+  Brand name now lives only in the sidebar nav / mobile nav drawer.
+- **All 9 admin screens** — `<PageShell toolbar={…}>` → `<PageShell>` +
+  `<AdminPageHeader …>`: assets, catalog, customers, customers/[id],
+  day-close, financials, sales, stock, stock/opening. Assets + Catalog
+  titles moved `text-display/display` → `text-h1/h1` to match the shell
+  header type (the other 7 already used it). Redundant single-item
+  `<Breadcrumb>` dropped from `/admin/customers` and `/admin/sales`
+  (repeated the title / the tab strip); real back-link breadcrumbs on
+  `customers/[id]` and `stock/opening` kept as the `title` node.
+
+**Tests.** 715 → **718** (`+3`, all in the new
+`tests/screens/admin-single-header.screen.test.tsx`). No existing spec
+needed a rewrite — `<AdminPageHeader>` outside a provider renders inline,
+so every per-screen assertion on title/actions text still resolves.
+`pnpm test` / `typecheck` / `build` green.
+
+**Not done (out of scope).** Staff shells
+(`components/layout/staff-shell-client.tsx` + cashier / canteen /
+store-manager screens) share the same two-row shape; the same change can
+follow in a later session.
+
+---
+
 ## Milestone 3 Session 4 — Financials: expenses, owner draws, profit (Developer — 2026-09-02) — DONE · **M3 COMPLETE**
 
 **Shipped (full-stack — backend + frontend + check).**

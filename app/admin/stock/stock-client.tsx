@@ -16,6 +16,7 @@
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
+import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
 import { DenseLedger } from "@/components/kit/dense-ledger";
 import { EmptyState } from "@/components/kit/empty-state";
@@ -237,16 +238,12 @@ export function StockClient() {
   const noRows = !loading && !error && rows.length === 0;
 
   return (
-    <PageShell
-      wide
-      toolbar={
-        <>
-          <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
-            Stock &amp; Reconciliation
-          </div>
-          <div className="grow" />
-          {/* Date moved into the FilterToolbar below (LDZ-0). "Opening Stock"
-              stays here — it's an action, not a filter. */}
+    <PageShell wide>
+      <AdminPageHeader
+        title="Stock & Reconciliation"
+        actions={
+          // Date lives in the FilterToolbar below (LDZ-0). "Opening Stock"
+          // is an action, not a filter.
           <a
             href="/admin/stock/opening"
             className="flex items-center h-(--control-md) shrink-0 px-(--sp-6) rounded-sm bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-interactive kit-focus-ring"
@@ -255,9 +252,8 @@ export function StockClient() {
               Opening Stock
             </span>
           </a>
-        </>
-      }
-    >
+        }
+      />
       {/* ───────── Desktop ledger ───────── */}
       <div className="hidden md:flex flex-col grow gap-(--sp-8) min-w-0">
         <div className="[width:100%] shrink-0">

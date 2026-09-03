@@ -9,6 +9,7 @@
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
+import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { Breadcrumb } from "@/components/kit/breadcrumb";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
 import { Drawer } from "@/components/kit/drawer";
@@ -109,16 +110,17 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
       : `KES ${fmtMoney(String(Math.abs(balanceOut)))}${balanceOut < 0 ? " cr" : ""}`;
 
   return (
-    <PageShell
-      toolbar={
-        <Breadcrumb
-          items={[
-            { label: "Customers", href: "/admin/customers" },
-            { label: loading ? "…" : (ledger?.customer.name ?? "Customer") },
-          ]}
-        />
-      }
-    >
+    <PageShell>
+      <AdminPageHeader
+        title={
+          <Breadcrumb
+            items={[
+              { label: "Customers", href: "/admin/customers" },
+              { label: loading ? "…" : (ledger?.customer.name ?? "Customer") },
+            ]}
+          />
+        }
+      />
       {error ? (
         <ErrorState
           title="Couldn't load this customer"

@@ -20,6 +20,7 @@
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
+import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { Tabs } from "@/components/kit/tabs";
 import { DatePicker } from "@/components/kit/date-picker";
 import { Button } from "@/components/kit/button";
@@ -116,31 +117,29 @@ export function FinancialsClient({
     tab === "purchases" || tab === "deliveries" || tab === "handovers";
 
   return (
-    <PageShell
-      toolbar={
-        <>
-          <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
-            Financials &amp; Expenses
-          </div>
-          <div className="grow" />
-          <DatePicker
-            value={fmtTriggerDate(date)}
-            selected={dateOf(date)}
-            maxDate={dateOf(today)}
-            onSelect={(d) => setDate(ymdOf(d))}
-            aria-label="Business date"
-          />
-          {tab === "purchases" && (
-            <Button
-              variant="primary"
-              onClick={() => recordPaymentRef.current?.()}
-            >
-              Record Payment
-            </Button>
-          )}
-        </>
-      }
-    >
+    <PageShell>
+      <AdminPageHeader
+        title="Financials & Expenses"
+        actions={
+          <>
+            <DatePicker
+              value={fmtTriggerDate(date)}
+              selected={dateOf(date)}
+              maxDate={dateOf(today)}
+              onSelect={(d) => setDate(ymdOf(d))}
+              aria-label="Business date"
+            />
+            {tab === "purchases" && (
+              <Button
+                variant="primary"
+                onClick={() => recordPaymentRef.current?.()}
+              >
+                Record Payment
+              </Button>
+            )}
+          </>
+        }
+      />
       {/* KPI strip — wired to the summary endpoint (S4). */}
       <div className="hidden md:block pt-(--sp-6)">
         <KpiStripDesktop summary={summary} loading={summaryLoading} />

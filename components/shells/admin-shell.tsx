@@ -20,6 +20,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { useAdminToolbarValue } from "./admin-toolbar-context";
 
 interface AdminNavItemDef {
   key: string;
@@ -194,9 +195,6 @@ const ICON_SIGNOUT = (
 export interface AdminShellProps {
   activeNavKey: string;
   onNavigate: (href: string) => void;
-  toolbarTitle: string;
-  toolbarSubtitle?: string;
-  toolbarActions?: React.ReactNode;
   accountName: string;
   accountRole: string;
   accountInitials: string;
@@ -209,9 +207,6 @@ export interface AdminShellProps {
 export function AdminShell({
   activeNavKey,
   onNavigate,
-  toolbarTitle,
-  toolbarSubtitle,
-  toolbarActions,
   accountName,
   accountRole,
   accountInitials,
@@ -220,6 +215,9 @@ export function AdminShell({
   onToggleCollapsed,
   children,
 }: AdminShellProps) {
+  // ADR-56: the one header row. Title + actions are published by the page that
+  // renders inside this shell (via <AdminPageHeader>) — not props.
+  const { title, actions } = useAdminToolbarValue();
   return (
     <div className="[font-synthesis:none] flex h-screen w-full antialiased text-caption/micro">
       {collapsed ? (
@@ -407,16 +405,15 @@ export function AdminShell({
                   {ICON_PANEL_DARK}
                 </button>
               )}
-              <div className="font-ui font-(--weight-semibold) inline-block [color:var(--text-primary)] text-h1/h1">
-                {toolbarTitle}
-              </div>
-              {toolbarSubtitle && (
-                <div className="font-ui inline-block [color:var(--text-secondary)] text-sm/sm">
-                  {toolbarSubtitle}
+              {typeof title === "string" ? (
+                <div className="font-ui font-(--weight-semibold) inline-block [color:var(--text-primary)] text-h1/h1">
+                  {title}
                 </div>
+              ) : (
+                title
               )}
               <div className="grow" />
-              {toolbarActions}
+              {actions}
               <button
                 type="button"
                 onClick={onAccountClick}

@@ -1,5 +1,5 @@
 // A1 — Customers & Credit register (Admin). COMPOSED from the proven kit
-// only: <PageShell> + <Breadcrumb> + <SimpleTable> + the shared kit
+// only: <PageShell> + <SimpleTable> + the shared kit
 // <FilterToolbar> (search slot + a "Has balance" kind:"toggle" — 3e
 // retrofit off the old <PillFilter>) + rail <Drawer>. Visual target:
 // `A1 Customers Register — … [M2-01]` (Paper artboards DU2-0 / DZ0-0 /
@@ -20,7 +20,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { PageShell } from "@/components/kit/page-shell";
-import { Breadcrumb } from "@/components/kit/breadcrumb";
+import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
 import { SearchInput } from "@/components/kit/search-input";
 import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
@@ -179,25 +179,18 @@ export function CustomersClient() {
   ];
 
   return (
-    <PageShell
-      toolbar={
-        <div className="flex flex-col gap-(--sp-2) w-full">
-          <Breadcrumb items={[{ label: "Customers" }]} />
-          <div className="flex items-center gap-(--sp-4) w-full">
-            <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
-              Customers &amp; Credit
-            </div>
-            <div className="grow" />
-            <Button
-              variant="secondary"
-              onClick={() => setDrawerMode("add-customer")}
-            >
-              Add customer
-            </Button>
-          </div>
-        </div>
-      }
-    >
+    <PageShell>
+      <AdminPageHeader
+        title="Customers & Credit"
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => setDrawerMode("add-customer")}
+          >
+            Add customer
+          </Button>
+        }
+      />
       <div className="flex flex-col grow gap-(--sp-6)">
         <FilterToolbar
           aria-label="Filter customers"

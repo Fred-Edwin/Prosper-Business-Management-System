@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { AdminShell, ADMIN_NAV_ITEMS } from "@/components/shells/admin-shell";
 import { MobileShellAdmin } from "@/components/shells/mobile-shell-admin";
+import { AdminToolbarProvider } from "@/components/shells/admin-toolbar-context";
 import { ToastProvider } from "@/components/kit/toast";
 
 // Resolve the active nav key by longest matching href prefix — items sit at
@@ -105,43 +106,48 @@ export function AdminShellClient({
     // admin save / record / correction success fires one via useToast(). The
     // staff tree gets placement="bottom-center" in Session 12, not here.
     <ToastProvider placement="top-right">
-      {/* M2 6b: two-shell responsive switch. The desktop sidebar shell and the
-          mobile hamburger + MobileNavDrawer shell are BOTH real, verified
-          layouts (Paper 649-0/67T-0 and 6B1-0/1ZP-0). Rather than merge two
-          different box models into one tree, render each and toggle with the
-          same `hidden md:*` pattern the screens use — `children` renders in
-          both (a client subtree, no server-only effects; the hidden shell's
-          hooks still run — an accepted cost). */}
-      <div className="hidden md:block">
-        <AdminShell
-          activeNavKey={activeNavKey}
-          onNavigate={navigate}
-          toolbarTitle="Prosper"
-          accountName="Admin"
-          accountRole="Admin"
-          accountInitials={accountInitials}
-          onAccountClick={handleAccountClick}
-          collapsed={collapsed}
-          onToggleCollapsed={toggleCollapsed}
-        >
-          {children}
-        </AdminShell>
-      </div>
-      <div className="md:hidden">
-        <MobileShellAdmin
-          activeNavKey={activeNavKey}
-          onNavigate={navigate}
-          toolbarTitle="Prosper"
-          brandLabel="Prosper"
-          brandSubLabel="Admin"
-          accountName="Admin"
-          accountRole="Admin"
-          accountInitials={accountInitials}
-          onAccountClick={handleAccountClick}
-        >
-          {children}
-        </MobileShellAdmin>
-      </div>
+      {/* ADR-56: one header row per admin screen. The page publishes its title +
+          actions through <AdminToolbarProvider>; each shell renders them in its
+          single header row alongside the account avatar. Wraps BOTH shells and
+          `children` so the provider sits above the shell's header row and the
+          page subtree alike. */}
+      <AdminToolbarProvider>
+        {/* M2 6b: two-shell responsive switch. The desktop sidebar shell and the
+            mobile hamburger + MobileNavDrawer shell are BOTH real, verified
+            layouts (Paper 649-0/67T-0 and 6B1-0/1ZP-0). Rather than merge two
+            different box models into one tree, render each and toggle with the
+            same `hidden md:*` pattern the screens use — `children` renders in
+            both (a client subtree, no server-only effects; the hidden shell's
+            hooks still run — an accepted cost). */}
+        <div className="hidden md:block">
+          <AdminShell
+            activeNavKey={activeNavKey}
+            onNavigate={navigate}
+            accountName="Admin"
+            accountRole="Admin"
+            accountInitials={accountInitials}
+            onAccountClick={handleAccountClick}
+            collapsed={collapsed}
+            onToggleCollapsed={toggleCollapsed}
+          >
+            {children}
+          </AdminShell>
+        </div>
+        <div className="md:hidden">
+          <MobileShellAdmin
+            activeNavKey={activeNavKey}
+            onNavigate={navigate}
+            brandLabel="Prosper"
+            brandSubLabel="Admin"
+            accountName="Admin"
+            accountRole="Admin"
+            accountInitials={accountInitials}
+            onAccountClick={handleAccountClick}
+          >
+            {children}
+          </MobileShellAdmin>
+        </div>
+      </AdminToolbarProvider>
     </ToastProvider>
   );
 }

@@ -20,6 +20,7 @@
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
+import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { Tabs } from "@/components/kit/tabs";
 import { SearchInput } from "@/components/kit/search-input";
 import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
@@ -283,24 +284,26 @@ export function AssetsClient() {
   ];
 
   return (
-    <PageShell
-      toolbar={
-        <>
-          <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-display/display">
-            Physical Assets Register
-          </div>
-          <div className="flex items-center h-[22px] px-(--sp-4) rounded-lg [background-color:var(--surface-hover)]">
-            <div className="font-ui font-(--weight-medium) [color:var(--text-secondary)] text-caption/micro">
-              {count}
+    <PageShell>
+      <AdminPageHeader
+        title={
+          <div className="flex items-center gap-(--sp-4)">
+            <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
+              Physical Assets Register
+            </div>
+            <div className="flex items-center h-[22px] px-(--sp-4) rounded-lg [background-color:var(--surface-hover)]">
+              <div className="font-ui font-(--weight-medium) [color:var(--text-secondary)] text-caption/micro">
+                {count}
+              </div>
             </div>
           </div>
-          <div className="grow" />
+        }
+        actions={
           <Button variant="primary" onClick={openCreate}>
             Register New Asset
           </Button>
-        </>
-      }
-    >
+        }
+      />
       <div className="flex flex-col grow gap-(--sp-8)">
         {/* Active / Archived tab (A5 / ADR-47 §1) */}
         <Tabs

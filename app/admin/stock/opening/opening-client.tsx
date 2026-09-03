@@ -17,6 +17,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/kit/page-shell";
+import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { Breadcrumb } from "@/components/kit/breadcrumb";
 import { InstructionalBanner } from "@/components/kit/instructional-banner";
 import { BulkEntryGrid, type BulkGridRow } from "@/components/kit/bulk-entry-grid";
@@ -272,19 +273,18 @@ export function OpeningClient() {
       : "Save Baseline & Initialize Day 1";
 
   return (
-    <PageShell
-      wide
-      toolbar={
-        <>
+    <PageShell wide>
+      <AdminPageHeader
+        title={
           <Breadcrumb
             items={[
               { label: "Stock & Reconciliation", href: "/admin/stock" },
               { label: `Day 1 Opening Stock — ${businessDate}` },
             ]}
           />
-          <div className="grow" />
-          {/* Toolbar actions are desktop-only; on mobile they live in the sticky
-              bottom bar (§3.6). */}
+        }
+        actions={
+          // Desktop-only; on mobile these live in the sticky bottom bar (§3.6).
           <div className="hidden md:flex items-center shrink-0 gap-(--sp-4)">
             <Button
               variant="secondary"
@@ -301,9 +301,8 @@ export function OpeningClient() {
               {saveLabel}
             </Button>
           </div>
-        </>
-      }
-    >
+        }
+      />
       {/* ───────── Desktop grid (≥ --bp-md) ───────── */}
       <div className="hidden md:flex flex-col grow gap-(--sp-8)">
         <InstructionalBanner

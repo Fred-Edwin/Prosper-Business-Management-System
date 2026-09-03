@@ -9,6 +9,7 @@
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
+import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import {
   SimpleTable,
   type SimpleTableColumn,
@@ -111,13 +112,8 @@ export function DayCloseClient() {
   ];
 
   return (
-    <PageShell
-      toolbar={
-        <h1 className="font-ui font-(--weight-semibold) text-[color:var(--text-primary)]">
-          Dashboard
-        </h1>
-      }
-    >
+    <PageShell>
+      <AdminPageHeader title="Dashboard" />
       <section
         aria-labelledby="day-close-heading"
         className="flex flex-col gap-(--sp-6) border border-solid [border-color:var(--border-subtle)] [background:var(--surface-raised)] p-(--sp-7) max-w-[680px]"

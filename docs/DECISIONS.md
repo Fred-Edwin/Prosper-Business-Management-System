@@ -2493,3 +2493,60 @@ and nothing else — COGS, Gross Profit and Net Profit are untouched.
   figure above", leading with the reason breakdown — so no reader totals
   the two.
 - No `TODO(mock)` — this is the real implementation.
+
+---
+
+## ADR-56: One header row per admin screen — the page publishes its title + actions up to the shell via React context (Developer, Milestone 3 Session 6 [header unify], 2026-09-03)
+
+**Context:** Every admin screen rendered TWO stacked header rows: the
+shell's toolbar row (hardcoded "Prosper" + the account avatar) sitting
+above the page's own `<PageShell toolbar>` (the real page title, date
+picker, primary action). The top row said nothing the sidebar didn't
+already say. The owner approved collapsing to one row (M3 S5 Paper
+design): **desktop** = page title · page actions · account avatar;
+**mobile** = hamburger · page title · (primary action) · account avatar.
+
+The design problem: the shell (`app/admin/layout.tsx` →
+`AdminShellClient` → `AdminShell` / `MobileShellAdmin`) is a layout
+wrapper and does not know which page renders inside it. The title and
+actions live in the page.
+
+**Decision.** A small React context, `AdminToolbarProvider`, wraps both
+shells and `children` in `AdminShellClient`. A screen renders one
+`<AdminPageHeader title=… actions=… />` at the top of its JSX **instead
+of** passing a `toolbar` prop to `<PageShell>`. Inside the provider it
+publishes its content (via effect) into the shell's single header row and
+renders nothing itself; outside a provider (a screen spec that renders
+the client directly) it renders the title + actions inline in a
+`<header>` so assertions still resolve. `<PageShell>` stays in use for
+content width / padding — it is just no longer given `toolbar`.
+
+Rejected alternative (b) — *drop the shell's row, keep `<PageShell
+toolbar>` as the only header*: the account avatar, the mobile hamburger,
+and the collapsed-sidebar expand toggle all live in the shell and need
+shell state/callbacks. Making nine pages render that chrome themselves —
+and `<PageShell>` is frozen kit with no avatar slot — is worse than a
+15-line context.
+
+**Consequences.**
+
+- `AdminShell` / `MobileShellAdmin` lose their `toolbarTitle` /
+  `toolbarSubtitle` / `toolbarActions` props; they read
+  `useAdminToolbarValue()` instead. `admin-shell-client.tsx` no longer
+  passes `toolbarTitle="Prosper"`. The brand name now lives ONLY in the
+  sidebar nav and the mobile nav drawer (`brandLabel`).
+- All nine admin screens changed: `<PageShell toolbar={…}>` →
+  `<PageShell>` + `<AdminPageHeader …>`. The Assets and Catalog titles
+  moved from `text-display/display` to `text-h1/h1` to match the shell's
+  header type (every other screen already used `text-h1/h1`).
+- The single-item non-link `<Breadcrumb>` on `/admin/customers` and the
+  tab-echo `<Breadcrumb>` on `/admin/sales` were dropped — both only
+  repeated the page title or the tab strip below. The real back-link
+  breadcrumbs on `/admin/customers/[id]` and `/admin/stock/opening` are
+  kept, passed as the `title` node.
+- Mobile: a screen's primary action renders between the title and the
+  avatar in the mobile shell header, so nothing reachable on mobile
+  before is lost. `/admin/stock/opening` keeps its actions desktop-only
+  (`hidden md:flex`) — its mobile Save lives in the sticky bottom bar.
+- Not applied to the staff shells this session (out of scope). They share
+  the same two-row shape; the same change can follow.

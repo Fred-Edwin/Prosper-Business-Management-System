@@ -15,6 +15,7 @@
 
 import * as React from "react";
 import { MobileNavDrawer } from "./mobile-nav-drawer";
+import { useAdminToolbarValue } from "./admin-toolbar-context";
 
 const ICON_HAMBURGER = (
   <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
@@ -25,7 +26,6 @@ const ICON_HAMBURGER = (
 );
 
 export interface MobileShellAdminProps {
-  toolbarTitle: string;
   accountInitials: string;
   activeNavKey: string;
   onNavigate: (href: string) => void;
@@ -38,7 +38,6 @@ export interface MobileShellAdminProps {
 }
 
 export function MobileShellAdmin({
-  toolbarTitle,
   accountInitials,
   activeNavKey,
   onNavigate,
@@ -50,6 +49,11 @@ export function MobileShellAdmin({
   children,
 }: MobileShellAdminProps) {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  // ADR-56: page title + actions come from the screen (via <AdminPageHeader>),
+  // not props. The approved mobile header is hamburger · title · avatar; a
+  // screen's primary action rides between the title and the avatar so nothing
+  // that was reachable on mobile before is lost.
+  const { title, actions } = useAdminToolbarValue();
 
   return (
     <div className="[font-synthesis:none] flex flex-col h-screen w-full bg-(--surface-page) antialiased">
@@ -63,10 +67,17 @@ export function MobileShellAdmin({
         >
           {ICON_HAMBURGER}
         </button>
-        <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
-          {toolbarTitle}
-        </div>
+        {typeof title === "string" ? (
+          <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1 truncate">
+            {title}
+          </div>
+        ) : (
+          title
+        )}
         <div className="grow" />
+        {actions && (
+          <div className="flex items-center shrink-0 gap-(--sp-3)">{actions}</div>
+        )}
         <button
           type="button"
           onClick={onAccountClick}
