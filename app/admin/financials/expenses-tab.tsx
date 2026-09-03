@@ -157,7 +157,7 @@ export function ExpensesView({
       : `${fmtDate(`${from}T12:00:00Z`)} – ${fmtDate(`${to}T12:00:00Z`)}`;
 
   return (
-    <div className="flex flex-col grow gap-(--sp-5) pt-(--sp-6)">
+    <div className="flex flex-col grow gap-(--sp-5) pt-(--sp-6) pb-(--sp-12)">
       <div className="flex items-center justify-between gap-(--sp-4) px-(--sp-6) md:px-0">
         <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
           {loading

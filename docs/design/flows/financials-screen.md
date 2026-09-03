@@ -48,7 +48,41 @@ Related: ADR-55 (COGS model), ADR-56 (single admin header row),
    — it is Section 2.) Each tab's table keeps its **column headers
    visible even when empty**, with the empty-state message rendered in a
    full-height area the page scrolls to (the Stock Purchases pattern —
-   no `min-h-0` / trapped inner scroll on the tab container).
+   no `min-h-0` / trapped inner scroll on the tab container). Every tab
+   has a **64px bottom gap** (`pb-(--sp-12)`) so a short table is
+   obviously the end of the list, not content cut off at the viewport.
+
+## Handovers reconciliation table (owner-approved v2 — Paper page "M3 S7 — Handovers table redesign")
+
+A bespoke grouped table — the kit `<SimpleTable>` has no grouped-header
+or footer support, so it is hand-built from token markup with full ARIA
+table roles (`table` / `row` / `columnheader` / `cell`). No kit change.
+
+- **Two-row header.** Group labels (Declared · Received · Variance) sit
+  over `Cash | M-Pesa` sub-columns. **One line per row** — Cash and
+  M-Pesa each get their own narrow right-aligned column; nothing is
+  stacked.
+- **Columns:** Staff (150) · Status (130) · six money columns 90px each ·
+  Note (grow) · action (130). A hairline `border-l` opens each of the
+  three money groups and the Note column.
+- **Status** is a bare coloured dot + coloured label (no filled pill) in
+  the Staff column — success "Received" / warning "Awaiting".
+- **Value styling:** a real figure is `--text-primary`; an exact `0.00`
+  is `--text-tertiary` so real numbers pop; a variance is `--color-danger`
+  when short, `--color-success` when over. An unreceived row shows `—`
+  (centered) in the Received / Variance columns and the Note column.
+- **Note header** is centered; the `—` placeholder in a Note cell is
+  centered (a real shortfall sentence stays left-aligned).
+- **Totals strip** aligns to the same columns; label is `--weight-medium`,
+  figures are regular weight (NOT bold — matches the body rows).
+- Mobile keeps the existing stacked cards.
+
+## Typography foundation (ADR-63)
+
+The screen (and the app) render Inter with the foundation block on
+`body` — `antialiased`, `font-synthesis: none`, `font-optical-sizing:
+none` — so it matches the Paper mockups. `--weight-semibold` is **550**,
+not 600.
 
 ---
 

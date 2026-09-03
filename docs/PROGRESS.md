@@ -15,6 +15,136 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## M3 S7 follow-up — Handovers table redesign + typography foundation (Developer + Owner — 2026-09-04) — DONE
+
+Frontend polish on the shipped `/admin/financials`, plus two foundation
+token changes. No backend, schema, or route changes.
+
+**Handovers reconciliation table — rebuilt to owner-approved v2** (Paper
+"Prosper Hotel" · page "M3 S7 — Handovers table redesign", artboard
+"v2 — APPROVED"). The old table stacked a `Cash / M-Pesa` pair in each
+of 7 columns and read cluttered.
+
+- Now a **bespoke grouped table** (the kit `<SimpleTable>` has no
+  grouped-header / footer support — hand-built from token markup with
+  full ARIA table roles; no kit change). Two-row header: group labels
+  (Declared · Received · Variance) over `Cash | M-Pesa` sub-columns.
+  **One line per row.**
+- Columns: Staff (150) · Status (130) · six 90px money columns · Note
+  (grow) · action (130); a hairline `border-l` opens each money group +
+  Note.
+- Status is a bare dot + coloured label (no filled pill). Real figure =
+  `--text-primary`; exact `0.00` = `--text-tertiary`; variance = danger
+  short / success over. Unreceived row → centered `—`. Note header
+  centered; `—` in a Note cell centered. Totals strip aligns to the same
+  columns, **not bold** (`--weight-medium` label, regular figures).
+- Mobile stacked cards unchanged.
+
+**Empty-state parity + 64px bottom gap** (from earlier this session,
+carried): Handovers / Expenses / Owner Draws keep their table headers
+when empty, the PAGE scrolls to the empty-state message (removed
+`min-h-0` that trapped it in an inner strip), and every tab now has
+`pb-(--sp-12)` so a short table reads as the end of the list.
+
+**Typography foundation (ADR-63)** — a type audit of the code vs. the
+Paper mockups for this screen found the app rendered Inter heavier /
+fuzzier than the design:
+
+- **`body` in `app/globals.css`** gains `-webkit-font-smoothing:
+  antialiased` + `-moz-osx-font-smoothing: grayscale` + `font-synthesis:
+  none` + `font-optical-sizing: none` + `text-rendering:
+  optimizeLegibility`. Set once, inherited app-wide — every screen now
+  renders closer to its mockup.
+- **`--weight-semibold: 600 → 550`** in BOTH `tokens.css` and `tokens.ts`
+  (the `tokens.test.ts` drift guard enforces they match). Inter is
+  variable, so 550 is a true intermediate weight; the 3-step scale is
+  kept, gentler at the top. Every `font-(--weight-semibold)` in the app
+  softens at once — a deliberate global visual change.
+
+**Docs.** ADR-63; `design-principles.md` §2 type scale; the flow doc
+`docs/design/flows/financials-screen.md`.
+
+**Tests.** 843/843 (`pnpm test`), `typecheck`, `build` all green. The
+only failure during the work was the `tokens.test.ts` drift guard when
+`tokens.ts` lagged `tokens.css` — fixed by syncing both.
+
+---
+
+## Milestone 5 Session 11 — Audit-trail read + day detail (Developer — 2026-09-03) — DONE (backend only)
+
+Backend only. The audit-log **read** side (write side has existed since
+M1, ADR-25) plus a one-date "everything that happened" read. No UI — a
+later session builds the screens after a Paper pass.
+
+**Shipped**
+
+- `lib/domain/audit/list-audit-log.ts` — `listAuditLog(filter)`:
+  paginated (OFFSET/limit), newest first. Filters: `from`/`to`
+  (business-date range on `occurredAt`), `actorId`, `action`,
+  `entityType`, and `group: "significant"` (corrections + deletions +
+  day close/reopen + staff/payout/pay-adjustment creates — the
+  investigable subset the screen defaults to). Each entry carries
+  `actorName` (one `include`, no per-row query) and a best-effort
+  `entityLabel` resolved with **one batched query per entity type on the
+  page**.
+- `lib/domain/audit/get-day-detail.ts` — `getDayDetail(businessDate)`:
+  orders / stock movements / handovers (+receipts) / expenses / owner
+  transactions / stock counts / payouts / close status for one
+  Africa/Nairobi date. **Composed from the existing per-module reads**
+  (`listOrders`, `listMovements`, `listHandovers`, `listExpenses`,
+  `listOwnerTransactions`) called with an `admin` context; only
+  `stockCount` and `staffPayout` are queried directly (no date-scoped
+  domain read exists for them). Empty date → empty collections, not an
+  error.
+- `GET /api/audit` and `GET /api/audit/day-detail` — thin handlers,
+  Zod in `lib/validation/audit.ts`, **Admin-only**.
+- Tests: `list-audit-log.test.ts` (8) — filters, pagination stability,
+  significant-set, label resolution, N+1 sanity;
+  `day-detail-reconciliation.test.ts` (6) — **the reconciliation
+  guarantee**: day-detail revenue / expense / handover figures equal
+  `getFinancialSummary(date, date)` for the same seeded date; plus
+  empty-date and every-category coverage. `app/api/audit/*/route.test.ts`
+  (8) — admin-only gates.
+
+**Test count:** 821 → 843 (+22). typecheck clean, build clean.
+
+**Docs**
+
+- `docs/DECISIONS.md` **ADR-62** — no separate reports page (owner's
+  call); period reporting IS `/admin/financials`; M5 backend is only the
+  audit read + day detail; reconciliation enforced by test.
+- `docs/API.md` "Day Close & Audit" — full contract for `GET /api/audit`
+  and `GET /api/audit/day-detail` (the M5 screen session builds against
+  this, must not re-derive it). Old `GET /api/audit-log` /
+  `GET /api/reports/*` stubs marked "not built".
+- `docs/SCHEMA.md` §14 — the ingredients-only COGS split (superseded by
+  ADR-55 in M3 S4, never edited) corrected to the ADR-55 all-stock
+  sweep. This was the last doc describing the old formula.
+
+**Changed from plan:** none — the session prompt was the plan (no
+`milestone-5-plan.md` exists yet; M5 hadn't been formally opened).
+
+**For the screen session — things that make the audit data hard to
+design:**
+
+- `oldValue` / `newValue` **shapes vary wildly by action**. There is no
+  common schema. `docs/API.md` lists every known shape. Do NOT build a
+  generic deep-diff renderer blind — design per action group
+  (create / correct / delete / day-close).
+- On a `correct` for an **order**, `entityId` is the *correction row's*
+  id, not the original's. `handover` / `expense` corrections put the
+  original's id in `entityId` and the correction id inside `newValue`.
+  Inconsistent — the screen must special-case order corrections.
+- `stock_movement` rows always have `action: "create"` in the enum
+  column; the real sub-action (`purchase_receipt`, `transfer`, `issue`,
+  `production`, `non_sale_consumption`, …) is `newValue.action`. Filter
+  by `entityType` + read the sub-label from the Json.
+- `entityLabel` is `null` for `money_movement`, `receipt_of_handover`,
+  `staff_pay_adjustment`, `user` — the screen needs a graceful
+  `entityType #id` fallback for ~4 of the ~15 entity types.
+- `login` rows exist and are frequent — the default `group=significant`
+  hides them; an "everything" view will be login-heavy.
+
 ## Milestone 4 Session 9C — Locations tab, the assets crash, a real test DB (Developer — 2026-09-03) — DONE
 
 Four contained items. Mostly frontend + infrastructure. `pnpm test`

@@ -140,7 +140,10 @@
   /* --- Typography: weights -------------------------------------------------- */
   --weight-regular: 400;
   --weight-medium: 500;
-  --weight-semibold: 600;
+  /* Softened 600 → 550 app-wide (owner call, M3 S7): plain 600 read as too
+     heavy everywhere it appeared. Inter is a variable font, so 550 renders
+     as a true intermediate weight; the 3-step scale is kept. */
+  --weight-semibold: 550;
 
   /* --- Typography: tracking (letter-spacing) ---------------------------- */
   /* GAP → codified. Paper defines no letter-spacing tokens. House style +

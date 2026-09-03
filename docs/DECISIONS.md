@@ -2872,3 +2872,128 @@ not; do not carry that habit over).
 - No test was weakened or deleted for this. The full suite passed
   815/815 on the first run against the new DB — nothing turned out to
   depend on dev-DB-specific data.
+
+---
+
+## ADR-62: There is no separate reports page — period reporting IS `/admin/financials`; the audit trail + day-detail read cover the rest (Owner + Developer, Milestone 5 Session 11 [audit-trail + day-detail backend], 2026-09-03)
+
+**Context.** M5 ("History, at a glance") was originally scoped as
+"weekly/monthly summaries + the full audit log view + historical record
+lookup". By the time S11 (this session) ran, `/admin/financials` had
+already shipped (M3 S7 / ADR-57): Today / this week / this month / custom
+date ranges, full profit (revenue, COGS, gross, expenses, net),
+per-location breakdown, handovers, owner transactions — every figure
+summed on read from the ledger, with the flows-vs-balances split of
+ADR-57.
+
+Building a second "Reports" page would mean a second aggregation layer
+computing the same revenue / COGS / profit numbers a second way. Two
+implementations of the same figure drift — a live bug we have already
+been bitten by (the 2026-09-01 double-count, ADR-50 / F1).
+
+**Decision (owner's call).**
+
+1. **No separate reports page, no `GET /api/reports/*`.** Period
+   reporting for any date range is `/admin/financials` +
+   `GET /api/financials/summary?from=&to=`. `getFinancialSummary` is the
+   single source of truth for revenue / COGS / gross / expenses / net /
+   balances. A future session must not build a parallel one.
+
+2. M5's remaining backend is only the two things financials does **not**
+   cover, both **Admin-only, read-only**:
+   - **The audit-trail read** — `listAuditLog(filter)` in
+     `lib/domain/audit` (`GET /api/audit`). The write side has existed
+     since M1 (ADR-25); this is the paginated, filterable, newest-first
+     read. Returns everything, with a `group: "significant"` filter for
+     the investigable subset (corrections, deletions, day close/reopen,
+     staff/location/payout writes) that the screen defaults to.
+   - **Day detail** — `getDayDetail(businessDate)` (`GET
+     /api/audit/day-detail`): one Africa/Nairobi business date's orders,
+     stock movements, handovers (+ receipts), expenses, owner
+     transactions, stock counts, payouts, and close status —
+     **composed from the existing per-module reads**, not fresh queries.
+
+3. **Reconciliation is enforced by a test.** `getDayDetail`'s revenue /
+   expense / handover figures must equal `getFinancialSummary(date,
+   date)` for the same date
+   (`lib/domain/audit/day-detail-reconciliation.test.ts`). If they
+   diverge, the day detail is the bug — the summary is authoritative.
+
+**Consequences.**
+
+- `docs/API.md` "Day Close & Audit" now documents `GET /api/audit` and
+  `GET /api/audit/day-detail` as the real contract; the old
+  `GET /api/audit-log` / `GET /api/reports/*` stubs are marked "not
+  built". The M5 screen session builds against that doc.
+- Pagination on `/api/audit` is OFFSET/limit (total count + "page N" +
+  stable page sizes matter more than cursor deep-scroll for an
+  investigator's table that grows at human speed).
+- Entity resolution in the audit read is best-effort and batched (one
+  query per entity type per page). `money_movement`,
+  `receipt_of_handover`, `staff_pay_adjustment` and `user` rows get no
+  label — the screen renders `entityType #id`.
+- SCHEMA §14's old ingredients-only COGS split (superseded by ADR-55 in
+  M3 S4 but never edited) was corrected in this session — it was the
+  last doc still describing the pre-ADR-55 formula.
+
+---
+
+## ADR-63: Foundation type-rendering tokens — Inter is pinned to antialiased, no synthesis, no optical sizing; `--weight-semibold` softened 600 → 550 (Owner + Developer, Milestone 3 Session 7 follow-up, 2026-09-04)
+
+**Context.** The shipped `/admin/financials` screens read visibly heavier
+and slightly fuzzier than the approved Paper mockups even where the font,
+size and weight matched one-to-one. A typography audit — every text
+node in the Paper artboards (M3 S5 Financials redesign, M3 S7 Handovers
+table) against the live markup — found two foundation-level gaps:
+
+1. **No font smoothing / synthesis control on `body`.** Paper renders
+   every text node `antialiased` with `font-synthesis: none`. The app's
+   `body` set only `font-family` / `font-size` / `line-height`, so the
+   browser default (`-webkit-font-smoothing: auto`) applied — Inter
+   rendered heavier and blurrier than the design preview. Individual kit
+   components carried `antialiased` inconsistently; most screen markup
+   did not.
+2. **Inter's `opsz` (optical size) axis was left on auto.** `next/font`
+   loads the variable Inter; with `font-optical-sizing` unset the browser
+   auto-applies opsz, thickening strokes at the 11–13px sizes that make
+   up most of the admin UI. Paper renders at a fixed optical size.
+
+Separately, the owner found the plain `--weight-semibold: 600` too heavy
+**everywhere it appeared** (page titles, section headings, table
+headers, KPI figures) and asked for it softened at the token, not
+screen by screen.
+
+**Decision.**
+
+1. **`body` (`app/globals.css`) gains a foundation type-rendering
+   block**, set once and inherited everywhere:
+   ```css
+   -webkit-font-smoothing: antialiased;
+   -moz-osx-font-smoothing: grayscale;
+   font-synthesis: none;
+   font-optical-sizing: none;
+   text-rendering: optimizeLegibility;
+   ```
+   No component should re-declare these; the scattered per-component
+   `antialiased` classes are now redundant (left in place, not swept, to
+   keep the diff small — a later cleanup may remove them).
+
+2. **`--weight-semibold: 600 → 550`** in **both** `app/design-system/
+   tokens.css` and `app/design-system/tokens.ts` (the drift-guard test
+   `tokens.test.ts` enforces they match). Inter is variable, so 550
+   renders as a true intermediate weight; the three-step regular / medium
+   / semibold scale is kept, just gentler at the top. Every
+   `font-(--weight-semibold)` in the app softens at once — this is a
+   deliberate global visual change, not a bug fix.
+
+**Consequences.**
+
+- These are the "make the app match the mockup" tokens. Any future
+  screen work inherits the correct rendering; a session that reintroduces
+  `-webkit-font-smoothing: auto` behaviour (e.g. by overriding on a
+  wrapper) is regressing this ADR.
+- `--weight-semibold` is now 550, not 600 — do not "restore" it to 600.
+  If a specific element genuinely needs 600, that is a new token
+  (`--weight-bold`) with owner sign-off, not an edit to this one.
+- `design-principles.md` §2 (type scale) updated to state the semibold
+  weight is 550 and the `body` rendering block is the foundation.
