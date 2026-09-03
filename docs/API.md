@@ -1219,3 +1219,134 @@ profit, expenses, handovers and per-location breakdown (ADR-57). A second
 aggregation layer would be a second source of truth for the same numbers
 and they would drift (owner decision, M5 S11). For a single past date's
 records use `GET /api/audit/day-detail`.
+
+---
+
+## Dashboard
+
+### `GET /api/admin/dashboard?date=YYYY-MM-DD` — the `/admin` morning-triage aggregator (M5 S13)
+
+Roles: **Admin only** (`401 UNAUTHENTICATED` / `403 FORBIDDEN`).
+Read-only — the dashboard writes nothing.
+
+`date` is optional; defaults to **today** (Africa/Nairobi). An explicit
+`date` is honoured for a pre-close review of a past day (and by tests).
+Malformed → `400 VALIDATION_ERROR` (`field: "date"`).
+
+**There is no period picker on this screen.** Every figure is "now",
+"today", or "this week so far". Period reporting for arbitrary ranges is
+`/admin/financials` (`GET /api/financials/summary`), unchanged.
+
+All money is a 2dp decimal string. All dates are `YYYY-MM-DD`
+Africa/Nairobi business dates. The five bands map 1:1 to
+`docs/design/flows/dashboard-screen.md`.
+
+**Sources (composed, not re-derived):**
+
+- **Position** — `getAccountBalances` / `getOwnerOwedToBusiness` with
+  `asOf` = end of `date` — the SAME derivations `getFinancialSummary`
+  uses for its balance figures (one source of truth).
+- **Week + Trend** `dailyNet` — `dailyNetSeries` (ADR-64): net profit per
+  business date via span-wide bucketed queries, agreeing **to the cent**
+  with `getFinancialSummary(day, day).consolidated.netProfit`. NOT a
+  proxy, and NOT 37 stock sweeps.
+- **Needs attention / Today** — counts + small detail lists from the
+  handovers / stock / audit / money ledgers.
+
+**Response** `200`:
+
+```jsonc
+{
+  "data": {
+    "date": "2026-09-03",
+
+    // ── Band 1 — Position right now ──────────────────────────────────
+    "position": {
+      "liquidity": "182400.00",          // cash + mpesaBank
+      "cash": "54300.00",
+      "mpesaBank": "128100.00",
+      "ownerOwedToBusiness": "15000.00"  // draws − returns; +ve = owner owes the business
+    },
+
+    // ── Band 2 — This week so far ────────────────────────────────────
+    "week": {
+      "from": "2026-08-31",              // Monday of the current business week (businessWeekRange)
+      "to": "2026-09-06",                // Sunday
+      "dailyNet": [                      // 7 entries, Mon→Sun
+        { "date": "2026-08-31", "net": "4200.00" },
+        { "date": "2026-09-01", "net": "-1100.00" },
+        { "date": "2026-09-02", "net": "3800.00" },
+        { "date": "2026-09-03", "net": "900.00" },   // today
+        { "date": "2026-09-04", "net": null },       // FUTURE day → null, NOT "0.00"
+        { "date": "2026-09-05", "net": null },
+        { "date": "2026-09-06", "net": null }
+      ],
+      "revenueWtd": "48200.00",          // Mon..today, week-to-date
+      "expensesWtd": "12300.00",
+      "netWtd": "7800.00",               // == revenueWtd − cogsWtd − expensesWtd
+      "revenuePriorWtd": "39100.00",     // same weekday range one week earlier (Mon−7 .. today−7)
+      "expensesPriorWtd": "9900.00",
+      "netPriorWtd": "5100.00"
+      // The client computes the "▲/▼ N% vs. same point last week" lines
+      // itself — the wording differs per tile (revenue ▲ good, expenses
+      // ▲ bad, net is prose).
+    },
+
+    // ── Band 3 — Needs attention ─────────────────────────────────────
+    "needsAttention": {
+      "openPriorDates": ["2026-09-01", "2026-09-02"],  // business dates < today with activity and no DayClose row; ascending. [] = none
+      "handoversAwaitingReceipt": {
+        "count": 2,
+        "items": [
+          { "handoverId": "uuid", "locationName": "Canteen", "staffName": "Otieno",
+            "declaredTotal": "8100.00",           // current derived declared cash + M-Pesa
+            "occurredAt": "2026-09-02T18:30:00.000Z" }
+        ]
+      },
+      "openShortfalls": { "count": 1, "total": "450.00" },   // ALL currently-open handover shortfalls — NOT month-scoped
+      "lowOrNegativeStock": {
+        "count": 4,
+        "top": [                                  // up to 3, most negative first
+          { "productName": "Cooking Oil 5L", "locationName": "Store", "qty": "-3.0000", "unit": "btl" }
+        ]
+      }
+      // ALL FOUR queues empty + every count 0 is the "all clear" state —
+      // returned as empty collections, never an error.
+    },
+
+    // ── Band 4 — Today's activity ────────────────────────────────────
+    "today": {
+      "date": "2026-09-03",
+      "salesSoFar": "18900.00",          // Σ MoneyMovement.amount today where sourceType ∈ {order, canteen_sale}
+      "stockMovementCount": 14,
+      "purchaseReceiptCount": 2,
+      "handoversReceived": 1,
+      "handoversDue": 2,
+      "correctionCountToday": 0          // AuditLog rows today with action = "correct"
+    },
+
+    // ── Band 5 — 30-day trend ───────────────────────────────────────
+    "trend": {
+      "dailyNet": [                      // 30 entries, oldest first, ending on `date`
+        { "date": "2026-08-05", "net": "2100.00" },
+        // …28 more…
+        { "date": "2026-09-03", "net": "900.00" }
+      ],
+      "net30Total": "61200.00"           // Σ of the 30 nets
+    }
+  }
+}
+```
+
+**Notes for the screen session:**
+
+- `week.dailyNet[i].net === null` ⇒ that day has not happened yet — render
+  the faded stub, not a zero bar. `to` (Sunday) is the only bound that is
+  always in the future for a mid-week load.
+- `week.netWtd` and every `trend.dailyNet[i].net` are exactly what
+  `/admin/financials` shows for the same day/range — the bars will not
+  disagree with the Financials screen.
+- `needsAttention.openPriorDates` looks back at most 60 days for activity
+  (a business that closes daily never has an older gap).
+- "Corrections today" is meant to link into the Audit trail screen with
+  `action=correct` + a today date-range preset (see `GET /api/audit`).

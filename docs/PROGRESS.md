@@ -145,6 +145,98 @@ design:**
 - `login` rows exist and are frequent — the default `group=significant`
   hides them; an "everything" view will be login-heavy.
 
+## Milestone 5 Session 13 — Dashboard backend: the aggregator + fast trend series (Developer — 2026-09-04) — DONE (backend only)
+
+Backend only. One Admin-only, read-only aggregator for the `/admin`
+morning-triage screen. **Writes nothing.** Session 14 builds the screen
+against `docs/API.md` "Dashboard".
+
+**Shipped**
+
+- `lib/domain/dashboard/` — new module, spans financials + audit +
+  handovers + stock, owns no entity:
+  - `trend-series.ts` — `dailyNetSeries(from, to)`: net profit + revenue
+    + expenses per business date over a contiguous span, **fixed query
+    count regardless of span length** (see "the real work" below).
+  - `needs-attention.ts` — `getNeedsAttention(today)`: open prior dates
+    (activity but no `DayClose`, ≤ 60-day lookback, excludes today);
+    handovers with no receipt yet (+ location / declarer / declared
+    total); ALL open handover shortfalls (count + total, **not
+    month-scoped**); products ≤ 0 on-hand anywhere (count + top 3). All
+    queues empty = empty collections, not an error.
+  - `todays-activity.ts` — `getTodaysActivity(today)`: sales so far (Σ
+    `order` + `canteen_sale` MoneyMovement today), stock-movement count,
+    purchase-receipt count, handovers received / due, `action="correct"`
+    AuditLog count today.
+  - `get-dashboard.ts` — `getDashboard(date)`: the 5-band aggregate.
+    Position reuses `getAccountBalances` / `getOwnerOwedToBusiness` with
+    `asOf` = end of `date` (no second balance derivation). Week + 30-day
+    trend are slices of ONE `dailyNetSeries` call over the union span.
+- `GET /api/admin/dashboard?date=YYYY-MM-DD` — thin handler, Zod in
+  `lib/validation/dashboard.ts`, **Admin-only**, `date` defaults to
+  today (Africa/Nairobi). First route under `app/api/admin/`.
+- `lib/time` — `addBusinessDays` is now exported (was file-private).
+
+**The real work — making the trend series fast (ADR-64)**
+
+Bands 2 + 5 need net profit for ~37 days. The naive
+`getFinancialSummary(day, day)` × 37 runs a full stock-valuation sweep
+per day — **measured 625 ms for 37 calls on the *seeded* DB** (~17
+ms/day), and it scales with product × location × history.
+
+Instead: the opening/closing COGS terms **telescope** — one day's COGS
+is `purchaseReceiptValueDay − Σ(value of every StockMovement in that
+day)`, needing NO opening sweep. The whole series then comes from a fixed
+handful of span-wide queries bucketed by business date in memory.
+**Measured: the FULL aggregator for today runs in ~21 ms on the seeded
+DB.**
+
+This is **not a proxy** — `dailyNetSeries` net values equal
+`getFinancialSummary(day, day).consolidated.netProfit` **to the cent**,
+proven day-by-day across a month boundary (2024-08-29 … 2024-09-02) in
+`trend-series.test.ts`. The design spec floated a cheaper proxy and said
+to flag it with the owner; not needed — the exact path is fast enough.
+No owner decision required.
+
+**Tests** (+19): `trend-series.test.ts` (4) — per-day agreement across a
+month boundary, superseded-order not double-counted, span-sum agreement,
+**fixed query count for a 2-day vs 5-day span**;
+`get-dashboard.test.ts` (10) — Monday-first week matching
+`businessWeekRange`, future days `null` not zero, per-day + WTD +
+prior-WTD agreement with `getFinancialSummary`, 30-entry oldest-first
+trend, position == `getFinancialSummary` balances, malformed-date reject,
+needs-attention structural invariants + "never includes today", **PERF:
+full aggregator < 2 s on seeded DB (actual ~21 ms)**;
+`app/api/admin/dashboard/route.test.ts` (5) — 401 / 403 / 200-all-bands /
+default-date / 400-malformed.
+
+**Test count:** 843 → 862 (+19). typecheck clean, build clean.
+
+**Docs**
+
+- `docs/DECISIONS.md` **ADR-64** — the telescoping-COGS identity, the
+  bucketed approach, exact-agreement (not proxy), the measured timings,
+  and the lockstep dependency on `getFinancialSummary`'s COGS formula.
+- `docs/API.md` "Dashboard" — the full `GET /api/admin/dashboard`
+  contract with a worked response for all 5 bands. Session 14 builds
+  against this doc; must not re-derive it.
+
+**Changed from plan:** none — the session prompt was the plan (still no
+`milestone-5-plan.md`).
+
+**For the screen session:**
+
+- `week.dailyNet[i].net === null` ⇒ future day → faded stub, not a zero
+  bar. Only Sunday (`week.to`) is guaranteed future on a mid-week load.
+- Every bar value (`week.netWtd`, each `trend.dailyNet[i].net`) is
+  exactly what `/admin/financials` shows for the same day/range — they
+  will not disagree.
+- The client computes the "vs. same point last week" delta lines from
+  `revenueWtd` / `revenuePriorWtd` etc. — wording differs per tile
+  (revenue ▲ good, expenses ▲ bad, net is prose).
+- `needsAttention` all-clear = empty collections + zero counts (the band
+  never disappears — it's a reassurance signal).
+
 ## Milestone 4 Session 9C — Locations tab, the assets crash, a real test DB (Developer — 2026-09-03) — DONE
 
 Four contained items. Mostly frontend + infrastructure. `pnpm test`

@@ -2997,3 +2997,75 @@ screen by screen.
   (`--weight-bold`) with owner sign-off, not an edit to this one.
 - `design-principles.md` §2 (type scale) updated to state the semibold
   weight is 550 and the `body` rendering block is the foundation.
+
+---
+
+## ADR-64: The dashboard's daily net-profit series is a span-wide bucketed re-derivation, not N `getFinancialSummary` calls — exact agreement via the telescoping-COGS identity (Developer, Milestone 5 Session 13 [Dashboard backend], 2026-09-04)
+
+**Context.** The `/admin` dashboard (design: `docs/design/flows/dashboard-screen.md`)
+has two bar strips — "net profit per day this week" (7 bars) and "net
+profit — last 30 days" (30 bars). Together with the prior-week comparison
+range the aggregator needs net profit for ~37 separate business days.
+
+The obvious implementation calls `getFinancialSummary(day, day)` once per
+day. Each of those runs a **full stock-valuation sweep**: `groupBy` over
+`StockMovement` for opening (`occurredAt < dayStart`), closing
+(`occurredAt < dayEnd`) and purchases, for every product at every
+location, valued by kind. Measured on the *seeded* DB: **~625 ms for 37
+calls** (~17 ms/day). That cost scales with product count × location
+count × history depth — on real data (hundreds of products) it is
+seconds, on the screen the owner opens every morning.
+
+**Decision.** `lib/domain/dashboard/trend-series.ts` computes the whole
+series from a **fixed handful of span-wide queries bucketed by business
+date in memory** — the query count does not grow with the number of days.
+The full aggregator (`getDashboard`) now runs in **~21 ms on the seeded
+DB** (vs. ~625 ms for the trend series alone the naive way).
+
+The identity that makes it exact — a single day's COGS in
+`getFinancialSummary` is
+
+    openingValue(occurredAt < dayStart)
+      + purchaseReceiptValue(occurredAt ∈ [dayStart, dayEnd))
+      − closingValue(occurredAt < dayEnd)
+
+The opening and closing terms **telescope**: `closingValue(< dayEnd) −
+openingValue(< dayStart)` is exactly the summed value (quantity ×
+costValue; costValue = `buyingPrice` for ingredient/goods, 0 for dish) of
+**every `StockMovement` whose `occurredAt` falls in `[dayStart, dayEnd)`**.
+So
+
+    cogsDay = purchaseReceiptValueDay − Σ (allMovementValue in the day)
+
+and **no opening sweep is needed**. Revenue (live restaurant orders +
+resolved `canteen_sale` money movements) and expenses are already
+per-day-additive; they are computed here with the *same* live-only rules
+`getFinancialSummary` uses (superseded orders dropped, correction rows
+kept; canteen sales only when the `StockCount` resolves to a location).
+
+**This is NOT a proxy.** `netDay` equals
+`getFinancialSummary(day, day).consolidated.netProfit` **to the cent** —
+proven day by day, including across a month boundary
+(2024-08-29 … 2024-09-02), in `lib/domain/dashboard/trend-series.test.ts`.
+The design spec (§"Assumptions") floated a cheaper proxy (revenue −
+expenses, no COGS sweep) and said to flag it with the owner; that route
+was **not taken** — the exact path is fast enough.
+
+**Consequences.**
+
+- `dailyNetSeries(from, to)` is the one place the dashboard's per-day
+  net/revenue/expenses come from. The week band and the 30-day trend are
+  both slices of one continuous series computed once over the union span
+  (trend start … this week's Sunday, reaching back a further 7 days for
+  the prior-week deltas).
+- The telescoping identity depends on `getFinancialSummary`'s COGS
+  formula. If that formula changes (e.g. a different valuation basis, or
+  "purchases" widened beyond `purchase_receipt`), `trend-series.ts` must
+  change in lockstep and the agreement test will catch a divergence.
+- Position (band 1) is NOT re-derived — it calls `getAccountBalances` /
+  `getOwnerOwedToBusiness` with `asOf` = end of the dashboard date, the
+  same derivations `getFinancialSummary` uses for its balance figures
+  (one source of truth; asserted in `get-dashboard.test.ts`).
+- The dashboard module (`lib/domain/dashboard/`) owns no entity and
+  writes nothing — it is a read-only composition layer over financials +
+  audit + handovers + stock.
