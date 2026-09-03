@@ -51,3 +51,60 @@ export function businessDateEndUtc(businessDate: string): Date {
 export function businessDateOnly(businessDate: string): Date {
   return new Date(`${businessDate}T00:00:00Z`);
 }
+
+/**
+ * The last representable UTC instant that still falls on the given
+ * Africa/Nairobi business date (1ms before the exclusive end). This is the
+ * "as of end of <businessDate>" cutoff for a **point-in-time balance**
+ * read (ADR-57): every movement dated on or before this instant is in,
+ * everything after it is out. `businessDate` must be `YYYY-MM-DD`.
+ */
+export function businessDateLastInstantUtc(businessDate: string): Date {
+  return new Date(businessDateEndUtc(businessDate).getTime() - 1);
+}
+
+/** The Africa/Nairobi business date (`YYYY-MM-DD`) of "now". */
+export function nairobiToday(now: Date = new Date()): string {
+  return toBusinessDate(now);
+}
+
+/** Add `days` (may be negative) to a `YYYY-MM-DD` business date. */
+function addBusinessDays(businessDate: string, days: number): string {
+  const [y, m, d] = businessDate.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * The Monday–Sunday business week that contains `businessDate`, as an
+ * inclusive `{ from, to }` pair of `YYYY-MM-DD` Africa/Nairobi business
+ * dates. **Weeks start Monday** (ISO 8601; also the local trading-week
+ * convention) — the same Monday-first boundary the kit `<DatePicker>`
+ * grid already uses. `businessDate` must be `YYYY-MM-DD`.
+ */
+export function businessWeekRange(businessDate: string): {
+  from: string;
+  to: string;
+} {
+  const [y, m, d] = businessDate.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sun … 6 = Sat
+  const sinceMonday = (dow + 6) % 7; // 0 = Mon
+  const from = addBusinessDays(businessDate, -sinceMonday);
+  return { from, to: addBusinessDays(from, 6) };
+}
+
+/**
+ * The calendar month that contains `businessDate`, as an inclusive
+ * `{ from, to }` pair of `YYYY-MM-DD` Africa/Nairobi business dates
+ * (1st → last day of that month). `businessDate` must be `YYYY-MM-DD`.
+ */
+export function businessMonthRange(businessDate: string): {
+  from: string;
+  to: string;
+} {
+  const [y, m] = businessDate.split("-").map(Number);
+  const from = `${businessDate.slice(0, 7)}-01`;
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate(); // day 0 of next month
+  return { from, to: `${businessDate.slice(0, 7)}-${String(lastDay).padStart(2, "0")}` };
+}

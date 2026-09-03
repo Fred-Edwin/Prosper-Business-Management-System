@@ -50,7 +50,12 @@ export type MoneyWriteContext = {
   tx?: Prisma.TransactionClient;
 };
 
-/** Optional read context — reserved for a future `asOf` cutoff. */
+/**
+ * Optional read context. `asOf` is a point-in-time cutoff (inclusive
+ * instant): the balance is summed over movements with `occurredAt <= asOf`
+ * (ADR-57 — a balance is a level at a moment, never a range figure).
+ * Omit it for the "as of now" running total.
+ */
 export type MoneyReadContext = {
   asOf?: Date;
 };
@@ -234,11 +239,19 @@ export type FinancialSummary = {
     grossProfit: string;
     totalExpenses: string;
     netProfit: string;
-    /** Σ Debt − Σ Repayment across all customers (running, not period). */
+    /**
+     * Σ Debt − Σ Repayment across all customers, **as of the end of `to`**
+     * (a balance, not a period figure — ADR-57).
+     */
     debtsOwedToBusiness: string;
-    /** Draws − returns, derived by summing `OwnerTransaction` rows. */
+    /**
+     * Draws − returns (summed `OwnerTransaction` rows), **as of the end of
+     * `to`** — a balance, not a period figure (ADR-57).
+     */
     ownerOwedToBusiness: string;
+    /** Cash at hand as of the end of `to` (ADR-57). */
     cashBalance: string;
+    /** M-Pesa / Bank as of the end of `to` (ADR-57). */
     mpesaBankBalance: string;
   };
   nonSaleConsumption: NonSaleConsumptionCost;

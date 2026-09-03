@@ -24,7 +24,9 @@ import { DomainError } from "./errors";
  *
  * Filters: `productId`, `locationId` (further narrows within the role
  * scope), `movementType`, `date` (a business date ->
- * `[businessDateStartUtc, businessDateEndUtc)` on `occurredAt`).
+ * `[businessDateStartUtc, businessDateEndUtc)` on `occurredAt`), or
+ * `from`/`to` for an inclusive business-date *range* (the
+ * /admin/financials range control — `date` still wins if both are given).
  *
  * Newest first.
  */
@@ -81,6 +83,10 @@ export async function listMovements(
       gte: businessDateStartUtc(filter.date),
       lt: businessDateEndUtc(filter.date),
     };
+  } else if (filter.from || filter.to) {
+    where.occurredAt = {};
+    if (filter.from) where.occurredAt.gte = businessDateStartUtc(filter.from);
+    if (filter.to) where.occurredAt.lt = businessDateEndUtc(filter.to);
   }
 
   // Join the product so `productName` / `unitLabel` travel on each row.

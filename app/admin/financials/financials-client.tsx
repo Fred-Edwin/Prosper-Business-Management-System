@@ -1,42 +1,50 @@
 "use client";
 
-// M3 S4 — /admin/financials. One screen, one shared business-date picker
-// in the toolbar, and ONE inner tab row:
+// M3 S7 — /admin/financials, rebuilt to the approved redesign (Paper
+// "Prosper Hotel" · page "M3 S5 — Financials redesign") + the S7
+// date-range control.
 //
-//   [ Stock Purchases ] [ Deliveries ] [ Handovers ] [ Expenses ]
-//   [ Owner Draws ] [ Profit ]
+// LAYOUT (approved):
+//   • ONE header row (ADR-56): title · range control · Record Payment ·
+//     avatar. On mobile the range control drops to its own "Date Row"
+//     below the header so the ~390px header never crowds.
+//   • The Profit panel is PROMOTED OUT of the tab row — it is a summary,
+//     not a transaction log — into an always-on block above the tabs
+//     (<ProfitPanelDesktop> / <ProfitPanelMobile>). The KPI figures live
+//     inside it now (kit-native: hairline dividers, mono figures, no box).
+//   • FIVE tabs below: Stock Purchases · Deliveries · Handovers ·
+//     Expenses · Owner Draws. (Profit is no longer a tab.)
 //
-// The date picker (toolbar, defaults to today, no future) scopes every
-// tab — change the date and everything re-fetches for that Africa/Nairobi
-// business day.
-//
-// S4 additions:
-//   • The KPI strip is WIRED (was "—"/"M3", deferred in S3): the shell
-//     fetches GET /api/financials/summary for the picked day and hands it
-//     to <KpiStripDesktop> / <KpiGridMobile>.
-//   • Three new inner tabs: Expenses, Owner Draws, Profit — all scoped to
-//     the toolbar date and sharing the one summary fetch where they need
-//     figures from it.
+// DATE SEMANTICS (ADR-57). One control, presets Today / This week / This
+// month / Custom, resolving to an inclusive Africa/Nairobi business-date
+// range `{ from, to }` (weeks are Monday–Sunday). That pair drives every
+// figure:
+//   • FLOWS (revenue, COGS, profit, expenses, non-sale, the transaction
+//     tables) take the WHOLE range.
+//   • BALANCES (cash, M-Pesa/bank, debts owed, owed by owner) are read
+//     "as of the end of `to`" — the domain does this split itself.
+// The KPI caption and the balance sub-labels say "as of <date>" so a
+// point-in-time figure is never misread as a range total.
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
 import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { Tabs } from "@/components/kit/tabs";
-import { DatePicker } from "@/components/kit/date-picker";
 import { Button } from "@/components/kit/button";
 import { TransactionsTab, type TxTabKey } from "./transactions-tab";
-import { KpiStripDesktop, KpiGridMobile } from "./kpi-strip";
 import { ExpensesView } from "./expenses-tab";
 import { OwnerDrawsView } from "./owner-draws-tab";
-import { ProfitSummaryView } from "./profit-summary";
-import { nairobiBusinessDate } from "./use-handovers";
+import { ProfitPanelDesktop } from "./profit-panel";
+import { ProfitPanelMobile, KpiBandMobile } from "./profit-panel-mobile";
+import { FinancialsRangeControl } from "./financials-range";
+import {
+  rangeLabel,
+  shortBusinessDateWithYear,
+  useFinancialsRange,
+} from "./use-financials-range";
 import { useFinancialSummary } from "./use-financials";
 
-export type FinancialsTabKey =
-  | TxTabKey
-  | "expenses"
-  | "owner-draws"
-  | "profit";
+export type FinancialsTabKey = TxTabKey | "expenses" | "owner-draws";
 
 const TABS = [
   { key: "purchases" as const, label: "Stock Purchases", panelId: "fin-panel-purchases" },
@@ -44,7 +52,6 @@ const TABS = [
   { key: "handovers" as const, label: "Handovers", panelId: "fin-panel-handovers" },
   { key: "expenses" as const, label: "Expenses", panelId: "fin-panel-expenses" },
   { key: "owner-draws" as const, label: "Owner Draws", panelId: "fin-panel-owner-draws" },
-  { key: "profit" as const, label: "Profit", panelId: "fin-panel-profit" },
 ];
 
 const VALID: readonly FinancialsTabKey[] = [
@@ -53,34 +60,7 @@ const VALID: readonly FinancialsTabKey[] = [
   "handovers",
   "expenses",
   "owner-draws",
-  "profit",
 ];
-
-/** `YYYY-MM-DD` → "Sep 2, 2026" for the DatePicker trigger. */
-function fmtTriggerDate(ymd: string): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(Date.UTC(y, m - 1, d)));
-}
-
-/** A local `Date` → `YYYY-MM-DD` (the calendar day the Admin picked). */
-function ymdOf(d: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
-}
-
-/** `YYYY-MM-DD` → a local `Date` at midnight. */
-function dateOf(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
 
 export function FinancialsClient({
   initialTab = "purchases",
@@ -90,19 +70,23 @@ export function FinancialsClient({
   const [tab, setTab] = React.useState<FinancialsTabKey>(
     VALID.includes(initialTab) ? initialTab : "purchases",
   );
-  const [date, setDate] = React.useState<string>(() => nairobiBusinessDate());
-  const today = nairobiBusinessDate();
-  const isToday = date === today;
+
+  const { range, setPreset, setCustomDay, today } = useFinancialsRange();
+  const { from, to } = range;
+  const isRangeToday = from === today && to === today;
 
   const {
     summary,
     loading: summaryLoading,
     error: summaryError,
     refresh: refreshSummary,
-  } = useFinancialSummary(date);
+  } = useFinancialSummary(from, to);
+
+  const label = rangeLabel(range);
+  const asOfLabel = shortBusinessDateWithYear(to);
 
   // The payment drawer's open state lives in <TransactionsTab>; it hands
-  // the shell a callback so the toolbar "Record Payment" button (Purchases
+  // the shell a callback so the header "Record Payment" button (Purchases
   // tab only) can trigger it.
   const recordPaymentRef = React.useRef<(() => void) | null>(null);
   const registerRecordPayment = React.useCallback((fn: () => void) => {
@@ -110,11 +94,24 @@ export function FinancialsClient({
   }, []);
 
   const changeTab = React.useCallback((key: string) => {
-    setTab(VALID.includes(key as FinancialsTabKey) ? (key as FinancialsTabKey) : "purchases");
+    setTab(
+      VALID.includes(key as FinancialsTabKey)
+        ? (key as FinancialsTabKey)
+        : "purchases",
+    );
   }, []);
 
   const isTxTab =
     tab === "purchases" || tab === "deliveries" || tab === "handovers";
+
+  const rangeControl = (
+    <FinancialsRangeControl
+      range={range}
+      today={today}
+      onPreset={setPreset}
+      onCustomDay={setCustomDay}
+    />
+  );
 
   return (
     <PageShell>
@@ -122,13 +119,8 @@ export function FinancialsClient({
         title="Financials & Expenses"
         actions={
           <>
-            <DatePicker
-              value={fmtTriggerDate(date)}
-              selected={dateOf(date)}
-              maxDate={dateOf(today)}
-              onSelect={(d) => setDate(ymdOf(d))}
-              aria-label="Business date"
-            />
+            {/* Desktop: range control sits in the header row. */}
+            <div className="hidden md:block">{rangeControl}</div>
             {tab === "purchases" && (
               <Button
                 variant="primary"
@@ -140,13 +132,33 @@ export function FinancialsClient({
           </>
         }
       />
-      {/* KPI strip — wired to the summary endpoint (S4). */}
-      <div className="hidden md:block pt-(--sp-6)">
-        <KpiStripDesktop summary={summary} loading={summaryLoading} />
+
+      {/* Mobile: range control gets its own row so the header stays uncrowded. */}
+      <div className="md:hidden flex items-center justify-between gap-(--sp-4) py-(--sp-4) px-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+        <span className="font-ui font-(--weight-medium) uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-caption/micro">
+          Showing
+        </span>
+        {rangeControl}
       </div>
-      <div className="md:hidden">
-        <KpiGridMobile summary={summary} loading={summaryLoading} />
-      </div>
+
+      {/* Always-on Profit panel — promoted out of the tab row. */}
+      <KpiBandMobile summary={summary} loading={summaryLoading} />
+      <ProfitPanelDesktop
+        summary={summary}
+        loading={summaryLoading}
+        error={summaryError}
+        onRetry={refreshSummary}
+        rangeLabel={label}
+        asOfLabel={asOfLabel}
+      />
+      <ProfitPanelMobile
+        summary={summary}
+        loading={summaryLoading}
+        error={summaryError}
+        onRetry={refreshSummary}
+        rangeLabel={label}
+        asOfLabel={asOfLabel}
+      />
 
       <div className="px-(--sp-6) md:px-0 pt-(--sp-6)">
         <Tabs tabs={TABS} activeKey={tab} onChange={changeTab} idBase="fin-tabs" />
@@ -161,25 +173,26 @@ export function FinancialsClient({
         {isTxTab ? (
           <TransactionsTab
             tab={tab as TxTabKey}
-            date={date}
-            isToday={isToday}
+            from={from}
+            to={to}
+            isRangeToday={isRangeToday}
             registerRecordPayment={registerRecordPayment}
           />
         ) : tab === "expenses" ? (
-          <ExpensesView key={date} date={date} onMutated={refreshSummary} />
-        ) : tab === "owner-draws" ? (
-          <OwnerDrawsView
-            key={date}
-            date={date}
-            owedToBusiness={summary?.consolidated.ownerOwedToBusiness ?? null}
+          <ExpensesView
+            key={`${from}:${to}`}
+            from={from}
+            to={to}
             onMutated={refreshSummary}
           />
         ) : (
-          <ProfitSummaryView
-            summary={summary}
-            loading={summaryLoading}
-            error={summaryError}
-            onRetry={refreshSummary}
+          <OwnerDrawsView
+            key={`${from}:${to}`}
+            from={from}
+            to={to}
+            owedToBusiness={summary?.consolidated.ownerOwedToBusiness ?? null}
+            asOfLabel={asOfLabel}
+            onMutated={refreshSummary}
           />
         )}
       </div>

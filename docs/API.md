@@ -170,8 +170,10 @@ Roles: Admin (all locations), Store Manager / Canteen Attendant (their
 location only — resolved via `User.staff.locationId`). Cashier: `403`.
 Query: `?productId=&locationId=&movementType=&date=` (`date` is a
 `YYYY-MM-DD` business date, matched on `occurredAt` in the
-`Africa/Nairobi` day). A location-bound caller passing another location's
-`locationId` gets `[]`. Newest first.
+`Africa/Nairobi` day), or `?from=YYYY-MM-DD&to=YYYY-MM-DD` for an
+inclusive business-date **range** (M3 S7 — the `/admin/financials` range
+control; `date` wins if both are given). A location-bound caller passing
+another location's `locationId` gets `[]`. Newest first.
 
 Each row: `{ id, productId, locationId, movementType, quantity (signed
 decimal string, from this row's location's perspective), recordedById,
@@ -798,6 +800,14 @@ required; `400` if missing / malformed / `from > to`). Returns
   `Expense.amount` in the range).
 - Per-location carries revenue/COGS/gross only — expenses, net profit and
   debts are consolidated (Expense rows carry no location).
+- **Flows vs. balances (ADR-57).** `revenue`, `cogs`, `grossProfit`,
+  `totalExpenses`, `netProfit` and `nonSaleConsumption` accumulate over
+  the whole `from..to` range. The four position figures —
+  `cashBalance`, `mpesaBankBalance`, `debtsOwedToBusiness`,
+  `ownerOwedToBusiness` — are a level at one instant and are read **as of
+  the end of `to`** (movements dated on the `to` business day count; the
+  next day does not). Derived by summing append-only rows with an
+  `occurredAt` cutoff — nothing stored.
 - **`nonSaleConsumption`** is a SEPARATE figure — a view INTO COGS for
   management visibility, **not** added on top of it. Ingredient/goods
   waste valued at `buyingPrice`; dish waste at `dishWasteCostPercent ×

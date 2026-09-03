@@ -2550,3 +2550,80 @@ and `<PageShell>` is frozen kit with no avatar slot — is worse than a
   (`hidden md:flex`) — its mobile Save lives in the sticky bottom bar.
 - Not applied to the staff shells this session (out of scope). They share
   the same two-row shape; the same change can follow.
+
+---
+
+## ADR-57: `/admin/financials` figures split into FLOWS (whole date range) and BALANCES (as of the range's end date) (Developer, Milestone 3 Session 7 [financials redesign + date ranges], 2026-09-03)
+
+**Context.** S7 replaced the single business-date picker on
+`/admin/financials` with a range control (Today / This week / This month
+/ Custom → an inclusive `{ from, to }` pair of Africa/Nairobi business
+dates). The screen carries two kinds of number and they must answer to a
+range *differently*:
+
+- **Flows** accumulate over a span — revenue, COGS, gross/net profit,
+  total expenses, non-sale consumption, and the transaction tables
+  (Stock Purchases / Deliveries / Expenses / Owner Draws).
+- **Balances** are a level at one instant — cash at hand, M-Pesa/bank,
+  debts owed to the business, owed back by the owner. A balance "for a
+  week" is meaningless.
+
+Before S7, `getFinancialSummary(from, to)` already summed the flow terms
+over the range, but it called `getAccountBalances()` /
+`getOwnerOwedToBusiness()` with **no argument** and aggregated `Debt` /
+`Repayment` with **no date filter** — so every balance tile silently
+showed the *live "now"* total no matter what date was picked. Picking a
+past week still showed today's cash. That is the bug this ADR fixes.
+
+**Decision.**
+
+1. **Flows take `from..to`.** Unchanged — the existing behaviour is
+   correct.
+2. **Balances take `asOf = end of `to``.** `getFinancialSummary` computes
+   `asOf = businessDateLastInstantUtc(to)` (the last representable UTC
+   instant still on that Nairobi business day — 1 ms before the exclusive
+   end) and passes it to `getAccountBalances({ asOf })`,
+   `getOwnerOwedToBusiness(asOf)`, and the `Debt` / `Repayment`
+   aggregates (`occurredAt <= asOf`). Every balance is still **derived by
+   summing append-only rows** — nothing stored; `asOf` only moves the
+   upper bound of the sum.
+3. **`asOf` is an inclusive instant.** `MoneyReadContext.asOf` and
+   `getOwnerOwedToBusiness(asOf)` keep their existing `lte` semantics; a
+   movement dated anywhere on the `to` business day is IN, one on `to`+1
+   is OUT. The no-argument form still means "as of now" (no cutoff).
+4. **New `lib/time` helpers:** `businessDateLastInstantUtc`,
+   `nairobiToday`, `businessWeekRange` (Monday–Sunday — ISO 8601 and the
+   local trading-week convention; the same Monday-first boundary the kit
+   `<DatePicker>` grid already uses), `businessMonthRange` (1st → last of
+   the calendar month). Weeks/months are Africa/Nairobi business dates,
+   never server-local.
+5. **The UI must label a balance as point-in-time.** The KPI strip is
+   captioned "Position & balances as of <date>"; the Owner Draws
+   owed-to-business card carries "· as of <date>". This is the same
+   class of guard as ADR-55's non-sale-consumption caption — a correct
+   number shown so it invites a wrong reading is still a bug.
+
+**Non-sale consumption is unaffected** — it is a flow (a view INTO the
+range's COGS per ADR-55), summed over `from..to` like the other flows,
+never a balance.
+
+**`listMovements` gained an additive `from`/`to` range** (business-date
+range on `occurredAt`; `date` still wins if both are passed) so the
+Stock Purchases / Deliveries flow lists span the whole range. Backward
+compatible — every existing `date`-only call is unchanged.
+
+**Handover reconciliation stays a single-DAY worksheet.** `getReconciliation`
+computes declared-vs-received-vs-variance with per-day totals; a
+multi-day span has no meaning for it. When the range spans more than one
+day the Handovers tab reconciles the range's **end day** and captions
+that it is doing so.
+
+**Consequences.**
+
+- `getFinancialSummary` is the only production call site that passes
+  `asOf`; the no-arg "now" behaviour of `getAccountBalances` /
+  `getOwnerOwedToBusiness` is retained for any other caller and its
+  existing tests.
+- `API.md` "Financials" updated: the summary's `consolidated` balance
+  fields are documented as "as of the end of `to`".
+- No schema change. No `TODO(mock)`.

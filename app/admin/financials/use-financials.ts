@@ -55,7 +55,12 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 // ── Expenses ──────────────────────────────────────────────────────────
 
-export function useExpenses(date: string) {
+/**
+ * Expenses for a business-date RANGE (`from`..`to` inclusive). Expenses
+ * are a FLOW (ADR-57) — they accumulate over the whole range the
+ * /admin/financials control selects. `from === to` for a single day.
+ */
+export function useExpenses(from: string, to: string) {
   const [expenses, setExpenses] = React.useState<ExpenseView[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -65,7 +70,7 @@ export function useExpenses(date: string) {
     setError(null);
     try {
       const rows = await request<ExpenseView[]>(
-        `/api/expenses?from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}`,
+        `/api/expenses?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       );
       setExpenses(rows);
     } catch (e) {
@@ -73,7 +78,7 @@ export function useExpenses(date: string) {
     } finally {
       setLoading(false);
     }
-  }, [date]);
+  }, [from, to]);
 
   React.useEffect(() => {
     void refresh();
@@ -108,7 +113,13 @@ export function useExpenses(date: string) {
 
 // ── Owner transactions ────────────────────────────────────────────────
 
-export function useOwnerTransactions(date: string) {
+/**
+ * Owner draws / returns for a business-date RANGE (`from`..`to`
+ * inclusive) — a FLOW list (ADR-57). The running "owed to business"
+ * balance comes separately from the summary (`consolidated.ownerOwedToBusiness`,
+ * read as of the range's end date).
+ */
+export function useOwnerTransactions(from: string, to: string) {
   const [transactions, setTransactions] = React.useState<OwnerTransactionView[]>(
     [],
   );
@@ -120,7 +131,7 @@ export function useOwnerTransactions(date: string) {
     setError(null);
     try {
       const rows = await request<OwnerTransactionView[]>(
-        `/api/owner-transactions?from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}`,
+        `/api/owner-transactions?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       );
       setTransactions(rows);
     } catch (e) {
@@ -130,7 +141,7 @@ export function useOwnerTransactions(date: string) {
     } finally {
       setLoading(false);
     }
-  }, [date]);
+  }, [from, to]);
 
   React.useEffect(() => {
     void refresh();
@@ -154,12 +165,17 @@ export function useOwnerTransactions(date: string) {
 // ── Financial summary (profit picture + KPI tiles) ────────────────────
 
 /**
- * The summary for a single business date (`from === to === date`). Powers
- * both the KPI strip (running balances + the day's outflows) and the
- * profit section (revenue / COGS / gross / expenses / net, per location
- * and consolidated, plus the separate non-sale consumption figure).
+ * The summary for a business-date RANGE (`from`..`to` inclusive). Powers
+ * the always-on Profit panel: the KPI row (position balances + range
+ * figures) and the Revenue → Net stack, per location and consolidated,
+ * plus the separate non-sale consumption figure.
+ *
+ * The domain applies the ADR-57 split itself — FLOW figures (revenue,
+ * COGS, gross/net, expenses, non-sale) accumulate over `from`..`to`;
+ * BALANCE figures (cash, M-Pesa/bank, debts owed, owed by owner) are read
+ * "as of the end of `to`".
  */
-export function useFinancialSummary(date: string) {
+export function useFinancialSummary(from: string, to: string) {
   const [summary, setSummary] = React.useState<FinancialSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -169,7 +185,7 @@ export function useFinancialSummary(date: string) {
     setError(null);
     try {
       const s = await request<FinancialSummary>(
-        `/api/financials/summary?from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}`,
+        `/api/financials/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       );
       setSummary(s);
     } catch (e) {
@@ -177,7 +193,7 @@ export function useFinancialSummary(date: string) {
     } finally {
       setLoading(false);
     }
-  }, [date]);
+  }, [from, to]);
 
   React.useEffect(() => {
     void refresh();

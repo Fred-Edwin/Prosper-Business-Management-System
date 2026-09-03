@@ -64,6 +64,9 @@ export type ListMovementsFilter = {
   movementType?: MovementType;
   /** YYYY-MM-DD business date. */
   date?: string;
+  /** Inclusive YYYY-MM-DD business-date range (use instead of `date`). */
+  from?: string;
+  to?: string;
 };
 
 export type OpeningStockInput = {
@@ -102,6 +105,8 @@ export const stockApi = {
     if (filter.locationId) params.set("locationId", filter.locationId);
     if (filter.movementType) params.set("movementType", filter.movementType);
     if (filter.date) params.set("date", filter.date);
+    if (filter.from) params.set("from", filter.from);
+    if (filter.to) params.set("to", filter.to);
     return request<StockMovementView[]>(
       `/api/stock-movements?${params.toString()}`,
     );

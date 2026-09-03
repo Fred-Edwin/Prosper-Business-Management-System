@@ -81,14 +81,17 @@ const PURCHASE_STATUS: Record<
 
 export function TransactionsTab({
   tab,
-  date,
-  isToday,
+  from,
+  to,
+  isRangeToday,
   registerRecordPayment,
 }: {
   tab: TxTabKey;
-  /** `YYYY-MM-DD` business date from the toolbar. */
-  date: string;
-  isToday: boolean;
+  /** Inclusive `YYYY-MM-DD` business-date range from the header control. */
+  from: string;
+  to: string;
+  /** True when the range is exactly today (gates staff same-day actions). */
+  isRangeToday: boolean;
   registerRecordPayment?: (fn: () => void) => void;
 }) {
   const [payments, setPayments] = React.useState<StockMovementView[]>([]);
@@ -123,8 +126,8 @@ export function TransactionsTab({
     setError(null);
     try {
       const [pmts, rcpts, out, prods, locs] = await Promise.all([
-        stockApi.listMovements({ movementType: "purchase_payment", date }),
-        stockApi.listMovements({ movementType: "purchase_receipt", date }),
+        stockApi.listMovements({ movementType: "purchase_payment", from, to }),
+        stockApi.listMovements({ movementType: "purchase_receipt", from, to }),
         stockApi.outstanding(),
         stockApi.listProducts(),
         stockApi.listLocations(),
@@ -139,7 +142,7 @@ export function TransactionsTab({
     } finally {
       setLoading(false);
     }
-  }, [isStockTab, date]);
+  }, [isStockTab, from, to]);
 
   React.useEffect(() => {
     void refresh();
@@ -166,8 +169,19 @@ export function TransactionsTab({
   );
 
   // ── Handovers tab: delegate ─────────────────────────────────────────
+  // Handover reconciliation is a single-DAY worksheet (declared vs
+  // received vs variance, with day totals) — a multi-day span has no
+  // meaning for it. When a range is picked it reconciles the range's end
+  // day (`to`); <HandoversView> captions that.
   if (tab === "handovers") {
-    return <HandoversView date={date} isToday={isToday} />;
+    return (
+      <HandoversView
+        date={to}
+        isToday={isRangeToday}
+        rangeFrom={from}
+        rangeTo={to}
+      />
+    );
   }
 
   // ── Purchases / Deliveries columns ─────────────────────────────────
@@ -321,7 +335,10 @@ export function TransactionsTab({
     },
   ];
 
-  const dateLabel = fmtDate(`${date}T12:00:00Z`);
+  const dateLabel =
+    from === to
+      ? fmtDate(`${from}T12:00:00Z`)
+      : `${fmtDate(`${from}T12:00:00Z`)} – ${fmtDate(`${to}T12:00:00Z`)}`;
 
   return (
     <>
@@ -343,9 +360,9 @@ export function TransactionsTab({
               emptyState={{
                 title: `No stock purchases on ${dateLabel}`,
                 description:
-                  "Payments to suppliers recorded on the selected day appear here.",
-                actionLabel: isToday ? "Record Payment" : undefined,
-                onAction: isToday ? () => openDrawer() : undefined,
+                  "Payments to suppliers recorded over the selected range appear here.",
+                actionLabel: isRangeToday ? "Record Payment" : undefined,
+                onAction: isRangeToday ? () => openDrawer() : undefined,
               }}
             />
           ) : (
@@ -357,7 +374,7 @@ export function TransactionsTab({
               emptyState={{
                 title: `No deliveries on ${dateLabel}`,
                 description:
-                  "Deliveries received by the Store Manager on the selected day appear here.",
+                  "Deliveries received by the Store Manager over the selected range appear here.",
               }}
             />
           )}
@@ -449,7 +466,7 @@ function MobilePurchaseCards({
           No stock purchases on {dateLabel}
         </div>
         <div className="font-ui [color:var(--text-tertiary)] text-sm/sm">
-          Payments to suppliers recorded on the selected day appear here.
+          Payments to suppliers recorded over the selected range appear here.
         </div>
       </div>
     );
@@ -521,7 +538,7 @@ function MobileDeliveryCards({
           No deliveries on {dateLabel}
         </div>
         <div className="font-ui [color:var(--text-tertiary)] text-sm/sm">
-          Deliveries received by the Store Manager on the selected day appear here.
+          Deliveries received by the Store Manager over the selected range appear here.
         </div>
       </div>
     );
