@@ -1084,13 +1084,138 @@ note }], total, count } }`:
 ### `POST /api/day-close`
 Roles: Admin. Body: `{ date }`. Locks all records dated to `date`.
 
-### `GET /api/audit-log`
-Roles: Admin. Query: `?entity_type=&entity_id=&user_id=&from=&to=`.
+### `GET /api/audit` — the audit trail (M5 S11)
 
-### `GET /api/reports/daily?date=`
-Roles: Admin. Full reconciliation view for one date: expected vs. received
-cash/M-Pesa, variances, sales, stock movements.
+Roles: **Admin only** (401 `UNAUTHENTICATED` / 403 `FORBIDDEN`).
+Paginated (OFFSET/limit), newest first.
 
-### `GET /api/reports/weekly` / `GET /api/reports/monthly`
-Roles: Admin. Query: `?from=&to=` or `?month=`. Reconciled against
-underlying daily records (PRD §4.10).
+**Query params** (all optional):
+
+| Param | Type | Meaning |
+|---|---|---|
+| `from`, `to` | `YYYY-MM-DD` | Inclusive business-date range on `occurredAt` (Africa/Nairobi). Malformed → `400 VALIDATION_ERROR`. |
+| `actorId` | string (`User.id`) | Narrow to one actor. |
+| `action` | enum | One of `create` \| `correct` \| `soft_delete` \| `hard_delete` \| `login` \| `day_close` \| `day_reopen`. |
+| `entityType` | string | e.g. `order`, `handover`, `expense`, `staff`, `stock_movement`, `day_close`, `money_movement`, `receipt_of_handover`, `stock_count`, `owner_transaction`, `staff_payout`, `staff_pay_adjustment`, `customer`, `repayment`, `user`. |
+| `group` | `"significant"` | The investigable subset the screen defaults to: any `correct` / `soft_delete` / `hard_delete` / `day_close` / `day_reopen`, **plus** every `create` on `staff` / `staff_payout` / `staff_pay_adjustment`. Routine `create` rows (orders, stock movements, handovers, expenses, money movements) and `login` are excluded. An explicit `action`/`entityType` still AND-narrows within the subset. |
+| `limit` | int 1..200 | Default 50. |
+| `offset` | int ≥ 0 | Default 0. |
+
+**Why OFFSET, not a cursor:** the screen is an investigator's tool — it
+needs a total count, "page N", and stable page sizes under filters more
+than O(1) deep-scroll. The table grows at human speed (tens of rows/day),
+so a large OFFSET is not a real cost. Ties on `occurredAt` break by `id`
+so page boundaries never duplicate or drop a row.
+
+**Response** `200`:
+
+```jsonc
+{
+  "data": {
+    "entries": [
+      {
+        "id": "uuid",
+        "action": "correct",
+        "actorId": "uuid",
+        "actorName": "Amina",                       // User.name; "(deleted user)" if gone
+        "entityType": "order",
+        "entityId": "uuid",
+        "entityLabel": "dine_in · KES 300.00",      // best-effort; null → screen shows `entityType #id`
+        "oldValue": { "total": "250.00" },          // raw Json column, shape varies by action — see below
+        "newValue": { "total": "300.00", "correctsOrderId": "uuid" },
+        "occurredAt": "2026-08-20T09:00:00.000Z",   // business-meaningful (backdated on a correction)
+        "recordedAt": "2026-08-21T06:12:04.113Z"    // real insert time (createdAt)
+      }
+    ],
+    "page": { "total": 412, "offset": 0, "limit": 50, "hasMore": true }
+  }
+}
+```
+
+**`entityLabel` resolution** (batched — one query per entity type on the
+page, never per row):
+
+| Resolved | Label format |
+|---|---|
+| `order` | `"<orderType> · KES <total>"` |
+| `handover` | `"<location> · <YYYY-MM-DD>"` |
+| `expense` | `"<category> · KES <amount>"` |
+| `customer` | `<name>` |
+| `staff` | `<name>` |
+| `staff_payout` | `"<staff> · <YYYY-MM> · KES <netPaid>"` |
+| `stock_movement` | `"<movementType> · <product> @ <location> · <qty>"` |
+| `stock_count` | `"<product> @ <location>"` |
+| `day_close` | the `entityId` IS the `YYYY-MM-DD` date |
+| `money_movement`, `receipt_of_handover`, `staff_pay_adjustment`, `user` | **`null`** — no cheap user-facing name; screen falls back to `entityType #id` |
+
+**`oldValue` / `newValue` shapes vary by action** — returned raw for the
+screen to diff. Known shapes:
+
+- `create` `order` → `{ total }`; `expense` → `{ category, amount, paidFromAccount }`;
+  `handover` → declared figures; `stock_movement` → `{ action, movementType, productId, locationId, quantity, correlationId? }`
+  (the `action` sub-label distinguishes `purchase_receipt` / `transfer` / `issue` / `production` / `non_sale_consumption` etc. — the enum column is always `create`);
+  `stock_count` → `{ countedQuantity, sold, revenue }`; `staff` → `{ name }` (+ role/locationId/dailyRate when set);
+  `staff_payout` → `{ staffId, month, netPaid, expenseId, paidFromAccount }`;
+  `staff_pay_adjustment` → `{ type, amount }`.
+- `correct` `order` → `oldValue` a pre-correction summary object, `newValue` `{ total, paymentMethod, orderType, lineCount, correctsOrderId }`
+  — **`entityId` is the CORRECTION row's id**, not the original;
+  `handover` → `{ correctionId, cashDeclaredTo, mpesaDeclaredTo, cashDelta, mpesaDelta }`;
+  `expense` → `{ correctionId, amountTo, amountDelta }`;
+  `staff` → the changed fields only.
+- `soft_delete` / `hard_delete` → usually no value payload (`staff` deactivation, `stock_count` void).
+- `day_close` → `newValue` `{ date, closedBy }`; `day_reopen` → `oldValue` `{ date, closedBy }`.
+
+### `GET /api/audit/day-detail?date=YYYY-MM-DD` — one business day, in full (M5 S11)
+
+Roles: **Admin only**. Read-only. `date` is required (`YYYY-MM-DD`,
+Africa/Nairobi); missing/malformed → `400 VALIDATION_ERROR`
+(`field: "date"`). An empty date returns empty collections, **not** an
+error.
+
+Composed from the existing per-module reads (`listOrders`,
+`listMovements`, `listHandovers`, `listExpenses`,
+`listOwnerTransactions`) plus direct `stockCount` / `staffPayout`
+queries. **Figures reconcile with `GET /api/financials/summary?from=DATE&to=DATE`**
+for the same date (enforced by a test — if they diverge, day-detail is
+the bug).
+
+**Response** `200`:
+
+```jsonc
+{
+  "data": {
+    "businessDate": "2026-08-20",
+    "closed": true,
+    "closedBy": "uuid",                 // User.id, or null
+    "closedByName": "Amina",            // or null
+    "closedAt": "2026-08-21T05:00:00.000Z",  // or null
+    "orders": [ /* OrderView[] — same shape as GET /api/orders; superseded originals dropped, correction rows kept */ ],
+    "stockMovements": [ /* StockMovementView[] — same as GET /api/stock-movements; canteen sale rows carry derivedRevenue */ ],
+    "handovers": [ /* HandoverView[] — same as GET /api/handovers; each carries its receipts[] and derived declared figures */ ],
+    "expenses": [ /* ExpenseView[] — derived amounts (correction deltas folded) */ ],
+    "ownerTransactions": [ /* OwnerTransactionView[] */ ],
+    "stockCounts": [
+      { "id": "uuid", "productName": "Soda", "locationName": "Canteen",
+        "countedQuantity": "80.0000", "occurredAt": "…Z", "countedByName": "Otieno" }
+    ],
+    "payouts": [
+      { "id": "uuid", "staffName": "Jane", "month": "2026-07", "netPaid": "12000.00",
+        "paidFromAccount": "cash", "expenseId": "uuid", "recordedByName": "Amina" }
+    ]
+  }
+}
+```
+
+`orders` / `stockMovements` / `handovers` / `expenses` /
+`ownerTransactions` reuse the exact view types their own list endpoints
+return — the day-detail screen reuses those screens' mappers unchanged.
+
+### `GET /api/reports/daily?date=` — NOT BUILT; see `GET /api/audit/day-detail`
+
+`GET /api/reports/*` was never built and will not be. **Period reporting
+lives on `/admin/financials`** (`GET /api/financials/summary`), which
+already does Today / this week / this month / custom ranges with full
+profit, expenses, handovers and per-location breakdown (ADR-57). A second
+aggregation layer would be a second source of truth for the same numbers
+and they would drift (owner decision, M5 S11). For a single past date's
+records use `GET /api/audit/day-detail`.
