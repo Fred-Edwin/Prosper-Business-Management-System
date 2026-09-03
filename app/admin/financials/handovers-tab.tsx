@@ -122,14 +122,32 @@ function Stack({
 export function HandoversView({
   date,
   isToday,
+  rangeFrom,
+  rangeTo,
 }: {
-  /** `YYYY-MM-DD` business date from the Financials toolbar. */
+  /** `YYYY-MM-DD` business date being reconciled (the range's end day). */
   date: string;
   /** True when `date` is today (Africa/Nairobi) — gates "Record receipt". */
   isToday: boolean;
+  /**
+   * The full range the header control has selected. When it spans more
+   * than one day, a caption tells the Admin this worksheet reconciles the
+   * range's END day only (a handover is reconciled per day).
+   */
+  rangeFrom?: string;
+  rangeTo?: string;
 }) {
   const { data, loading, error, refresh, recordReceipt, correct } =
     useReconciliation(date);
+
+  const isMultiDayRange =
+    rangeFrom != null && rangeTo != null && rangeFrom !== rangeTo;
+  const dayLabel = new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "Africa/Nairobi",
+  });
 
   const [receiptRow, setReceiptRow] = React.useState<ReconciliationRow | null>(
     null,
@@ -240,7 +258,16 @@ export function HandoversView({
   ];
 
   return (
-    <div className="flex flex-col grow min-h-0 gap-(--sp-5) pt-(--sp-6)">
+    <div className="flex flex-col grow gap-(--sp-5) pt-(--sp-6)">
+      {isMultiDayRange && (
+        <div className="font-ui [color:var(--text-tertiary)] text-caption/micro px-(--sp-6) md:px-0">
+          A handover is reconciled per day — this worksheet shows{" "}
+          <span className="font-(--weight-medium) [color:var(--text-secondary)]">
+            {dayLabel}
+          </span>
+          , the last day of the selected range.
+        </div>
+      )}
       {!loading && !error && rows.length > 0 && (
         <div className="font-ui [color:var(--text-secondary)] text-sm/sm px-(--sp-6) md:px-0">
           {rows.length} {rows.length === 1 ? "handover" : "handovers"}
@@ -265,22 +292,25 @@ export function HandoversView({
             onRetry={() => void refresh()}
           />
         </div>
-      ) : !loading && rows.length === 0 ? (
-        <div className="px-(--sp-6) md:px-0">
-          <EmptyState
-            title="No handovers for this date"
-            description="Cash and M-Pesa handovers declared by cashiers and the canteen attendant on the selected day show up here for you to receive."
-          />
-        </div>
       ) : (
         <>
-          {/* Desktop / tablet: the table + a totals strip. */}
+          {/* Desktop / tablet: the table + a totals strip. The column
+              headers are ALWAYS visible — an empty day renders the
+              EmptyState inside the table body and the PAGE scrolls to it
+              (no trapped inner strip), matching Stock Purchases:
+              `overflow-x-auto` for horizontal scroll only, no `min-h-0`
+              ancestor to clip height. */}
           <div className="hidden md:flex flex-col overflow-x-auto">
             <SimpleTable
               columns={columns}
               rows={rows}
               rowKey={(r) => r.handoverId}
               loading={loading && rows.length === 0}
+              emptyState={{
+                title: "No handovers for this day",
+                description:
+                  "Cash and M-Pesa handovers declared by cashiers and the canteen attendant show up here for you to receive.",
+              }}
             />
             {totals && rows.length > 0 && <TotalsRow totals={totals} />}
           </div>
@@ -298,6 +328,13 @@ export function HandoversView({
                     <div className="kit-skeleton h-[12px] w-full rounded-sm" />
                   </div>
                 ))}
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="p-(--sp-5)">
+                <EmptyState
+                  title="No handovers for this day"
+                  description="Cash and M-Pesa handovers declared by cashiers and the canteen attendant show up here for you to receive."
+                />
               </div>
             ) : (
               rows.map((r) => (

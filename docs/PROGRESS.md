@@ -15,6 +15,91 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 3 Session 7 — Financials redesign + date-range filtering (Developer — 2026-09-03) — DONE
+
+**Mostly frontend. One focused backend addition (`asOf` on the balance
+reads) + an additive `from`/`to` on `listMovements`. No schema change.**
+
+**Shipped — the approved redesign (Paper "M3 S5 — Financials redesign").**
+
+- **Profit promoted OUT of the tab row** into an always-on panel above
+  the tabs. The old `profit-summary.tsx` + `kpi-strip.tsx` are deleted;
+  replaced by `profit-panel.tsx` (`KpiRowDesktop`, `ProfitStack`,
+  `ProfitSecondary`, `ProfitPanelDesktop`) + `profit-panel-mobile.tsx`
+  (`KpiBandMobile`, `ProfitPanelMobile`).
+- **KPI strip restyled kit-native** — no card, a caption header, four
+  mono figure columns separated by hairline rules. Tiles: Total Business
+  Liquidity · Cash at Hand · M-Pesa/Bank Till · Owed Back by the Owner.
+- **KPI section and Profit section are visually distinct** (owner
+  follow-up): KPI on its own `--surface-subtle` band, hairline-separated;
+  Profit on the page ground with generous spacing; then the tabs.
+- **Tabs cut from 6 to 5** — Stock Purchases · Deliveries · Handovers ·
+  Expenses · Owner Draws (Profit is no longer a tab).
+- **Mobile** — the range control drops to its own "Showing" row below the
+  ADR-56 header (keeps the ~390px header uncrowded); a compact dark
+  2-tile KPI band (Cash / M-Pesa); the panel blocks stack.
+- ADR-55 respected — non-sale consumption still renders as its own block,
+  captioned "already inside the COGS figure above", never a sibling line
+  in the Revenue→Net stack.
+
+**Shipped — date ranges (owner-approved: Today / This week / This
+month / Custom).**
+
+- **`use-financials-range.ts`** — resolves a preset (or a custom single
+  day) to an inclusive `{ from, to }` pair of Africa/Nairobi business
+  dates. **Weeks start Monday** (ISO 8601 / local trading-week
+  convention; matches the kit `<DatePicker>` grid). `financials-range.tsx`
+  — kit `<SegmentedControl>` of the four presets + the existing
+  single-date `<DatePicker>` shown only for Custom. **The kit was not
+  touched** — no range picker added.
+- **`lib/time`** gained `businessDateLastInstantUtc`, `nairobiToday`,
+  `businessWeekRange`, `businessMonthRange`.
+- **`getFinancialSummary(from, to)`** now threads `asOf = end of `to``
+  into `getAccountBalances`, `getOwnerOwedToBusiness` and the
+  `Debt`/`Repayment` aggregates — **the flow-vs-balance split, ADR-57**.
+  Flows still take the whole range; balances are point-in-time as of the
+  range's end. Previously the balance tiles ignored the date filter
+  entirely (always "now") — that was a real bug, now fixed.
+- **`listMovements`** gained additive `from`/`to` (business-date range on
+  `occurredAt`; `date` still wins) so the Stock Purchases / Deliveries
+  flow lists span the range. Backward compatible.
+- **Handover reconciliation stays a single-day worksheet** — when the
+  range is multi-day it reconciles the range's end day and captions that.
+- **`use-financials.ts`** hooks (`useFinancialSummary`, `useExpenses`,
+  `useOwnerTransactions`) take `(from, to)`; the tabs thread
+  `from`/`to`/`isRangeToday` down.
+- **Balance figures are labelled point-in-time** — KPI caption "Position
+  & balances as of <date>"; Owner Draws card "· as of <date>".
+
+**Owner follow-ups fixed in-session.**
+
+- KPI / Profit sections separated (above).
+- **Empty-state parity** — Handovers / Expenses / Owner Draws now keep
+  their table headers visible AND render the empty-state message in a
+  full-height area the **page** scrolls to, exactly like Stock Purchases.
+  Root cause: `min-h-0` on those tabs' outer flex column was clipping
+  height and trapping the message in a tiny inner scroll strip; removed
+  it, kept `overflow-x-auto` for horizontal scroll only.
+
+**Docs.** ADR-57 (flow-vs-balance date semantics). `API.md` — summary
+balance fields documented "as of the end of `to`"; `GET
+/api/stock-movements` documents `from`/`to`. Approved design recorded in
+`docs/design/flows/financials-screen.md`.
+
+**Tests.** 717 → **745** (`+28`). New: `lib/time` range/cutoff helpers
+(10), `lib/domain/financials/asof-semantics.test.ts` (11 — the
+flow-vs-balance split pinned), `lib/domain/stock/list-movements-range.test.ts`
+(3), plus screen specs for the range control refetch, the as-of caption,
+and the persistent-headers empty state on all three tabs. `pnpm test`
+(745 pass) / `typecheck` / `build` green — full suite re-run after the
+last change.
+
+**Not done (out of scope, noted for later).** The dashboard page (the
+KPI strip may overlap what a dashboard shows — flagged in the S5
+handoff). Staff shells still two-row (ADR-56 scope).
+
+---
+
 ## M3 follow-up — Unify the admin header into a single toolbar row (Developer — 2026-09-03) — DONE
 
 **Frontend-only refactor. No backend, schema, routes, or domain logic touched.**

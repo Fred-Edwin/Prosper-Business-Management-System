@@ -215,6 +215,8 @@ export const listMovementsQuerySchema = z.object({
   locationId: id.optional(),
   movementType: movementType.optional(),
   date: businessDate.optional(),
+  from: businessDate.optional(),
+  to: businessDate.optional(),
 });
 
 export type CreateStockMovementBody = z.infer<typeof createStockMovementSchema>;

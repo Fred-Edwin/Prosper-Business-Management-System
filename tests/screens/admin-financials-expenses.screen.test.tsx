@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 //
-// M3 S4 — the Admin Financials Expenses tab + Owner Draws tab + the wired
-// KPI strip. Interactive bits only; use-financials is mocked, no server /
-// DB. jsdom applies no CSS, so both the `md:` table branch and the
-// `md:hidden` card branch render — queries use getAllBy / within where
-// they'd otherwise be ambiguous.
+// M3 S4 / S7 — the Admin Financials Expenses tab + Owner Draws tab + the
+// KPI row (kit-native, redesigned in S7). Interactive bits only;
+// use-financials is mocked, no server / DB. jsdom applies no CSS, so both
+// the `md:` table branch and the `md:hidden` card branch render — queries
+// use getAllBy / within where they'd otherwise be ambiguous.
+//
+// S7: the tabs take a business-date RANGE (`from`/`to`) not a single
+// `date` — expenses / owner draws are FLOWS (ADR-57). The KPI strip
+// became <KpiRowDesktop> in profit-panel.tsx (no box, hairline dividers,
+// mono figures) and carries an "as of <date>" caption because every
+// figure in it is a point-in-time BALANCE.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
@@ -61,7 +67,7 @@ vi.mock("@/app/admin/financials/use-financials", async (importOriginal) => {
 
 import { ExpensesView } from "@/app/admin/financials/expenses-tab";
 import { OwnerDrawsView } from "@/app/admin/financials/owner-draws-tab";
-import { KpiStripDesktop } from "@/app/admin/financials/kpi-strip";
+import { KpiRowDesktop } from "@/app/admin/financials/profit-panel";
 
 // ── fixtures ───────────────────────────────────────────────────────────
 
@@ -134,7 +140,7 @@ describe("Admin Financials — Expenses tab", () => {
     const user = userEvent.setup();
     render(
       <ToastProvider placement="top-right">
-        <ExpensesView date="2026-09-02" />
+        <ExpensesView from="2026-09-02" to="2026-09-02" />
       </ToastProvider>,
     );
 
@@ -166,11 +172,30 @@ describe("Admin Financials — Expenses tab", () => {
     expect(await screen.findByText("Expense recorded")).toBeInTheDocument();
   });
 
+  it("keeps the table headers visible when the range has no expenses", async () => {
+    expensesState = { expenses: [], loading: false, error: null };
+    render(
+      <ToastProvider placement="top-right">
+        <ExpensesView from="2026-09-01" to="2026-09-07" />
+      </ToastProvider>,
+    );
+    // The <SimpleTable> renders even with zero rows — its column headers
+    // are present, and the EmptyState copy sits inside the table body.
+    const table = screen.getByRole("table");
+    expect(
+      within(table).getByRole("columnheader", { name: "Category" }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("columnheader", { name: "Amount (KES)" }),
+    ).toBeInTheDocument();
+    expect(within(table).getByText(/No expenses for/)).toBeInTheDocument();
+  });
+
   it("corrects an existing expense with the absolute corrected amount", async () => {
     const user = userEvent.setup();
     render(
       <ToastProvider placement="top-right">
-        <ExpensesView date="2026-09-02" />
+        <ExpensesView from="2026-09-02" to="2026-09-02" />
       </ToastProvider>,
     );
 
@@ -194,20 +219,49 @@ describe("Admin Financials — Expenses tab", () => {
 // ── Owner Draws tab ────────────────────────────────────────────────────
 
 describe("Admin Financials — Owner Draws tab", () => {
+  it("keeps the table headers visible when the range has no draws / returns", async () => {
+    ownerState = { transactions: [], loading: false, error: null };
+    render(
+      <ToastProvider placement="top-right">
+        <OwnerDrawsView
+          from="2026-09-01"
+          to="2026-09-07"
+          owedToBusiness="0.00"
+          asOfLabel="7 Sep 2026"
+          onMutated={vi.fn()}
+        />
+      </ToastProvider>,
+    );
+    const table = screen.getByRole("table");
+    expect(
+      within(table).getByRole("columnheader", { name: "Type" }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("columnheader", { name: "Amount (KES)" }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByText(/No draws or returns for/),
+    ).toBeInTheDocument();
+  });
+
   it("shows the running owed-to-business figure and logs a draw", async () => {
     const user = userEvent.setup();
     const onMutated = vi.fn();
     render(
       <ToastProvider placement="top-right">
         <OwnerDrawsView
-          date="2026-09-02"
+          from="2026-09-02"
+          to="2026-09-02"
           owedToBusiness="4000.00"
+          asOfLabel="2 Sep 2026"
           onMutated={onMutated}
         />
       </ToastProvider>,
     );
 
     expect(screen.getByText("KES 4,000.00")).toBeInTheDocument();
+    // The owed-to-business figure is a BALANCE — labelled point-in-time.
+    expect(screen.getByText(/as of 2 Sep 2026/)).toBeInTheDocument();
 
     await user.click(
       screen.getAllByRole("button", { name: "Log Draw / Return" })[0],
@@ -224,21 +278,42 @@ describe("Admin Financials — Owner Draws tab", () => {
   });
 });
 
-// ── KPI strip ──────────────────────────────────────────────────────────
+// ── KPI row (kit-native, S7) ──────────────────────────────────────────
 
-describe("Admin Financials — KPI strip", () => {
-  it("renders the four wired figures from the summary", () => {
-    render(<KpiStripDesktop summary={summary()} loading={false} />);
-    // Liquidity = 25,000 + 15,000.
-    expect(screen.getByText("40,000.00")).toBeInTheDocument();
-    expect(screen.getByText("25,000.00")).toBeInTheDocument();
-    expect(screen.getByText("15,000.00")).toBeInTheDocument();
-    // Today's outflows = total expenses.
-    expect(screen.getByText("800.00")).toBeInTheDocument();
+describe("Admin Financials — KPI row", () => {
+  it("renders the four position figures from the summary, all as balances", () => {
+    render(
+      <KpiRowDesktop
+        summary={summary()}
+        asOfLabel="7 Sep 2026"
+        loading={false}
+      />,
+    );
+    // Liquidity = cash 25,000 + M-Pesa 15,000 = 40,000.
+    expect(screen.getByText("KES 40,000.00")).toBeInTheDocument();
+    expect(screen.getByText("KES 25,000.00")).toBeInTheDocument();
+    expect(screen.getByText("KES 15,000.00")).toBeInTheDocument();
+    // Owed back by the owner = ownerOwedToBusiness.
+    expect(screen.getByText("KES 4,000.00")).toBeInTheDocument();
+  });
+
+  it("captions the row 'as of <date>' so the figures read as point-in-time balances", () => {
+    render(
+      <KpiRowDesktop
+        summary={summary()}
+        asOfLabel="7 Sep 2026"
+        loading={false}
+      />,
+    );
+    expect(
+      screen.getByText(/Position & balances as of 7 Sep 2026/i),
+    ).toBeInTheDocument();
   });
 
   it("shows an em-dash when the summary failed to load", () => {
-    render(<KpiStripDesktop summary={null} loading={false} />);
+    render(
+      <KpiRowDesktop summary={null} asOfLabel="7 Sep 2026" loading={false} />,
+    );
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 });

@@ -41,6 +41,8 @@ export async function GET(req: NextRequest) {
     locationId: sp.get("locationId") ?? undefined,
     movementType: sp.get("movementType") ?? undefined,
     date: sp.get("date") ?? undefined,
+    from: sp.get("from") ?? undefined,
+    to: sp.get("to") ?? undefined,
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];

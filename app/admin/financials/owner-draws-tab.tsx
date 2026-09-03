@@ -38,19 +38,32 @@ function fmtDate(iso: string): string {
 }
 
 export function OwnerDrawsView({
-  date,
+  from,
+  to,
   owedToBusiness,
+  asOfLabel,
   onMutated,
 }: {
-  date: string;
-  /** `consolidated.ownerOwedToBusiness` from the shared summary. */
+  /** Inclusive `YYYY-MM-DD` business-date range from the header control. */
+  from: string;
+  to: string;
+  /**
+   * `consolidated.ownerOwedToBusiness` from the shared summary — a
+   * BALANCE, as of the range's end date (ADR-57).
+   */
   owedToBusiness: string | null;
+  /** e.g. "7 Sep 2026" — the range's end date, for the balance's as-of label. */
+  asOfLabel: string;
   /** Called after a draw / return so the parent can refresh the summary + KPIs. */
   onMutated: () => void;
 }) {
-  const { transactions, loading, error, refresh, create } =
-    useOwnerTransactions(date);
+  const { transactions, loading, error, refresh, create } = useOwnerTransactions(
+    from,
+    to,
+  );
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  /** A new draw / return is dated to the range's END day. */
+  const entryDate = to;
 
   const handleCreate = React.useCallback(
     async (input: Parameters<typeof create>[0]) => {
@@ -104,18 +117,23 @@ export function OwnerDrawsView({
     },
   ];
 
-  const dateLabel = fmtDate(`${date}T12:00:00Z`);
+  const dateLabel =
+    from === to
+      ? fmtDate(`${from}T12:00:00Z`)
+      : `${fmtDate(`${from}T12:00:00Z`)} – ${fmtDate(`${to}T12:00:00Z`)}`;
 
   return (
-    <div className="flex flex-col grow min-h-0 gap-(--sp-5) pt-(--sp-6)">
+    <div className="flex flex-col grow gap-(--sp-5) pt-(--sp-6)">
       {/* Running owed-to-business figure. */}
       <div className="flex items-center justify-between gap-(--sp-4) p-(--sp-5) mx-(--sp-6) md:mx-0 rounded-sm border border-solid [border-color:var(--border-subtle)] [background-color:var(--surface-subtle)]">
         <div className="flex flex-col gap-(--sp-1)">
           <span className="font-ui font-(--weight-medium) uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-caption/micro">
             Owed back to the business
+            <span className="font-(--weight-regular) lowercase"> · as of {asOfLabel}</span>
           </span>
           <span className="font-ui [color:var(--text-tertiary)] text-caption/micro">
-            All draws minus all returns — derived, not stored.
+            All draws minus all returns to date — a running balance, derived,
+            not stored.
           </span>
         </div>
         <span
@@ -137,7 +155,7 @@ export function OwnerDrawsView({
         <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
           {loading
             ? "Loading…"
-            : `${transactions.length} on ${dateLabel}`}
+            : `${transactions.length} ${transactions.length === 1 ? "entry" : "entries"} · ${dateLabel}`}
         </div>
         <Button
           variant="primary"
@@ -156,27 +174,40 @@ export function OwnerDrawsView({
             onRetry={() => void refresh()}
           />
         </div>
-      ) : !loading && transactions.length === 0 ? (
-        <div className="px-(--sp-6) md:px-0">
-          <EmptyState
-            title={`No draws or returns on ${dateLabel}`}
-            description="Money the owner takes out of, or puts back into, the business appears here."
-            actionLabel="Log Draw / Return"
-            onAction={() => setDrawerOpen(true)}
-          />
-        </div>
       ) : (
         <>
+          {/* Desktop: table headers ALWAYS visible — an empty range renders
+              the EmptyState inside the table body, and the PAGE (not a
+              trapped inner strip) scrolls to it, exactly like Stock
+              Purchases: `overflow-x-auto` on a plain div (horizontal
+              scroll only), and no `min-h-0` ancestor to clip height. */}
           <div className="hidden md:block overflow-x-auto">
             <SimpleTable
               columns={columns}
               rows={transactions}
               rowKey={(t) => t.id}
               loading={loading && transactions.length === 0}
+              emptyState={{
+                title: `No draws or returns for ${dateLabel}`,
+                description:
+                  "Money the owner takes out of, or puts back into, the business over the selected range appears here.",
+                actionLabel: "Log Draw / Return",
+                onAction: () => setDrawerOpen(true),
+              }}
             />
           </div>
 
           <div className="flex md:hidden flex-col">
+            {!loading && transactions.length === 0 && (
+              <div className="p-(--sp-5)">
+                <EmptyState
+                  title={`No draws or returns for ${dateLabel}`}
+                  description="Money the owner takes out of, or puts back into, the business over the selected range appears here."
+                  actionLabel="Log Draw / Return"
+                  onAction={() => setDrawerOpen(true)}
+                />
+              </div>
+            )}
             {transactions.map((t) => (
               <div
                 key={t.id}
@@ -204,7 +235,7 @@ export function OwnerDrawsView({
 
       {drawerOpen && (
         <OwnerDrawDrawer
-          date={date}
+          date={entryDate}
           onCreate={handleCreate}
           onClose={() => setDrawerOpen(false)}
         />

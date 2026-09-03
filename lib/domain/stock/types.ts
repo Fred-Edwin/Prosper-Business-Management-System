@@ -234,4 +234,12 @@ export type ListMovementsFilter = {
   movementType?: MovementType;
   /** `YYYY-MM-DD` business date → `[businessDateStartUtc, businessDateEndUtc)` on `occurredAt`. */
   date?: string;
+  /**
+   * Inclusive `YYYY-MM-DD` business-date range → `[businessDateStartUtc(from),
+   * businessDateEndUtc(to))` on `occurredAt`. Use instead of `date` for a
+   * multi-day span (the /admin/financials range control). Ignored when
+   * `date` is also given (`date` wins).
+   */
+  from?: string;
+  to?: string;
 };

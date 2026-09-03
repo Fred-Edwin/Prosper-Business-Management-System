@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { businessDateEndUtc, businessDateStartUtc, toBusinessDate } from "./index";
+import {
+  businessDateEndUtc,
+  businessDateLastInstantUtc,
+  businessDateStartUtc,
+  businessMonthRange,
+  businessWeekRange,
+  toBusinessDate,
+} from "./index";
 
 describe("toBusinessDate", () => {
   it("converts a UTC timestamp to its Africa/Nairobi (UTC+3) business date", () => {
@@ -51,5 +58,81 @@ describe("businessDateStartUtc / businessDateEndUtc", () => {
     expect(toBusinessDate(start)).toBe(businessDate);
     // `end` is exclusive — the last valid instant is 1ms before it.
     expect(toBusinessDate(new Date(end.getTime() - 1))).toBe(businessDate);
+  });
+});
+
+describe("businessDateLastInstantUtc", () => {
+  it("is 1ms before the exclusive business-day end (still on that date)", () => {
+    const last = businessDateLastInstantUtc("2026-03-05");
+    expect(last.toISOString()).toBe("2026-03-05T20:59:59.999Z");
+    expect(toBusinessDate(last)).toBe("2026-03-05");
+  });
+
+  it("excludes the first instant of the next business day", () => {
+    const last = businessDateLastInstantUtc("2026-03-05");
+    const nextDayStart = businessDateStartUtc("2026-03-06");
+    expect(last.getTime()).toBeLessThan(nextDayStart.getTime());
+  });
+});
+
+describe("businessWeekRange — Monday-first", () => {
+  it("returns Mon→Sun for a mid-week date", () => {
+    // 2026-09-03 is a Thursday.
+    expect(businessWeekRange("2026-09-03")).toEqual({
+      from: "2026-08-31", // Monday
+      to: "2026-09-06", // Sunday
+    });
+  });
+
+  it("keeps a Monday as the range start", () => {
+    expect(businessWeekRange("2026-08-31")).toEqual({
+      from: "2026-08-31",
+      to: "2026-09-06",
+    });
+  });
+
+  it("puts Sunday at the end of its own week, not the start of the next", () => {
+    expect(businessWeekRange("2026-09-06")).toEqual({
+      from: "2026-08-31",
+      to: "2026-09-06",
+    });
+  });
+
+  it("spans a month edge correctly", () => {
+    // 2026-03-01 is a Sunday → its week is 2026-02-23 … 2026-03-01.
+    expect(businessWeekRange("2026-03-01")).toEqual({
+      from: "2026-02-23",
+      to: "2026-03-01",
+    });
+  });
+});
+
+describe("businessMonthRange", () => {
+  it("returns the 1st → last day of the month", () => {
+    expect(businessMonthRange("2026-09-03")).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-30",
+    });
+  });
+
+  it("handles 31-day months", () => {
+    expect(businessMonthRange("2026-01-15")).toEqual({
+      from: "2026-01-01",
+      to: "2026-01-31",
+    });
+  });
+
+  it("handles February in a non-leap year", () => {
+    expect(businessMonthRange("2026-02-10")).toEqual({
+      from: "2026-02-01",
+      to: "2026-02-28",
+    });
+  });
+
+  it("handles February in a leap year", () => {
+    expect(businessMonthRange("2028-02-10")).toEqual({
+      from: "2028-02-01",
+      to: "2028-02-29",
+    });
   });
 });

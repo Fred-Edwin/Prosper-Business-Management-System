@@ -51,15 +51,22 @@ function fmtDate(iso: string): string {
 }
 
 export function ExpensesView({
-  date,
+  from,
+  to,
   onMutated,
 }: {
-  date: string;
+  /** Inclusive `YYYY-MM-DD` business-date range from the header control. */
+  from: string;
+  to: string;
   /** Called after a create / correct so the parent refreshes the summary + KPIs. */
   onMutated?: () => void;
 }) {
-  const { expenses, loading, error, refresh, create, correct } =
-    useExpenses(date);
+  const { expenses, loading, error, refresh, create, correct } = useExpenses(
+    from,
+    to,
+  );
+  /** A new expense is dated to the range's END day (the day a create makes sense on). */
+  const entryDate = to;
 
   const handleCreate = React.useCallback(
     async (input: Parameters<typeof create>[0]) => {
@@ -144,10 +151,13 @@ export function ExpensesView({
     },
   ];
 
-  const dateLabel = fmtDate(`${date}T12:00:00Z`);
+  const dateLabel =
+    from === to
+      ? fmtDate(`${from}T12:00:00Z`)
+      : `${fmtDate(`${from}T12:00:00Z`)} – ${fmtDate(`${to}T12:00:00Z`)}`;
 
   return (
-    <div className="flex flex-col grow min-h-0 gap-(--sp-5) pt-(--sp-6)">
+    <div className="flex flex-col grow gap-(--sp-5) pt-(--sp-6)">
       <div className="flex items-center justify-between gap-(--sp-4) px-(--sp-6) md:px-0">
         <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
           {loading
@@ -167,27 +177,40 @@ export function ExpensesView({
             onRetry={() => void refresh()}
           />
         </div>
-      ) : !loading && expenses.length === 0 ? (
-        <div className="px-(--sp-6) md:px-0">
-          <EmptyState
-            title={`No expenses on ${dateLabel}`}
-            description="Business expenses the Admin logs for the selected day appear here."
-            actionLabel="Record Expense"
-            onAction={() => setDrawer({ mode: "create" })}
-          />
-        </div>
       ) : (
         <>
+          {/* Desktop: the table headers are ALWAYS visible — an empty
+              range renders the EmptyState inside the table body and the
+              PAGE scrolls to it (no trapped inner strip), exactly like
+              the Stock Purchases / Deliveries tabs: `overflow-x-auto` on
+              a plain div, no `min-h-0` ancestor. */}
           <div className="hidden md:block overflow-x-auto">
             <SimpleTable
               columns={columns}
               rows={expenses}
               rowKey={(e) => e.id}
               loading={loading && expenses.length === 0}
+              emptyState={{
+                title: `No expenses for ${dateLabel}`,
+                description:
+                  "Business expenses the Admin logs over the selected range appear here.",
+                actionLabel: "Record Expense",
+                onAction: () => setDrawer({ mode: "create" }),
+              }}
             />
           </div>
 
           <div className="flex md:hidden flex-col">
+            {!loading && expenses.length === 0 && (
+              <div className="p-(--sp-5)">
+                <EmptyState
+                  title={`No expenses for ${dateLabel}`}
+                  description="Business expenses the Admin logs over the selected range appear here."
+                  actionLabel="Record Expense"
+                  onAction={() => setDrawer({ mode: "create" })}
+                />
+              </div>
+            )}
             {expenses.map((e) => (
               <div
                 key={e.id}
@@ -227,7 +250,7 @@ export function ExpensesView({
       {drawer && (
         <ExpenseDrawer
           mode={drawer.mode}
-          date={date}
+          date={entryDate}
           target={drawer.mode === "correct" ? drawer.target : undefined}
           onCreate={handleCreate}
           onCorrect={handleCorrect}

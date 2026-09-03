@@ -1,6 +1,10 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { businessDateEndUtc, businessDateStartUtc } from "@/lib/time";
+import {
+  businessDateEndUtc,
+  businessDateLastInstantUtc,
+  businessDateStartUtc,
+} from "@/lib/time";
 import { getAccountBalances } from "./get-account-balances";
 import { getOwnerOwedToBusiness } from "./owner-transactions";
 import { getDishWasteCostPercent } from "./config";
@@ -69,6 +73,14 @@ function assertRange(from: string, to: string): void {
  * a view INTO COGS for management visibility, never an addition on top of
  * it. The wasted stock already left the ledger and is already inside the
  * COGS sweep.
+ *
+ * **Flows vs. balances (ADR-57).** Revenue, COGS, gross/net profit, total
+ * expenses and non-sale consumption ACCUMULATE over `from..to` — they take
+ * the whole range. The four position figures — `cashBalance`,
+ * `mpesaBankBalance`, `debtsOwedToBusiness`, `ownerOwedToBusiness` — are a
+ * LEVEL at one instant, so they are read **as of the end of `to`**
+ * (`asOf`), never over the range. Pick "this month" and you see the
+ * month's revenue next to cash as it stood on the last day of the month.
  */
 export async function getFinancialSummary(
   from: string,
@@ -76,7 +88,8 @@ export async function getFinancialSummary(
 ): Promise<FinancialSummary> {
   assertRange(from, to);
   const start = businessDateStartUtc(from);
-  const end = businessDateEndUtc(to); // exclusive
+  const end = businessDateEndUtc(to); // exclusive — for FLOW figures
+  const asOf = businessDateLastInstantUtc(to); // point-in-time — for BALANCES
 
   const [
     locations,
@@ -98,10 +111,16 @@ export async function getFinancialSummary(
       _sum: { amount: true },
       where: { date: { gte: start, lt: end } },
     }),
-    prisma.debt.aggregate({ _sum: { amount: true } }),
-    prisma.repayment.aggregate({ _sum: { amount: true } }),
-    getAccountBalances(),
-    getOwnerOwedToBusiness(),
+    prisma.debt.aggregate({
+      _sum: { amount: true },
+      where: { occurredAt: { lte: asOf } },
+    }),
+    prisma.repayment.aggregate({
+      _sum: { amount: true },
+      where: { occurredAt: { lte: asOf } },
+    }),
+    getAccountBalances({ asOf }),
+    getOwnerOwedToBusiness(asOf),
     computeNonSaleCost(start, end),
   ]);
 

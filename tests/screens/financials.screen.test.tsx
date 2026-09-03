@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
-// Per-screen gate — /admin/financials (M3 S3 restructure). One screen, one
-// toolbar business-date picker, ONE inner tab row over transaction types:
-// Stock Purchases / Deliveries / Handovers. The old ADR-46 "Reconciliation"
-// table is folded into a Status column. stockApi + use-handovers mocked.
+// Per-screen gate — /admin/financials (M3 S3 → S7). One screen; the S7
+// redesign replaced the single toolbar date picker with a RANGE control
+// (SegmentedControl: Today / This week / This month / Custom), promoted
+// the Profit panel OUT of the tab row into an always-on block, and left
+// FIVE inner tabs: Stock Purchases / Deliveries / Handovers / Expenses /
+// Owner Draws. Flows take the whole range; balances are as-of the range
+// end (ADR-57). stockApi + use-handovers + use-financials mocked.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -57,6 +60,8 @@ let summaryState: {
   loading: boolean;
   error: string | null;
 } = { summary: null, loading: false, error: null };
+/** Records the (from, to) each render of the shell asks the summary hook for. */
+const summaryRangeCalls: Array<{ from: string; to: string }> = [];
 vi.mock("@/app/admin/financials/use-financials", async (importOriginal) => {
   const actual =
     await importOriginal<
@@ -64,7 +69,10 @@ vi.mock("@/app/admin/financials/use-financials", async (importOriginal) => {
     >();
   return {
     ...actual,
-    useFinancialSummary: () => ({ ...summaryState, refresh: vi.fn() }),
+    useFinancialSummary: (from: string, to: string) => {
+      summaryRangeCalls.push({ from, to });
+      return { ...summaryState, refresh: vi.fn() };
+    },
     useExpenses: () => ({
       expenses: [],
       loading: false,
@@ -100,13 +108,15 @@ function desktop(): HTMLElement {
   return node;
 }
 
-// S3: the KPI strip moved OUT of the desktop tab body and above the tab row
-// (owner's layout: heading → KPI strip → tab selector), so it is a sibling of
-// `desktop()`, not a descendant. Scope KPI assertions to its own container.
+// S7: the KPI figures live inside the always-on <ProfitPanelDesktop>
+// (`.hidden.md\:flex` container, `--surface-subtle` ground) above the tab
+// row. Scope KPI assertions to that panel.
 function kpiDesktop(): HTMLElement {
-  const node = document.querySelector<HTMLElement>(".hidden.md\\:block");
-  if (!node) throw new Error("desktop KPI strip not found");
-  return node;
+  const nodes = document.querySelectorAll<HTMLElement>(".hidden.md\\:flex");
+  for (const n of nodes) {
+    if (n.textContent?.includes("Position & balances as of")) return n;
+  }
+  throw new Error("desktop Profit panel (KPI row) not found");
 }
 
 function movement(over: Partial<Record<string, unknown>> = {}) {
@@ -159,6 +169,7 @@ const LOC_1 = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  summaryRangeCalls.length = 0;
   api.listMovements.mockResolvedValue([]);
   api.outstanding.mockResolvedValue({ awaitingReceipt: [], unmatchedReceipts: [] });
   api.listProducts.mockResolvedValue([]);
@@ -166,40 +177,100 @@ beforeEach(() => {
   reconState = { data: null, loading: false, error: null };
 });
 
+const nairobiToday = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Nairobi" }).format(
+    new Date(),
+  );
+
 describe("/admin/financials — shell", () => {
-  it("has a toolbar business-date picker and three inner tabs", async () => {
+  it("has a date-range control and the five inner tabs", async () => {
     renderScreen();
     await waitFor(() => expect(api.listMovements).toHaveBeenCalled());
+    // The range control is a radiogroup of presets (kit SegmentedControl).
     expect(
-      screen.getByRole("button", { name: /Business date/ }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Stock Purchases" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Deliveries" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Handovers" })).toBeInTheDocument();
+      screen.getAllByRole("radiogroup", { name: "Date range" }).length,
+    ).toBeGreaterThan(0);
+    for (const name of [
+      "Stock Purchases",
+      "Deliveries",
+      "Handovers",
+      "Expenses",
+      "Owner Draws",
+    ]) {
+      expect(screen.getByRole("tab", { name })).toBeInTheDocument();
+    }
+    // Profit is no longer a tab — it is the always-on panel.
+    expect(screen.queryByRole("tab", { name: "Profit" })).not.toBeInTheDocument();
   });
 
-  it("scopes listMovements to the toolbar date (defaults to today)", async () => {
+  it("defaults to Today — scopes listMovements to from===to===today", async () => {
     renderScreen();
     await waitFor(() => expect(api.listMovements).toHaveBeenCalled());
-    const today = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Africa/Nairobi",
-    }).format(new Date());
+    const today = nairobiToday();
     expect(api.listMovements).toHaveBeenCalledWith(
-      expect.objectContaining({ movementType: "purchase_payment", date: today }),
+      expect.objectContaining({
+        movementType: "purchase_payment",
+        from: today,
+        to: today,
+      }),
     );
   });
 
-  it("renders the KPI strip; shows — for each tile until the summary loads", async () => {
+  it("switching to 'This week' refetches with a Mon–today (or wider) range", async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await waitFor(() => expect(api.listMovements).toHaveBeenCalled());
+    api.listMovements.mockClear();
+
+    await user.click(
+      screen.getAllByRole("radio", { name: "This week" })[0],
+    );
+
+    await waitFor(() => expect(api.listMovements).toHaveBeenCalled());
+    const call = api.listMovements.mock.calls.at(-1)![0] as {
+      from: string;
+      to: string;
+    };
+    const today = nairobiToday();
+    // Monday-first week: `from` <= today <= `to`, and the span is 7 days.
+    expect(call.from <= today).toBe(true);
+    expect(call.to >= today).toBe(true);
+    const days =
+      (Date.parse(`${call.to}T00:00:00Z`) -
+        Date.parse(`${call.from}T00:00:00Z`)) /
+      86_400_000;
+    expect(days).toBe(6);
+  });
+
+  it("switching a preset re-drives the summary hook with the new range (flows follow the whole range)", async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await waitFor(() => expect(api.listMovements).toHaveBeenCalled());
+    const today = nairobiToday();
+    // Default: Today → from === to === today.
+    expect(summaryRangeCalls.at(-1)).toEqual({ from: today, to: today });
+
+    await user.click(
+      screen.getAllByRole("radio", { name: "This month" })[0],
+    );
+    await waitFor(() => {
+      const last = summaryRangeCalls.at(-1)!;
+      expect(last.from).toBe(`${today.slice(0, 7)}-01`);
+      expect(last.to >= today).toBe(true);
+    });
+  });
+
+  it("the Profit panel KPI row is captioned 'as of <date>' and shows — per tile until the summary loads", async () => {
     summaryState = { summary: null, loading: false, error: null };
     renderScreen();
     await waitFor(() => expect(api.listMovements).toHaveBeenCalled());
+    const panel = kpiDesktop();
     expect(
-      within(kpiDesktop()).getByText("Total Business Liquidity"),
+      within(panel).getByText(/Position & balances as of/i),
     ).toBeInTheDocument();
-    // S4: the "M3" placeholder captions are gone; an unresolved summary
-    // renders an em-dash per tile.
-    expect(within(kpiDesktop()).queryByText("M3")).not.toBeInTheDocument();
-    expect(within(kpiDesktop()).getAllByText("—").length).toBe(4);
+    expect(within(panel).getByText("Total Business Liquidity")).toBeInTheDocument();
+    // Unresolved summary → an em-dash per position tile.
+    expect(within(panel).getAllByText("—").length).toBe(4);
   });
 });
 
@@ -394,5 +465,38 @@ describe("/admin/financials — Handovers tab", () => {
     ).toBeGreaterThan(0);
     // totals strip
     expect(screen.getAllByText("Totals").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the table headers + an empty-state message when the day has no handovers", async () => {
+    reconState = {
+      data: {
+        date: "2026-09-03",
+        rows: [],
+        totals: {
+          cashDeclared: "0.00",
+          mpesaDeclared: "0.00",
+          cashReceived: "0.00",
+          mpesaReceived: "0.00",
+          cashVariance: "0.00",
+          mpesaVariance: "0.00",
+        },
+      },
+      loading: false,
+      error: null,
+    };
+    renderScreen();
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("tab", { name: "Handovers" }));
+
+    const table = await screen.findByRole("table");
+    // Headers stay visible…
+    expect(
+      within(table).getByRole("columnheader", { name: "Staff" }),
+    ).toBeInTheDocument();
+    // …and an explicit "no handovers" message renders in the body.
+    expect(
+      screen.getAllByText(/No handovers for this day/).length,
+    ).toBeGreaterThan(0);
   });
 });
