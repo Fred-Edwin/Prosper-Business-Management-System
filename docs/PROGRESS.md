@@ -123,6 +123,109 @@ shared-dev-DB suite flakiness is unchanged — not addressed here.
 
 ---
 
+## Milestone 4 Session 9A — Staff payout: record a payment, post it to the ledger (Developer — 2026-09-03) — DONE (backend only)
+
+**Backend only. One additive schema change.** 9B builds the payout screen
+against this API. This writes to the money ledger and changes Net Profit,
+so the verification centred on a no-double-count assertion.
+
+**Owner decision — CHANGES PRD §4.8 (ADR-60).** Payroll now happens
+**inside** the system. Recording a payout for a staff-month creates one
+Salaries `Expense` for the net, which reduces Cash and Net Profit like any
+other expense. PRD §4.7, §4.8, §6 updated; the old "payroll disbursement
+happens outside the system" rationale removed. **ADR-60** records the
+change and states explicitly that it **SUPERSEDES** the old §4.8 rule.
+
+**Shipped — schema.** New model `StaffPayout` (`staffId`, `month`
+`@db.Date`, `netPaid`, `date`, `paidFromAccount`, `recordedById`,
+`expenseId` 1:1 → `Expense`). `@@unique([staffId, month])` — a staff-month
+is payable at most once, **at the DB level**. `expenseId @unique`.
+Migration `20260903130000_m4_s9a_add_staff_payout` (additive; no existing
+table altered). Applied to the dev DB via `prisma db execute` + `prisma
+generate` (the repo's DB is `db push`-tracked, not migrate-tracked — same
+as prior sessions).
+
+**Shipped — domain (`lib/domain/staff/pay.ts`, not a new module).**
+
+- `payStaff({ staffId, month, paidFromAccount, date }, actor)` —
+  Admin-only. **No `amount` in the input.** In ONE transaction: recompute
+  net from the ledger via `getStaffPay`, `assertDayOpen(date)`, create the
+  Salaries `Expense` via `recordExpense(…, { tx })`, write the
+  `StaffPayout` row + an `AuditLog` row. Returns the refreshed
+  `getStaffPay`.
+- `payAllUnpaid({ month, paidFromAccount, date }, actor)` — every unpaid
+  **active** staff member for the month; **one transaction per staff
+  member** (one failure is skipped, not a batch rollback); one `Expense`
+  each. Returns `{ month, paid: PayoutView[], skipped: [{ staffId,
+  staffName, reason }] }`.
+- `recordExpense` gained an optional `{ tx }` third arg (mirrors
+  `recordMoneyMovement`'s ctx pattern) so expense + payout commit
+  atomically. **No bespoke `MoneyMovement`, no new `MoneySourceType`** —
+  everything routes through `recordExpense`.
+- `getStaffPay` / `getPayrollSummary` now carry `paid` + `payout`
+  (id/month/netPaid/date/account/expenseId); summary `totals` gains
+  `netPaid`, `netUnpaid`, `paidCount`, `unpaidCount` so 9B renders a
+  paid/unpaid column with no second call.
+
+**Decisions (also in ADR-60 / the report).**
+
+- **Net-pay floor:** `netPay` is **not** floored — it may be negative.
+  A payout is **refused** while `netPay ≤ 0` (`VALIDATION_ERROR`, `field:
+  "net"`).
+- **Carry-forward:** the excess over-advance is **neither written off nor
+  auto-carried** — it stays as the `StaffPayAdjustment` rows in that
+  month; the Admin clears it with a correcting entry.
+- **Zero-net payout:** rejected, nothing written, no negative expense
+  ever.
+- **Payout reversal:** **out of scope for 9A** — a payout's effect lives
+  entirely in its `Expense`, and `correctExpense(payout.expenseId,
+  "0.00")` already reverses Cash + Net Profit. A first-class "void
+  payout" (releasing the unique slot) is deferred; `reversesPayoutId` was
+  considered and rejected as scope creep.
+
+**Shipped — API.** `POST /api/pay/payout` (single) + `POST
+/api/pay/payout?mode=all`. Thin handlers, `requireApiRole("admin")`, Zod
+schemas (`payStaffSchema` / `payAllUnpaidSchema`) in
+`lib/validation/staff.ts` — neither has an `amount` field. `GET /api/pay`
+reads now return `paid` / `payout` so the screen renders the column
+without a second call. Endpoints + payloads documented in `docs/API.md`
+(9B builds against that, must not re-derive).
+
+**Tests.** +15 (`pnpm test` 787 → **802**, all green; typecheck + build
+clean).
+
+- `lib/domain/staff/payout.test.ts` (11) — **the no-double-count
+  assertion** (after a payout: cash −netPay exactly once, exactly ONE
+  Salaries `Expense` linked, exactly ONE paired `MoneyMovement`,
+  `getFinancialSummary` netProfit −netPay and no more); pay-twice →
+  `CONFLICT` + a direct-insert `P2002`; future month; closed day (nothing
+  written, no orphan expense); zero/negative net (rejected, advance row
+  untouched); **amount recomputed server-side** (a bogus client `amount`
+  has no effect); **handover shortfall does NOT affect net pay** (S8A
+  assertion kept); `payAllUnpaid` (b paid with exactly one payout+expense,
+  a skipped already-paid, c skipped zero-net, inactive never appears);
+  future-month rejection; non-admin `FORBIDDEN`; `paid`/`payout` fields on
+  both reads.
+- `app/api/pay/payout/route.test.ts` (4) — admin-only gates (401/403 on
+  both single and `?mode=all`), a 400 on a malformed body, and one
+  admin-happy-path single payout through the route. `?mode=all` happy path
+  is domain-suite only (it is business-wide and would pollute the shared
+  dev DB).
+
+The no-double-count assertion was **verified by a run**, not assumed.
+
+**Seed.** One paid staff-month — the seed Cashier
+(`seed-staff-cashier`), previous calendar month, `KES 17,050` — as a real
+`Expense` + paired `MoneyMovement` + `StaffPayout`. Every other staff
+member left unpaid, so 9B opens with both states. `staffPayout.deleteMany`
+added to the wipe transaction (before `expense.deleteMany` — FK order).
+
+**Not done / for a later session.** No payout screen (`/admin/staff` pay
+tab — 9B). No first-class payout void. Shared-dev-DB suite flakiness
+unchanged (9B's remit).
+
+---
+
 ## Milestone 3 Session 7 — Financials redesign + date-range filtering (Developer — 2026-09-03) — DONE
 
 **Mostly frontend. One focused backend addition (`asOf` on the balance

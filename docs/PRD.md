@@ -205,16 +205,34 @@ cylinders, tables, POS phones) — distinct from stock; never sold or consumed.
 - As the Admin, profit is calculated as: Revenue − Cost of Goods Sold =
   Gross Profit; Gross Profit − Total Expenses = Net Profit. Cost of Goods
   Sold for Dishes is the derived ingredient-consumption figure (§3), not a
-  per-dish entered cost. Calculated staff pay (§4.8) does not automatically
-  count as an expense — only an Expense the Admin actually logs (e.g.
-  category Salaries) reduces Net Profit, since payroll disbursement happens
-  outside the system.
+  per-dish entered cost. Recording a staff **payout** (§4.8) creates one
+  Salaries `Expense` for the net amount, which reduces Net Profit like any
+  other expense — payroll disbursement now happens inside the system
+  (ADR-60). Merely *calculated* pay for a month not yet paid does not
+  affect Net Profit; only the payout does.
 
 ### 4.8 Staff & Pay
 - As the Admin, I can mark staff attendance daily (default present, flag absences).
 - As the Admin, monthly pay is calculated as daily rate × days present.
 - As the Admin, I can record salary advances and deductions against a staff member, netted off monthly pay.
-- As the Admin, I can record handover shortfalls with a required note against the responsible staff member; shortfalls do not block day-close or auto-deduct pay.
+- As the Admin, I can **pay** a staff member for a month — recording the
+  payout. The net amount is recomputed from the ledger at that moment
+  (daily rate × days present − advances − deductions); it is never
+  entered by hand. Recording a payout creates one Salaries `Expense` for
+  the net amount, which is what moves Cash and reduces Net Profit — there
+  is exactly one expense per payout, through the same path as any other
+  expense (ADR-60). Payroll disbursement happens **inside** the system.
+  - A staff-month can be paid at most once (enforced in the database).
+  - A future month cannot be paid; a payout dated to a closed day is
+    rejected like any other create.
+  - If advances + deductions exceed what was earned, net pay is negative
+    and the payout is refused — the over-advance stays on the books as
+    the recorded adjustments until the Admin posts a correcting entry; it
+    is neither written off nor auto-carried to another month.
+  - "Pay all unpaid" pays every unpaid active staff member for the month
+    in one action, one Salaries `Expense` each, skipping (with a reason)
+    anyone already paid or whose net is zero or less.
+- As the Admin, I can record handover shortfalls with a required note against the responsible staff member; shortfalls do not block day-close, **do not auto-deduct pay, and never reduce a payout** (unchanged by ADR-60).
 
 ### 4.9 Recipes (Informational)
 - As the Admin, I can optionally define a recipe for a Dish — the
@@ -266,7 +284,9 @@ cylinders, tables, POS phones) — distinct from stock; never sold or consumed.
 - Table or reservation management
 - Kitchen display screens
 - Barcode scanning
-- Payroll disbursement (pay is calculated, not paid out, by the system)
+- Payroll bank/M-Pesa integration or payslip generation (a payout is
+  recorded in-system and posts a Salaries expense — ADR-60 — but the
+  system does not move money to staff accounts or produce payslips)
 - Accounting-software export/integration
 - Recipes / bill-of-materials linking ingredients to dishes
 - Multi-currency support

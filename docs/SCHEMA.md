@@ -416,7 +416,27 @@ Unique on (`staff_id`, `date`).
 | note | text, nullable |
 
 Monthly pay is derived, not stored: `daily_rate × days_present −
-advances/deductions for the month`, computed on demand.
+advances/deductions for the month`, computed on demand. This derived
+`net_pay` is **not floored** — it may be negative when advances +
+deductions exceed gross (ADR-60).
+
+### `StaffPayout` (M4 S9A, ADR-60)
+| Column | Notes |
+|---|---|
+| staff_id | FK → `Staff` |
+| month | `@db.Date`, stored as the 1st of the covered calendar month |
+| net_paid | `NUMERIC(12,2)` — net disbursed, recomputed from the ledger at record time, always > 0 |
+| date | `@db.Date` — the business day the disbursement is dated to (day-close gated) |
+| paid_from_account | enum `MoneyAccount` (`cash` \| `mpesa_bank`) |
+| recorded_by | FK → `User` |
+| expense_id | FK → `Expense`, **unique** — the one Salaries `Expense` this payout created (which carries the paired `MoneyMovement`) |
+
+Unique on (`staff_id`, `month`) — a staff-month can be paid at most once,
+enforced by the database. Recording a payout does **not** write a bespoke
+`MoneyMovement`; it goes through `recordExpense`, so Cash and Net Profit
+move exactly once through the shared path. No new `MoneySourceType`.
+Reversal = correct the linked `Expense` to zero (ADR-60); a first-class
+void is deferred.
 
 ### `HandoverShortfall`
 | Column | Notes |

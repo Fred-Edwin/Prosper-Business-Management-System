@@ -79,10 +79,16 @@ function toExpenseView(
  * rejected for everyone; the Admin's route back in is `correctExpense`.
  * The Admin is exempt from the staff "today only" rule (ADR-53), so they
  * may log a past-dated expense on an open day.
+ *
+ * Pass `ctx.tx` to run inside an already-open transaction — `payStaff`
+ * (M4 S9A) writes the Salaries `Expense` and the `StaffPayout` row that
+ * links to it in one transaction so cash, profit and the payout record
+ * commit together or not at all. With no `tx` this opens its own.
  */
 export async function recordExpense(
   input: RecordExpenseInput,
   actor: FinancialsActor,
+  ctx: { tx?: Prisma.TransactionClient } = {},
 ): Promise<ExpenseView> {
   if (actor.role !== "admin") {
     throw new DomainError(
@@ -95,7 +101,7 @@ export async function recordExpense(
   const occurredAt = businessDateNoonUtc(input.date);
   const note = input.note?.trim() ? input.note.trim() : null;
 
-  const row = await prisma.$transaction(async (tx) => {
+  const write = async (tx: Prisma.TransactionClient) => {
     await assertDayOpen(input.date, tx);
 
     const expense = await tx.expense.create({
@@ -137,7 +143,9 @@ export async function recordExpense(
     });
 
     return expense;
-  });
+  };
+
+  const row = ctx.tx ? await write(ctx.tx) : await prisma.$transaction(write);
 
   return toExpenseView(row, row.amount, false);
 }

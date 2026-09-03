@@ -2707,3 +2707,105 @@ revocation under a JWT strategy). So:
 - `deactivateStaff` is idempotent — an already-inactive staff member is a
   no-op success (no second audit row).
 - No schema change. No `TODO(mock)`.
+
+---
+
+## ADR-60: A staff payout is recorded in-system and posts one Salaries `Expense` — SUPERSEDES the PRD §4.8 "payroll happens outside the system" rule (Developer, Milestone 4 Session 9A [Staff payout backend], 2026-09-03)
+
+**Context.** Through S8A, staff pay was a **pure calculation**:
+`getStaffPay` / `getPayrollSummary` derive gross = dailyRate × daysPresent
+and net = gross − advances − deductions, but nothing is recorded when a
+staff member is actually paid. PRD §4.7 / §4.8 stated explicitly that
+calculated pay does **not** count as an expense — "only an Expense the
+Admin actually logs (e.g. category Salaries) reduces Net Profit, since
+payroll disbursement happens outside the system" — and PRD §6 listed
+"payroll disbursement" as out of scope.
+
+**Owner decision (M4 S9A): payroll now happens INSIDE the system.** The
+Admin records a payout for a staff-month; that payout **must** reduce
+Cash and Net Profit, through a real Salaries `Expense`.
+
+**Decision.**
+
+1. **A payout creates exactly ONE Salaries `Expense`, via the existing
+   `recordExpense` path.** That expense writes its own paired negative
+   `MoneyMovement` (`sourceType: "expense"`). Cash drops once, Net Profit
+   drops once, through the already-tested path. There is **no** bespoke
+   `MoneyMovement` written alongside a payout, and **no** new
+   `MoneySourceType` — routing everything through `recordExpense` is what
+   keeps `getAccountBalances` a plain `SUM(amount)` and `getFinancialSummary`
+   a plain `SUM(Expense.amount)`.
+2. **New table `StaffPayout`** (`staffId`, `month` `@db.Date`, `netPaid`,
+   `date`, `paidFromAccount`, `recordedById`, `expenseId` 1:1 → `Expense`).
+   `@@unique([staffId, month])` makes double-paying a staff-month
+   impossible **at the database level**, not just in code. Additive
+   migration; no existing table altered.
+3. **The amount is recomputed from the ledger at payout time** — there is
+   no client-supplied amount on the input at all. `payStaff` calls
+   `getStaffPay` inside the flow and uses that `netPay`.
+4. **`recordExpense` gained an optional `{ tx }` third argument** (the
+   same pattern `recordMoneyMovement` already uses) so the Salaries
+   `Expense`, its paired `MoneyMovement`, and the `StaffPayout` row commit
+   in ONE transaction — all or nothing.
+5. **Guards** (each tested):
+   - already paid for that month → `CONFLICT` (in code, and the DB unique
+     is the backstop — a race surfaces as `P2002` → `CONFLICT`).
+   - a **future** month → `VALIDATION_ERROR` (nothing worked yet).
+   - net pay **≤ 0** → `VALIDATION_ERROR` (see below).
+   - the disbursement date's day is closed → `FORBIDDEN` (`assertDayOpen`,
+     a create path).
+6. **`payAllUnpaid`** pays every unpaid **active** staff member for the
+   month — each staff member's `Expense` + `StaffPayout` is its **own**
+   transaction, so one failure (a race, a zero net) is *skipped* with a
+   reason, never a rollback of the whole batch. One `Expense` per staff
+   member paid.
+
+**Net-pay floor / carry-forward.** `getStaffPay.netPay` is **not floored**
+— if advances + deductions exceed gross it is negative, and this is
+surfaced as-is (9B renders it). A payout is **refused** while `netPay ≤ 0`.
+The excess over-advance is **neither written off nor auto-carried** to
+another month: it remains exactly the `StaffPayAdjustment` rows already
+recorded in that month, and the Admin clears it by posting a correcting
+entry (record the opposite type for the difference). Auto-carrying to the
+next month was rejected — it would break the month-scoping of `getStaffPay`
+and surprise every downstream reader.
+
+**Zero-or-negative-net payout.** Rejected with `VALIDATION_ERROR`
+(`field: "net"`), message explaining that recorded advances/deductions
+exceed earnings and the excess stays on the books. Nothing is written; no
+negative expense, no negative `MoneyMovement`, ever.
+
+**Payout reversal — out of scope for S9A, deliberately.** A payout's
+entire financial effect lives in the `Expense` it created, and the house
+correction path for that already exists: `correctExpense(payout.expenseId,
+"0.00")` writes the offsetting delta row and its paired `MoneyMovement`,
+restoring Cash and Net Profit. What a first-class "void payout" would add
+on top is releasing the `@@unique([staffId, month])` slot so the month can
+be re-paid — deferred to a later session. A `reversesPayoutId`
+self-relation was considered and rejected as scope creep for 9A. Until
+then: correct the linked expense to zero, and (if the month must be
+re-paid) an Admin deletes the `StaffPayout` row out of band.
+
+**This SUPERSEDES** the PRD §4.7 / §4.8 statement that "payroll
+disbursement happens outside the system" and calculated pay never counts
+as an expense. PRD §4.7, §4.8 and §6 are updated in this session. A future
+session reading an older copy of that rule must treat **this ADR** as
+current — do not "restore" the old behaviour.
+
+**What does NOT change.** Handover shortfalls still never auto-deduct pay
+and never reduce a payout (PRD §4.8, ADR-58 context) — asserted by a test
+in `lib/domain/staff/payout.test.ts`. Attendance is still not day-close
+gated (ADR-58). `recordPayAdjustment` is still day-close gated (ADR-58
+contrast).
+
+**Consequences.**
+
+- `StaffPay` / `PayrollSummary` reads carry `paid`, `payout`
+  (id/month/netPaid/date/account/expenseId); summary totals gain
+  `netPaid`, `netUnpaid`, `paidCount`, `unpaidCount` so 9B renders a
+  paid/unpaid column with no second call.
+- `POST /api/pay/payout` (single) and `POST /api/pay/payout?mode=all`,
+  both Admin-only. No `amount` on either payload.
+- Migration `20260903130000_m4_s9a_add_staff_payout`. No `TODO(mock)`.
+- The seed records one paid staff-month (the seed Cashier, previous
+  month) and leaves every other staff member unpaid.

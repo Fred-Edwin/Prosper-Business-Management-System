@@ -81,8 +81,30 @@ export const payQuerySchema = z.object({
   staffId: z.string().min(1).optional(),
 });
 
+const moneyAccount = z.enum(["cash", "mpesa_bank"]);
+
+/**
+ * `POST /api/pay/payout` — disburse one staff member's month (M4 S9A).
+ * **No amount field** — the net is recomputed server-side from the ledger.
+ */
+export const payStaffSchema = z.object({
+  staffId: z.string().min(1),
+  month,
+  paidFromAccount: moneyAccount,
+  date: businessDate,
+});
+
+/** `POST /api/pay/payout?mode=all` — pay every unpaid active staff member. */
+export const payAllUnpaidSchema = z.object({
+  month,
+  paidFromAccount: moneyAccount,
+  date: businessDate,
+});
+
 export type CreateStaffBody = z.infer<typeof createStaffSchema>;
 export type UpdateStaffBody = z.infer<typeof updateStaffSchema>;
 export type SetAttendanceBody = z.infer<typeof setAttendanceSchema>;
 export type SetAttendanceBulkBody = z.infer<typeof setAttendanceBulkSchema>;
 export type RecordPayAdjustmentBody = z.infer<typeof recordPayAdjustmentSchema>;
+export type PayStaffBody = z.infer<typeof payStaffSchema>;
+export type PayAllUnpaidBody = z.infer<typeof payAllUnpaidSchema>;

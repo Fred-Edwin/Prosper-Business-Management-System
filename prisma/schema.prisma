@@ -136,6 +136,7 @@ model User {
   receiptsOfHandover     ReceiptOfHandover[]  @relation("ReceiptRecordedBy")
   repaymentsRecorded     Repayment[]          @relation("RepaymentRecordedBy")
   expensesRecorded       Expense[]            @relation("ExpenseRecordedBy")
+  staffPayoutsRecorded   StaffPayout[]        @relation("StaffPayoutRecordedBy")
   auditLogs              AuditLog[]           @relation("AuditLogUser")
 
   @@map("user")
@@ -155,6 +156,7 @@ model Staff {
   user                User?
   attendance          Attendance[]
   payAdjustments      StaffPayAdjustment[]
+  payouts             StaffPayout[]
   handovers           Handover[]
   handoverShortfalls  HandoverShortfall[]
 
@@ -541,6 +543,8 @@ model Expense {
   correctsExpense   Expense?  @relation("ExpenseCorrection", fields: [correctsExpenseId], references: [id])
   corrections       Expense[] @relation("ExpenseCorrection")
 
+  staffPayout StaffPayout? @relation("StaffPayoutExpense")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -589,6 +593,40 @@ model StaffPayAdjustment {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("staff_pay_adjustment")
+}
+
+/// A staff member's monthly pay actually disbursed (M4 S9A). Recording one
+/// creates ONE Salaries `Expense` (via `recordExpense`) — that expense
+/// writes the paired negative `MoneyMovement`, so cash and Net Profit drop
+/// exactly once through the already-tested path. There is no bespoke
+/// MoneyMovement here. `netPaid` is recomputed server-side from the ledger
+/// at record time (never client-supplied). One payout per (staff, month) —
+/// enforced by the DB unique below, not just in code (ADR-60).
+model StaffPayout {
+  id    String   @id @default(uuid())
+  staffId String @map("staff_id")
+  staff Staff    @relation(fields: [staffId], references: [id])
+  /// The calendar month covered, stored as the 1st of that month (`@db.Date`).
+  month DateTime @db.Date
+  /// Net pay disbursed — recomputed from the ledger, always > 0.
+  netPaid Decimal @map("net_paid") @db.Decimal(12, 2)
+  /// The business date the disbursement is dated to (day-close gated).
+  date  DateTime @db.Date
+  paidFromAccount MoneyAccount @map("paid_from_account")
+
+  recordedById String @map("recorded_by")
+  recordedBy   User   @relation("StaffPayoutRecordedBy", fields: [recordedById], references: [id])
+
+  /// The Salaries `Expense` this payout created. 1:1 — the expense carries
+  /// the money/profit effect; this row records that the month was paid.
+  expenseId String  @unique @map("expense_id")
+  expense   Expense @relation("StaffPayoutExpense", fields: [expenseId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([staffId, month])
+  @@map("staff_payout")
 }
 
 model HandoverShortfall {

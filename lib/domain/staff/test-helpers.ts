@@ -100,6 +100,20 @@ export async function cleanupStaffTestData(scope: string): Promise<void> {
     await prisma.staffPayAdjustment.deleteMany({
       where: { staffId: { in: staffIds } },
     });
+    // Payouts + the Salaries Expense (and its paired MoneyMovement) each
+    // one created via `recordExpense`.
+    const payouts = await prisma.staffPayout.findMany({
+      where: { staffId: { in: staffIds } },
+      select: { id: true, expenseId: true },
+    });
+    const expenseIds = payouts.map((p) => p.expenseId);
+    await prisma.staffPayout.deleteMany({ where: { staffId: { in: staffIds } } });
+    if (expenseIds.length > 0) {
+      await prisma.moneyMovement.deleteMany({
+        where: { sourceType: "expense", sourceId: { in: expenseIds } },
+      });
+      await prisma.expense.deleteMany({ where: { id: { in: expenseIds } } });
+    }
   }
 
   // Audit rows written by this suite belong to its users (the Admin actor,
@@ -116,9 +130,35 @@ export async function cleanupStaffTestData(scope: string): Promise<void> {
   const userIds = users.map((u) => u.id);
   if (userIds.length > 0) {
     await prisma.auditLog.deleteMany({ where: { userId: { in: userIds } } });
+    // A payout's Salaries Expense + its paired MoneyMovement are RESTRICT
+    // FKs onto the recording user. Clear anything this suite's users
+    // recorded (covers rows a prior FAILED run left behind before the
+    // payout/expense could be linked and matched above).
+    await prisma.moneyMovement.deleteMany({
+      where: { recordedById: { in: userIds } },
+    });
+    const staffPayouts = await prisma.staffPayout.findMany({
+      where: { recordedById: { in: userIds } },
+      select: { expenseId: true },
+    });
+    await prisma.staffPayout.deleteMany({
+      where: { recordedById: { in: userIds } },
+    });
+    await prisma.receiptOfHandover.deleteMany({
+      where: { recordedById: { in: userIds } },
+    });
+    await prisma.expense.deleteMany({
+      where: {
+        OR: [
+          { recordedById: { in: userIds } },
+          { id: { in: staffPayouts.map((p) => p.expenseId) } },
+        ],
+      },
+    });
   }
 
   if (staffIds.length > 0) {
+    await prisma.handover.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.user.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.staff.deleteMany({ where: { id: { in: staffIds } } });
   }

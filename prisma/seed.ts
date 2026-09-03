@@ -91,6 +91,7 @@ async function wipe() {
     prisma.productLocation.deleteMany(),
     prisma.product.deleteMany(),
     prisma.customer.deleteMany(),
+    prisma.staffPayout.deleteMany(),
     prisma.expense.deleteMany(),
     prisma.ownerTransaction.deleteMany(),
     prisma.attendance.deleteMany(),
@@ -563,6 +564,7 @@ async function main() {
     adminId: admin.id,
   });
   await seedFinancials({ adminId: admin.id });
+  await seedStaffPayout({ adminId: admin.id });
 
   console.log("Seed complete (wipe + rebuild).");
   console.log('Admin:  "Admin" / PIN 1234');
@@ -1144,6 +1146,74 @@ async function seedFinancials({ adminId }: { adminId: string }) {
       },
     });
   }
+}
+
+/**
+ * One PAID staff-month so `/admin/staff` pay (M4 S9B) opens with both
+ * states on screen. The seed cashier ("Cashier", `seed-staff-cashier`,
+ * dailyRate 550) is paid for LAST calendar month; every other staff member
+ * is left unpaid. Mirrors `payStaff` (ADR-60): ONE Salaries `Expense`
+ * dated to the 1st of the current month, its paired negative
+ * `MoneyMovement`, and the `StaffPayout` row linking to it. No bespoke
+ * money row, no new `MoneySourceType`.
+ */
+async function seedStaffPayout({ adminId }: { adminId: string }) {
+  const now = new Date(SEED_NOW);
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth(); // 0-based, current month
+  // Previous calendar month (wholly in the past → deterministic net).
+  const prevY = m === 0 ? y - 1 : y;
+  const prevM = m === 0 ? 11 : m - 1; // 0-based
+  const monthStr = `${prevY}-${String(prevM + 1).padStart(2, "0")}`;
+  const daysInPrevMonth = new Date(Date.UTC(prevY, prevM + 1, 0)).getUTCDate();
+
+  // Net = dailyRate × days present. No absences / adjustments seeded for
+  // this staff member, so days present = every calendar day of the month.
+  const dailyRate = 550;
+  const net = (dailyRate * daysInPrevMonth).toFixed(2);
+
+  // Disbursed on the 1st of the current month (an open day).
+  const paidDate = new Date(Date.UTC(y, m, 1)); // @db.Date → midnight UTC
+  const expenseOccurredAt = new Date(`${y}-${String(m + 1).padStart(2, "0")}-01T12:00:00+03:00`);
+  const monthDate = new Date(Date.UTC(prevY, prevM, 1)); // @db.Date key
+
+  const expense = await prisma.expense.create({
+    data: {
+      id: "seed-payout-expense-cashier",
+      category: "salaries",
+      amount: net,
+      date: expenseOccurredAt,
+      paidFromAccount: "cash",
+      note: `Staff pay — Cashier — ${monthStr}`,
+      recordedById: adminId,
+    },
+  });
+  await prisma.moneyMovement.create({
+    data: {
+      id: "seed-mm-seed-payout-expense-cashier",
+      account: "cash",
+      amount: `-${net}`, // money out
+      sourceType: "expense",
+      sourceId: expense.id,
+      recordedById: adminId,
+      occurredAt: expenseOccurredAt,
+      note: `Staff pay — Cashier — ${monthStr}`,
+    },
+  });
+  await prisma.staffPayout.create({
+    data: {
+      id: "seed-payout-cashier",
+      staffId: "seed-staff-cashier",
+      month: monthDate,
+      netPaid: net,
+      date: paidDate,
+      paidFromAccount: "cash",
+      recordedById: adminId,
+      expenseId: expense.id,
+    },
+  });
+
+  console.log(`Seeded 1 paid staff-month: Cashier / ${monthStr} / KES ${net}`);
 }
 
 main()

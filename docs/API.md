@@ -929,11 +929,15 @@ blocked state, not a toast. Clean ⇒ the row is deleted. Returns
 
 ## Staff & Pay
 
-> **Backend implemented Milestone 4 Session 8A (2026-09-03).** Screens
-> (`/admin/staff`) land in a later session. Every endpoint is **Admin
-> only**. Field names are `camelCase`. `dailyRate` and adjustment
-> `amount` are decimal strings. **A PIN is never returned or logged in
+> **Backend implemented Milestone 4 Session 8A (2026-09-03); payout
+> added Session 9A (2026-09-03).** Screens (`/admin/staff`) land in a
+> later session. Every endpoint is **Admin only**. Field names are
+> `camelCase`. `dailyRate`, adjustment `amount`, and all payout money
+> figures are decimal strings. **A PIN is never returned or logged in
 > any read** (ADR-59 context — a `StaffView` carries no PIN/hash field).
+> A **payout** (`POST /api/pay/payout`) records that a staff-month was
+> paid and posts one Salaries `Expense` for the net — see ADR-60; the
+> amount is always recomputed server-side, never client-supplied.
 
 ### `POST /api/staff`
 Body: `{ name, role: "store_manager" | "cashier" | "canteen_attendant",
@@ -995,17 +999,64 @@ for the same amount. `201` with `{ data: PayAdjustmentView }`.
 ### `GET /api/pay?month=YYYY-MM`
 Payroll for **every active staff member**: `{ data: PayrollSummary }` —
 `{ month, rows: StaffPay[], totals: { grossPay, advances, deductions,
-netPay } }`. Set-wise (one attendance groupBy + one adjustments query).
+netPay, netPaid, netUnpaid, paidCount, unpaidCount } }`. Set-wise (one
+attendance groupBy + one adjustments query + one payouts query).
+`netPaid` = Σ `payout.netPaid` over the rows already paid; `netUnpaid` =
+Σ `netPay` over unpaid rows whose net is > 0; `paidCount` / `unpaidCount`
+partition `rows`.
 
 ### `GET /api/pay?month=YYYY-MM&staffId=…`
 One staff member: `{ data: StaffPay }` —
 `{ staffId, staffName, month, dailyRate, payableDays, daysPresent,
-daysAbsent, grossPay, advances, deductions, netPay, adjustments }`.
+daysAbsent, grossPay, advances, deductions, netPay, adjustments, paid,
+payout }`.
 Nothing stored; all derived. `grossPay = dailyRate × daysPresent`;
 `daysPresent = payableDays − (explicit present:false rows)`; `payableDays`
 = calendar days from the 1st through `min(month-end, today)` (a wholly
-future month → `0`). `netPay = grossPay − Σ advances − Σ deductions`.
-Handover shortfalls do **not** auto-deduct (PRD §4.8).
+future month → `0`). `netPay = grossPay − Σ advances − Σ deductions` —
+**not floored**, so it may be negative (ADR-60). Handover shortfalls do
+**not** auto-deduct and never reduce a payout (PRD §4.8).
+
+`paid` (boolean) and `payout` — `null` when unpaid, else
+`{ id, staffId, month: "YYYY-MM", netPaid, date: "YYYY-MM-DD",
+paidFromAccount, expenseId }`. `netPaid` is what was disbursed (recomputed
+from the ledger at payout time — equal to `netPay` unless adjustments
+changed after the payout); `expenseId` is the Salaries `Expense` the
+payout created.
+
+### `POST /api/pay/payout`  — pay one staff member for a month
+**Admin only** (PRD §4.8, ADR-60). Body:
+`{ staffId, month: "YYYY-MM", paidFromAccount: "cash" | "mpesa_bank",
+date: "YYYY-MM-DD" }`. **There is no `amount` field** — the net is
+recomputed server-side from the ledger; any `amount` in the body is
+ignored.
+
+In one transaction: recompute net pay, create **one** Salaries `Expense`
+for that net via the shared `recordExpense` path (which writes the paired
+negative `MoneyMovement`), write the `StaffPayout` row linking to the
+expense. `201` with `{ data: StaffPay }` — the refreshed pay view, now
+`paid: true` with `payout` populated.
+
+Errors:
+- `409 CONFLICT` (`field: "month"`) — this staff-month is already paid.
+  Enforced in code **and** by a DB unique `(staffId, month)`.
+- `400 VALIDATION_ERROR` (`field: "month"`) — the month is in the future.
+- `400 VALIDATION_ERROR` (`field: "net"`) — net pay is ≤ 0 (advances +
+  deductions exceed earnings). Nothing is written; the over-advance stays
+  as the recorded adjustments (ADR-60).
+- `403 FORBIDDEN` — the disbursement `date`'s day is closed
+  (`assertDayOpen`), or the caller is not an admin.
+- `404 NOT_FOUND` (`field: "staffId"`) — no such staff member.
+
+### `POST /api/pay/payout?mode=all`  — pay every unpaid active staff member
+**Admin only.** Body: `{ month, paidFromAccount, date }` (no `staffId`).
+Pays each unpaid active staff member for the month — **one Salaries
+`Expense` each**, each in its own transaction. `201` with
+`{ data: { month, paid: PayoutView[], skipped: [{ staffId, staffName,
+reason }] } }`. Skips (does not fail the batch) anyone already paid
+(`reason` mentions "already paid") or whose net is ≤ 0 (`reason` mentions
+"zero or less"). A future month → `400 VALIDATION_ERROR` (`field:
+"month"`), nothing done.
 
 ---
 
