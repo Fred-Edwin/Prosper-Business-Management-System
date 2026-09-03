@@ -17,12 +17,19 @@ const LOCATION_READ_ROLES: readonly Role[] = [
   "canteen_attendant",
 ];
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const auth = await requireApiRoleIn(LOCATION_READ_ROLES);
   if (auth instanceof NextResponse) return auth;
 
+  // `?includeInactive=1` returns deactivated locations too — for the
+  // /admin/catalog Locations tab, which lists and re-activates them. Admin
+  // only; the other read roles always get the active-only list.
+  const includeInactive =
+    req.nextUrl.searchParams.get("includeInactive") === "1" &&
+    auth.user.role === "admin";
+
   try {
-    const locations = await listLocations({ activeOnly: true });
+    const locations = await listLocations({ activeOnly: !includeInactive });
     return ok(locations);
   } catch (e) {
     if (e instanceof DomainError) return fail(e.code, e.message, e.field);

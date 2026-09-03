@@ -86,6 +86,21 @@ vi.mock("@/app/admin/catalog/use-catalog", async () => {
   };
 });
 
+// The Locations tab is mounted (hidden) alongside Products; stub its hook so
+// it doesn't reach for `fetch`. Its own behaviour is covered by
+// catalog-locations.screen.test.tsx.
+vi.mock("@/app/admin/catalog/use-locations", () => ({
+  useLocations: () => ({
+    locations: [],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    deactivate: vi.fn(),
+  }),
+}));
+
 import { CatalogClient } from "@/app/admin/catalog/catalog-client";
 
 // jsdom applies no CSS, so both the `md:block` desktop table and the

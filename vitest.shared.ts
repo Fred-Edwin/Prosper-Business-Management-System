@@ -1,6 +1,13 @@
-import "dotenv/config";
 import path from "node:path";
+import { config as loadEnv } from "dotenv";
 import type { ViteUserConfig } from "vitest/config";
+
+// The suite runs against its OWN database, never the dev DB. `.env.test`
+// holds that connection string; `override: true` means it wins even if the
+// shell already exported DATABASE_URL from `.env`. `pnpm test`'s `pretest`
+// script creates + migrates + seeds `prosper_hotel_tests` first — see
+// docs/TESTING.md and ADR-61.
+loadEnv({ path: ".env.test", override: true });
 
 // Shared test config. The full run (`pnpm test`, vitest.config.ts) and the
 // two split lanes (`pnpm test:unit` / `pnpm test:db`) all build off this so

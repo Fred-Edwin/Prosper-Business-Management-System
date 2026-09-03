@@ -536,9 +536,9 @@ async function main() {
   // ── §7 Assets ────────────────────────────────────────────────────────
   const assets = [
     { key: "deep-frier", name: "Deep Frier", locationId: restaurant.id, daysAgo: 400, cost: "38000.00", condition: "Good" },
-    { key: "fridge", name: "Chest Fridge", locationId: canteen.id, daysAgo: 700, cost: "52000.00", condition: "Fair" },
+    { key: "fridge", name: "Chest Fridge", locationId: canteen.id, daysAgo: 700, cost: "52000.00", condition: "Needs Repair" },
     { key: "gas-cooker", name: "Gas Cooker (6 burner)", locationId: restaurant.id, daysAgo: 200, cost: "74500.00", condition: "Good" },
-    { key: "shelving", name: "Store Shelving Unit", locationId: store.id, daysAgo: 900, cost: "12000.00", condition: "Needs repair", archived: true },
+    { key: "shelving", name: "Store Shelving Unit", locationId: store.id, daysAgo: 900, cost: "12000.00", condition: "Needs Repair", archived: true },
   ];
   for (const a of assets) {
     await prisma.asset.create({

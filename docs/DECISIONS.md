@@ -2809,3 +2809,66 @@ contrast).
 - Migration `20260903130000_m4_s9a_add_staff_payout`. No `TODO(mock)`.
 - The seed records one paid staff-month (the seed Cashier, previous
   month) and leaves every other staff member unpaid.
+
+---
+
+## ADR-61: The test suite runs against its own database, isolated from dev (Developer, Milestone 4 Session 9C, 2026-09-03)
+
+**Context.** Until now `pnpm test` ran against the **dev** database.
+`vitest.shared.ts` did `import "dotenv/config"` and every suite read the
+same `DATABASE_URL` as `next dev` and the seed. This cost real sessions:
+
+- Running `pnpm dev` (or a stray `prisma:seed`) mid-test-run shifted the
+  totals the financials-summary suites assert — one run lost four tests at
+  once.
+- Stale rows from a killed run broke exact-count assertions on the next
+  run.
+- A red run no longer told you whether anything was actually broken.
+
+Test files namespace their own rows and clean up only their own, but the
+cross-cutting summaries (financial summary, account balances) sum across
+**all** stock/money movements, so they are exposed to anything else
+touching the same DB.
+
+**Decision.** The suite gets a dedicated database, `prosper_hotel_tests`,
+on the same local Postgres container as dev. It is **migration-built**,
+not `db push` — it has real `_prisma_migrations` history (the dev DB does
+not; do not carry that habit over).
+
+- **`.env.test`** (committed — local connection string only, no secrets)
+  holds the test `DATABASE_URL`. `vitest.shared.ts` loads it with
+  `dotenv`'s `override: true`, so it wins even when the shell already
+  exported the dev URL.
+- **`scripts/setup-test-db.mjs`** (idempotent): creates the database if
+  absent (connecting to `postgres` to issue `CREATE DATABASE`), runs
+  `prisma migrate deploy`, then seeds it (the seed is WIPE + REBUILD, so
+  re-runs are clean). Wired as `pretest` / `pretest:db` / `pretest:e2e`,
+  so `pnpm test` works with **no extra manual steps** and a fresh clone
+  needs nothing but a running Postgres on the host/port in `.env.test`.
+- Documented in **`docs/TESTING.md`**.
+
+**Alternatives rejected.**
+
+- *Per-run schema isolation / a schema per worker* — heavier plumbing
+  (every worker needs its own migrate), and the M1 flow suites look up
+  seed users by stable name, so every schema would still need seeding.
+- *Transaction-rollback per test* — the domain code opens its own Prisma
+  transactions; nesting is fragile and several suites assert across
+  multiple committed writes.
+- *Reusing an existing `*_test` database on the container* — those are
+  stale (old schema, different migration history) from earlier work;
+  named a fresh one to avoid ambiguity.
+
+**Consequences.**
+
+- The seed is now also the **test fixture of record** for anything that
+  reads seed users/locations by name (`tests/integration/m1-flows`).
+  Changing seed user names or the `seed-location-*` ids is a
+  test-breaking change.
+- `test:unit` (the DB-free lane) has no `pretest` — its specs never touch
+  Postgres.
+- CI / a fresh clone must run `pnpm test` (which triggers the setup) or
+  `pnpm test:setup` once before `pnpm test:db`.
+- No test was weakened or deleted for this. The full suite passed
+  815/815 on the first run against the new DB — nothing turned out to
+  depend on dev-DB-specific data.

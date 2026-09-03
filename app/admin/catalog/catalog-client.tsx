@@ -1,261 +1,70 @@
-// Session 11 rebuild — COMPOSED from the proven kit, no longer a transcription
-// of Paper artboards 6ZO-0 (desktop) / 8L7-0 (mobile). Those artboards are the
-// visual acceptance target; this screen is assembled from <PageShell> + <Tabs> +
-// <SearchInput> + <SimpleTable> (desktop) / a card list (< --bp-md) + the kit
-// <Drawer> / <FrictionDeleteDialog> (which now portal + scrim themselves, so the
-// old hand-rolled `fixed inset-0 bg-black/30` wrappers are gone).
+// /admin/catalog — the Admin catalog screen. Two tabs (Session 9C):
 //
-// The data path is unchanged: `useCatalog(filter)`, the 5 tabs (incl. Archived),
-// search state, and the drawer / delete-dialog orchestration are verbatim.
+//   Products  — the M1 product CRUD (kind sub-tabs, search, drawer, delete).
+//               VERBATIM from the previous single-file version, now in
+//               ./products-tab.tsx.
+//   Locations — locations CRUD (add / edit / deactivate). New this session;
+//               closes the gap M1 left when it shipped locations read-only.
+//
+// The screen owns ONE <AdminPageHeader> (ADR-56) — title with a count
+// badge + a primary "Add …" button — and the <Tabs> row directly under it.
+// Each tab publishes its count + its create trigger up through `onState`
+// (same pattern financials / staff use to drive a header button from the
+// active tab). Tab bodies live in their own files, per the brief.
 "use client";
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
 import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { Tabs } from "@/components/kit/tabs";
-import { SearchInput } from "@/components/kit/search-input";
-import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
-import { StatusChip } from "@/components/kit/status-chip";
-import { Select } from "@/components/kit/select";
 import { Button } from "@/components/kit/button";
-import { useToast } from "@/components/kit/toast";
-import type { ProductWithLocations } from "@/lib/domain/catalog";
-import { useCatalog, type CatalogListFilter } from "./use-catalog";
-import { ProductDrawer } from "./product-drawer";
-import { ProductDeleteDialog } from "./product-delete-dialog";
+import { ProductsTab, type ProductsTabState } from "./products-tab";
+import { LocationsTab, type LocationsTabState } from "./locations-tab";
+
+type CatalogTabKey = "products" | "locations";
 
 const TABS = [
-  { key: "all", label: "All", kind: undefined, archived: false },
-  { key: "ingredient", label: "Ingredients", kind: "ingredient" as const, archived: false },
-  { key: "dish", label: "Dishes", kind: "dish" as const, archived: false },
-  { key: "goods", label: "Goods", kind: "goods" as const, archived: false },
-  { key: "archived", label: "Archived", kind: undefined, archived: true },
+  { key: "products" as const, label: "Products", panelId: "catalog-panel-products" },
+  { key: "locations" as const, label: "Locations", panelId: "catalog-panel-locations" },
 ];
 
-const CATEGORY_LABEL: Record<string, string> = {
-  ingredient: "Ingredient",
-  dish: "Dish",
-  goods: "Goods",
+const VALID: readonly CatalogTabKey[] = ["products", "locations"];
+
+const TITLE: Record<CatalogTabKey, string> = {
+  products: "Product Catalog",
+  locations: "Locations",
 };
-const CATEGORY_TONE: Record<string, string> = {
-  ingredient: "text-info",
-  dish: "text-warning",
-  goods: "text-success",
+const ADD_LABEL: Record<CatalogTabKey, string> = {
+  products: "Add Product",
+  locations: "Add Location",
 };
 
-function fmt(value: string | null): string {
-  return value == null ? "—" : value;
-}
-
-// "All locations" sentinel for the location filter <Select>.
-const ALL_LOCATIONS = "__all__";
-
-/** The location names a product is actively assigned to, sorted. */
-function assignedLocationNames(product: ProductWithLocations): string[] {
-  return product.locations
-    .filter((l) => l.active)
-    .map((l) => l.locationName)
-    .sort((a, b) => a.localeCompare(b));
-}
-
-function LocationChips({ product }: { product: ProductWithLocations }) {
-  const names = assignedLocationNames(product);
-  if (names.length === 0) {
-    return <span className="[color:var(--text-tertiary)]">—</span>;
-  }
-  return (
-    <span className="flex flex-wrap items-center gap-[4px]">
-      {names.map((name) => (
-        <StatusChip key={name} variant="neutral">
-          {name}
-        </StatusChip>
-      ))}
-    </span>
+export function CatalogClient({
+  initialTab = "products",
+}: {
+  initialTab?: CatalogTabKey;
+}) {
+  const [tab, setTab] = React.useState<CatalogTabKey>(
+    VALID.includes(initialTab) ? initialTab : "products",
   );
-}
 
-/** Selling price for a named location type, "—" when not sold there. */
-function priceAt(
-  product: ProductWithLocations,
-  type: "restaurant" | "canteen" | "store",
-): string {
-  const row = product.locations.find(
-    (l) => l.locationType === type && l.active,
-  );
-  return row && row.sellingPrice != null ? row.sellingPrice : "—";
-}
+  const changeTab = React.useCallback((key: string) => {
+    setTab(
+      VALID.includes(key as CatalogTabKey)
+        ? (key as CatalogTabKey)
+        : "products",
+    );
+  }, []);
 
-function Money({ value }: { value: string }) {
-  const muted = value === "—";
-  return (
-    <span
-      className={muted ? "[color:var(--text-tertiary)]" : "[color:var(--text-primary)]"}
-    >
-      {value}
-    </span>
-  );
-}
+  // Each tab reports { countLabel, openCreate } up here so the shared
+  // header renders the right badge + wires the right "Add …" button.
+  const [productsState, setProductsState] =
+    React.useState<ProductsTabState | null>(null);
+  const [locationsState, setLocationsState] =
+    React.useState<LocationsTabState | null>(null);
 
-export function CatalogClient() {
-  const [activeTabKey, setActiveTabKey] = React.useState("all");
-  const [search, setSearch] = React.useState("");
-  const [locationId, setLocationId] = React.useState<string>(ALL_LOCATIONS);
-
-  const tab = TABS.find((t) => t.key === activeTabKey) ?? TABS[0];
-  const filter: CatalogListFilter = {
-    kind: tab.kind,
-    search,
-    includeArchived: tab.archived,
-    locationId: locationId === ALL_LOCATIONS ? undefined : locationId,
-  };
-
-  const {
-    products,
-    locations,
-    loading,
-    error,
-    create,
-    update,
-    archive,
-    hardDelete,
-    unarchive,
-  } = useCatalog(filter);
-  const { toast } = useToast();
-
-  const [drawerOpen, setDrawerOpen] = React.useState(false);
-  const [selected, setSelected] = React.useState<ProductWithLocations | null>(null);
-  const [deleteTarget, setDeleteTarget] = React.useState<ProductWithLocations | null>(null);
-
-  function openCreate() {
-    setSelected(null);
-    setDrawerOpen(true);
-  }
-  function openEdit(product: ProductWithLocations) {
-    setSelected(product);
-    setDrawerOpen(true);
-  }
-
-  async function handleUnarchive(product: ProductWithLocations) {
-    try {
-      await unarchive(product.id);
-      toast("Product restored", { tone: "success" });
-    } catch (e) {
-      toast(
-        e instanceof Error ? e.message : "Could not restore the product.",
-        { tone: "danger" },
-      );
-    }
-  }
-
-  // `includeArchived=true` returns active + archived rows; on the Archived
-  // tab show only the archived ones (ADR-47 §1 — the tab is archived-only,
-  // and an unarchived row must leave it).
-  const visibleProducts = tab.archived
-    ? products.filter((p) => p.deletedAt != null)
-    : products;
-
-  const count = tab.archived
-    ? `${visibleProducts.length} archived`
-    : `${visibleProducts.length} product${visibleProducts.length === 1 ? "" : "s"}`;
-  const filtered = search.trim() !== "" || locationId !== ALL_LOCATIONS;
-
-  function clearFilters() {
-    setSearch("");
-    setLocationId(ALL_LOCATIONS);
-  }
-
-  const columns: SimpleTableColumn<ProductWithLocations>[] = [
-    {
-      key: "name",
-      header: "Name",
-      width: "grow min-w-[180px]",
-      cell: "strong",
-      render: (r) => (
-        <span className="flex items-center gap-(--sp-4)">
-          {r.name}
-          {r.deletedAt && <StatusChip variant="neutral">Archived</StatusChip>}
-        </span>
-      ),
-    },
-    {
-      key: "category",
-      header: "Category",
-      width: "w-[100px]",
-      render: (r) => (
-        <span className={`font-ui font-(--weight-medium) ${CATEGORY_TONE[r.kind]}`}>
-          {CATEGORY_LABEL[r.kind]}
-        </span>
-      ),
-    },
-    {
-      key: "locations",
-      header: "Locations",
-      width: "w-[220px]",
-      render: (r) => <LocationChips product={r} />,
-    },
-    { key: "unit", header: "Unit", width: "w-[70px]", cell: "mono", render: (r) => r.unitLabel },
-    {
-      key: "buying",
-      header: "Buying Price",
-      width: "w-[120px]",
-      align: "right",
-      cell: "mono",
-      render: (r) => <Money value={fmt(r.buyingPrice)} />,
-    },
-    {
-      key: "restaurant",
-      header: "Restaurant",
-      width: "w-[110px]",
-      align: "right",
-      cell: "mono",
-      render: (r) => <Money value={priceAt(r, "restaurant")} />,
-    },
-    {
-      key: "canteen",
-      header: "Canteen",
-      width: "w-[110px]",
-      align: "right",
-      cell: "mono",
-      render: (r) => <Money value={priceAt(r, "canteen")} />,
-    },
-    {
-      key: "store",
-      header: "Store",
-      width: "w-[110px]",
-      align: "right",
-      cell: "mono",
-      render: (r) => <Money value={priceAt(r, "store")} />,
-    },
-    {
-      key: "edit",
-      header: tab.archived ? "Action" : "Edit",
-      width: "w-[110px]",
-      render: (r) =>
-        tab.archived ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void handleUnarchive(r);
-            }}
-            className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
-          >
-            Unarchive
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEdit(r);
-            }}
-            className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
-          >
-            Edit
-          </button>
-        ),
-    },
-  ];
+  const active = tab === "products" ? productsState : locationsState;
+  const countLabel = active?.countLabel ?? "";
 
   return (
     <PageShell>
@@ -263,193 +72,57 @@ export function CatalogClient() {
         title={
           <div className="flex items-center gap-(--sp-4)">
             <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
-              Product Catalog
+              {TITLE[tab]}
             </div>
-            <div className="flex items-center h-[22px] px-(--sp-4) rounded-lg [background-color:var(--surface-hover)]">
-              <div className="font-ui font-(--weight-medium) [color:var(--text-secondary)] text-caption/micro">
-                {count}
+            {countLabel && (
+              <div className="flex items-center h-[22px] px-(--sp-4) rounded-lg [background-color:var(--surface-hover)]">
+                <div className="font-ui font-(--weight-medium) [color:var(--text-secondary)] text-caption/micro">
+                  {countLabel}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         }
         actions={
-          <Button variant="primary" onClick={openCreate}>
-            Add Product
+          <Button
+            variant="primary"
+            onClick={() => active?.openCreate()}
+            disabled={!active}
+          >
+            {ADD_LABEL[tab]}
           </Button>
         }
       />
+
       <div className="flex flex-col grow gap-(--sp-8)">
-        {/* Tabs + filters */}
-        <div className="flex items-center justify-between gap-(--sp-4) flex-wrap">
-          <Tabs
-            tabs={TABS.map((t) => ({ key: t.key, label: t.label }))}
-            activeKey={activeTabKey}
-            onChange={setActiveTabKey}
-          />
-          <div className="flex items-center gap-(--sp-4)">
-            <Select
-              aria-label="Filter by location"
-              options={[
-                { value: ALL_LOCATIONS, label: "All locations" },
-                ...locations.map((l) => ({ value: l.id, label: l.name })),
-              ]}
-              value={locationId}
-              onChange={setLocationId}
-            />
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Search products…"
-              aria-label="Search products"
-            />
-          </div>
+        <Tabs
+          tabs={TABS.map((t) => ({ key: t.key, label: t.label }))}
+          activeKey={tab}
+          onChange={changeTab}
+          idBase="catalog-tabs"
+        />
+
+        {/* Both tabs stay mounted so their data / drawer state survives a
+            tab switch; only the active one is shown. */}
+        <div
+          id="catalog-panel-products"
+          role="tabpanel"
+          aria-labelledby="catalog-tabs-tab-products"
+          hidden={tab !== "products"}
+          className="flex flex-col grow min-h-0"
+        >
+          <ProductsTab onState={setProductsState} />
         </div>
-
-        {error && (
-          <div role="alert" className="font-ui text-danger text-sm/sm">
-            {error}
-          </div>
-        )}
-
-        {/* Desktop table */}
-        <div className="hidden md:block">
-          <SimpleTable
-            columns={columns}
-            rows={visibleProducts}
-            rowKey={(r) => r.id}
-            loading={loading && visibleProducts.length === 0}
-            emptyState={{
-              variant: filtered ? "filtered" : "default",
-              title: filtered ? "No products match these filters" : "No products yet",
-              description: filtered
-                ? "Try a different search term or location, or clear the filters."
-                : "Add your first product to start building the catalog.",
-              actionLabel: filtered ? "Clear filters" : "Add Product",
-              onAction: filtered ? clearFilters : openCreate,
-            }}
-          />
-        </div>
-
-        {/* Mobile card list */}
-        <div className="flex md:hidden flex-col [width:100%]">
-          {loading && visibleProducts.length === 0 ? (
-            <div className="font-ui [color:var(--text-tertiary)] text-body/sm py-(--sp-4)">
-              Loading…
-            </div>
-          ) : visibleProducts.length === 0 ? (
-            <div className="font-ui [color:var(--text-tertiary)] text-body/sm py-(--sp-4)">
-              {filtered
-                ? "No products match these filters."
-                : "No products yet."}
-            </div>
-          ) : (
-            products.map((card) => {
-              const prices: { label: string; value: string }[] = [
-                { label: "Buying", value: fmt(card.buyingPrice) },
-                { label: "Restaurant", value: priceAt(card, "restaurant") },
-                { label: "Canteen", value: priceAt(card, "canteen") },
-                { label: "Store", value: priceAt(card, "store") },
-              ];
-              return (
-                <div
-                  key={card.id}
-                  className="flex flex-col [width:100%] py-(--sp-4) gap-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
-                >
-                  <div className="flex items-start justify-between [width:100%]">
-                    <div className="flex flex-col gap-[2px]">
-                      <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h2/h2">
-                        {card.name}
-                      </div>
-                      <div className="flex items-center gap-[4px]">
-                        <div className={`font-ui text-sm/micro ${CATEGORY_TONE[card.kind]}`}>
-                          {CATEGORY_LABEL[card.kind]}
-                        </div>
-                        <div className="font-ui [color:var(--text-secondary)] text-sm/micro">
-                          · per {card.unitLabel}
-                        </div>
-                        {card.deletedAt && (
-                          <StatusChip variant="neutral">Archived</StatusChip>
-                        )}
-                      </div>
-                      <div className="mt-[4px]">
-                        <LocationChips product={card} />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-(--sp-3)">
-                      {tab.archived ? (
-                        <button
-                          type="button"
-                          onClick={() => void handleUnarchive(card)}
-                          className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
-                        >
-                          Unarchive
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => openEdit(card)}
-                          className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
-                        >
-                          Edit
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center [width:100%] rounded-sm [background-color:var(--surface-subtle)]">
-                    {prices.map((price, i) => (
-                      <React.Fragment key={price.label}>
-                        {i > 0 && (
-                          <div className="w-px self-stretch shrink-0 [background-color:var(--border-subtle)]" />
-                        )}
-                        <div className="flex flex-col grow p-(--sp-4) gap-[2px]">
-                          <div className="font-ui text-micro uppercase leading-[14px] [color:var(--text-tertiary)]">
-                            {price.label}
-                          </div>
-                          <div
-                            className={`font-mono font-(--weight-medium) w-max text-sm/micro ${
-                              price.value === "—"
-                                ? "[color:var(--text-tertiary)]"
-                                : "[color:var(--text-primary)]"
-                            }`}
-                          >
-                            {price.value}
-                          </div>
-                        </div>
-                      </React.Fragment>
-                    ))}
-                  </div>
-                </div>
-              );
-            })
-          )}
+        <div
+          id="catalog-panel-locations"
+          role="tabpanel"
+          aria-labelledby="catalog-tabs-tab-locations"
+          hidden={tab !== "locations"}
+          className="flex flex-col grow min-h-0"
+        >
+          <LocationsTab onState={setLocationsState} />
         </div>
       </div>
-
-      {/* Overlays — the kit components own their own scrim / portal / focus-trap. */}
-      <ProductDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        locations={locations}
-        product={selected}
-        onCreate={create}
-        onUpdate={update}
-        onRequestDelete={
-          selected ? () => setDeleteTarget(selected) : undefined
-        }
-      />
-      <ProductDeleteDialog
-        open={deleteTarget !== null}
-        product={deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onHardDelete={async (id, confirmName) => {
-          await hardDelete(id, confirmName);
-          setDrawerOpen(false); // the product is gone — close the Edit drawer too
-        }}
-        onArchive={async (id) => {
-          await archive(id);
-          setDrawerOpen(false);
-        }}
-      />
     </PageShell>
   );
 }

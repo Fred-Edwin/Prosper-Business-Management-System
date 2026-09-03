@@ -33,7 +33,10 @@ export function toAssetView(row: AssetRow): AssetView {
     locationType: row.location.type,
     purchaseDate: isoDate(row.purchaseDate),
     purchaseCost: money(row.purchaseCost),
-    condition: row.conditionStatus as AssetCondition,
+    // `Asset.conditionStatus` is a free-text `String` column, so the DB will
+    // accept anything. Validate at this boundary rather than blind-casting —
+    // an unrecognised value must never reach the UI (it crashed ConditionChip).
+    condition: assertCondition(row.conditionStatus),
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

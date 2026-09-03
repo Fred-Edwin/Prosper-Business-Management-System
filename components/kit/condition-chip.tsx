@@ -26,8 +26,17 @@ const STYLES: Record<AssetCondition, { dot: string; label: string }> = {
   Decommissioned: { dot: "bg-danger", label: "text-danger" },
 };
 
+// Neutral styling, matching status-chip's `neutral` variant — used only as a
+// defensive fallback when `condition` is not one of the three fixed values.
+const FALLBACK_STYLE = {
+  dot: "[background-color:var(--text-tertiary)]",
+  label: "[color:var(--text-secondary)]",
+};
+
 export function ConditionChip({ condition, className }: ConditionChipProps) {
-  const s = STYLES[condition];
+  // Defensive: `condition` should always be one of the three fixed values,
+  // but if bad data slips through it must not crash the whole screen.
+  const s = STYLES[condition] ?? FALLBACK_STYLE;
   return (
     <div
       className={cn(

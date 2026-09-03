@@ -15,6 +15,100 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 4 Session 9C — Locations tab, the assets crash, a real test DB (Developer — 2026-09-03) — DONE
+
+Four contained items. Mostly frontend + infrastructure. `pnpm test`
+815 → **819** (4 new: the Locations-tab screen spec). typecheck + build
+green. Full suite run **twice** after the DB change — both **819/819**
+(deterministic).
+
+**TASK 1 — Locations tab on `/admin/catalog`.** M1 shipped product CRUD
+but left locations read-only; the CRUD backend landed in S8A. Closed the
+UI gap.
+
+- `catalog-client.tsx` slimmed to the shared `<AdminPageHeader>` (title +
+  count badge + "Add …" button) + a `<Tabs>` row (Products · Locations),
+  following `app/admin/financials/financials-client.tsx`. **Both tabs stay
+  mounted** (hidden), so drawer/data state survives a switch; each tab
+  publishes `{ countLabel, openCreate }` up so the header renders the
+  right badge and wires the right button (financials/staff pattern).
+- Tab bodies split into their own files: **`products-tab.tsx`** (the old
+  single-file body, VERBATIM — kind sub-tabs, search, drawer, delete
+  dialog) and **`locations-tab.tsx`** (new).
+- `locations-tab.tsx` — `<SimpleTable>` / mobile cards (name · type ·
+  status), row actions Edit / Deactivate (active) or Reactivate
+  (inactive). **`location-drawer.tsx`** for add/edit (`<Drawer>` +
+  `<FormField>` + `<SegmentedControl>` for type). Deactivation goes
+  through a confirm `<Drawer>`; when the domain's referential guard 409s,
+  its **specific** message (active staff / stock on hand / pending
+  transfer) is shown verbatim in a `bg-danger-bg` panel and the dialog
+  stays open — never collapsed to a generic string.
+- `use-locations.ts` — sibling of `use-catalog`, same request/error shape
+  (reuses `CatalogRequestError`). Lists **all** locations via a new
+  `GET /api/locations?includeInactive=1` (admin-only widening; other read
+  roles still get active-only). Route test extended (2 cases).
+- Screen spec `tests/screens/catalog-locations.screen.test.tsx` —
+  interactive bits only (list + status, add through the drawer,
+  deactivate-after-confirm, the 409 guard message surfaces verbatim).
+  Read-only display not specced.
+
+**TASK 2 — `/admin/assets` crash fixed, all three layers.**
+
+- **Seed** (`prisma/seed.ts`): `"Fair"` → **`"Needs Repair"`** (a
+  700-day-old chest fridge reads as needing attention, and it keeps two
+  distinct conditions in the seed); `"Needs repair"` → `"Needs Repair"`
+  (capitalisation).
+- **Domain** (`lib/domain/assets/internal.ts`): `toAssetView` now calls
+  the existing `assertCondition` helper instead of a blind
+  `as AssetCondition` cast — an unrecognised `conditionStatus` (the column
+  is free-text `String`) raises `VALIDATION_ERROR` at the boundary and
+  never reaches the UI.
+- **Kit** (`components/kit/condition-chip.tsx`): `STYLES[condition] ??
+  FALLBACK_STYLE` (neutral, matching `status-chip`'s `neutral` variant).
+  Minimal defensive fallback only — API, styling, variants unchanged.
+- **Real data check:** the dev DB's 4 asset rows are all `seed-asset-*`;
+  no admin-created rows carry an invalid value, so re-seeding fixes it
+  and no separate data migration is needed. (A production DB with real
+  rows would need a one-off `UPDATE` — none exist here.)
+
+**TASK 3 — the test suite gets its own database (ADR-61).** Was running
+against the **dev** DB; concurrent writes / stale rows / cross-cutting
+summary sums cost real tests across the last five sessions.
+
+- `.env.test` (committed — local connection string only) → dedicated DB
+  `prosper_hotel_tests`. `vitest.shared.ts` loads it with
+  `dotenv` `override: true`.
+- `scripts/setup-test-db.mjs` — idempotent: `CREATE DATABASE` if absent →
+  `prisma migrate deploy` (**real `_prisma_migrations` history**, not
+  `db push`) → seed. Wired as `pretest` / `pretest:db` / `pretest:e2e`,
+  so `pnpm test` needs no manual steps and a fresh clone needs only a
+  running Postgres.
+- Documented in **`docs/TESTING.md`** (incl. from-scratch + reset steps).
+- **No test weakened or deleted.** First run on the new DB: 815/815 — no
+  test turned out to depend on dev-DB-specific data. The `m1-flows`
+  suites rely on **seed** users/locations by stable name, which is why
+  the test DB is seeded (noted in TESTING.md + ADR-61 as a test-breaking
+  surface).
+
+**TASK 4 — API.md.** `GET /api/pay/shortfalls?month=` was **already**
+documented in the "Staff & Pay" section (commit 795b774, line ~1062) — no
+action needed. The 9B PROGRESS entry's "flagged for the next doc pass"
+note is now stale.
+
+**Files touched:** `app/admin/catalog/{catalog-client,products-tab,
+locations-tab,location-drawer,use-locations}.tsx/.ts`,
+`app/api/locations/route.ts` (+ `route.test.ts`),
+`lib/domain/assets/internal.ts`, `components/kit/condition-chip.tsx`,
+`prisma/seed.ts`, `vitest.shared.ts`, `package.json`, `.env.test` (new),
+`scripts/setup-test-db.mjs` (new), `tests/screens/catalog.screen.test.tsx`
+(+ `catalog-locations.screen.test.tsx` new), `docs/TESTING.md` (new),
+`docs/DECISIONS.md` (ADR-61), `docs/PROGRESS.md`.
+
+**Not done / deferred:** nothing from the four tasks. No `TODO(mock)` in
+any touched file.
+
+---
+
 ## Milestone 4 Session 8A — Locations CRUD + Staff CRUD + attendance + pay (Developer — 2026-09-03) — DONE (backend only)
 
 **Backend only. No schema change** — every table used
