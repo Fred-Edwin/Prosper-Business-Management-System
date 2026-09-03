@@ -107,7 +107,7 @@ export const tokens = {
   // --- Typography: weights ---------------------------------------------
   "--weight-regular": "400",
   "--weight-medium": "500",
-  "--weight-semibold": "600",
+  "--weight-semibold": "550",
 
   // --- Typography: tracking -------------------------------------------
   "--tracking-tight": "-0.01em",

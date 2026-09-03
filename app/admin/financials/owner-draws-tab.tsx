@@ -123,7 +123,7 @@ export function OwnerDrawsView({
       : `${fmtDate(`${from}T12:00:00Z`)} – ${fmtDate(`${to}T12:00:00Z`)}`;
 
   return (
-    <div className="flex flex-col grow gap-(--sp-5) pt-(--sp-6)">
+    <div className="flex flex-col grow gap-(--sp-5) pt-(--sp-6) pb-(--sp-12)">
       {/* Running owed-to-business figure. */}
       <div className="flex items-center justify-between gap-(--sp-4) p-(--sp-5) mx-(--sp-6) md:mx-0 rounded-sm border border-solid [border-color:var(--border-subtle)] [background-color:var(--surface-subtle)]">
         <div className="flex flex-col gap-(--sp-1)">

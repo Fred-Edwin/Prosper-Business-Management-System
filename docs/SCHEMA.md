@@ -529,32 +529,74 @@ Revenue = value of all `sale`-type StockMovement rows in the period
 
 ### Cost of Goods Sold (COGS)
 
-**Goods** — COGS uses the real per-unit buying price:
+> **SUPERSEDED by ADR-55 (Milestone 3 Session 4).** The
+> ingredients-only / per-kind split described below was never the
+> client's actual method. COGS is now **one all-stock valuation sweep**
+> over every product at every location, with dishes valued at zero.
+> The formula below is kept only as the historical record of what these
+> docs said before; `getFinancialSummary` implements ADR-55, and the M5
+> Audit Trail / day-detail screens read against ADR-55, not this. Fixed
+> in M5 Session 11 — this was the last unreconciled doc.
+
+**The live formula (ADR-55).**
+
+Every product has one **cost value**: `buying_price` for `ingredient`
+and `goods`, and **0** for `dish` (double-counting is prevented by
+dishes valuing at zero, not by excluding them — the ingredients that
+became a dish were already counted as ingredients).
+
 ```
-Goods COGS = Σ (quantity sold × Product.buying_price) over `sale` movements in the period
+COGS (period) = opening stock value + purchases value − closing stock value
+```
+summed as `Σ quantity × costValue(product)` over **every**
+`StockMovement` for that product/location:
+
+- **Opening value** — movements with `occurred_at <` period start.
+- **Closing value** — movements with `occurred_at <` period end.
+- **Purchases value** — `purchase_receipt` movements **only**, in the
+  period. NOT production, NOT transfers, NOT opening adjustments.
+- **Transfers between the business's own locations net to zero** by
+  construction (not in the purchases term; the two signed legs cancel
+  across the opening/closing deltas).
+
+Per-location COGS is the same sweep restricted to one location. Revenue
+and COGS (hence gross profit) are location-attributable; `Expense` rows
+carry no location, so total expenses / net profit / debts are
+consolidated only.
+
+**Non-sale consumption** (`staff_meal` / `complimentary` / `spoiled` /
+`damaged` / `other`) is a **separate report**, a view *into* COGS — it is
+NOT added on top and does NOT reduce gross/net profit. The wasted stock
+already left the ledger and is already inside the sweep. Dish waste is
+valued at `dishWasteCostPercent × selling_price` (a configurable proxy,
+`DISH_WASTE_COST_PERCENT`, default 0.60); ingredient/goods waste at
+`buying_price`.
+
+~~**Goods** — COGS uses the real per-unit buying price:~~
+```
+Goods COGS = Σ (quantity sold × Product.buying_price) over `sale` movements in the period   [SUPERSEDED]
 ```
 
-**Dishes** — COGS is *not* per-dish. It's the blended cost of all
+~~**Dishes** — COGS is *not* per-dish. It's the blended cost of all
 ingredients actually consumed across the whole business in the period,
 regardless of which dish they went into (ADR-33). This is why `Dish.
 buying_price` is always `0` — counting a per-dish cost on top of this
-would double-count:
+would double-count:~~
 ```
 Dish COGS (period) = opening Ingredient stock (period start)
                     + Ingredient purchase receipts (period)
-                    − closing Ingredient stock (period end)
+                    − closing Ingredient stock (period end)                                 [SUPERSEDED]
 ```
-This is computed once across all locations/ingredients combined, not
-per-location and not per-dish. (Recipes, §2a, give an informational
-per-dish estimate for the Admin's own reference — never used in this
-calculation.)
 
-**Ingredients** — never sold directly, no COGS entry of their own; their
-cost is captured via the Dish COGS formula above.
+~~**Ingredients** — never sold directly, no COGS entry of their own; their
+cost is captured via the Dish COGS formula above.~~
 
 ```
-Total COGS = Goods COGS + Dish COGS
+Total COGS = Goods COGS + Dish COGS                                                         [SUPERSEDED — see ADR-55]
 ```
+
+(Recipes, §2a, still give an informational per-dish estimate for the
+Admin's own reference — never used in any COGS calculation, old or new.)
 
 ### Gross Profit
 ```

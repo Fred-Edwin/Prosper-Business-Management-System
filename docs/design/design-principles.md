@@ -296,7 +296,12 @@ identical (`contentHash 710ac1c5`). Colors are OKLCH (see §7's kit facts)
   --text-h2: 16px;      --leading-h2: 24px;
   --text-h1: 20px;      --leading-h1: 28px;
   --text-display: 24px; --leading-display: 32px;
-  --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600;
+  --weight-regular: 400; --weight-medium: 500; --weight-semibold: 550;
+  /* semibold softened 600 → 550 app-wide (ADR-63) — Inter is variable, so
+   * 550 is a true intermediate weight. Foundation type rendering lives on
+   * `body` in app/globals.css: antialiased + font-synthesis:none +
+   * font-optical-sizing:none (matches the Paper mockups). Don't re-declare
+   * per component; don't restore 600. */
 
   --sp-1: 2px;   --sp-2: 4px;   --sp-3: 6px;   --sp-4: 8px;
   --sp-5: 12px;  --sp-6: 16px;  --sp-7: 20px;  --sp-8: 24px;

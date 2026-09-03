@@ -343,7 +343,7 @@ export function TransactionsTab({
   return (
     <>
       {/* ───────── Desktop ───────── */}
-      <div className="hidden md:flex flex-col grow gap-(--sp-6) pt-(--sp-6)">
+      <div className="hidden md:flex flex-col grow gap-(--sp-6) pt-(--sp-6) pb-(--sp-12)">
         {error && (
           <div role="alert" className="font-ui text-danger text-body/sm">
             {error}

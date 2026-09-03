@@ -14,3 +14,5 @@ export {
 } from "./day-close-guard";
 export { closeDay, reopenDay } from "./close-day";
 export { listDayCloses, getDayStatus } from "./list-day-closes";
+export { listAuditLog } from "./list-audit-log";
+export { getDayDetail } from "./get-day-detail";

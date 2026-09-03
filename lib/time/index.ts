@@ -69,7 +69,7 @@ export function nairobiToday(now: Date = new Date()): string {
 }
 
 /** Add `days` (may be negative) to a `YYYY-MM-DD` business date. */
-function addBusinessDays(businessDate: string, days: number): string {
+export function addBusinessDays(businessDate: string, days: number): string {
   const [y, m, d] = businessDate.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
   dt.setUTCDate(dt.getUTCDate() + days);
