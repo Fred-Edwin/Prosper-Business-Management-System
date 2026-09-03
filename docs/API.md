@@ -930,8 +930,9 @@ blocked state, not a toast. Clean ⇒ the row is deleted. Returns
 ## Staff & Pay
 
 > **Backend implemented Milestone 4 Session 8A (2026-09-03); payout
-> added Session 9A (2026-09-03).** Screens (`/admin/staff`) land in a
-> later session. Every endpoint is **Admin only**. Field names are
+> added Session 9A; `GET /api/pay/shortfalls` added Session 9B alongside
+> the `/admin/staff` screens (2026-09-03).** Every endpoint is **Admin
+> only**. Field names are
 > `camelCase`. `dailyRate`, adjustment `amount`, and all payout money
 > figures are decimal strings. **A PIN is never returned or logged in
 > any read** (ADR-59 context — a `StaffView` carries no PIN/hash field).
@@ -1057,6 +1058,24 @@ reason }] } }`. Skips (does not fail the batch) anyone already paid
 (`reason` mentions "already paid") or whose net is ≤ 0 (`reason` mentions
 "zero or less"). A future month → `400 VALIDATION_ERROR` (`field:
 "month"`), nothing done.
+
+### `GET /api/pay/shortfalls?month=YYYY-MM`  — handover shortfalls for a month
+**Admin only. READ-ONLY.** Added M4 S9B for the Pay & advances screen's
+standing "settle these separately" card. **Completely separate from pay
+arithmetic** — a handover shortfall is never netted off pay (PRD §4.8,
+ADR-58 context); this endpoint does not touch, and is not touched by, the
+`getStaffPay` / payout paths.
+
+`{ data: { month, entries: [{ id, staffId, staffName, date, amount,
+note }], total, count } }`:
+- `entries` — one per `HandoverShortfall` whose raising `ReceiptOfHandover`
+  was recorded in the month, oldest first. `date` is that receipt's
+  business date (`YYYY-MM-DD`); `note` is the shortfall's required note.
+- `amount` — a **derived** positive decimal string: the sum of the
+  negative parts of the receipt's stored `cashVariance` / `mpesaVariance`
+  (no schema change — the figure already lives on the receipt).
+- `total` — Σ of every entry's `amount`. `count` — `entries.length`.
+- Malformed `month` → `400 VALIDATION_ERROR` (`field: "month"`).
 
 ---
 

@@ -96,6 +96,19 @@ export async function cleanupStaffTestData(scope: string): Promise<void> {
   const staffIds = staff.map((s) => s.id);
 
   if (staffIds.length > 0) {
+    // Handover shortfalls raised against this suite's staff (S9B read tests).
+    const receipts = await prisma.receiptOfHandover.findMany({
+      where: { shortfalls: { some: { staffId: { in: staffIds } } } },
+      select: { id: true },
+    });
+    await prisma.handoverShortfall.deleteMany({
+      where: { staffId: { in: staffIds } },
+    });
+    if (receipts.length > 0) {
+      await prisma.receiptOfHandover.deleteMany({
+        where: { id: { in: receipts.map((r) => r.id) } },
+      });
+    }
     await prisma.attendance.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.staffPayAdjustment.deleteMany({
       where: { staffId: { in: staffIds } },

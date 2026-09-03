@@ -226,6 +226,153 @@ unchanged (9B's remit).
 
 ---
 
+## Milestone 4 Session 9B — `/admin/staff` screen: Roster / Attendance / Pay & advances (Frontend — 2026-09-03) — DONE
+
+**Frontend session.** Built `/admin/staff` to the approved design (Paper
+"Prosper Hotel" · page "M4 S8 — Staff & Pay"; `docs/design/flows/staff-screen.md`)
+against the S8A/S9A API. One small **read-only** backend addition (owner-approved
+mid-session) — see below.
+
+**Shipped — the screen.** New route `app/admin/staff/` composed entirely
+from the frozen kit, following `app/admin/financials/` as the sibling.
+Tab bodies split into their own files from the start (financials' 1,034-line
+lesson).
+
+- `page.tsx` (`?tab=` deep-link → roster | attendance | pay) + `staff-client.tsx`
+  (ADR-56 single header via `<AdminPageHeader>`; desktop underline `<Tabs>`,
+  mobile pill strip + sticky bottom action bar; header buttons reach the
+  active tab through a registered callback, same pattern as financials'
+  `registerRecordPayment`).
+- `roster-tab.tsx` + `staff-drawer.tsx` — count line + Location `<PillFilter>`,
+  `<SimpleTable>` / mobile cards, whole row opens the add/edit `<Drawer>`.
+  Status is plain colored text, no chip (design-principles §4.4). Drawer:
+  name / role / location / daily rate (KES adornment) / 4-digit PIN
+  (`inputmode=numeric`, digit-only, capped 4, wide tracking) / Active
+  `<ToggleSwitch>`. PIN optional on edit (blank = unchanged). Active→off
+  in the edit drawer calls `PATCH ?mode=deactivate`.
+- `attendance-tab.tsx` — DEFAULT PRESENT, one `<SegmentedControl>`
+  (Present/Absent) per staff, no per-row save; a single "Save attendance"
+  does one `?mode=bulk` write. Header `<DatePicker>` (backdatable, capped
+  today via `maxDate`). "Mark all present" is a working-set reset.
+- `pay-tab.tsx` + `month-picker.tsx` + `payout-drawer.tsx` +
+  `advance-drawer.tsx` + `shortfalls-card.tsx` — per-staff month table
+  (role·location caption joined from the roster — `StaffPay` carries
+  neither), Advances/Deductions as `− x / —`, **Net pay not floored**
+  (negative → red `− x`, and the row's "Pay out" button is disabled).
+  Dark totals footer mirrors the `<SimpleTable>` row geometry exactly
+  (`px-(--sp-6)` + `gap-(--sp-6)`). Payout drawer shows the full
+  reconciliation (Gross → − Advances → − Deductions → Net to pay now) and
+  surfaces server error **fields** inline — `month` (already paid),
+  `net` (≤ 0), `FORBIDDEN` (closed day). "Pay out all unpaid" → `?mode=all`.
+- **Month picker** — kit has none; composed from `<Select>` with a
+  generated month list (newest first), the workaround the flow doc names.
+  No new kit component.
+- **Handover shortfalls** — a SEPARATED warning-framed card below the
+  totals footer (NOT a pay column), mandated caption verbatim, a
+  different row shape (name + "date · note" + one `--color-warning`
+  amount), foot line "N open shortfalls · tracked outside payroll" +
+  total. Built from a plain frame + `--color-warning*` tokens + a
+  triangle icon (not `<Banner>` / not `<CalculatedImpactBanner>`), per
+  the flow doc.
+
+**Shipped — one read-only backend add (owner-approved mid-session).**
+The Pay tab's shortfalls card needs a **per-row KES amount + a month
+total**; S8A shipped neither (`HandoverShortfall` has no amount column,
+no by-month/by-staff read). Rather than a schema migration, the amount is
+**derived** from the receipt's already-stored negative variances:
+
+- `lib/domain/staff/shortfalls.ts` — `getMonthlyShortfalls(month)` reads
+  `HandoverShortfall` rows whose `ReceiptOfHandover.occurredAt` falls in
+  the month (business-date window, `lib/time`), amount = `|min(cashVariance,0)|
+  + |min(mpesaVariance,0)|` on the linked receipt, grouped by staff,
+  with a total + count. **Zero schema change.** Read-only. Never touches
+  pay (`getStaffPay` / `getPayrollSummary` unchanged).
+- `GET /api/pay/shortfalls?month=YYYY-MM` — admin-only, thin handler,
+  inline Zod. Documented shape: `{ month, entries: [{ id, staffId,
+  staffName, date, amount, note }], total, count }`.
+- `lib/domain/staff/index.ts` exports it; `test-helpers.ts` cleanup
+  extended for `handoverShortfall` + linked receipts.
+
+**API.md** — needs a `GET /api/pay/shortfalls` entry added (the existing
+"Staff & Pay" section still lists only the S8A/S9A endpoints). Flagged for
+the next doc pass; the shape is in this entry and the route file.
+
+**What did NOT survive contact with the frozen kit / the S8A contract:**
+
+1. **Roles.** The Paper Roster/Attendance artboards show "Cook", "Waiter",
+   "Cleaner" alongside the three real roles. `POST /api/staff` only
+   accepts `store_manager | cashier | canteen_attendant` (it creates the
+   login `User`; those are the only non-admin roles). The Role dropdown
+   offers **only the three real roles**; existing rows render whatever
+   string comes back. If the owner wants job *titles* distinct from
+   *system roles*, that is a schema field + a backend session — NOT
+   substituted here.
+2. **No reactivate path.** S8A gives `PATCH ?mode=deactivate` but no
+   reactivate. The edit drawer's Active toggle can be switched **off**
+   only; once inactive it is disabled with an explanatory caption. A
+   "reactivate staff" endpoint + UI is a later add.
+3. **`StaffPay` has no role/location** for the Pay table's "Role ·
+   Location" caption — joined client-side from `useRoster`. Works, but a
+   second fetch; a future `getPayrollSummary` could include them.
+
+**Owner walkthrough feedback applied.** After a first look at the Pay
+tab: the dark totals footer was cramped and over-bold. Fixed — footer
+geometry now matches the table row (`px-(--sp-6)`/`gap-(--sp-6)`),
+weights dropped semibold → medium, the "N of N paid / X to pay" block
+vertically centered instead of squeezed. Table **Net pay** column also
+softened semibold → medium at the owner's request (flow doc had it
+semibold).
+
+**Verification (driven on `pnpm dev` as Admin, real DB).**
+
+- Created a staff member via the screen's API path; **logged in AS that
+  staff member with the Admin-set PIN — succeeded.**
+- Backdated bulk attendance (absent on a past date) — written.
+- Recorded an advance; on the current (partial) month the advance
+  exceeded the 3-day gross → **net −300, rendered red, payout button
+  disabled**; `POST /api/pay/payout` → `400 field "net"`.
+- Paid a past month (net 27,900) from Cash: **Cash 1,540.00 →
+  −26,360.00, i.e. −27,900.00 exactly** (`/api/financials/summary`).
+- Paid the same staff-month again → **`409 CONFLICT field "month"`**.
+
+**Tests.** +13 (`pnpm test` 802 → **815**, all green; typecheck + build
+clean).
+
+- `lib/domain/staff/shortfalls.test.ts` (3) — month-scoped, amount =
+  summed negative variances, month total + count, malformed month
+  rejected.
+- `tests/screens/admin-staff.screen.test.tsx` (10) — interactive bits
+  only (per brief): add-staff drawer incl. PIN entry (digit-only, capped
+  4, disabled until valid), attendance flag-absence + bulk save, "Mark
+  all present", payout drawer submit (**no client `amount` in the
+  body**), already-paid `CONFLICT` surfaced inline, net ≤ 0 disables the
+  row button + the `net`-field server error surfaced inline, advance
+  drawer records.
+
+**Nav.** The **Staff** item already existed in `admin-shell.tsx` +
+`mobile-nav-drawer.tsx` (key `staff` → `/admin/staff`) — it was a dead
+link until this session. Now resolves; verified `GET /admin/staff` →
+200 for all three tabs.
+
+**Pre-existing bug found (NOT 9B, NOT fixed here — for 9C or a ticket).**
+`/admin/assets` throws `Cannot read properties of undefined (reading
+'dot')` in `components/kit/condition-chip.tsx`. Cause: `prisma/seed.ts`
+(line 539/541, introduced in `e13da9c`) seeds asset `conditionStatus`
+values `"Fair"` and `"Needs repair"` that are not valid `AssetCondition`
+(`"Good" | "Needs Repair" | "Decommissioned"`); `conditionStatus` is a
+free `String` in the schema so the write succeeds, but `ConditionChip`
+has no fallback and crashes. Reseeding does not fix it — the seed is the
+source. Two fixes needed (separate task): (a) `ConditionChip` fallback
+for an unknown condition, (b) correct the seed literals (and/or validate
+the asset PATCH path).
+
+**Not done / for a later session.** Locations tab on `/admin/catalog`
+(9C). Shared-dev-DB suite flakiness (9C). `API.md` `GET
+/api/pay/shortfalls` entry. Reactivate-staff endpoint + UI. Job-title
+field if the owner wants roles beyond the three system roles.
+
+---
+
 ## Milestone 3 Session 7 — Financials redesign + date-range filtering (Developer — 2026-09-03) — DONE
 
 **Mostly frontend. One focused backend addition (`asOf` on the balance

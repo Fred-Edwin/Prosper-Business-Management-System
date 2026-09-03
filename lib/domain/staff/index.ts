@@ -19,6 +19,12 @@ export {
 } from "./attendance";
 
 export {
+  getMonthlyShortfalls,
+  type MonthlyShortfallEntry,
+  type MonthlyShortfalls,
+} from "./shortfalls";
+
+export {
   recordPayAdjustment,
   getStaffPay,
   getPayrollSummary,
