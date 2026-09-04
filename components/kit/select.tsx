@@ -419,7 +419,10 @@ export function Select({
               role="listbox"
               aria-label={typeof label === "string" ? label : undefined}
               className={cn(
-                "absolute left-0 top-full [z-index:var(--z-dropdown)] mt-[4px] flex rounded-md flex-col w-full p-[4px] gap-[2px] [box-shadow:var(--shadow-md)] bg-(--surface-page) border border-solid [border-color:var(--border-strong)] list-none",
+                // The popover is at LEAST as wide as the trigger, then grows
+                // to fit the widest option (w-max) so long labels don't wrap,
+                // capped so it never runs off a narrow viewport.
+                "absolute left-0 top-full [z-index:var(--z-dropdown)] mt-[4px] flex rounded-md flex-col min-w-full w-max max-w-[min(90vw,26rem)] p-[4px] gap-[2px] [box-shadow:var(--shadow-md)] bg-(--surface-page) border border-solid [border-color:var(--border-strong)] list-none",
                 searchable
                   ? "max-h-[calc(var(--control-md)*8)] overflow-y-auto"
                   : "h-fit",
@@ -450,13 +453,13 @@ export function Select({
                         closeList();
                       }}
                       className={cn(
-                        "flex items-center justify-between h-(--control-sm) px-(--sp-5) rounded-sm shrink-0 kit-row cursor-pointer",
+                        "flex items-center justify-between min-h-(--control-sm) py-[6px] px-(--sp-5) rounded-sm shrink-0 kit-row cursor-pointer",
                         isActive && !isSelected && "bg-(--surface-hover)",
                       )}
                     >
                       <span
                         className={cn(
-                          "font-ui text-sm/sm",
+                          "font-ui text-sm/sm whitespace-nowrap",
                           isSelected
                             ? "font-(--weight-medium) text-accent"
                             : "[color:var(--text-primary)]",

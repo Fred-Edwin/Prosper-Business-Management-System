@@ -26,20 +26,22 @@
 //   - Fixed-width slots (flex-shrink:0) so the row does not reflow as values
 //     change (Paper guide: vertical-lane alignment).
 //
-// Mobile (< --bp-md, model IKW-0): the controls collapse to a
-// horizontally-scrollable row of 32px chips + a trailing "More" chip that
-// opens a BottomSheet of the overflow controls; the result count + Reset
-// move to their own row below. The layout split is driven by
-// `matchMedia("(max-width: <--bp-md - 1>)")`; a `layout` escape-hatch prop
-// forces one side deterministically (Storybook's viewport global does not
-// resize the test-runner page).
+// Mobile (< --bp-md): the controls become a single horizontally-scrollable
+// row of REAL controls (the same <Select> / <DatePicker> / toggle as
+// desktop) — every filter is always a visible chip, NO "More" overflow
+// sheet (ADR-66, owner decision M5 S15: for a small fixed filter set the
+// user must never hunt for a filter behind an overflow affordance). The
+// result count + Reset sit on their own row below. Off-default controls
+// sort to the front so an active filter is never scrolled out of view.
+// The layout split is driven by `matchMedia("(max-width: <--bp-md - 1>)")`;
+// a `layout` escape-hatch prop forces one side deterministically
+// (Storybook's viewport global does not resize the test-runner page).
 "use client";
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { tokens } from "@/app/design-system/tokens";
 import { Button } from "./button";
-import { BottomSheet, type BottomSheetState } from "./bottom-sheet";
 import { DatePicker } from "./date-picker";
 import { Select } from "./select";
 import { ToggleSwitch } from "./toggle-switch";
@@ -137,28 +139,6 @@ function triggerText(c: FilterControl): string {
   return c.label;
 }
 
-// --- the chevron / calendar glyphs (match IEA-0 / IKW-0 exactly) -------------
-
-function Chevron({ size = 14 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      aria-hidden
-      style={{ flexShrink: 0 }}
-    >
-      <polyline
-        points="6 9 12 15 18 9"
-        fill="none"
-        stroke="var(--text-tertiary)"
-        strokeWidth={size <= 12 ? 2 : 1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 // --- desktop control renderers ---------------------------------------------
 //
@@ -251,48 +231,6 @@ function DesktopControl({
   );
 }
 
-// --- mobile chip renderers -------------------------------------------------
-
-function MobileChip({
-  control,
-  onOpen,
-}: {
-  control: FilterControl;
-  onOpen: () => void;
-}) {
-  const atDefault = isDefault(control);
-  // Chip label: the VALUE when set (--text-primary / --weight-medium), the
-  // CONTROL NAME when at default (--text-secondary / --weight-regular).
-  const text =
-    control.kind === "toggle"
-      ? control.label
-      : atDefault
-        ? control.label
-        : control.kind === "select"
-          ? (control.options.find((o) => o.value === control.value)?.label ?? control.value)
-          : (control.value ?? control.label);
-  const tone =
-    atDefault && control.kind !== "date"
-      ? "[color:var(--text-secondary)] font-(--weight-regular)"
-      : "[color:var(--text-primary)] font-(--weight-medium)";
-
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={`${control.label}: ${triggerText(control)}`}
-      className={cn(
-        "flex items-center h-[32px] shrink-0 px-(--sp-4) rounded-sm gap-(--sp-2) whitespace-nowrap",
-        "bg-(--surface-page) border border-solid [border-color:var(--border-strong)]",
-        "kit-field kit-focus-ring",
-      )}
-    >
-      <span className={cn("font-ui text-sm/sm w-max shrink-0", tone)}>{text}</span>
-      {control.kind !== "toggle" && <Chevron size={12} />}
-    </button>
-  );
-}
-
 // --- the component -------------------------------------------------------------
 
 export function FilterToolbar({
@@ -324,20 +262,18 @@ export function FilterToolbar({
 
   const countText = `${resultCount} ${nounFor(resultNoun, resultCount)}`;
 
-  // ---- mobile ----------------------------------------------------------------
-  const [sheet, setSheet] = React.useState<BottomSheetState>("closed");
-
   if (mobile) {
-    // Which controls sit inline vs behind "More": inline = the first 3 that
-    // fit the chip row comfortably (IKW-0 shows 3 + More); the rest go in the
-    // sheet. Off-default controls are surfaced first so an active filter is
-    // never hidden behind More.
+    // Mobile (2026-09 rework, ADR-66): a horizontal-scroll row of REAL
+    // controls — every filter is always a visible chip, no "More" sheet.
+    // Best practice for a small, fixed filter set (owner decision M5 S15):
+    // the user should never have to discover a filter behind an overflow
+    // affordance. `DesktopControl` already renders a real <Select> /
+    // <DatePicker> / toggle; its popover is `absolute` + width-capped so
+    // it works inside the scroll container. Off-default controls sort
+    // first so an active filter is never scrolled out of the initial view.
     const ordered = [...controls].sort(
       (a, b) => Number(isDefault(a)) - Number(isDefault(b)),
     );
-    const INLINE = 3;
-    const inline = ordered.slice(0, INLINE);
-    const overflow = ordered.slice(INLINE);
 
     return (
       <section
@@ -353,23 +289,11 @@ export function FilterToolbar({
           )}
         >
           {search && <div className="shrink-0">{search}</div>}
-          {inline.map((c) => (
-            <MobileChip key={c.id} control={c} onOpen={() => setSheet("open")} />
+          {ordered.map((c) => (
+            <div key={c.id} className="shrink-0">
+              <DesktopControl control={c} onChange={(v) => onChange(c.id, v)} />
+            </div>
           ))}
-          {overflow.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setSheet("open")}
-              className={cn(
-                "flex items-center h-[32px] shrink-0 px-(--sp-4) rounded-sm whitespace-nowrap",
-                "bg-(--surface-page) border border-solid [border-color:var(--border-strong)]",
-                "font-ui text-sm/sm [color:var(--text-secondary)] font-(--weight-regular)",
-                "kit-field kit-focus-ring",
-              )}
-            >
-              More
-            </button>
-          )}
         </div>
 
         <div
@@ -391,30 +315,6 @@ export function FilterToolbar({
             </Button>
           )}
         </div>
-
-        {/* "More" reveals the overflow controls as full-width rows in a
-            BottomSheet — the staff-shell's standard overflow affordance
-            (IKW-0 does not draw the reveal; BottomSheet is the proven kit
-            primitive for it). All controls are offered here, not just the
-            overflow ones, so the sheet is a complete filter editor. */}
-        <BottomSheet
-          state={sheet}
-          onStateChange={setSheet}
-          title="Filters"
-        >
-          <div className="flex flex-col gap-(--sp-6) pb-(--sp-6)">
-            {controls.map((c) => (
-              <div key={c.id} className="flex flex-col gap-(--sp-3)">
-                <DesktopControl control={c} onChange={(v) => onChange(c.id, v)} />
-              </div>
-            ))}
-            {showReset && (
-              <Button variant="tertiary" size="sm" onClick={doReset} className="self-start">
-                Reset
-              </Button>
-            )}
-          </div>
-        </BottomSheet>
       </section>
     );
   }

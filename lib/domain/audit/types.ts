@@ -49,10 +49,61 @@ export type AuditLogEntryView = {
   recordedAt: string;
 };
 
+/**
+ * One item in a page of the audit trail (M5 S15). Either a `"single"` —
+ * one plain `AuditLogEntryView` — or a `"batch"` — several rows that
+ * were written in ONE transaction (they share a `correlationId` stamped
+ * inside their `newValue`, ADR-25) collapsed to one expandable summary
+ * (e.g. "6 items received · Store · 9:14am").
+ *
+ * The screen renders a `"single"` as a plain row and a `"batch"` as a
+ * summary row that expands to `entries`. Pagination pages by ITEM, never
+ * by raw row — a batch is never split across two pages (ADR-65).
+ */
+export type AuditLogItem =
+  | { kind: "single"; entry: AuditLogEntryView }
+  | {
+      kind: "batch";
+      /** `batch_<uuid>` — the shared correlation id from `newValue`. */
+      correlationId: string;
+      /** The `AuditAction` every row in the batch shares (always `create` today). */
+      action: AuditAction;
+      /** Actor of the batch (uniform — one transaction, one actor). */
+      actorId: string;
+      actorName: string;
+      /** Number of rows in the batch. */
+      count: number;
+      /** `entityType` when every row shares it, else `null` (mixed batch). */
+      entityType: string | null;
+      /**
+       * `newValue.action` sub-label (`purchase_receipt` / `transfer` /
+       * `issue` / `production` / `non_sale_consumption` …) when uniform
+       * across the batch, else `null`. The enum `action` is always
+       * `create` for stock batches — this is the real verb.
+       */
+      subAction: string | null;
+      /** Newest `occurredAt` in the batch (the batch sorts by this). */
+      occurredAt: string;
+      /** The individual rows, newest-first — shown in the expansion. */
+      entries: AuditLogEntryView[];
+    };
+
 export type AuditLogPage = {
-  entries: AuditLogEntryView[];
+  /**
+   * The page of items (batches + singles), newest-first. Supersedes the
+   * S11 flat `entries` array — a client that wants every raw row still
+   * has them inside each `batch`'s `entries` and each `single`'s `entry`.
+   */
+  items: AuditLogItem[];
+  /**
+   * Every `User` with ≥1 `AuditLog` row, `{ id, name }`, name-sorted —
+   * the Actor filter dropdown's option list (M5 S15). Independent of the
+   * current filter / page (one small grouped query), so the dropdown is
+   * stable as the investigator pages and filters.
+   */
+  actors: { id: string; name: string }[];
   page: {
-    /** Total rows matching the filter (across all pages). */
+    /** Total ITEMS matching the filter across all pages (batches count once). */
     total: number;
     offset: number;
     limit: number;

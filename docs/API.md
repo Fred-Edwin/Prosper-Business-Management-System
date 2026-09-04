@@ -1084,10 +1084,11 @@ note }], total, count } }`:
 ### `POST /api/day-close`
 Roles: Admin. Body: `{ date }`. Locks all records dated to `date`.
 
-### `GET /api/audit` — the audit trail (M5 S11)
+### `GET /api/audit` — the audit trail (M5 S11; batch grouping M5 S15, ADR-65)
 
 Roles: **Admin only** (401 `UNAUTHENTICATED` / 403 `FORBIDDEN`).
-Paginated (OFFSET/limit), newest first.
+Paginated newest-first, **by item** (see "Response" — a batch is one
+item and is never split across a page).
 
 **Query params** (all optional):
 
@@ -1098,8 +1099,8 @@ Paginated (OFFSET/limit), newest first.
 | `action` | enum | One of `create` \| `correct` \| `soft_delete` \| `hard_delete` \| `login` \| `day_close` \| `day_reopen`. |
 | `entityType` | string | e.g. `order`, `handover`, `expense`, `staff`, `stock_movement`, `day_close`, `money_movement`, `receipt_of_handover`, `stock_count`, `owner_transaction`, `staff_payout`, `staff_pay_adjustment`, `customer`, `repayment`, `user`. |
 | `group` | `"significant"` | The investigable subset the screen defaults to: any `correct` / `soft_delete` / `hard_delete` / `day_close` / `day_reopen`, **plus** every `create` on `staff` / `staff_payout` / `staff_pay_adjustment`. Routine `create` rows (orders, stock movements, handovers, expenses, money movements) and `login` are excluded. An explicit `action`/`entityType` still AND-narrows within the subset. |
-| `limit` | int 1..200 | Default 50. |
-| `offset` | int ≥ 0 | Default 0. |
+| `limit` | int 1..200 | Default 50. Bounds the number of **items** (batches + singles) on the page, not raw rows. |
+| `offset` | int ≥ 0 | Default 0. Counted in **items**. |
 
 **Why OFFSET, not a cursor:** the screen is an investigator's tool — it
 needs a total count, "page N", and stable page sizes under filters more
@@ -1107,30 +1108,71 @@ than O(1) deep-scroll. The table grows at human speed (tens of rows/day),
 so a large OFFSET is not a real cost. Ties on `occurredAt` break by `id`
 so page boundaries never duplicate or drop a row.
 
+**Batch grouping (ADR-65).** `AuditLog` rows written in one transaction
+share a `correlationId` (a `batch_<uuid>` string **inside `newValue`** —
+not a column; e.g. a 6-line purchase receipt is 6 rows). The read folds
+rows sharing a `correlationId` **and** the same `action` into one
+**batch** item. Because a batch must never straddle a page, the read
+does not `skip`/`take` raw rows: it applies every filter at the DB,
+fetches the whole matching set newest-first (bounded — see ADR-65), folds
+into items, then slices `limit` **items** from `offset`. `page.total` is
+the item count. Entity-label resolution then runs only over the sliced
+page's rows (still one batched query per entity type).
+
 **Response** `200`:
 
 ```jsonc
 {
   "data": {
-    "entries": [
+    "items": [
+      // ── a plain (non-batched) row ──────────────────────────────────
       {
-        "id": "uuid",
-        "action": "correct",
+        "kind": "single",
+        "entry": {
+          "id": "uuid",
+          "action": "correct",
+          "actorId": "uuid",
+          "actorName": "Amina",                     // User.name; "(deleted user)" if gone
+          "entityType": "order",
+          "entityId": "uuid",
+          "entityLabel": "dine_in · KES 300.00",    // best-effort; null → screen shows `entityType #id`
+          "oldValue": { "total": "250.00" },        // raw Json column, shape varies by action — see below
+          "newValue": { "total": "300.00", "correctsOrderId": "uuid" },
+          "occurredAt": "2026-08-20T09:00:00.000Z", // business-meaningful (backdated on a correction)
+          "recordedAt": "2026-08-21T06:12:04.113Z"  // real insert time (createdAt)
+        }
+      },
+      // ── a batch: N rows written in one transaction ─────────────────
+      {
+        "kind": "batch",
+        "correlationId": "batch_5f1c…",
+        "action": "create",                         // the AuditAction every row in the batch shares
         "actorId": "uuid",
-        "actorName": "Amina",                       // User.name; "(deleted user)" if gone
-        "entityType": "order",
-        "entityId": "uuid",
-        "entityLabel": "dine_in · KES 300.00",      // best-effort; null → screen shows `entityType #id`
-        "oldValue": { "total": "250.00" },          // raw Json column, shape varies by action — see below
-        "newValue": { "total": "300.00", "correctsOrderId": "uuid" },
-        "occurredAt": "2026-08-20T09:00:00.000Z",   // business-meaningful (backdated on a correction)
-        "recordedAt": "2026-08-21T06:12:04.113Z"    // real insert time (createdAt)
+        "actorName": "Amina",
+        "count": 6,
+        "entityType": "stock_movement",             // null if the batch's rows are not all one type
+        "subAction": "purchase_receipt",            // newValue.action when uniform, else null (the real verb — enum action is always `create`)
+        "occurredAt": "2026-08-20T09:14:00.000Z",   // newest row in the batch
+        "entries": [ /* AuditLogEntryView[] — same shape as `single.entry`, newest-first */ ]
       }
     ],
-    "page": { "total": 412, "offset": 0, "limit": 50, "hasMore": true }
+    "actors": [                                     // every User with ≥1 audit row, name-sorted — the Actor filter's options
+      { "id": "uuid", "name": "Amina" },
+      { "id": "uuid", "name": "Otieno" }
+    ],
+    "page": { "total": 412, "offset": 0, "limit": 50, "hasMore": true }  // total = ITEM count
   }
 }
 ```
+
+`actors` is filter- and page-independent (one grouped query on the
+indexed `user_id`) so the dropdown stays stable while the investigator
+pages and filters.
+
+> **Superseded:** before M5 S15 this endpoint returned a flat
+> `data.entries: AuditLogEntryView[]`. That array is gone — a client that
+> wants every raw row reads `single.entry` / `batch.entries`. The domain
+> exports `flattenAuditItems(items)` for that.
 
 **`entityLabel` resolution** (batched — one query per entity type on the
 page, never per row):

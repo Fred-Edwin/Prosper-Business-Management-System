@@ -15,6 +15,118 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 5 Session 15 — Build the audit-trail screen + batch grouping (Developer — 2026-09-04) — DONE
+
+Full-stack. The read backend existed (S11) but ignored `correlationId`;
+batch-grouping is new backend work this session, then the screen composed
+against it. Built to the approved M5 S12 design
+(`docs/design/flows/audit-screen.md` + Paper "Prosper Hotel" · page "M5 —
+Dashboard & Audit", `Audit trail — desktop/mobile [M5]`).
+
+**Shipped — backend (ADR-65)**
+
+- `lib/domain/audit/list-audit-log.ts` — `listAuditLog` now groups rows
+  sharing a `correlationId` (extracted from `newValue` JSON — not a
+  column) **and** the same `action` into one `BatchGroup`. Returns
+  `{ items, actors, page }`: an item is `{ kind: "single", entry }` or
+  `{ kind: "batch", correlationId, action, actorId, actorName, count,
+  entityType, subAction, occurredAt, entries }`. The S11 flat
+  `entries: AuditLogEntryView[]` is **gone**; `flattenAuditItems(items)`
+  exported for callers that want the raw rows.
+- **Pagination is by ITEM.** A batch never straddles a page: the read
+  applies filters at the DB, fetches the whole matching set newest-first
+  (bounded `SCAN_CEILING = 5000` — justified by the tens-of-rows/day
+  volume, same argument S11 used for offset pagination), folds into
+  buckets, slices `limit` items from `offset`. `page.total` = item count.
+  Label resolution still one batched query per entity type on the sliced
+  page (S11 N+1 guarantee holds). Full rationale + the mixed-batch and
+  one-row-bucket rules in **ADR-65**.
+- `actors: { id, name }[]` added to the response — every `User` with ≥1
+  audit row, name-sorted, one `groupBy`, filter/page-independent (the
+  Actor dropdown's option list).
+- `GET /api/audit` route unchanged (thin pass-through); `docs/API.md`
+  "Day Close & Audit" rewritten for the grouped shape, S11's flat
+  response marked superseded.
+
+**Shipped — frontend**
+
+- `app/admin/audit-trail/` — `page.tsx` (parses the Dashboard's
+  `?action=correct&from=&to=` deep link), `audit-trail-client.tsx`,
+  `audit-format.ts` (per-row summary + FIELD/WAS/NOW resolution + entity
+  label/link/fallback + action tone), `use-audit-trail.ts` (one read,
+  `request<T>` shape like `use-dashboard.ts`).
+- Composed from `components/kit/*`: `<PageShell>` / `<AdminPageHeader>` /
+  `<FilterToolbar>` (four `<Select>` + the `<ToggleSwitch>`) /
+  `<ErrorState>` / `<EmptyState>` + the Financials table language
+  (bordered `<div>` grid, info-bg uppercase header, hairline rows, plain
+  coloured status text). Two things the kit had no answer for — both
+  built in the screen file, re-using existing visual language, **not** new
+  kit components: (a) the expanded FIELD/WAS/NOW mini-table (bordered
+  `<div>` grid, profit-stack language); (b) the **mobile card layout**
+  (audit-screen.md §"Mobile" / artboard `OEA-0` — action · entity ·
+  timestamp on line 1, summary line 2, actor line 3). The desktop table
+  is `hidden md:flex`; a `flex md:hidden` card list renders the same
+  items on mobile.
+- Default view = `group=significant` (logins hidden). "Show everything"
+  toggle drops the restriction; result line switches copy (trimmed on
+  mobile); logins would appear (none in the dev seed — the exclusion is
+  proven by the domain test, not a live screenshot).
+- Batch rows render as one summary row ("N items received · 9:14am" —
+  `newValue.action` normalised, `_batch` suffix stripped) that expands to
+  the member rows; each member row itself expands its own FIELD/WAS/NOW
+  detail. A `"single"` is a plain row with an inline chevron; trivial
+  rows (`day_close` / `day_reopen`) have no chevron. Verified on the real
+  seeded DB — a 3-row seed batch collapses to one summary row.
+- Pagination footer — "1–50 of N" · Previous / Page N of M / Next; page
+  size 50; Previous disabled on page 1, Next on the last page. Any filter
+  change resets to page 1.
+
+**Kit changes this session (owner-directed, both in `components/kit/*`)**
+
+- **`<Select>` popover width (kit-audit.md §Select).** Was `w-full`
+  (trigger width) + fixed-height option rows, so a long option label
+  wrapped and overflowed. Now `min-w-full w-max max-w-[26rem]` +
+  `whitespace-nowrap` rows. Byte-identical for short-option selects;
+  fixes the audit Entity dropdown (18 long options). Tokens-only, no API
+  change.
+- **`<FilterToolbar>` mobile — ADR-66.** Removed the "3 chips + `More` →
+  `BottomSheet`" overflow. Mobile is now one horizontal-scroll row of the
+  **real** controls (`<Select>` / `<DatePicker>` / toggle), every filter
+  always visible; off-default controls sort first. Owner decision: for
+  the 3–5-filter screens that are the real case, a filter must never hide
+  behind an overflow affordance. Toggle stays an inline control (a
+  divergence from `OEA-0`, which drew it on its own row — owner chose kit
+  consistency). `MobileChip` + the `bottom-sheet` import deleted from the
+  file. Affects Assets / Customers / Stock / Sales mobile too — all their
+  screen specs pass unchanged.
+
+**Changed from plan**
+
+- **Date filter is presets only** (Today / Last 7 days / Last 30 days /
+  This month). The kit `<FilterToolbar>`'s `kind:"date"` bridges a single
+  day, not a range — a preset `<Select>` is the honest kit fit. A custom
+  range picker is deferred (would need a kit answer that doesn't exist).
+  The Dashboard's explicit `?from=&to=` still passes straight through.
+- Two kit changes (above) were not planned — they came out of the owner
+  looking at the shipped filter chrome on mobile.
+- No M5 plan file exists (M5 never formally opened) — the session prompt
+  was the plan, as in S11/S13/S14.
+
+**Tests:** 867 → 881 (+14). Domain `list-audit-log.test.ts` +5 (batch
+fold, no-split-across-page, mixed batch, one-row bucket, actor list);
+route test updated for the `items` shape; new
+`tests/screens/admin-audit-trail.screen.test.tsx` (+9 — filter re-query,
+show-everything toggle, scalar expansion → FIELD/WAS/NOW, raw fallback,
+batch expansion, mobile card list, pagination). All 111 test files green.
+`pnpm test` + `typecheck` + `build` all green (full suite run last).
+
+**Docs.** ADR-65 (batch grouping + pagination-by-group), ADR-66
+(FilterToolbar mobile row); `docs/API.md` "Day Close & Audit" (grouped
+response + `actors`); `docs/design/filter-toolbar.md` §4 +
+`docs/design/kit-audit.md` (Select popover + FilterToolbar mobile rows).
+
+---
+
 ## M3 S7 follow-up — Handovers table redesign + typography foundation (Developer + Owner — 2026-09-04) — DONE
 
 Frontend polish on the shipped `/admin/financials`, plus two foundation

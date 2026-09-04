@@ -4,6 +4,7 @@ import { businessDateStartUtc, businessDateEndUtc } from "@/lib/time";
 import { DomainError } from "./errors";
 import type {
   AuditLogEntryView,
+  AuditLogItem,
   AuditLogPage,
   ListAuditLogFilter,
 } from "./types";
@@ -14,7 +15,7 @@ import type {
  * correct / delete / login / day close+reopen; this is the paginated,
  * newest-first read the Audit Trail screen renders.
  *
- * ── Pagination ────────────────────────────────────────────────────────
+ * ── Pagination — PAGE BY ITEM, NOT BY ROW (M5 S15, ADR-65) ───────────
  * OFFSET/limit, not a cursor. Justification: the screen is an
  * investigator's tool — it needs "page 7", a total count, and stable
  * page sizes under active filters far more than it needs the O(1)
@@ -22,6 +23,18 @@ import type {
  * (tens of rows/day), so a large OFFSET is not a real cost here. Ties on
  * `occurredAt` are broken by `id` so page boundaries never duplicate or
  * drop a row.
+ *
+ * A "batch" — several `AuditLog` rows written in ONE transaction, sharing
+ * a `correlationId` stamped inside `newValue` (ADR-25: a 6-line purchase
+ * receipt is 6 rows) — is one ITEM. It must never be split across two
+ * pages, so we cannot `skip`/`take` raw rows at the DB. Instead: apply
+ * every filter at the DB, fetch the whole matching set newest-first (up
+ * to `SCAN_CEILING` — well beyond any real filtered window at tens of
+ * rows/day), fold rows sharing a `correlationId` + `action` into one
+ * `AuditLogItem`, then slice `[offset, offset+limit)` ITEMS. `total` is
+ * the item count. Entity-label resolution then runs only over the sliced
+ * page's rows — still one batched query per entity type (see ADR-65 for
+ * the volume argument and the ceiling fallback).
  *
  * ── The `significant` filter ─────────────────────────────────────────
  * `filter.group: "significant"` returns only the investigable subset the
@@ -49,6 +62,42 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
 /**
+ * Upper bound on rows pulled into memory for one filtered query before
+ * grouping + slicing (ADR-65). At tens of `AuditLog` rows/day a filtered
+ * window (a date range, one actor, one entity type, or the significant
+ * subset) sits far under this. If a query ever exceeds it the oldest
+ * rows past the ceiling are simply not paged — an unreachable case for
+ * the screen's own filters; documented rather than engineered around.
+ */
+const SCAN_CEILING = 5000;
+
+/**
+ * Pull a `correlationId` out of a row's `newValue` JSON (ADR-25 —
+ * `newCorrelationId()` writes `batch_<uuid>`). Not a column. Returns
+ * `null` for a plain (non-batched) row.
+ */
+function correlationIdOf(newValue: Prisma.JsonValue | null): string | null {
+  if (newValue && typeof newValue === "object" && !Array.isArray(newValue)) {
+    const cid = (newValue as Record<string, unknown>).correlationId;
+    if (typeof cid === "string" && cid.length > 0) return cid;
+  }
+  return null;
+}
+
+/**
+ * The `newValue.action` sub-label (`purchase_receipt`, `transfer`,
+ * `issue`, `production`, `non_sale_consumption`, …). For `stock_movement`
+ * the enum `action` column is always `create`; this is the real verb.
+ */
+function subActionOf(newValue: Prisma.JsonValue | null): string | null {
+  if (newValue && typeof newValue === "object" && !Array.isArray(newValue)) {
+    const a = (newValue as Record<string, unknown>).action;
+    if (typeof a === "string" && a.length > 0) return a;
+  }
+  return null;
+}
+
+/**
  * Actions that are always "significant" regardless of entity type.
  * `create` is deliberately absent — a bare create is the routine case.
  */
@@ -69,6 +118,20 @@ const SIGNIFICANT_ENTITY_TYPES: ReadonlySet<string> = new Set<string>([
   "staff_payout",
   "staff_pay_adjustment",
 ]);
+
+/**
+ * Flatten a page of items back to the raw per-row entries, newest-first —
+ * the pre-S15 shape. For callers / tests that don't care about batch
+ * grouping. A `"single"` yields its one entry; a `"batch"` yields its
+ * `entries` in order.
+ */
+export function flattenAuditItems(
+  items: readonly AuditLogItem[],
+): AuditLogEntryView[] {
+  return items.flatMap((it) =>
+    it.kind === "single" ? [it.entry] : it.entries,
+  );
+}
 
 function assertBusinessDate(value: string, field: "from" | "to"): void {
   if (!BUSINESS_DATE_RE.test(value)) {
@@ -116,20 +179,57 @@ export async function listAuditLog(
   );
   const offset = Math.max(0, filter.offset ?? 0);
 
-  const [total, rows] = await Promise.all([
-    prisma.auditLog.count({ where }),
-    prisma.auditLog.findMany({
-      where,
-      orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
-      skip: offset,
-      take: limit,
-      include: { user: { select: { name: true } } },
-    }),
+  // Fetch the whole filtered set newest-first (bounded by SCAN_CEILING),
+  // then group + slice by ITEM below. We cannot skip/take raw rows at the
+  // DB: a batch must stay whole (ADR-65).
+  const rows = await prisma.auditLog.findMany({
+    where,
+    orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
+    take: SCAN_CEILING,
+    include: { user: { select: { name: true } } },
+  });
+  type Raw = (typeof rows)[number];
+
+  // ── Group rows into ordered item-buckets ────────────────────────────
+  // A row with no `correlationId` is its own single-row bucket. Rows
+  // sharing a `correlationId` AND the same `action` fold into one bucket,
+  // anchored at the position of the batch's first-seen (newest) row so
+  // overall newest-first order is preserved. A `correlationId` set that
+  // spans two `action` values (rare — noted in the task) splits into one
+  // bucket per action; each stays contiguous at its own newest row.
+  const buckets: Raw[][] = [];
+  const bucketByKey = new Map<string, Raw[]>();
+  for (const r of rows) {
+    const cid = correlationIdOf(r.newValue as Prisma.JsonValue | null);
+    if (!cid) {
+      buckets.push([r]);
+      continue;
+    }
+    const key = `${cid}::${r.action}`;
+    const existing = bucketByKey.get(key);
+    if (existing) {
+      existing.push(r);
+    } else {
+      const bucket = [r];
+      bucketByKey.set(key, bucket);
+      buckets.push(bucket);
+    }
+  }
+
+  const total = buckets.length;
+  const pageBuckets = buckets.slice(offset, offset + limit);
+
+  // Resolve entity labels over ONLY this page's raw rows — one batched
+  // query per entity type present, never per row (unchanged from S11).
+  // In parallel, the Actor dropdown's full option list: every User with
+  // ≥1 audit row, filter-independent so it is stable as the screen pages.
+  const pageRows = pageBuckets.flat();
+  const [labels, actors] = await Promise.all([
+    resolveEntityLabels(pageRows),
+    listAuditActors(),
   ]);
 
-  const labels = await resolveEntityLabels(rows);
-
-  const entries: AuditLogEntryView[] = rows.map((r) => ({
+  const toEntry = (r: Raw): AuditLogEntryView => ({
     id: r.id,
     action: r.action,
     actorId: r.userId,
@@ -141,17 +241,67 @@ export async function listAuditLog(
     newValue: (r.newValue ?? null) as Prisma.JsonValue | null,
     occurredAt: r.occurredAt.toISOString(),
     recordedAt: r.createdAt.toISOString(),
-  }));
+  });
+
+  const items: AuditLogItem[] = pageBuckets.map((bucket) => {
+    // A one-row bucket is always a plain row — whether it never had a
+    // `correlationId`, or it is a batch that a filter pared down to a
+    // single visible line (a corner case; the current filters are all
+    // batch-uniform so it does not arise for the screen, but the shape
+    // stays honest if it ever does).
+    if (bucket.length === 1) {
+      return { kind: "single", entry: toEntry(bucket[0]) };
+    }
+    const entries = bucket.map(toEntry);
+    const first = bucket[0];
+    const cid = correlationIdOf(first.newValue as Prisma.JsonValue | null)!;
+    const uniform = <T,>(pick: (r: Raw) => T): T | null => {
+      const v = pick(first);
+      return bucket.every((r) => pick(r) === v) ? v : null;
+    };
+    return {
+      kind: "batch",
+      correlationId: cid,
+      action: first.action,
+      actorId: first.userId,
+      actorName: first.user?.name ?? "(deleted user)",
+      count: bucket.length,
+      entityType: uniform((r) => r.entityType),
+      subAction: uniform((r) => subActionOf(r.newValue as Prisma.JsonValue | null)),
+      occurredAt: first.occurredAt.toISOString(),
+      entries,
+    };
+  });
 
   return {
-    entries,
+    items,
+    actors,
     page: {
       total,
       offset,
       limit,
-      hasMore: offset + rows.length < total,
+      hasMore: offset + items.length < total,
     },
   };
+}
+
+/**
+ * Every `User` that has appended at least one `AuditLog` row, `{ id,
+ * name }`, name-sorted — the Audit-trail Actor filter's option list (M5
+ * S15). One grouped query on the indexed `user_id` column; independent
+ * of the current filter.
+ */
+async function listAuditActors(): Promise<{ id: string; name: string }[]> {
+  const groups = await prisma.auditLog.groupBy({
+    by: ["userId"],
+  });
+  if (groups.length === 0) return [];
+  const users = await prisma.user.findMany({
+    where: { id: { in: groups.map((g) => g.userId) } },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  return users;
 }
 
 /**

@@ -345,6 +345,19 @@ listbox), error (ARTBOARD ✓), filled/disabled/focus (GLOBAL).
     `test:a11y` axe + §9 `postVisit`); `tsc` 0; `pnpm test` no new
     failures. `pnpm build` handed to the parallel Session 16.
 
+**Popover width — M5 S15.** The open `<ul>` was `w-full` (= trigger
+width) with fixed-height (`h-(--control-sm)`) option rows and no
+`whitespace-nowrap`, so a long option label wrapped inside a too-narrow
+box and overflowed its row. Seen on `/admin/audit-trail`, whose Entity
+`<FilterToolbar>` control has ~17 options remapped to `"Entity: <long
+name>"`. Fix (tokens-only, no API change): the popover is now
+`min-w-full w-max max-w-[min(90vw,26rem)]` — at least as wide as the
+trigger, grows to fit the widest option, capped so it never runs off a
+narrow viewport; option rows are `min-h-(--control-sm)` + `py-[6px]` and
+the label is `whitespace-nowrap`. Byte-identical for short-option selects
+(the pre-existing stories); only wide-label lists change. Helps every
+screen with long option labels, not just audit.
+
 | aspect | BEFORE | AFTER |
 |---|---|---|
 | tokens-only? | **NO** — `[box-shadow:#00000014_0px_4px_12px]` raw → `--shadow-md` (X7); `z-10` → `--z-dropdown` (X14); `tracking-[0.04em]` (X15). | _tbd_ |
@@ -456,7 +469,7 @@ toolbar A/A2 already shipped inside `I00-0`).
 | Reset visibility | — | Present iff `controls.some(c => c.value !== c.default)` (null-safe compare for `kind:"date"`); absent (not disabled) otherwise. `·` separator rendered only alongside Reset. |
 | keyboard | — | Each control's primitive is unchanged (Select APG listbox, DatePicker dialog, checkbox, ToggleSwitch). Reset = native `<button>`. No roving pattern — it's a toolbar of independent controls, not a single-select group. |
 | ARIA | — | Wrapper `role="search"` + `aria-label` (default `"Filters"`). Result count `aria-live="polite"`. Sub-controls carry their own `aria-*`. |
-| mobile | — | `overflow-x:auto` row of 32px chips (`flex-shrink:0`, `white-space:nowrap`, 12px chevron `stroke-width:2`) + trailing `More` chip for overflow/secondary controls; count + Reset on their own row below. |
+| mobile | — | **ADR-66 (M5 S15):** `overflow-x:auto` row of the REAL controls (`DesktopControl` reused — same `<Select>` / `<DatePicker>` / toggle as desktop), every filter always a visible chip; **no `More` chip, no `BottomSheet`**. Off-default controls sort first. Count + Reset on their own row below. Was `3 chips + More → BottomSheet`; dropped because it hid a filter behind an overflow affordance for the 3–5-filter screens that are the real case. |
 | search field | — | Not a `FilterControl`. A screen with free-text search (Assets, Customers) puts a sibling `<SearchInput>` in the same toolbar row — own state/handler, shares the reset path (screen clears the string on reset). |
 | stories / baselines | — | to build in 3-KIT-FILTER: `Default`, `OneActive`, `MultipleActive`, `ToggleControl`, `Mobile`, `FilteredEmpty`, `ResetHover`, `ResetFocusVisible`. `test:visual` + `test:a11y` + §9 `postVisit`; baselines eyeballed vs `L9O-0` / `IEA-0`. |
 | screens 3e retrofits | — | Sales Restaurant Orders + Canteen Derived (reconcile A/A2's inline toolbar to the component), A1 Customers (the `Has balance` toggle → `kind:"toggle"`), **Admin Stock Ledger** (`Admin Stock Ledger — filter toolbar [M2-3DF]` — Location/Category/Date into the toolbar; `Columns` stays a separate control), **Admin Assets** (`Admin Assets — filter toolbar [M2-3DF]` — Search/Location/Condition into the toolbar; Category `Tabs` strip stays). Financials transactions unchanged (Tabs only). Stock Levels `PillFilter` strips unchanged (out of scope). |

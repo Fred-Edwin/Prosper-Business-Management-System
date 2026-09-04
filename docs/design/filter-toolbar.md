@@ -7,9 +7,14 @@ stories / 8 visual baselines / axe clean / tsc 0 / jsdom 416).
   sibling at the START of the toolbar row (it keeps its own state; the
   screen clears it on reset). Chosen over a `children` slot so the toolbar
   owns the row layout around it.
-- **Mobile "More" reveal (§4):** a kit `BottomSheet` listing *all* controls
-  as full-width rows (not just the overflow). `IKW-0` doesn't draw the
-  reveal; `BottomSheet` is the staff-shell's proven overflow affordance.
+- **Mobile "More" reveal (§4) — REMOVED (ADR-66, M5 S15).** The mobile
+  row now shows **every** control as a real inline chip in one
+  horizontal-scroll row; there is no `More` chip and no `BottomSheet`.
+  Owner decision: for a small, fixed filter set the user must never hunt
+  for a filter behind an overflow affordance. Each chip is a real
+  `<Select>` / `<DatePicker>` / toggle (`DesktopControl` reused), so it
+  opens its own option list in place. Off-default controls sort to the
+  front of the row. See §4 below.
 - **Layout split:** `matchMedia("(max-width: --bp-md - 1)")` via an in-file
   hook, plus a `layout?: "auto" | "desktop" | "mobile"` escape hatch so the
   Storybook visual snapshot is deterministic.
@@ -124,19 +129,29 @@ interface FilterToolbarProps {
 
 ---
 
-## 4. Mobile (`< --bp-md`, model `IKW-0`)
+## 4. Mobile (`< --bp-md`) — updated ADR-66 (M5 S15)
 
-- The controls become a **horizontally-scrollable** (`overflow-x:auto`)
-  row of **32px chips** + a trailing **`More`** chip for any controls
-  that don't fit / are secondary. `gap:var(--sp-3)`;
-  `padding-block:var(--sp-4)`; `padding-inline:var(--sp-5)`. Each chip
-  `flex-shrink:0`, `white-space:nowrap`, 12px chevron `stroke-width:2`.
-- Chip label: the **value** when set (`Mary N.`, `Today`) in
-  `--text-primary` / `--weight-medium`; the **control name** when at
-  default (`Payment`, `Location`) in `--text-secondary` / `--weight-regular`.
-- The **result count + `Reset`** move to their own row directly below the
-  chip row (`Reset` right-aligned). On mobile the desktop `Clear all`
+- The controls become a **single horizontally-scrollable**
+  (`overflow-x:auto`) row of **real controls** — the same `<Select>` /
+  `<DatePicker>` / toggle rendered on desktop (`DesktopControl`), each
+  `flex-shrink:0`. `gap:var(--sp-3)`; `padding-block:var(--sp-4)`;
+  `padding-inline:var(--sp-5)`. **No `More` chip, no `BottomSheet`** —
+  every filter is always visible; the user scrolls to reach one, never
+  opens an overflow menu.
+- Off-default controls sort to the **front** of the row so an active
+  filter is never scrolled out of the initial view.
+- Each control opens its own popover in place (the `<Select>` popover is
+  `absolute` + width-capped, so it renders correctly inside the scroll
+  container).
+- The **result count + `Reset`** sit on their own row directly below the
+  control row (`Reset` right-aligned). On mobile the desktop `Clear all`
   wording is also `Reset`.
+- **Why the change:** the old `3 chips + More → BottomSheet` was the
+  right pattern for a *large* filter set but wrong for the 3–5 filters
+  every real screen has — it hid a filter (and, for `/admin/audit-trail`,
+  the "Show everything" toggle) behind an affordance the user had to
+  discover. Airbnb / Linear / Gmail / the App Store all use an
+  all-visible scroll row for small filter sets. Owner decision, M5 S15.
 
 ---
 

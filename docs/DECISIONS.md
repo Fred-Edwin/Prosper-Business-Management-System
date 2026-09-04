@@ -3069,3 +3069,144 @@ was **not taken** — the exact path is fast enough.
 - The dashboard module (`lib/domain/dashboard/`) owns no entity and
   writes nothing — it is a read-only composition layer over financials +
   audit + handovers + stock.
+
+## ADR-65: The audit trail groups a transaction's rows into one expandable "batch" item and paginates BY ITEM, not by raw row (Developer, Milestone 5 Session 15 [Audit-trail screen], 2026-09-04)
+
+**Context.** A single business action can write several `AuditLog` rows in
+one transaction — a 6-line purchase receipt is 6 `create` rows (ADR-25).
+The write side stamps each with a shared `correlationId` (`batch_<uuid>`)
+**inside the row's `newValue` JSON** — it is not a column. The M5 S11 read
+(`listAuditLog`) returned a flat, offset-paginated row list and ignored
+`correlationId` entirely. The audit-trail screen (M5 S15,
+`docs/design/flows/audit-screen.md`) needs those 6 rows to read as **one**
+line ("6 items received · Store · 9:14am") that expands to the individual
+rows — the owner's explicit decision (session prompt, "OWNER DECISIONS"
+§2). A single, non-batched action stays its own plain row.
+
+**Decision.**
+
+1. **Grouping lives in `listAuditLog`** (not a new module, not the route,
+   not the client). The route stays a thin pass-through; the client
+   renders whatever the domain hands it.
+
+2. **The response shape changes.** `listAuditLog` now returns
+   `{ items, actors, page }` where an `item` is
+   `{ kind: "single", entry }` or
+   `{ kind: "batch", correlationId, action, actorId, actorName, count,
+   entityType, subAction, occurredAt, entries }`. The pre-S15 flat
+   `entries: AuditLogEntryView[]` is **gone** — `docs/API.md` was updated
+   rather than left describing two shapes. `flattenAuditItems(items)` is
+   exported for any caller that wants the raw rows back.
+
+3. **Pagination is BY ITEM.** A batch must never straddle a page, so the
+   read cannot `skip`/`take` raw rows at the DB. Instead it: applies every
+   filter at the DB → fetches the whole matching set newest-first, bounded
+   by `SCAN_CEILING = 5000` → folds rows sharing a `correlationId` **and**
+   the same `action` into one bucket, anchored at the batch's newest row
+   so newest-first order is preserved → slices `limit` **items** from
+   `offset`. `page.total` is the item count. Entity-label resolution then
+   runs over only the sliced page's rows (still one batched query per
+   entity type — the S11 N+1 guarantee holds).
+
+   **Why fetch-all-then-slice is acceptable here** (the same argument
+   ADR-25/S11 already relied on for offset pagination): the `AuditLog`
+   table grows at *human* speed — tens of rows/day. A filtered window (a
+   date range, one actor, one entity type, or the significant subset —
+   the screen always sends at least a date range) sits far under 5000
+   rows. If a query ever exceeds the ceiling the oldest rows past it are
+   simply not paged; an unreachable case for the screen's own filters,
+   documented rather than engineered around. A cursor scheme keyed on
+   `(occurredAt, id)` that skips whole `correlationId` groups was
+   considered and rejected as complexity with no payoff at this scale.
+
+4. **Mixed batches.** A `correlationId` set is grouped **per `action`** —
+   a rare set spanning two `action` values becomes one batch per action.
+   Within a batch, `entityType` / `subAction` (`newValue.action` — the
+   real verb; the enum column is always `create` for stock batches) are
+   reported only when **uniform** across the batch's rows, else `null`;
+   the screen shows "Mixed" for the entity and a generic "N items
+   changed" summary.
+
+5. **A one-row bucket is always rendered as a `"single"`** — whether it
+   never had a `correlationId`, or a filter pared a batch down to one
+   visible row (a corner case; the screen's current filters are all
+   batch-uniform so it does not arise, but the shape stays honest).
+
+**Also shipped alongside (not a separate ADR):** the response carries
+`actors: { id, name }[]` — every `User` with ≥1 audit row, name-sorted,
+one grouped query, filter- and page-independent — so the screen's Actor
+filter dropdown is stable as the investigator pages. The design doc had
+floated a separate `GET /api/audit/actors`; a field on the main response
+is simpler and the query is cheap.
+
+**Consequences.**
+
+- One extra `groupBy` per audit request (the actor list). Negligible.
+- `SCAN_CEILING` is a real (if distant) limit — noted in the code and
+  here. Revisit only if `AuditLog` volume ever changes character.
+- The screen's Date filter is **presets only** (Today / Last 7 days /
+  Last 30 days / This month) — the kit `<FilterToolbar>`'s `kind:"date"`
+  bridges a single day, not a range, so a preset `<Select>` is the honest
+  kit fit. A fully custom range picker is deferred; flagged in the S15
+  report. The Dashboard's `?from=&to=` deep link is still honoured (it
+  passes an explicit range straight through).
+
+## ADR-66: `<FilterToolbar>` mobile is one all-visible horizontal-scroll row of real controls — the "3 chips + More → BottomSheet" overflow is removed (Owner + Developer, Milestone 5 Session 15 [Audit-trail screen], 2026-09-04)
+
+**Context.** `components/kit/filter-toolbar.tsx` (ADR-42) rendered, below
+`--bp-md`, the first 3 controls as inert "chips" that opened a
+`BottomSheet` containing every control as a full-width row; any 4th+
+control was reachable only via a trailing **"More"** chip. Building
+`/admin/audit-trail` (4 filter controls + a "Show everything" toggle)
+exposed the problem: on a phone the **Entity** filter was hidden behind
+"More", and the toggle — a primary control — lived inside the overflow
+sheet where its on/off state is not visible at a glance. The approved
+mobile artboard (`OEA-0`) had drawn a different pattern (all four filters
+in one scroll row) without regard to what the kit actually did.
+
+**Best-practice finding.** The `3 + More → sheet` pattern is the
+*prioritise + overflow* idiom (Material overflow menu, iOS "More" tab) —
+correct when there are **many** filters (6+) of unequal importance. For a
+**small, fixed** set (3–5, which is every real screen in this app) the
+right pattern is an **all-visible horizontal-scroll chip row**: no hidden
+affordance, nothing to discover. Airbnb, Linear, Gmail and the iOS App
+Store all do this for small filter sets.
+
+**Decision.**
+
+1. **Mobile `<FilterToolbar>` is a single `overflow-x:auto` row of the
+   real controls** — the same `DesktopControl` (`<Select>` / `<DatePicker>`
+   / `<ToggleSwitch>`) rendered on desktop, each `flex-shrink:0`. Every
+   filter is always a visible, operable chip; each opens its own popover
+   in place (the `<Select>` popover is `absolute` + width-capped — see the
+   S15 Select popover fix — so it renders correctly inside the scroll
+   container).
+2. **The "More" chip, the `BottomSheet` overflow, and the `MobileChip`
+   proxy-button are deleted.** The `bottom-sheet` import is dropped from
+   the file. `BottomSheet` itself is unchanged and still used elsewhere.
+3. **Off-default controls sort to the front** of the row so an active
+   filter is never scrolled out of the initial viewport.
+4. **The result count + `Reset`** stay on their own row directly below
+   (unchanged).
+
+**Toggle placement.** Owner decision: a `kind:"toggle"` control stays an
+inline item in the same scroll row (rendered by `DesktopControl` — label
++ `<ToggleSwitch>`), **not** lifted to its own labelled row. This
+diverges from `OEA-0`, which drew the audit "Show everything" toggle on a
+separate row; the owner chose kit consistency (one rule for every control
+kind) over matching that one artboard detail. Flagged in the S15 report.
+
+**Consequences.**
+
+- Affects **every** screen using `<FilterToolbar>` on mobile — Assets,
+  Customers, Stock Ledger, Sales (Restaurant + Canteen), and the new
+  Audit trail. All their screen specs (`tests/screens/*`) pass unchanged
+  (73 green) — the specs drive the controls, not the removed chrome.
+- No Storybook test-runner exists in this repo (only a stale
+  `storybook-static/`), so the kit is gated by `pnpm test` + `typecheck`
+  + `build`, all green.
+- `docs/design/filter-toolbar.md` §4 and `docs/design/kit-audit.md`
+  updated; the old `IKW-0` "More" description is marked superseded.
+- If a screen ever genuinely needs 6+ filters, revisit — a grouped or
+  collapsible affordance may be worth reintroducing behind a prop, but
+  not on spec.

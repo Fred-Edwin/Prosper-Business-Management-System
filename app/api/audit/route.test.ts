@@ -69,8 +69,9 @@ describe("/api/audit — admin only", () => {
     mockSession.current = sessionFor("admin", adminId);
     const { status, body } = await call("from=2024-01-01&to=2024-01-01");
     expect(status).toBe(200);
-    expect(body.data).toHaveProperty("entries");
+    expect(body.data).toHaveProperty("items");
     expect(body.data).toHaveProperty("page");
+    expect(Array.isArray(body.data.items)).toBe(true);
   });
 
   it("400 on a malformed date", async () => {

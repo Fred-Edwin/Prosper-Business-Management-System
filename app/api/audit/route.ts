@@ -5,15 +5,21 @@ import { listAuditLogQuerySchema } from "@/lib/validation/audit";
 import { DomainError, listAuditLog } from "@/lib/domain/audit";
 
 /**
- * `GET /api/audit` (M5 S11 / ADR-25 read side). Admin-only. Paginated
- * (OFFSET/limit), newest first. Filter by `from`/`to` (business-date
- * range on `occurredAt`), `actorId`, `action`, `entityType`, and
- * `group=significant` (the investigable subset the screen defaults to).
+ * `GET /api/audit` (M5 S11 / ADR-25 read side; batch grouping M5 S15 /
+ * ADR-65). Admin-only. Paginated (OFFSET/limit), newest first. Filter by
+ * `from`/`to` (business-date range on `occurredAt`), `actorId`, `action`,
+ * `entityType`, and `group=significant` (the investigable subset the
+ * screen defaults to).
  *
- * Returns `{ entries, page: { total, offset, limit, hasMore } }`. Each
- * entry carries the actor's NAME and a best-effort `entityLabel`
- * (`null` → the screen renders `entityType #id`). `oldValue`/`newValue`
- * are the raw `Json` columns — shape varies by action (see `docs/API.md`).
+ * Returns `{ items, page: { total, offset, limit, hasMore } }`. An item
+ * is either `{ kind: "single", entry }` — one row — or `{ kind: "batch",
+ * … entries }` — several rows written in one transaction (shared
+ * `correlationId` inside `newValue`) collapsed to one expandable summary.
+ * Pagination pages by ITEM: `total` counts a batch once and a batch is
+ * never split across two pages. Each entry carries the actor's NAME and a
+ * best-effort `entityLabel` (`null` → the screen renders `entityType
+ * #id`). `oldValue`/`newValue` are the raw `Json` columns — shape varies
+ * by action (see `docs/API.md`).
  */
 export async function GET(req: NextRequest) {
   const auth = await requireApiRole("admin");
