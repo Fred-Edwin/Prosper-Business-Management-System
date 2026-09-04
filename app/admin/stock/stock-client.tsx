@@ -16,8 +16,8 @@
 // ADR-36b), not this file.
 //
 // LEDGER v2 (this session) — a date-RANGE control (the same
-// <FinancialsRangeControl> / useFinancialsRange the Financials screen
-// already uses, imported as-is: Today / This week / This month / Custom)
+// <AdminDateRangeControl> / useAdminDateRange the Financials/Dashboard
+// screens already use, imported as-is: Today / This week / This month / Custom)
 // now sits in the header next to the title. Today/Custom (both single-day,
 // from===to) render EXACTLY the single-day grid above, unchanged. Week/Month
 // switch the grid to a period-summary view — one row per (product,
@@ -40,8 +40,8 @@ import { useLedger, usePeriodLedger, useProductDayLedger } from "./use-stock";
 import { deriveLedgerRows } from "./derive-ledger";
 import { derivePeriodSummaryRows } from "./derive-period-summary";
 import { deriveProductDayRows } from "./derive-product-days";
-import { FinancialsRangeControl } from "@/app/admin/date-range-control";
-import { useFinancialsRange, shortBusinessDateWithYear } from "@/app/admin/use-date-range";
+import { AdminDateRangeControl } from "@/app/admin/date-range-control";
+import { useAdminDateRange, shortBusinessDateWithYear } from "@/app/admin/use-date-range";
 import { useFinancialSummary } from "@/app/admin/financials/use-financials";
 import {
   CorrectionDrawer,
@@ -188,7 +188,7 @@ type DrillInTarget = {
 };
 
 export function StockClient() {
-  const { range, setPreset, setCustomDay, today } = useFinancialsRange();
+  const { range, setPreset, setCustomDay, today } = useAdminDateRange();
   const isSingleDay = range.preset === "today" || range.preset === "custom";
   const date = range.from; // single-day presets: from === to
 
@@ -480,7 +480,7 @@ export function StockClient() {
   const noRows = !loading && !error && rows.length === 0;
 
   const rangeControl = (
-    <FinancialsRangeControl
+    <AdminDateRangeControl
       range={range}
       today={today}
       onPreset={setPreset}
