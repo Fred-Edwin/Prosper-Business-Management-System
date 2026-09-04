@@ -22,15 +22,22 @@ import { DenseLedger } from "@/components/kit/dense-ledger";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
 import { Button } from "@/components/kit/button";
+import { SearchInput } from "@/components/kit/search-input";
 import { toBusinessDate } from "@/lib/time";
 import { useLedger } from "./use-stock";
 import { deriveLedgerRows } from "./derive-ledger";
-import { CorrectionDrawer, type CorrectionTarget } from "./correction-drawer";
+import {
+  CorrectionDrawer,
+  MovementBreakdownDrawer,
+  type CorrectionTarget,
+  type BreakdownTarget,
+} from "./correction-drawer";
 
 // Human labels for the ledger's movement columns (correction-drawer field label).
 const COLUMN_LABEL: Record<string, string> = {
   purchases: "Purchase (+)",
-  issues: "Kitchen Issue (-)",
+  issues: "Kitchen (-)",
+  nonSale: "Non-Sale (-)",
   production: "Production (+)",
   transferIn: "Transfer In (+)",
   transferOut: "Transfer Out (-)",
@@ -40,9 +47,12 @@ const COLUMN_LABEL: Record<string, string> = {
 // Short chip labels for the mobile stacked-row deltas — aligned to artboard
 // 8Q4-0 (`+50.0 Purch`  `-18.5 Issue`  `-10.0 Tr Out`  `+40.0 Prod`  `+5.0 Tr In`
 // `-38.0 Sold`), per fidelity-audit-m1.md §"Admin Stock — Ledger mobile" item 4.
+// "Issue" → "Kitchen" (owner rename, this session) to match the desktop column.
+// "Non-Sale" chip added this session alongside the desktop Non-Sale column.
 const MOBILE_CHIP_LABEL: Record<string, string> = {
   purchases: "Purch",
-  issues: "Issue",
+  issues: "Kitchen",
+  nonSale: "Non-Sale",
   production: "Prod",
   transferIn: "Tr In",
   transferOut: "Tr Out",
@@ -68,7 +78,74 @@ function unitOf(productLabel: string): string {
   return m ? m[1] : "units";
 }
 
+// KPI strip — visually matches the Admin Dashboard's "Position right now"
+// band (dashboard-client.tsx PositionBand / Caption), not the kit's
+// DenseSummaryStrip (that component is a dense dark FOOTER-bar pattern —
+// already used correctly as the Ledger's own table footer and the mobile
+// sticky band below — not a hero KPI strip). Owner feedback, this session:
+// the first cut used DenseSummaryStrip here and read as the wrong register
+// for a page-top KPI band. Rebuilt as a light --surface-subtle card with
+// hairline dividers + large mono figures, same recipe as the dashboard.
+function Caption({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="font-ui font-(--weight-medium) uppercase [letter-spacing:0.04em] [color:var(--text-tertiary)] text-caption/caption">
+      {children}
+    </span>
+  );
+}
+
+type PositionStat = { label: string; value: string; tone: string };
+
+function LedgerPositionBand({ stats }: { stats: PositionStat[] }) {
+  return (
+    <section className="flex shrink-0 rounded-md [background-color:var(--surface-subtle)] border border-solid [border-color:var(--border-subtle)] py-(--sp-6) px-(--sp-7)">
+      {stats.map((s, i) => (
+        <React.Fragment key={s.label}>
+          {i > 0 && (
+            <div className="w-px self-stretch shrink-0 [background-color:var(--border-strong)]" />
+          )}
+          {/* grow basis-0 (fix, this session): the dashboard's PositionBand
+              reads as edge-to-edge because its 4 money columns are wide
+              enough to fill the card on their own; the Ledger's shorter
+              quantity figures left the same content-sized columns packed
+              left with a dead gap to the card's right edge. Stretching each
+              column to share the row evenly fixes it without changing the
+              per-column recipe (label + gap + value) at all. */}
+          <div
+            className={`grow basis-0 flex flex-col gap-(--sp-3) ${
+              i === 0 ? "pr-(--sp-9)" : i === stats.length - 1 ? "pl-(--sp-9)" : "px-(--sp-9)"
+            }`}
+          >
+            <Caption>{s.label}</Caption>
+            <span className={`font-mono font-(--weight-semibold) text-display/display ${s.tone}`}>
+              {s.value}
+            </span>
+          </div>
+        </React.Fragment>
+      ))}
+    </section>
+  );
+}
+
 const ALL = "__all__";
+
+// Product.kind is the fixed Goods/Dishes/Ingredients enum (Prisma) — the
+// Ledger's Category filter reads THIS, not the admin-set free-text
+// Product.category (which powers the Sales/New-Order menu grid; a
+// same-name-different-field mix-up, not a missing admin UI — see the
+// review this session's changes came out of). One-line swap, no schema
+// or backend change: `ProductKind` is already on `ProductWithLocations`.
+const KIND_LABEL: Record<string, string> = {
+  ingredient: "Ingredients",
+  dish: "Dishes",
+  goods: "Goods",
+};
+const KIND_OPTIONS = [
+  { value: ALL, label: "All" },
+  { value: "ingredient", label: KIND_LABEL.ingredient },
+  { value: "dish", label: KIND_LABEL.dish },
+  { value: "goods", label: KIND_LABEL.goods },
+];
 
 export function StockClient() {
   const today = toBusinessDate(new Date());
@@ -76,9 +153,14 @@ export function StockClient() {
   // Location scope — re-fetched server-side by useLedger. "__all__" = every
   // location. (Was a <PillFilter>; now a FilterToolbar select, LDZ-0.)
   const [locationId, setLocationId] = React.useState<string>(ALL);
-  // Category — a client-side cut over the derived rows (product.category).
+  // Category — a client-side cut over the derived rows by Product.kind.
   const [category, setCategory] = React.useState<string>(ALL);
+  // Search — client-side substring match over product + location text.
+  const [search, setSearch] = React.useState("");
   const [drawerTarget, setDrawerTarget] = React.useState<CorrectionTarget | null>(
+    null,
+  );
+  const [breakdownTarget, setBreakdownTarget] = React.useState<BreakdownTarget | null>(
     null,
   );
   const [cellNote, setCellNote] = React.useState<string | null>(null);
@@ -100,31 +182,57 @@ export function StockClient() {
     [data, locationId],
   );
 
-  // productId → category, for the client-side Category filter + its options.
-  const categoryByProduct = React.useMemo(() => {
-    const m = new Map<string, string | null>();
-    for (const p of data.products) m.set(p.id, p.category);
+  // productId → kind (Goods/Dishes/Ingredients), for the client-side Category filter.
+  const kindByProduct = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of data.products) m.set(p.id, p.kind);
     return m;
   }, [data.products]);
 
-  const categoryOptions = React.useMemo(() => {
-    const seen = new Set<string>();
-    for (const r of allRows) {
-      const cat = categoryByProduct.get(r.id.split("@")[0]) ?? null;
-      if (cat) seen.add(cat);
+  const rows = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return allRows.filter((r) => {
+      if (category !== ALL && kindByProduct.get(r.id.split("@")[0]) !== category) {
+        return false;
+      }
+      if (q && !`${r.product} ${r.location ?? ""}`.toLowerCase().includes(q)) {
+        return false;
+      }
+      return true;
+    });
+  }, [allRows, category, kindByProduct, search]);
+
+  // Desktop KPI strip — see LedgerPositionBand above. Summed over the
+  // VISIBLE `rows` (post category/search filter), not `totals` (which is
+  // the unfiltered day) — so the strip always matches what the grid under
+  // it is actually showing. Quantity-only: closing/sold VALUE needs a
+  // per-unit cost join the F2 wire doesn't carry yet (same gap
+  // `derive-ledger.ts` flags for the grid's own Sold Value / Closing Value
+  // columns — pending F3/F4).
+  const kpiStats: PositionStat[] = React.useMemo(() => {
+    let closing = 0;
+    let purchases = 0;
+    let kitchen = 0;
+    let nonSale = 0;
+    let sold = 0;
+    for (const r of rows) {
+      closing += Number(r.closing.value ?? "0");
+      if (!r.purchases.dash) purchases += Number(r.purchases.value);
+      if (!r.issues.dash) kitchen += Number(r.issues.value);
+      if (!r.nonSale.dash) nonSale += Number(r.nonSale.value);
+      if (!r.sold.dash) sold += Number(r.sold.value);
     }
     return [
-      { value: ALL, label: "All" },
-      ...[...seen].sort((a, b) => a.localeCompare(b)).map((c) => ({ value: c, label: c })),
+      { label: "Stock on Hand", value: closing.toFixed(1), tone: "[color:var(--text-primary)]" },
+      { label: "Purchases Today", value: purchases === 0 ? "—" : `+${purchases.toFixed(1)}`, tone: "[color:var(--color-success)]" },
+      { label: "Kitchen Today", value: kitchen === 0 ? "—" : kitchen.toFixed(1), tone: "[color:var(--color-danger)]" },
+      // Warning (amber), not danger red — distinct from Kitchen's normal
+      // operational outflow. Non-Sale is the wastage/loss signal the owner
+      // asked to see; a non-zero figure here is worth a glance, not an alarm.
+      { label: "Non-Sale Today", value: nonSale === 0 ? "—" : nonSale.toFixed(1), tone: "[color:var(--color-warning)]" },
+      { label: "Sold Today", value: sold === 0 ? "—" : sold.toFixed(1), tone: "[color:var(--color-info)]" },
     ];
-  }, [allRows, categoryByProduct]);
-
-  const rows = React.useMemo(() => {
-    if (category === ALL) return allRows;
-    return allRows.filter(
-      (r) => (categoryByProduct.get(r.id.split("@")[0]) ?? null) === category,
-    );
-  }, [allRows, category, categoryByProduct]);
+  }, [rows]);
 
   // Date-control display label ("Aug 24"), per LDZ-0.
   const dateLabel = shortDate(date);
@@ -145,7 +253,7 @@ export function StockClient() {
       id: "category",
       kind: "select",
       label: "Category",
-      options: categoryOptions,
+      options: KIND_OPTIONS,
       value: category,
       default: ALL,
     },
@@ -173,6 +281,24 @@ export function StockClient() {
     setLocationId(ALL);
     setCategory(ALL);
     setDate(today);
+    setSearch("");
+  }
+
+  // Shared context (subtitle + unit) for both the single-movement
+  // CorrectionDrawer and the multi-movement BreakdownDrawer — one row can
+  // feed either, so the "Location · Product · Date" subtitle text is built
+  // once, not duplicated per drawer.
+  function rowContext(rowId: string) {
+    const [productId, rowLocationId] = rowId.split("@");
+    const product = data.products.find((p) => p.id === productId);
+    const location = data.locations.find((l) => l.id === rowLocationId);
+    const productLabel = product
+      ? `${product.name} (${product.unitLabel})`
+      : productId;
+    return {
+      subtitle: `${location?.name ?? rowLocationId} · ${productLabel} · ${shortDate(date)}`,
+      unit: product?.unitLabel ?? unitOf(productLabel),
+    };
   }
 
   function onCellClick(rowId: string, columnKey: string) {
@@ -180,34 +306,27 @@ export function StockClient() {
     if (!CORRECTABLE.has(columnKey)) return;
     const ids = cellMovements.get(rowId)?.[columnKey] ?? [];
     if (ids.length === 0) return;
+
+    const { subtitle, unit } = rowContext(rowId);
+    const fieldLabel = COLUMN_LABEL[columnKey] ?? columnKey;
+
     if (ids.length > 1) {
-      // FLAG (Session 7 wrap-up): a ledger aggregate cell backed by >1
-      // movement has no approved correction affordance. correctMovement
-      // needs one movementId; the drawer shows one editable field. Picking
-      // among rows behind an aggregate is a design-sprint question.
-      setCellNote(
-        `${ids.length} separate entries are behind this cell. Correcting one of several isn't designed yet — flagged for a design sprint.`,
-      );
+      // Was a "not designed yet" dead end (Session 7 flag) — now opens a
+      // breakdown list of the constituent movements, each with its own
+      // Correct action (this session, owner-approved). Also the only place
+      // a Non-Sale cell's `reason` (wastage/staff-meal/…) is visible, since
+      // the grid cell itself only ever shows the summed quantity.
+      const movements = ids
+        .map((id) => data.movements.find((m) => m.id === id))
+        .filter((m): m is NonNullable<typeof m> => !!m);
+      if (movements.length === 0) return;
+      setBreakdownTarget({ movements, subtitle, fieldLabel, unit });
       return;
     }
+
     const movement = data.movements.find((m) => m.id === ids[0]);
     if (!movement) return;
-
-    const [productId, rowLocationId] = rowId.split("@");
-    const product = data.products.find((p) => p.id === productId);
-    const location = data.locations.find((l) => l.id === rowLocationId);
-    const productLabel = product
-      ? `${product.name} (${product.unitLabel})`
-      : productId;
-
-    setDrawerTarget({
-      movement,
-      subtitle: `${location?.name ?? rowLocationId} · ${productLabel} · ${shortDate(
-        date,
-      )}`,
-      fieldLabel: COLUMN_LABEL[columnKey] ?? columnKey,
-      unit: product?.unitLabel ?? unitOf(productLabel),
-    });
+    setDrawerTarget({ movement, subtitle, fieldLabel, unit });
   }
 
   // Mobile per-row "Adjust" (artboard 8Q4-0): open the correction drawer for
@@ -234,7 +353,7 @@ export function StockClient() {
   }
 
   const filtered =
-    locationId !== ALL || category !== ALL || date !== today;
+    locationId !== ALL || category !== ALL || date !== today || search.trim() !== "";
   const noRows = !loading && !error && rows.length === 0;
 
   return (
@@ -242,13 +361,15 @@ export function StockClient() {
       <AdminPageHeader
         title="Stock & Reconciliation"
         actions={
-          // Date lives in the FilterToolbar below (LDZ-0). "Opening Stock"
-          // is an action, not a filter.
+          // Date lives in the FilterToolbar below (LDZ-0). "Opening Stock" is
+          // the screen's one real action (not a filter) — promoted to the
+          // primary button treatment so it doesn't read as a tertiary link
+          // next to the filter row (owner feedback, this session's review).
           <a
             href="/admin/stock/opening"
-            className="flex items-center h-(--control-md) shrink-0 px-(--sp-6) rounded-sm bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-interactive kit-focus-ring"
+            className="flex items-center justify-center h-(--control-md) shrink-0 px-(--sp-6) rounded-sm bg-accent [--kit-hover-bg:var(--color-accent-hover)] kit-interactive kit-focus-ring"
           >
-            <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-primary)] text-body/body">
+            <span className="font-ui font-(--weight-medium) w-max shrink-0 text-(--text-inverse) text-body/body">
               Opening Stock
             </span>
           </a>
@@ -256,9 +377,18 @@ export function StockClient() {
       />
       {/* ───────── Desktop ledger ───────── */}
       <div className="hidden md:flex flex-col grow gap-(--sp-8) min-w-0">
-        <div className="[width:100%] shrink-0">
+        <div className="[width:100%] shrink-0 flex flex-col gap-(--sp-6)">
+          <LedgerPositionBand stats={kpiStats} />
           <FilterToolbar
             aria-label="Filter the stock ledger"
+            search={
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Search products, locations…"
+                aria-label="Search the stock ledger"
+              />
+            }
             controls={filterControls}
             onChange={onFilterChange}
             onReset={resetFilters}
@@ -346,6 +476,14 @@ export function StockClient() {
         <div className="[width:100%] shrink-0 mb-(--sp-5)">
           <FilterToolbar
             aria-label="Filter the stock ledger"
+            search={
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Search products, locations…"
+                aria-label="Search the stock ledger"
+              />
+            }
             controls={filterControls}
             onChange={onFilterChange}
             onReset={resetFilters}
@@ -404,6 +542,7 @@ export function StockClient() {
                 [
                   "purchases",
                   "issues",
+                  "nonSale",
                   "production",
                   "transferIn",
                   "transferOut",
@@ -497,6 +636,24 @@ export function StockClient() {
           </a>
         </div>
       </div>
+
+      {breakdownTarget && (
+        <MovementBreakdownDrawer
+          target={breakdownTarget}
+          onClose={() => setBreakdownTarget(null)}
+          onPickMovement={(movement) => {
+            // Hand off breakdown → single correction for that one movement,
+            // reusing the same subtitle/fieldLabel/unit context.
+            setDrawerTarget({
+              movement,
+              subtitle: breakdownTarget.subtitle,
+              fieldLabel: breakdownTarget.fieldLabel,
+              unit: breakdownTarget.unit,
+            });
+            setBreakdownTarget(null);
+          }}
+        />
+      )}
 
       {drawerTarget && (
         <CorrectionDrawer

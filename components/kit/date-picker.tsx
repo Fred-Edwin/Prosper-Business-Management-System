@@ -1,7 +1,10 @@
 // Verbatim REST transcription of Paper artboard "Component Kit — Utility & Layout"
 // (6WD-0): "Date Picker" (6X2-0, closed) + "— Open" (9S1-0, calendar popover).
 // The trigger + popover visual (month header + ‹ ›, weekday row, day grid with
-// today ringed / selected = accent fill / future disabled) is byte-identical.
+// today ringed / selected = accent fill / future disabled) is byte-identical
+// EXCEPT the visual-polish pass below — same footing as the DenseLedger
+// Location column / Kitchen rename (owner-authorised divergence, artboard
+// now stale on this point, not yet re-synced).
 //
 // Session 10 rewire (owner-approved, kit-audit §1) — a real WAI-ARIA APG
 // "Date Picker Dialog":
@@ -16,10 +19,26 @@
 //     select + close, Esc = close. Roving tabindex over the day cells.
 //   - raw shadow → --shadow-md; z-10 → --z-dropdown; label linked via
 //     aria-labelledby.
+//
+// Visual polish (this session, owner review of the Ledger's date filter —
+// "it functions, but I think it can look better"):
+//   - ‹ › text glyphs → real Lucide ChevronLeft/ChevronRight (matches the
+//     rest of the icon system, design-principles.md §5: 1.5px stroke).
+//   - a "Today" quick-jump in the popover footer, replacing the old
+//     explanatory caption line ("Today ringed · selected = accent fill …")
+//     — an action is more useful than a legend once the ring/fill visual
+//     language is legible on its own.
+//   - month header weight/size tightened against the weekday row for
+//     clearer hierarchy.
+// Behavior (keyboard nav, ARIA, min/max, the `legacy` escape hatch) is
+// completely unchanged — polish only.
 "use client";
 
 import * as React from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const NAV_ICON_PROPS = { width: 14, height: 14, strokeWidth: 1.5, "aria-hidden": true } as const;
 
 /** Kept for the escape-hatch `weeks` prop (pre-computed grid). */
 export interface DatePickerDay {
@@ -256,12 +275,12 @@ export function DatePicker({
         >
           <div className="flex items-center justify-between">
             <div
-              className="font-ui font-(--weight-medium) inline-block [color:var(--text-primary)] text-sm/micro"
+              className="font-ui font-(--weight-semibold) inline-block [color:var(--text-primary)] text-body/sm"
               aria-live="polite"
             >
               {header}
             </div>
-            <div className="font-ui inline-block [color:var(--text-tertiary)] text-caption/micro">
+            <div className="flex items-center gap-[2px] [color:var(--text-secondary)]">
               <button
                 type="button"
                 onClick={() =>
@@ -270,10 +289,10 @@ export function DatePicker({
                     : setView(new Date(view.getFullYear(), view.getMonth() - 1, 1))
                 }
                 aria-label="Previous month"
-                className="kit-focus-ring rounded-sm px-[2px]"
+                className="flex items-center justify-center w-[22px] h-[22px] rounded-sm kit-interactive kit-focus-ring"
               >
-                ‹
-              </button>{" "}
+                <ChevronLeft {...NAV_ICON_PROPS} />
+              </button>
               <button
                 type="button"
                 onClick={() =>
@@ -282,9 +301,9 @@ export function DatePicker({
                     : setView(new Date(view.getFullYear(), view.getMonth() + 1, 1))
                 }
                 aria-label="Next month"
-                className="kit-focus-ring rounded-sm px-[2px]"
+                className="flex items-center justify-center w-[22px] h-[22px] rounded-sm kit-interactive kit-focus-ring"
               >
-                ›
+                <ChevronRight {...NAV_ICON_PROPS} />
               </button>
             </div>
           </div>
@@ -395,9 +414,18 @@ export function DatePicker({
             </div>
           )}
 
-          <div className="font-ui text-micro inline-block leading-[14px] [color:var(--text-tertiary)]">
-            Today ringed · selected = accent fill · future dates disabled
-          </div>
+          {/* "Today" quick-jump (this session) replaces the old static legend
+              line — real-calendar mode only, `legacy` has no Date to jump to. */}
+          {!legacy && (
+            <button
+              type="button"
+              onClick={() => pick(today)}
+              disabled={isDisabled(today)}
+              className="font-ui font-(--weight-medium) self-start text-accent text-caption/micro kit-focus-ring rounded-sm disabled:opacity-50 disabled:pointer-events-none"
+            >
+              Today
+            </button>
+          )}
         </div>
       )}
     </div>

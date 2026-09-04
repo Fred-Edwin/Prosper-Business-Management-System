@@ -27,7 +27,25 @@
 // Column widths from the artboard header: Product `grow min-w-[140px]`, Opening `w-[90px]`,
 // Purchases `w-[100px]`, Issues `w-[90px]`, Production `w-[100px]`, Transfer In `w-[110px]`,
 // Transfer Out `w-[120px]`, Sold `w-[80px]`, Sold Value `w-[100px]`, Closing `w-[90px]`,
-// Closing Value `w-[110px]`, Edit `w-[50px]`.
+// Closing Value `w-[110px]`, Edit `w-[50px]`. Non-Sale `w-[100px]` (added this session,
+// not on the artboard — see below).
+//
+// "Issues" → "Kitchen" (owner rename, this session's ledger-review pass). The
+// underlying MovementType is still `issue` in the
+// schema/API (a Store→Kitchen ingredient draw, distinct from non-sale consumption
+// wastage/staff-meal/etc — the two were never the same event, only mislabeled the
+// same in the grid). Cosmetic column label only; only real consumer today is the
+// Admin Stock ledger (stock-client.tsx) — Paper artboard 6ET-0 is stale on this
+// label like it already is on the Location column above.
+//
+// NON-SALE COLUMN (added this session, owner-authorised — kit change, same
+// footing as the Location column above; Paper 6ET-0 is stale on it too).
+// `non_sale_consumption` movements (wastage / staff meal / complimentary /
+// damaged / other) used to be silently merged into Kitchen (Issues) — see
+// `derive-ledger.ts` COLUMN_FOR_TYPE. Split into its own `w-[100px]` column
+// right after Kitchen so the two events (a normal Store→Kitchen draw vs.
+// stock that left for an exceptional non-sale reason) are visually
+// distinguishable on the grid, per the owner's review this session.
 //
 // LOCATION COLUMN (added Session 4b, owner-authorised — see DECISIONS.md ADR-37a). The
 // Admin Stock ledger screens (798-0 / 7G9-0 / 7LJ-0) draw a leading Location column
@@ -36,6 +54,15 @@
 // component is byte-identical to the 6ET-0 transcription. The Paper kit artboard 6ET-0 is
 // currently stale w.r.t. this prop — a follow-up Design Sprint adds the Location-column
 // state to 6ET-0 and this comment is removed.
+//
+// STICKY-LEFT PIN (design-principles.md §4.3, implemented this session — the spec
+// predates this build). When `horizontalScroll` is set, the Location + Product cells
+// are `position: sticky; left: 0/<location width>` with an opaque background (so
+// scrolling movement/value columns don't show through) and a hairline right border
+// on Product marking the pinned/scroll boundary — applied to header, every data row,
+// and the footer alike so the divider reads as one continuous vertical line. Only
+// active with `horizontalScroll` — the non-scrolling base usage (byte-identical
+// without it) needs no pin.
 "use client";
 
 import * as React from "react";
@@ -59,6 +86,15 @@ export interface LedgerRow {
   opening: LedgerCell;
   purchases: LedgerCell;
   issues: LedgerCell;
+  /**
+   * `non_sale_consumption` movements (wastage / staff meal / complimentary /
+   * damaged / other) — split into its own column, this session, from what
+   * used to be silently merged into `issues`. Owner review: a Kitchen draw
+   * (Store→Kitchen, `issues`) and stock that left without being sold for an
+   * exceptional reason are different events that happened to share one
+   * column. Correction-drawer / breakdown surfaces the `reason`.
+   */
+  nonSale: LedgerCell;
   production: LedgerCell;
   transferIn: LedgerCell;
   transferOut: LedgerCell;
@@ -73,6 +109,7 @@ export interface LedgerTotals {
   opening: LedgerCell;
   purchases: LedgerCell;
   issues: LedgerCell;
+  nonSale: LedgerCell;
   production: LedgerCell;
   transferIn: LedgerCell;
   transferOut: LedgerCell;
@@ -111,7 +148,8 @@ const COLUMNS: [keyof LedgerRow & string, string, string, boolean][] = [
   ["product", "Product", "grow min-w-[140px]", false],
   ["opening", "Opening", "w-[90px]", true],
   ["purchases", "Purchases (+)", "w-[100px]", true],
-  ["issues", "Issues (-)", "w-[90px]", true],
+  ["issues", "Kitchen (-)", "w-[90px]", true],
+  ["nonSale", "Non-Sale (-)", "w-[100px]", true],
   ["production", "Production (+)", "w-[100px]", true],
   ["transferIn", "Transfer In (+)", "w-[110px]", true],
   ["transferOut", "Transfer Out (-)", "w-[120px]", true],
@@ -122,6 +160,31 @@ const COLUMNS: [keyof LedgerRow & string, string, string, boolean][] = [
 ];
 
 const CLOSING_KEYS = new Set(["closing", "closingValue"]);
+
+/** Location column width (matches its `w-[100px]` class below). */
+const LOCATION_COL_WIDTH = 100;
+
+/** Sticky-left offset for the Product cell: after Location when shown, else 0. */
+function productStickyLeft(showLocation: boolean): number {
+  return showLocation ? LOCATION_COL_WIDTH : 0;
+}
+
+/**
+ * The header's `bg-info-bg` is `--color-info-bg` at 10% alpha — correct for a
+ * normal (non-sticky) cell painted once over the page background, but a
+ * STICKY header cell repaints on top of the scrolling columns behind it, so
+ * a translucent fill lets their text show through (visible bleed-through
+ * bug, caught this session). `background-image` paints above
+ * `background-color`, so stacking the same translucent token as an image
+ * over an explicit opaque `--surface-page` color-stop composites it solid —
+ * same visual tint, now actually opaque. Sticky-only; the base (non-scroll)
+ * header keeps the plain `bg-info-bg` class untouched.
+ */
+const STICKY_HEADER_BG: React.CSSProperties = {
+  backgroundColor: "var(--surface-page)",
+  backgroundImage:
+    "linear-gradient(var(--color-info-bg), var(--color-info-bg))",
+};
 
 function toneClass(cell: LedgerCell): string {
   if (cell.dash) return "[color:var(--text-tertiary)]";
@@ -204,17 +267,31 @@ export function DenseLedger({
         )}
       >
         {showLocation && (
-          <div className="w-[100px] shrink-0 font-ui font-(--weight-semibold) [letter-spacing:var(--tracking-caps)] uppercase inline-block text-info text-caption/micro">
+          <div
+            style={horizontalScroll ? STICKY_HEADER_BG : undefined}
+            className={cn(
+              "w-[100px] shrink-0 font-ui font-(--weight-semibold) [letter-spacing:var(--tracking-caps)] uppercase inline-block text-info text-caption/micro",
+              horizontalScroll ? "sticky left-0 [z-index:var(--z-sticky)]" : "bg-info-bg",
+            )}
+          >
             Location
           </div>
         )}
         {COLUMNS.map(([key, header, widthCls, numeric]) => (
           <div
             key={key}
+            style={
+              horizontalScroll && key === "product"
+                ? { left: productStickyLeft(showLocation), ...STICKY_HEADER_BG }
+                : undefined
+            }
             className={cn(
               "font-ui font-(--weight-semibold) text-[10px] [letter-spacing:var(--tracking-caps)] uppercase leading-[12px] text-info shrink-0",
               widthCls,
               numeric && "text-right flex justify-end flex-wrap",
+              horizontalScroll &&
+                key === "product" &&
+                "sticky [z-index:var(--z-sticky)] border-r border-r-solid [border-right-color:var(--border-subtle)]",
             )}
           >
             {header}
@@ -257,11 +334,28 @@ export function DenseLedger({
             )}
           >
             {showLocation && (
-              <div className="w-[100px] shrink-0 font-ui inline-block [color:var(--text-secondary)] text-sm/sm">
+              <div
+                className={cn(
+                  "w-[100px] shrink-0 font-ui inline-block [color:var(--text-secondary)] text-sm/sm",
+                  horizontalScroll &&
+                    "kit-ledger-sticky sticky left-0 [z-index:var(--z-sticky)]",
+                )}
+              >
                 {row.location}
               </div>
             )}
-            <div className="font-ui font-(--weight-medium) grow min-w-[140px] [color:var(--text-primary)] text-sm/micro">
+            <div
+              style={
+                horizontalScroll
+                  ? { left: productStickyLeft(showLocation) }
+                  : undefined
+              }
+              className={cn(
+                "font-ui font-(--weight-medium) grow min-w-[140px] [color:var(--text-primary)] text-sm/micro",
+                horizontalScroll &&
+                  "kit-ledger-sticky sticky [z-index:var(--z-sticky)] border-r border-r-solid [border-right-color:var(--border-subtle)]",
+              )}
+            >
               {row.product}
             </div>
             {COLUMNS.slice(1).map(([key, colHeader, widthCls, numeric]) => (
@@ -292,8 +386,26 @@ export function DenseLedger({
             lineWidth,
           )}
         >
-          {showLocation && <div className="w-[100px] shrink-0" />}
-          <div className="font-ui font-(--weight-semibold) grow min-w-[140px] text-(--text-inverse) text-sm/micro">
+          {showLocation && (
+            <div
+              className={cn(
+                "w-[100px] shrink-0",
+                horizontalScroll && "sticky left-0 [z-index:var(--z-sticky)] bg-gray-900",
+              )}
+            />
+          )}
+          <div
+            style={
+              horizontalScroll
+                ? { left: productStickyLeft(showLocation) }
+                : undefined
+            }
+            className={cn(
+              "font-ui font-(--weight-semibold) grow min-w-[140px] text-(--text-inverse) text-sm/micro",
+              horizontalScroll &&
+                "sticky [z-index:var(--z-sticky)] bg-gray-900 border-r border-r-solid [border-right-color:var(--nav-border)]",
+            )}
+          >
             {totals.label}
           </div>
           {COLUMNS.slice(1).map(([key, , widthCls]) => {

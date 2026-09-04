@@ -434,10 +434,10 @@ per screen, tabular-nums, no forbidden patterns).
 
 ## 8. Open design decisions
 
-Full context and ownership in `docs/DECISIONS.md` ADR-36. Three of the
-four are now resolved (Design Sprint Session 2, 2026-08-27). A session
-that hits the remaining open one **stops and gets a decision** — it does
-not pick an answer ad hoc.
+Full context and ownership in `docs/DECISIONS.md` ADR-36. All four are
+now resolved (three at Design Sprint Session 2, 2026-08-27; ADR-36b's
+stale "open" status caught and corrected during this session's Ledger
+review — the code had already resolved it, the doc hadn't caught up).
 
 1. **RESOLVED — "CORRECTED" chip on ledger correction rows.** No chip.
    Corrected cells render in their semantic color with a 1px underline
@@ -445,13 +445,16 @@ not pick an answer ad hoc.
    (§4.3, as rewritten). `components/kit/dense-ledger.tsx` drops the
    amber pill when rebuilt in Session 3. (ADR-36a)
 
-2. **OPEN — Ledger Maximize / sidebar-collapse persistence.** Settled:
-   the Maximize button uses the general Icon Rail collapse, not a
-   bespoke component (§2). Still open: whether that collapsed state
-   persists app-wide after leaving the Ledger or snaps back on
-   navigation. Development Sprint question — affects where the
-   `collapsed` state lives. Resolve with the Admin at the start of the
-   Stock admin-frontend session. (ADR-36b)
+2. **RESOLVED — Ledger Maximize / sidebar-collapse persistence.** The
+   Maximize button uses the general Icon Rail collapse, not a bespoke
+   component (§2), and the collapsed state persists app-wide —
+   `admin-shell-client.tsx` holds `collapsed` above the shell/route
+   split and mirrors it to `localStorage`
+   (`prosper.admin.sidebarCollapsed`), so it survives both a navigation
+   and a full reload (degrades to "expanded" if storage is unavailable).
+   Found already implemented and documented as done in code during this
+   session's Ledger review — this entry was stale, not re-decided.
+   (ADR-36b)
 
 3. **RESOLVED — `FrictionDeleteDialog` button labels.** The component
    takes optional `cancelLabel` / `confirmLabel` / `title` / `bodyCopy`

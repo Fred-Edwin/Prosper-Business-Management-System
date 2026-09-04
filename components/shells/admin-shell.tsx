@@ -392,7 +392,15 @@ export function AdminShell({
 
       {/* Body — 64A-0 / 67U-0 */}
       <div className="flex grow min-w-0">
-        <div className="flex items-start flex-1 flex-col">
+        {/* min-w-0 (fix, this session): without it, this flex-1 child refuses to
+            shrink below its content's intrinsic width — a wide table (e.g. the
+            Ledger with horizontalScroll) then blows out THIS wrapper instead of
+            triggering the table's own overflow-x-auto, and the whole document
+            (sidebar included) scrolls horizontally. Structural bug in the shell
+            itself, not any one screen — every wide-table Admin screen was
+            affected. `min-w-0` lets this shrink to its parent's clamped width,
+            so only the table's internal scroll container ever needs to scroll. */}
+        <div className="flex items-start flex-1 flex-col min-w-0">
           <div className="flex flex-col grow min-w-0 self-stretch h-screen">
             <div className="flex items-center h-[44px] shrink-0 gap-(--sp-4) pr-[24px] pl-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
               {collapsed && (

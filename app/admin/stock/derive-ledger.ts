@@ -37,7 +37,18 @@ const DASH: LedgerCell = { dash: true };
 /** Where a movementType routes. `"transfer"` = sign decides In vs Out; `null` = no column. */
 type ColumnRoute = keyof LedgerColumnSums | "transfer" | null;
 
-/** Which ledger column a movementType feeds. */
+/**
+ * Which ledger column a movementType feeds.
+ *
+ * `non_sale_consumption` → its own `nonSale` column (this session, owner
+ * review). It used to route to "issues" alongside real Kitchen draws —
+ * merging two different events (a normal Store→Kitchen transfer vs. stock
+ * that left for an exceptional reason: wastage/staff-meal/complimentary/
+ * damaged/other) into one number with no way to tell them apart on the
+ * grid. `<DenseLedger>`'s `nonSale` column + this routing change together
+ * are the fix; the correction drawer's per-movement breakdown (below)
+ * surfaces the `reason` for a cell backed by more than one movement.
+ */
 const COLUMN_FOR_TYPE: Record<MovementType, ColumnRoute> = {
   opening: null, // no column — its effect stays inside the derived Opening figure
   purchase_payment: null, // no stock effect (quantity = 0) — never on the grid
@@ -46,20 +57,21 @@ const COLUMN_FOR_TYPE: Record<MovementType, ColumnRoute> = {
   production: "production",
   transfer: "transfer", // sign decides transferIn vs transferOut
   sale: "sold",
-  non_sale_consumption: "issues", // non-sale consumption reads as an outflow alongside issues
+  non_sale_consumption: "nonSale",
   stock_count: null, // ditto: an adjusting count lands in Opening, not a column
   closing: null,
   // F6 (owner decision 2026-09-02): stock that left on a transfer and never
   // arrived. It reads as an outflow alongside issues so the TOTAL closing
   // reconciles and the loss is visible on the grid. A column of its own is
-  // the better home, but `<DenseLedger>` is frozen and adding one is a kit
-  // change — raised with the owner rather than forked here.
+  // a separate, not-yet-raised owner decision (unlike nonSale above) —
+  // left as-is.
   variance: "issues",
 };
 
 type LedgerColumnSums = {
   purchases: number;
   issues: number;
+  nonSale: number;
   production: number;
   transferIn: number;
   transferOut: number;
@@ -69,6 +81,7 @@ type LedgerColumnSums = {
 const ZERO_SUMS = (): LedgerColumnSums => ({
   purchases: 0,
   issues: 0,
+  nonSale: 0,
   production: 0,
   transferIn: 0,
   transferOut: 0,
@@ -163,6 +176,7 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
     const col: LedgerColumnSums = {
       purchases: 0,
       issues: 0,
+      nonSale: 0,
       production: 0,
       transferIn: 0,
       transferOut: 0,
@@ -191,6 +205,7 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
       closing -
       (col.purchases +
         col.issues +
+        col.nonSale +
         col.production +
         col.transferIn +
         col.transferOut +
@@ -198,6 +213,7 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
 
     sums.purchases += col.purchases;
     sums.issues += col.issues;
+    sums.nonSale += col.nonSale;
     sums.production += col.production;
     sums.transferIn += col.transferIn;
     sums.transferOut += col.transferOut;
@@ -215,6 +231,7 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
       opening: { value: opening.toFixed(1) },
       purchases: movementCell(col.purchases, "success", correctedCols.has("purchases")),
       issues: movementCell(col.issues, "danger", correctedCols.has("issues")),
+      nonSale: movementCell(col.nonSale, "danger", correctedCols.has("nonSale")),
       production: movementCell(col.production, "success", correctedCols.has("production")),
       transferIn: movementCell(col.transferIn, "success", correctedCols.has("transferIn")),
       transferOut: movementCell(col.transferOut, "danger", correctedCols.has("transferOut")),
@@ -232,6 +249,7 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
     opening: { value: totalOpening.toFixed(1) },
     purchases: sums.purchases === 0 ? { ...DASH } : { value: signed(sums.purchases), tone: "success" },
     issues: sums.issues === 0 ? { ...DASH } : { value: signed(sums.issues), tone: "danger" },
+    nonSale: sums.nonSale === 0 ? { ...DASH } : { value: signed(sums.nonSale), tone: "danger" },
     production: sums.production === 0 ? { ...DASH } : { value: signed(sums.production), tone: "success" },
     transferIn: sums.transferIn === 0 ? { ...DASH } : { value: signed(sums.transferIn), tone: "success" },
     transferOut: sums.transferOut === 0 ? { ...DASH } : { value: signed(sums.transferOut), tone: "danger" },

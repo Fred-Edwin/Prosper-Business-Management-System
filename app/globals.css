@@ -264,6 +264,26 @@ body {
   background-color: var(--surface-selected);
 }
 
+/* --- DenseLedger sticky-left pin (design-principles.md §4.3) -------------
+ * A `.kit-ledger-sticky` cell sits above its own row's scrolling siblings,
+ * so it needs an OPAQUE background of its own rather than inheriting the
+ * row's (CSS background-color doesn't cascade). Default = page background;
+ * tracks the row's hover/selected tint so the pinned columns don't look
+ * "stuck" mid-interaction. Header/footer set their own bg inline (info-bg /
+ * gray-900) since those rows are never .kit-row. */
+.kit-ledger-sticky {
+  background-color: var(--surface-page);
+}
+@media (hover: hover) {
+  .kit-row:hover .kit-ledger-sticky {
+    background-color: var(--surface-hover);
+  }
+}
+.kit-row[data-selected="true"] .kit-ledger-sticky,
+.kit-row[data-selected="true"]:hover .kit-ledger-sticky {
+  background-color: var(--surface-selected);
+}
+
 /* --- §9.5 + §9.6 + §9.7 + §9.9  Interactive control (button-ish) ---------
  * §9.9 transition ALLOW-LIST: background-color, border-color, opacity,
  * transform ONLY. Never a layout property. Never `outline` (§9.1 must be

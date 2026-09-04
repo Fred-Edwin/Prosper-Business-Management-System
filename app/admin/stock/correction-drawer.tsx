@@ -23,7 +23,7 @@ export type CorrectionTarget = {
   movement: StockMovementView;
   /** e.g. "Store · Beef Fillet (kg) · Aug 24" — the drawer's context subtitle. */
   subtitle: string;
-  /** Human label for the movement's column, e.g. "Kitchen Issue (-)". */
+  /** Human label for the movement's column, e.g. "Kitchen (-)". */
   fieldLabel: string;
   /** Unit label, e.g. "kg". */
   unit: string;
@@ -188,6 +188,127 @@ export function CorrectionDrawer({
         placeholder="What changed and why?"
         className="w-full"
       />
+    </Drawer>
+  );
+}
+
+// ── Multi-movement breakdown (this session — owner-approved) ───────────────
+//
+// Previously a cell backed by >1 movement (e.g. two purchases the same day)
+// showed a "not designed yet" note and refused to open (Session 7 flag). This
+// is the fix: list each constituent movement — quantity, reason (for
+// non_sale_consumption), corrected-flag — with its own "Correct" action that
+// hands off to <CorrectionDrawer> above for that one movement. Also answers
+// the owner's non-sale visibility question: a Non-Sale cell's reason is only
+// ever knowable at this per-movement level, never from the aggregated cell.
+//
+// Scope note: `recordedById` is on StockMovementView but there is no
+// resolved staff name on the wire today (no /api/staff join wired into
+// use-stock.ts) — "who" is left out of the breakdown rather than guessed or
+// wired up as unplanned scope. Flagged for a follow-up if the owner wants it.
+
+const REASON_LABEL: Record<string, string> = {
+  staff_meal: "Staff meal",
+  complimentary: "Complimentary",
+  spoiled: "Spoiled",
+  damaged: "Damaged",
+  other: "Other",
+};
+
+const MOVEMENT_TYPE_LABEL: Record<string, string> = {
+  purchase_receipt: "Purchase",
+  issue: "Kitchen issue",
+  non_sale_consumption: "Non-sale consumption",
+  production: "Production",
+  transfer: "Transfer",
+  sale: "Sale",
+  variance: "Variance",
+};
+
+export type BreakdownTarget = {
+  movements: StockMovementView[];
+  subtitle: string;
+  fieldLabel: string;
+  unit: string;
+};
+
+function fmtTime(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+export function MovementBreakdownDrawer({
+  target,
+  onClose,
+  onPickMovement,
+}: {
+  target: BreakdownTarget;
+  onClose: () => void;
+  /** Called when the user picks one movement to correct — the caller opens
+   *  <CorrectionDrawer> for it (same CorrectionTarget shape as a direct
+   *  single-movement cell click). */
+  onPickMovement: (movement: StockMovementView) => void;
+}) {
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title={`${target.fieldLabel} — ${target.movements.length} entries`}
+      subtitle={target.subtitle}
+      variant="rail"
+      footer={
+        <Button variant="secondary" className="grow" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      <div className="font-ui [color:var(--text-secondary)] text-body/sm">
+        This cell is the sum of {target.movements.length} separate entries.
+        Pick one to correct it.
+      </div>
+
+      <div className="flex flex-col">
+        {target.movements.map((m) => {
+          const q = Number(m.quantity);
+          const reasonLabel = m.reason ? REASON_LABEL[m.reason] ?? m.reason : null;
+          return (
+            <div
+              key={m.id}
+              className="flex items-center justify-between gap-(--sp-4) py-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
+            >
+              <div className="flex flex-col gap-(--sp-1) min-w-0">
+                <div className="font-ui [color:var(--text-primary)] text-body/sm">
+                  {MOVEMENT_TYPE_LABEL[m.movementType] ?? m.movementType}
+                  {reasonLabel ? ` · ${reasonLabel}` : ""}
+                </div>
+                <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
+                  {fmtTime(m.occurredAt)}
+                  {m.reasonNote ? ` · ${m.reasonNote}` : ""}
+                  {m.correctsMovementId ? " · corrected" : ""}
+                </div>
+              </div>
+              <div className="flex items-center gap-(--sp-4) shrink-0">
+                <span
+                  className={`font-mono text-body/sm ${
+                    q > 0 ? "text-success" : q < 0 ? "text-danger" : "[color:var(--text-tertiary)]"
+                  }`}
+                >
+                  {fmt1(q)} {target.unit}
+                </span>
+                <Button
+                  variant="tertiary"
+                  size="sm"
+                  onClick={() => onPickMovement(m)}
+                >
+                  Correct
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </Drawer>
   );
 }

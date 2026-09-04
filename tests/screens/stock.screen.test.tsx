@@ -62,6 +62,7 @@ function makeRow(id: string, product: string): LedgerRow {
     opening: { value: "25.0" },
     purchases: { value: "+50.0", tone: "success" },
     issues: CELL,
+    nonSale: CELL,
     production: CELL,
     transferIn: CELL,
     transferOut: CELL,
