@@ -22,10 +22,14 @@ function sessionFor(role: string, id: string, active = true) {
 
 const PREFIX = "__customers_route_test__";
 
-async function listCustomers(search?: string) {
+async function listCustomers(
+  search?: string,
+  extra?: { owingOnly?: boolean },
+) {
   const { GET } = await import("./route");
   const url = new URL("http://test/api/customers");
   if (search) url.searchParams.set("search", search);
+  if (extra?.owingOnly) url.searchParams.set("owingOnly", "true");
   const res = await GET(new NextRequest(url));
   return { status: res.status, body: await res.json() };
 }
@@ -110,6 +114,18 @@ describe("/api/customers — role access", () => {
     mockSession.current = sessionFor("admin", adminId);
     const { status } = await listCustomers(`${PREFIX}Mwangi`);
     expect(status).toBe(200);
+  });
+
+  it("admin: GET ?owingOnly=true → 200, rows carry oldestDebtAt", async () => {
+    mockSession.current = sessionFor("admin", adminId);
+    const { status, body } = await listCustomers(PREFIX, { owingOnly: true });
+    expect(status).toBe(200);
+    expect(Array.isArray(body.data)).toBe(true);
+    // Mwangi (created above via POST, no debt yet) must not appear — a
+    // customer with no Debt row has balance 0, excluded by owingOnly.
+    expect(body.data.map((r: { name: string }) => r.name)).not.toContain(
+      `${PREFIX} Mwangi`,
+    );
   });
 
   it("POST validation error (empty name) → 400 field name", async () => {

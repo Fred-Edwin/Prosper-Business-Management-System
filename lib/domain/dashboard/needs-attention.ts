@@ -139,7 +139,7 @@ export async function getNeedsAttention(
   }
 
   // ── lowOrNegativeStock ───────────────────────────────────────────
-  const lowStock = await getLowOrNegativeStock();
+  const { view: lowStock } = await getLowOrNegativeStock();
 
   return {
     openPriorDates,
@@ -157,10 +157,17 @@ export async function getNeedsAttention(
  * grouped sum over the whole `StockMovement` ledger (the derived-balance
  * rule — no stored total), then the product/location names for only the
  * offending rows.
+ *
+ * Also returns `countByLocationId` — the same low/negative rows folded to
+ * a per-location count, reused by the "Stock & activity by location" zone
+ * (`stock-activity.ts`) so that read doesn't re-run its own groupBy over
+ * the same ledger (CLAUDE.md: don't re-derive a figure that already
+ * exists elsewhere).
  */
-async function getLowOrNegativeStock(): Promise<
-  DashboardNeedsAttention["lowOrNegativeStock"]
-> {
+export async function getLowOrNegativeStock(): Promise<{
+  view: DashboardNeedsAttention["lowOrNegativeStock"];
+  countByLocationId: Map<string, number>;
+}> {
   const grouped = await prisma.stockMovement.groupBy({
     by: ["productId", "locationId"],
     _sum: { quantity: true },
@@ -174,7 +181,15 @@ async function getLowOrNegativeStock(): Promise<
     .filter((r) => r.qty.lte(ZERO))
     .sort((a, b) => a.qty.comparedTo(b.qty));
 
-  if (low.length === 0) return { count: 0, top: [] };
+  const countByLocationId = new Map<string, number>();
+  for (const r of low) {
+    countByLocationId.set(
+      r.locationId,
+      (countByLocationId.get(r.locationId) ?? 0) + 1,
+    );
+  }
+
+  if (low.length === 0) return { view: { count: 0, top: [] }, countByLocationId };
 
   const top3 = low.slice(0, 3);
   const productIds = [...new Set(top3.map((r) => r.productId))];
@@ -193,12 +208,15 @@ async function getLowOrNegativeStock(): Promise<
   const locationById = new Map(locations.map((l) => [l.id, l.name]));
 
   return {
-    count: low.length,
-    top: top3.map((r) => ({
-      productName: productById.get(r.productId)?.name ?? "?",
-      locationName: locationById.get(r.locationId) ?? "?",
-      qty: r.qty.toFixed(4),
-      unit: productById.get(r.productId)?.unitLabel ?? "",
-    })),
+    view: {
+      count: low.length,
+      top: top3.map((r) => ({
+        productName: productById.get(r.productId)?.name ?? "?",
+        locationName: locationById.get(r.locationId) ?? "?",
+        qty: r.qty.toFixed(4),
+        unit: productById.get(r.productId)?.unitLabel ?? "",
+      })),
+    },
+    countByLocationId,
   };
 }

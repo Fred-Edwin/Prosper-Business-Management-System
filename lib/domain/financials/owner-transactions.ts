@@ -147,6 +147,32 @@ export async function listOwnerTransactions(
 }
 
 /**
+ * `Σ draws` (`type = "draw"` only — NOT netted against returns) over an
+ * inclusive `[from, to]` business-date range. A FLOW (ADR-57), distinct
+ * from `getOwnerOwedToBusiness` (a running BALANCE, draws − returns, no
+ * date filter). Folded into `getFinancialSummary().consolidated` for
+ * Dashboard v2's "Owner draws this <period>" row.
+ */
+export async function getOwnerDrawsForPeriod(
+  from: string,
+  to: string,
+): Promise<Prisma.Decimal> {
+  assertBusinessDate(from, "from");
+  assertBusinessDate(to, "to");
+  const agg = await prisma.ownerTransaction.aggregate({
+    _sum: { amount: true },
+    where: {
+      type: "draw",
+      date: {
+        gte: businessDateStartUtc(from),
+        lt: businessDateEndUtc(to),
+      },
+    },
+  });
+  return agg._sum.amount ?? new Prisma.Decimal(0);
+}
+
+/**
  * The derived "owed to the business by the owner" figure: `Σ draws −
  * Σ returns` over **every** `OwnerTransaction` row (no date filter — it is
  * a running balance, not a period figure). Positive = the owner owes the

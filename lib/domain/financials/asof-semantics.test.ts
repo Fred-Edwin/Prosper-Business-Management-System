@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { businessDateLastInstantUtc } from "@/lib/time";
 import { getAccountBalances } from "./get-account-balances";
 import { getFinancialSummary } from "./get-financial-summary";
-import { getOwnerOwedToBusiness } from "./owner-transactions";
+import { getOwnerDrawsForPeriod, getOwnerOwedToBusiness } from "./owner-transactions";
 import { recordMoneyMovement } from "./record-money-movement";
 import {
   cleanupFinancialsTestData,
@@ -175,6 +175,28 @@ describe("asOf cutoff on getOwnerOwedToBusiness", () => {
     );
     // The 04-12 return of 100 reduces the figure by exactly 100.
     expect(early.sub(late).toFixed(2)).toBe("100.00");
+  });
+
+  // Dashboard v2, §1a — `ownerDrawsForPeriod` is a FLOW: it sums draws
+  // only over `from..to`, unlike the balance above (draws − returns,
+  // as-of a single instant).
+  it("getFinancialSummary(from, to).consolidated.ownerDrawsForPeriod equals getOwnerDrawsForPeriod and ignores the return", async () => {
+    const summary = await getFinancialSummary("2026-04-01", "2026-04-30");
+    const direct = await getOwnerDrawsForPeriod("2026-04-01", "2026-04-30");
+    expect(summary.consolidated.ownerDrawsForPeriod).toBe(direct.toFixed(2));
+    // Only the draw (300) counts — the return (100) is excluded, not
+    // subtracted, so this differs from ownerOwedToBusiness (200).
+    expect(summary.consolidated.ownerDrawsForPeriod).toBe("300.00");
+    expect(summary.consolidated.ownerOwedToBusiness).toBe("200.00");
+  });
+
+  it("ownerDrawsForPeriod does NOT move with asOf/to the way the balance does — a draw outside the range is excluded entirely", async () => {
+    // Range ending before the return (04-12) still counts the draw fully.
+    const early = await getFinancialSummary("2026-04-01", "2026-04-11");
+    expect(early.consolidated.ownerDrawsForPeriod).toBe("300.00");
+    // A range that excludes the draw's date entirely sees none of it.
+    const before = await getFinancialSummary("2026-04-01", "2026-04-09");
+    expect(before.consolidated.ownerDrawsForPeriod).toBe("0.00");
   });
 });
 

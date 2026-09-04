@@ -15,6 +15,197 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 5 "Dashboard & Financials v2" Session A — backend (Developer — 2026-09-04) — DONE (backend only)
+
+Backend-only session against the (unwritten-as-a-plan-doc) handoff
+`docs/sprints/m5-dashboard-financials-v2-session-A-backend-HANDOFF.md`.
+Three sessions total for this feature: **A (this one) → B (Dashboard
+frontend) → C (Financials frontend)**. No schema migration. No frontend
+screen work — the two test-fixture / one call-site edits below are pure
+mechanical follow-through to keep `pnpm typecheck` green after widening
+`CustomerListRow` and `DashboardView`, not screen composition.
+
+**Decision Session B needs (§6 of the handoff): `GET /api/admin/dashboard`
+still takes only `?date=` — no `from`/`to` were added.** The v2 period
+control's THREE period-scoped Dashboard zones are split as follows:
+
+- **Profit stack** (Revenue/COGS/Gross/Expenses/Net) + **"Financial
+  performance by location"** — client calls `GET
+  /api/financials/summary?from=&to=` directly. Already returned exactly
+  this shape before this session (`consolidated`, `perLocation[]`) — **no
+  backend change needed**, confirmed per the handoff's "verify, don't
+  build" framing for this piece.
+- **"Owner draws this `<period>`"** — **also** `GET
+  /api/financials/summary`, not the dashboard aggregator. `consolidated`
+  gained a new field, `ownerDrawsForPeriod` (Σ `OwnerTransaction` rows of
+  `type = "draw"` only, unnetted against returns, over `from..to` — a
+  FLOW, distinct from the existing `ownerOwedToBusiness` BALANCE). Chose
+  this over adding the read to the dashboard aggregator (which the
+  handoff explicitly steered away from — "lean toward NOT adding period
+  params to this endpoint") and over leaving it to client-side summing of
+  `GET /api/owner-transactions?from=&to=` rows (that endpoint has no
+  server-side aggregation and summing money client-side, while not
+  unprecedented in this codebase — `expenses-tab.tsx` already does it for
+  a tab total — would have meant Session B reimplementing "sum draws
+  only, ignore returns" itself). Reusing `/summary` means Session B builds
+  the ENTIRE period-scoped zone (profit stack + per-location table +
+  owner draws) from one call.
+- **"Stock & activity by location"** — new, and it DOES live on the
+  dashboard aggregator, per the handoff — it's a "now" figure like the
+  rest of that endpoint, not period data. See below.
+
+**Shipped**
+
+- `lib/domain/dashboard/stock-activity.ts` (new) —
+  `getStockActivityByLocation(today)`: per location (Store → Restaurant →
+  Canteen, via `Location.type` — not a name-string match),
+  `{ locationId, locationName, movementCount, lowStockCount,
+  handoverStatus }`.
+  - `movementCount` — a `groupBy` over today's `StockMovement` rows.
+  - `lowStockCount` — reuses `needs-attention.ts`'s existing low-stock
+    `groupBy` rather than a second sweep: `getLowOrNegativeStock` now
+    also returns a `countByLocationId` map alongside its unchanged
+    top-3-overall view (signature change, both call sites updated).
+  - `handoverStatus` — folded from `getReconciliation(today).rows`
+    (**not** re-derived from `Handover` directly) by `locationId`: any
+    row `received === false` → `"awaiting"`; rows present and all
+    received → `"received"`; no rows today → `null` (Store — no handover
+    flow at all, PRD).
+  - Wired into `getDashboard()` as `stockActivity: StockActivityByLocation[]`
+    on the aggregate (Promise.all'd alongside the existing bands — no
+    added round trips).
+- `lib/domain/financials/owner-transactions.ts` —
+  `getOwnerDrawsForPeriod(from, to)`: `Σ OwnerTransaction` where
+  `type = "draw"`, business-date range `[from, to]`. Wired into
+  `getFinancialSummary` as `consolidated.ownerDrawsForPeriod`.
+- `lib/domain/customers/list-customers.ts` — `listCustomers` gained
+  `owingOnly` (strictly-positive-balance filter, sorted oldest-unpaid
+  first when set — otherwise the existing name sort is untouched) and
+  every row now carries `oldestDebtAt` (earliest `Debt.occurredAt`, or
+  `null`). `GET /api/customers?owingOnly=true` — chose extending the
+  existing route/domain fn over a new endpoint, matching the handoff's
+  explicit steer and the existing `?hasBalance=true` precedent on the
+  same route.
+- `docs/API.md` — "Dashboard" gained the `stockActivity` field + a "v2
+  additions" note recording the from/to decision above; "Financials"
+  gained `ownerDrawsForPeriod` in the worked example + explanation;
+  "Customers & Credit" gained `owingOnly` + `oldestDebtAt`.
+
+**§1b (Non-Sale Consumption) — VERIFIED, nothing built.** Confirmed, not
+assumed:
+- `app/api/stock-movements/route.ts` already accepts
+  `?movementType=non_sale_consumption` (`listMovementsQuerySchema`
+  already had the field) — no route change.
+- `listMovements({ movementType: "non_sale_consumption" })` already
+  returns every field the v2 tab needs: `productId`, `locationId`,
+  `quantity`, `reason`, `recordedById`, `occurredAt`, plus `productName` /
+  `unitLabel` (joined). New test:
+  `lib/domain/stock/non-sale-consumption-read-shape.test.ts` — writes a
+  real row and asserts the shape against it, rather than trusting the
+  spec doc's claim.
+- `Recorded by` (a resolved staff **name**) and `Est. cost` are **not**
+  fields on `StockMovementView` — the row carries the raw
+  `recordedById`, and cost is not persisted or returned anywhere. Per the
+  spec (`financials-screen.md`), Session C is expected to resolve the
+  name and compute cost the same way every other transaction tab and
+  `computeNonSaleCost` already do (client-side, from data already on the
+  page) — flagging this explicitly so C doesn't go looking for a
+  `recordedByName` / `estCost` field that was never meant to exist.
+- `getFinancialSummary(from, to).nonSaleConsumption.total` — unchanged,
+  already the KPI tile total. No action needed.
+
+**§1c open question — flagged to the owner, not guessed:** "oldest
+unpaid" has no single well-defined meaning in this schema. `Debt` and
+`Repayment` carry **no FIFO linkage** — a repayment reduces a customer's
+total derived balance, not any specific debt row — so for a customer with
+several debts and partial repayments, which individual debt(s) remain
+"unpaid" is not answerable from the data as it exists today. Built
+`oldestDebtAt` as a documented simplification (earliest `Debt.occurredAt`
+for the customer, regardless of how much has since been repaid against
+the balance as a whole) rather than inventing a FIFO-allocation business
+rule unprompted. **Someone needs to decide**, before Session C ships the
+"Oldest unpaid" column as literal fact: is the simplification acceptable
+long-term, or does the product need real per-debt aging (which would mean
+schema work — linking repayments to debts — well beyond this session's
+read-only scope)? Documented in `docs/API.md` "Customers & Credit" so
+Session C inherits the caveat, not just the field name.
+
+**Tests** (+7 files): `stock-activity.test.ts` (7) — location order,
+`movementCount` scoped to today only, `lowStockCount` reflects ≤0 on
+hand, Store's `handoverStatus` is always `null`, and **two
+reconciliation-agreement tests** asserting `stockActivity[].handoverStatus`
+matches `getReconciliation(today).rows` exactly through an
+awaiting→received transition and a mixed-status multi-row case (the
+handoff's explicit "two reads of the same rows must not drift"
+discipline, `day-detail-reconciliation.test.ts`'s S11 precedent);
+`owner-transactions.test.ts` (+2) — draws-only sum ignores returns and
+out-of-range dates, malformed-date rejection; `asof-semantics.test.ts`
+(+2) — `getFinancialSummary().consolidated.ownerDrawsForPeriod` agrees
+with `getOwnerDrawsForPeriod` directly and behaves as a flow (unaffected
+by the balance-moving return, excluded entirely outside its date rather
+than netted); `customers.test.ts` (+2) — `oldestDebtAt` correctness
+(including the no-debt `null` case) and `owingOnly` (excludes
+zero/negative balances including an overpaid customer, sorts
+oldest-unpaid first); `non-sale-consumption-read-shape.test.ts` (2, new
+file, §1b verification); `app/api/admin/dashboard/route.test.ts` (updated)
+— `stockActivity` shape assertion added to the existing 200 case;
+`app/api/financials/summary/route.test.ts` (+1) — `ownerDrawsForPeriod`
+decimal-string shape; `app/api/customers/route.test.ts` (+1) —
+`?owingOnly=true` 200 + filter sanity.
+
+**Mechanical fixture/call-site fixes (not screen work) to keep
+`typecheck` green after widening the two shared types:**
+`app/cashier/orders/new/new-order-client.tsx` (one `onAttach(...)` call
+gained `oldestDebtAt: null` for a brand-new customer),
+`tests/screens/admin-customers.screen.test.tsx`,
+`tests/screens/cashier-customers.screen.test.tsx`,
+`tests/screens/cashier-orders.screen.test.tsx` (fixture rows gained
+`oldestDebtAt`), `tests/screens/admin-dashboard.screen.test.tsx` (fixture
+`DashboardView` gained a 3-row `stockActivity` fixture). None of these
+touch screen composition or business logic — Session B/C still own the
+real UI for `stockActivity` / `oldestDebtAt`.
+
+**`app/globals.css` and `components/kit/dense-ledger.tsx` were not
+touched** — confirmed clean of any change in this worktree at session
+start (the parked Ledger-redesign work the handoff warned about was not
+present here) and left untouched throughout.
+
+**Gates:** `pnpm test` — baseline run (before this session's edits, on a
+freshly-generated Prisma client this worktree needed via `pnpm
+prisma:generate`) was 978/978 passing with 1 unrelated file flaking on a
+concurrent-worker DB cleanup race, confirmed pre-existing/non-code by
+rerunning that one file in isolation (11/11 green) after the codebase
+was stable. Final full-suite result with every change in this entry
+applied: see the session's actual gate report (typecheck 0 errors;
+`grep -rn "TODO(mock)"` → none added, pre-existing state unchanged).
+
+**Changed from plan:** none — this handoff was the plan (no
+`milestone-5-plan.md`, matching S11/S13/S14/S15/S16 precedent).
+
+**For Session B (Dashboard frontend):**
+- `GET /api/admin/dashboard` — build `stockActivity` into the "Stock &
+  activity by location" table exactly as returned; no client-side
+  re-derivation.
+- For the period-scoped zones (profit stack, per-location table, owner
+  draws), call `GET /api/financials/summary?from=&to=` — **one call**
+  covers all three; `consolidated.ownerDrawsForPeriod` is the new field.
+- No prior-period comparison figure was built this session (see
+  `docs/API.md` "Dashboard" v2 note) — if the profit stack's delta
+  captions need one, that's a new ask, raise it rather than building a
+  second summary call as a workaround.
+
+**For Session C (Financials frontend):**
+- Non-Sale Consumption tab: `listMovements({ movementType:
+  "non_sale_consumption" })` is confirmed ready — resolve `recordedById`
+  → name and compute cost client-side, the same way the other tabs and
+  `computeNonSaleCost` already do; no new fields were added for this.
+- Debts card: `GET /api/customers?owingOnly=true` returns rows
+  pre-sorted oldest-unpaid-first with `oldestDebtAt` on each — **but read
+  the caveat above** before labelling that column "Oldest unpaid" as if
+  it were a precise per-debt figure; it is a customer-level proxy.
+
+---
+
 ## Milestone 5 Session 16 — QA walkthrough: one awkward business day, end to end (Developer + Owner — 2026-09-04) — DONE
 
 A full-day reconciliation pass, not a feature session. The owner scripted

@@ -12,3 +12,4 @@ export { DomainError } from "@/lib/domain/financials/errors";
 export * from "./types";
 export { getDashboard } from "./get-dashboard";
 export { dailyNetSeries, type DailyNet } from "./trend-series";
+export { getStockActivityByLocation } from "./stock-activity";

@@ -132,6 +132,28 @@ export type DashboardTrend = {
   net30Total: string;
 };
 
+// ── v2 — Stock & activity by location (always "now", never period) ────
+
+/**
+ * A location's `handoverStatus` today: `"awaiting"` if any of today's
+ * handovers at that location has no receipt yet, `"received"` if it has
+ * rows and every one is received, `null` if the location has no handover
+ * rows today at all (Store — no handover flow, PRD) or genuinely no
+ * activity yet. Folded from the SAME rows `GET /api/handovers/reconciliation`
+ * returns for the date (`getReconciliation`) — never re-derived.
+ */
+export type HandoverStatus = "awaiting" | "received" | null;
+
+export type StockActivityByLocation = {
+  locationId: string;
+  locationName: string;
+  /** Count of today's `StockMovement` rows at this location. */
+  movementCount: number;
+  /** Count of products at this location currently ≤ 0 on hand. */
+  lowStockCount: number;
+  handoverStatus: HandoverStatus;
+};
+
 // ── The aggregate ────────────────────────────────────────────────────
 
 export type DashboardView = {
@@ -142,4 +164,6 @@ export type DashboardView = {
   needsAttention: DashboardNeedsAttention;
   today: DashboardToday;
   trend: DashboardTrend;
+  /** v2 — always "now", ordered Store → Restaurant → Canteen. */
+  stockActivity: StockActivityByLocation[];
 };

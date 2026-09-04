@@ -249,6 +249,14 @@ export type FinancialSummary = {
      * `to`** — a balance, not a period figure (ADR-57).
      */
     ownerOwedToBusiness: string;
+    /**
+     * Σ owner draws (`type = "draw"` only, NOT netted against returns)
+     * over the whole `from..to` range — a FLOW (ADR-57), distinct from
+     * `ownerOwedToBusiness` above. Added for Dashboard v2's "Owner draws
+     * this &lt;period&gt;" row (`dashboard-screen.md`) — "money the owner
+     * has taken out", not the running owed-to-owner balance.
+     */
+    ownerDrawsForPeriod: string;
     /** Cash at hand as of the end of `to` (ADR-57). */
     cashBalance: string;
     /** M-Pesa / Bank as of the end of `to` (ADR-57). */

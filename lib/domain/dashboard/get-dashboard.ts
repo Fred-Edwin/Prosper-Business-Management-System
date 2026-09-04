@@ -12,6 +12,7 @@ import { DomainError } from "@/lib/domain/financials/errors";
 import { dailyNetSeries, type DailyNet } from "./trend-series";
 import { getNeedsAttention } from "./needs-attention";
 import { getTodaysActivity } from "./todays-activity";
+import { getStockActivityByLocation } from "./stock-activity";
 import type {
   DashboardView,
   DashboardPosition,
@@ -65,13 +66,14 @@ export async function getDashboard(date: string): Promise<DashboardView> {
     trendFrom < priorWeekFrom ? trendFrom : priorWeekFrom;
   const seriesTo = date > week.to ? date : week.to;
 
-  const [balances, ownerOwed, series, needsAttention, today] =
+  const [balances, ownerOwed, series, needsAttention, today, stockActivity] =
     await Promise.all([
       getAccountBalances({ asOf }),
       getOwnerOwedToBusiness(asOf),
       dailyNetSeries(seriesFrom, seriesTo),
       getNeedsAttention(date),
       getTodaysActivity(date),
+      getStockActivityByLocation(date),
     ]);
 
   const byDate = new Map(series.map((d) => [d.date, d]));
@@ -83,6 +85,7 @@ export async function getDashboard(date: string): Promise<DashboardView> {
     needsAttention,
     today,
     trend: buildTrend(trendFrom, date, byDate),
+    stockActivity,
   };
 }
 

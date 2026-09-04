@@ -26,6 +26,7 @@ const ROWS: CustomerListRow[] = [
     phone: "0722000111",
     balance: "1200.00",
     lastActivityAt: "2026-08-28T09:00:00.000Z",
+    oldestDebtAt: "2026-08-20T09:00:00.000Z",
   },
   {
     id: "c2",
@@ -33,6 +34,7 @@ const ROWS: CustomerListRow[] = [
     phone: "0733222444",
     balance: "0.00",
     lastActivityAt: null,
+    oldestDebtAt: null,
   },
 ];
 

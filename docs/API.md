@@ -686,11 +686,34 @@ Admin reconciliation view's read. → `200` with:
 ### `GET /api/customers`
 Roles: Admin, Cashier. Query: `?search=` (case-insensitive contains on
 `name` **or** `phone`), `?hasBalance=true` (only customers whose derived
-balance ≠ 0). Returns `{ data: CustomerListRow[] }`, sorted by name. Each
-item: `{ id, name, phone, balance, lastActivityAt }` — `balance` is a
-signed decimal string (negative = overpaid / credit in hand);
-`lastActivityAt` is the ISO max of the customer's debt/repayment
-`occurredAt`, or `null`.
+balance ≠ 0, either sign), `?owingOnly=true` (added M5 "Dashboard &
+Financials v2" Session A — only customers whose derived balance is
+**strictly positive**, i.e. they owe the business; takes precedence over
+`hasBalance` if both are passed). Returns `{ data: CustomerListRow[] }`.
+Each item: `{ id, name, phone, balance, lastActivityAt, oldestDebtAt }` —
+`balance` is a signed decimal string (negative = overpaid / credit in
+hand); `lastActivityAt` is the ISO max of the customer's debt/repayment
+`occurredAt`, or `null`; `oldestDebtAt` is the ISO **earliest**
+`Debt.occurredAt` for that customer, or `null` if they have never had a
+debt.
+
+- **Sort order.** The base list (no `owingOnly`) is sorted by name, as
+  before. `?owingOnly=true` sorts by `oldestDebtAt` **ascending**
+  (oldest-unpaid first) instead — this is the mode the Financials v2
+  "Debts owed to the business" card uses (`financials-screen.md` —
+  "Customer · Amount owed · Oldest unpaid"), and that card's whole point
+  is "who has owed us money the longest".
+- **`oldestDebtAt` is a simplification, flagged to the owner, not a true
+  per-debt aging figure.** `Debt` and `Repayment` carry no FIFO linkage —
+  a repayment reduces the customer's total derived balance, not a
+  specific debt row — so which individual debt(s) remain "unpaid" for a
+  customer with several debts and partial repayments is not answerable
+  from this schema today. `oldestDebtAt` is the earliest debt date
+  regardless of how much of it (if any) has since been repaid — a
+  reasonable proxy for "how long has this customer owed us something",
+  not a statement about which specific debt is still open. See
+  `docs/PROGRESS.md`'s M5 "Dashboard & Financials v2" Session A entry for
+  the open question this raises for the owner.
 
 ### `POST /api/customers`
 Roles: Admin, Cashier. Body: `{ "name": "...", "phone": "..." }` (both
@@ -812,6 +835,7 @@ required; `400` if missing / malformed / `from > to`). Returns
     "revenue": "5000.00", "cogs": "5000.00", "grossProfit": "0.00",
     "totalExpenses": "400.00", "netProfit": "-400.00",
     "debtsOwedToBusiness": "1200.00", "ownerOwedToBusiness": "4000.00",
+    "ownerDrawsForPeriod": "3000.00",
     "cashBalance": "25000.00", "mpesaBankBalance": "15000.00"
   },
   "nonSaleConsumption": {
@@ -835,17 +859,25 @@ required; `400` if missing / malformed / `from > to`). Returns
 - Per-location carries revenue/COGS/gross only — expenses, net profit and
   debts are consolidated (Expense rows carry no location).
 - **Flows vs. balances (ADR-57).** `revenue`, `cogs`, `grossProfit`,
-  `totalExpenses`, `netProfit` and `nonSaleConsumption` accumulate over
-  the whole `from..to` range. The four position figures —
-  `cashBalance`, `mpesaBankBalance`, `debtsOwedToBusiness`,
-  `ownerOwedToBusiness` — are a level at one instant and are read **as of
-  the end of `to`** (movements dated on the `to` business day count; the
-  next day does not). Derived by summing append-only rows with an
-  `occurredAt` cutoff — nothing stored.
+  `totalExpenses`, `netProfit`, `ownerDrawsForPeriod` and
+  `nonSaleConsumption` accumulate over the whole `from..to` range. The
+  four position figures — `cashBalance`, `mpesaBankBalance`,
+  `debtsOwedToBusiness`, `ownerOwedToBusiness` — are a level at one
+  instant and are read **as of the end of `to`** (movements dated on the
+  `to` business day count; the next day does not). Derived by summing
+  append-only rows with an `occurredAt` cutoff — nothing stored.
 - **`nonSaleConsumption`** is a SEPARATE figure — a view INTO COGS for
   management visibility, **not** added on top of it. Ingredient/goods
   waste valued at `buyingPrice`; dish waste at `dishWasteCostPercent ×
   sellingPrice` (default 0.60, env-configurable — ADR-55 §4).
+- **`ownerDrawsForPeriod`** (added M5 "Dashboard & Financials v2" Session
+  A) — `Σ OwnerTransaction` rows of `type = "draw"` **only**, over the
+  whole `from..to` range. **Not netted against returns** — a FLOW,
+  distinct from `ownerOwedToBusiness` (a running BALANCE, draws −
+  returns, as of the end of `to`). Added so the Dashboard v2 "Owner draws
+  this `<period>`" row (`dashboard-screen.md`) can be built from this one
+  call rather than a second aggregator endpoint or a client-side sum over
+  `GET /api/owner-transactions?from=&to=`.
 
 > `GET /api/financials/balances` (Cash / M-Pesa / owed-to-business) was
 > planned as its own route; those figures are all in
@@ -1388,7 +1420,37 @@ Africa/Nairobi business dates. The five bands map 1:1 to
         { "date": "2026-09-03", "net": "900.00" }
       ],
       "net30Total": "61200.00"           // Σ of the 30 nets
-    }
+    },
+
+    // ── v2 — Stock & activity by location ("now", not period-scoped) ──
+    "stockActivity": [
+      // Ordered Store → Restaurant → Canteen (Location.type, not a name
+      // match). ALWAYS today's date, regardless of any period a client
+      // is separately showing elsewhere on the page (dashboard-screen.md
+      // "Stock & activity by location" — same "always now" rule as
+      // Position above).
+      {
+        "locationId": "loc-store",
+        "locationName": "Store",
+        "movementCount": 6,             // today's StockMovement rows at this location
+        "lowStockCount": 1,             // products at this location currently ≤ 0 on hand
+        "handoverStatus": null          // Store has no handover flow — always null
+      },
+      {
+        "locationId": "loc-restaurant",
+        "locationName": "Restaurant",
+        "movementCount": 14,
+        "lowStockCount": 2,
+        "handoverStatus": "awaiting"    // "awaiting" | "received" | null
+      },
+      {
+        "locationId": "loc-canteen",
+        "locationName": "Canteen",
+        "movementCount": 9,
+        "lowStockCount": 0,
+        "handoverStatus": "received"
+      }
+    ]
   }
 }
 ```
@@ -1405,3 +1467,38 @@ Africa/Nairobi business dates. The five bands map 1:1 to
   (a business that closes daily never has an older gap).
 - "Corrections today" is meant to link into the Audit trail screen with
   `action=correct` + a today date-range preset (see `GET /api/audit`).
+
+### v2 additions (M5 "Dashboard & Financials v2" Session A, 2026-09-04)
+
+**This endpoint gained `stockActivity` above and NOTHING else — it still
+takes only `?date=`, no `from`/`to`.** The v2 redesign put a period
+control on the `/admin` screen for the profit-stack + per-location-P&L +
+owner-draws zones, but per `dashboard-screen.md`'s explicit steer
+("Do NOT duplicate the profit-stack numbers onto this endpoint… lean
+toward NOT adding period params to this endpoint"), those figures are
+**NOT** served here:
+
+- **Profit stack (Revenue/COGS/Gross/Expenses/Net) + "Financial
+  performance by location"** — the client calls `GET
+  /api/financials/summary?from=&to=` directly (see "Financials" below).
+  `perLocation[]` on that response is exactly the shape the by-location
+  table needs, Store naturally absent (it never sells).
+- **"Owner draws this `<period>`"** — also served by `GET
+  /api/financials/summary`, NOT this endpoint. `consolidated` gained
+  `ownerDrawsForPeriod` (see "Financials" below) precisely so the client
+  can build the whole period-scoped zone — profit stack, per-location
+  table, and the owner-draws row — from **one** call to `/summary`,
+  without a second aggregator call or a third bespoke endpoint. This
+  endpoint (`/api/admin/dashboard`) stays exactly what it was in M5:
+  "now" / "today" / "this week so far", no period picker.
+- **`stockActivity`** is the one genuinely new v2 figure that belongs
+  here (not on `/summary`) — it's a "now" read like the rest of this
+  endpoint's payload, never period-scoped, so putting a period control on
+  the page changes nothing about it.
+
+A prior-period comparison figure for the profit stack's delta captions
+(`dashboard-screen.md` mentions this as a possible follow-up) was **not
+built this session** — nothing in the v2 screen docs required it yet, and
+building it speculatively would be exactly the kind of workaround the
+handoff warned against. If Session B needs it, that is a new, explicit
+ask, not an oversight here.
