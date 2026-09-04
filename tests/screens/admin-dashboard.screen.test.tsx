@@ -1,27 +1,36 @@
 // @vitest-environment jsdom
 //
-// Per-screen gate — `/admin` dashboard (M5 S14). Composed from
-// components/kit/* + the two documented inline bar strips, against
-// GET /api/admin/dashboard (see docs/design/flows/dashboard-screen.md).
+// Per-screen gate — `/admin` dashboard v2 (Session B). Composed from
+// components/kit/* + the documented inline bar strips, against
+// GET /api/admin/dashboard, GET /api/financials/summary and
+// GET /api/admin/dashboard/trend (see docs/design/flows/dashboard-screen.md
+// "Structure (v2 — current)"). Extends the M5 S14 suite rather than
+// replacing it — same mocking shape, same reconciliation discipline.
 //
 // Interactive / guarantee bits only (no specs for read-only display):
+//   • period control changes trigger the right refetch (range passed to
+//     useFinancialSummary / useDashboardTrend)
 //   • the Needs-attention action links navigate to the right routes
 //   • the all-clear empty state renders when every queue is clear
-//   • the Day Close toggle still works from its new position (Band 5)
+//   • the Day Close toggle still works from its new position (bottom zone)
+//   • the new Stock & activity table renders `stockActivity` rows,
+//     including the `handoverStatus: null` Store case
+//   • the profit stack's Net Profit tile picks the right background
+//     colour by sign
 //   • RECONCILIATION: the Position figures the dashboard renders are the
-//     API's `position.*` verbatim — no rounding / transform — so they
-//     agree with the Financials balance figures at the same instant (the
-//     data-layer guarantee proven in S13 survives the UI wiring).
+//     API's `position.*` verbatim — no rounding / transform.
 //
-// useDashboard + useDayClose are mocked; no server / DB. jsdom applies no
-// CSS, so BOTH the `md:` and `md:hidden` branches render — queries use
-// getAllBy / within where they'd otherwise be ambiguous.
+// useDashboard / useFinancialSummary / useDashboardTrend / useDayClose are
+// all mocked; no server / DB. jsdom applies no CSS, so BOTH the `md:` and
+// `md:hidden` branches render — queries use getAllBy / within where
+// they'd otherwise be ambiguous.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "@/components/kit/toast";
 import type { DashboardView } from "@/lib/domain/dashboard";
+import type { FinancialSummary } from "@/lib/domain/financials";
 import type { DayCloseView, DayStatusView } from "@/lib/domain/audit";
 
 // ── next/link → plain <a> ─────────────────────────────────────────────
@@ -42,7 +51,47 @@ vi.mock("@/app/admin/use-dashboard", () => ({
   useDashboard: () => ({ ...dashState, refresh: refreshDash }),
 }));
 
-// ── useDayClose mock (Band 5's card) ─────────────────────────────────
+// ── useFinancialSummary mock — called twice (current + prior period);
+// track every {from, to} it's invoked with so the period-control test can
+// assert a preset change re-requests the right range. ────────────────
+const summaryCalls: { from: string; to: string }[] = [];
+let summaryByRange: (from: string, to: string) => FinancialSummary | null;
+const refreshSummary = vi.fn();
+vi.mock("@/app/admin/financials/use-financials", () => ({
+  useFinancialSummary: (from: string, to: string) => {
+    summaryCalls.push({ from, to });
+    return {
+      summary: summaryByRange(from, to),
+      loading: false,
+      error: null,
+      refresh: refreshSummary,
+    };
+  },
+}));
+
+// ── useDashboardTrend mock ─────────────────────────────────────────────
+const trendCalls: { from: string; to: string }[] = [];
+const refreshTrend = vi.fn();
+vi.mock("@/app/admin/use-dashboard-trend", () => ({
+  useDashboardTrend: (from: string, to: string) => {
+    trendCalls.push({ from, to });
+    return {
+      data: {
+        from,
+        to,
+        dailyNet: [
+          { date: from, net: "500.00" },
+          { date: to, net: "-200.00" },
+        ],
+      },
+      loading: false,
+      error: null,
+      refresh: refreshTrend,
+    };
+  },
+}));
+
+// ── useDayClose mock (bottom zone) ─────────────────────────────────
 const closeDay = vi.fn().mockResolvedValue(undefined);
 const reopenDay = vi.fn().mockResolvedValue(undefined);
 let dayCloseState: {
@@ -132,14 +181,42 @@ function view(over: Partial<DashboardView> = {}): DashboardView {
       })),
       net30Total: "41200.00",
     },
-    // v2 — "Stock & activity by location" (backend shipped Session A; the
-    // screen composition using this field is Session B's).
+    // v2 — "Stock & activity by location" (backend Session A, screen Session B).
     stockActivity: [
       { locationId: "loc-store", locationName: "Store", movementCount: 6, lowStockCount: 1, handoverStatus: null },
       { locationId: "loc-restaurant", locationName: "Restaurant", movementCount: 14, lowStockCount: 2, handoverStatus: "awaiting" },
       { locationId: "loc-canteen", locationName: "Canteen", movementCount: 9, lowStockCount: 0, handoverStatus: "received" },
     ],
     ...over,
+  };
+}
+
+function summary(over: Partial<FinancialSummary["consolidated"]> = {}): FinancialSummary {
+  return {
+    from: "2026-08-31",
+    to: "2026-09-03",
+    perLocation: [
+      { locationId: "loc-restaurant", locationName: "Restaurant", revenue: "9800.00", cogs: "6200.00", grossProfit: "3600.00" },
+      { locationId: "loc-canteen", locationName: "Canteen", revenue: "4400.00", cogs: "3400.00", grossProfit: "1000.00" },
+    ],
+    consolidated: {
+      revenue: "14200.00",
+      cogs: "9600.00",
+      grossProfit: "4600.00",
+      totalExpenses: "31900.00",
+      netProfit: "-27300.00",
+      debtsOwedToBusiness: "1200.00",
+      ownerOwedToBusiness: "15000.00",
+      ownerDrawsForPeriod: "6000.00",
+      cashBalance: "54300.00",
+      mpesaBankBalance: "128100.00",
+      ...over,
+    },
+    nonSaleConsumption: {
+      total: "740.00",
+      byReason: { staffMeal: "240.00", complimentary: "0.00", spoiled: "500.00", damaged: "0.00", other: "0.00" },
+      dishWasteCostPercent: "0.60",
+    },
   };
 }
 
@@ -160,8 +237,100 @@ function renderScreen() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  summaryCalls.length = 0;
+  trendCalls.length = 0;
   dashState = { data: view(), loading: false, error: null };
   dayCloseState = { today: OPEN_TODAY, recent: [], loading: false, error: null };
+  summaryByRange = () => summary();
+});
+
+// ── Period control — drives the period-scoped reads ──────────────────
+
+describe("/admin dashboard — period control", () => {
+  it("defaults to Today and requests that range from useFinancialSummary / useDashboardTrend", async () => {
+    renderScreen();
+    await screen.findAllByText(/right now/i);
+    // Today's preset resolves from === to.
+    expect(summaryCalls.length).toBeGreaterThan(0);
+    expect(summaryCalls[0].from).toBe(summaryCalls[0].to);
+    expect(trendCalls[0].from).toBe(trendCalls[0].to);
+  });
+
+  it("switching to This week re-requests a Monday–Sunday range", async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await screen.findAllByText(/right now/i);
+    summaryCalls.length = 0;
+    trendCalls.length = 0;
+
+    const weekButtons = screen.getAllByRole("radio", { name: "This week" });
+    await user.click(weekButtons[0]);
+
+    await waitFor(() => expect(trendCalls.length).toBeGreaterThan(0));
+    // useDashboardTrend is only ever called with the CURRENT period's
+    // range (never the prior-period comparison range), so it's the
+    // unambiguous signal here — useFinancialSummary is called twice
+    // (current + prior period) and their relative order isn't asserted.
+    const last = trendCalls.at(-1)!;
+    expect(last.from).not.toBe(last.to);
+    expect(
+      summaryCalls.some((c) => c.from === last.from && c.to === last.to),
+    ).toBe(true);
+  });
+});
+
+// ── Profit stack — Net Profit tile background by sign ─────────────────
+
+describe("/admin dashboard — profit stack", () => {
+  it("Net Profit renders in the danger-toned figure when negative", async () => {
+    summaryByRange = () => summary({ netProfit: "-27300.00" });
+    renderScreen();
+    const figures = await screen.findAllByText("− KES 27,300.00");
+    expect(figures.length).toBeGreaterThan(0);
+    expect(figures[0].className).toContain("text-danger");
+  });
+
+  it("Net Profit renders in the success-toned figure when non-negative", async () => {
+    summaryByRange = () => summary({ netProfit: "33400.00" });
+    renderScreen();
+    const figures = await screen.findAllByText("KES 33,400.00");
+    expect(figures.length).toBeGreaterThan(0);
+    expect(figures[0].className).toContain("text-success");
+  });
+
+  it("renders owner draws for the period", async () => {
+    summaryByRange = () => summary({ ownerDrawsForPeriod: "6000.00" });
+    renderScreen();
+    expect((await screen.findAllByText("KES 6,000.00")).length).toBeGreaterThan(0);
+  });
+});
+
+// ── Financial performance / Stock & activity by location tables ──────
+
+describe("/admin dashboard — location tables", () => {
+  it("financial performance table shows Restaurant + Canteen, not Store", async () => {
+    renderScreen();
+    await screen.findAllByText(/financial performance by location/i);
+    expect(screen.getAllByText("Restaurant").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Canteen").length).toBeGreaterThan(0);
+  });
+
+  it("stock activity table includes Store with a dash for handover (null status)", async () => {
+    renderScreen();
+    await screen.findAllByText(/stock & activity by location/i);
+    // Store row renders; its handover cell is the "—" placeholder, not a
+    // status pip, since `handoverStatus: null`.
+    const storeRows = screen.getAllByText("Store");
+    expect(storeRows.length).toBeGreaterThan(0);
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  it("renders Awaiting / Received pips for Restaurant / Canteen handover status", async () => {
+    renderScreen();
+    await screen.findAllByText(/stock & activity by location/i);
+    expect(screen.getAllByText("Awaiting").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Received").length).toBeGreaterThan(0);
+  });
 });
 
 // ── Needs attention — links + all-clear ──────────────────────────────
@@ -182,7 +351,6 @@ describe("/admin dashboard — Needs attention", () => {
 
   it("shows the open count and the danger dot copy for the low-stock row", async () => {
     renderScreen();
-    // 4 queues populated (open days + awaiting + shortfall + low stock).
     expect((await screen.findAllByText("4 open")).length).toBeGreaterThan(0);
     expect(
       screen.getAllByText(/items low or negative on stock/i).length,
@@ -208,16 +376,14 @@ describe("/admin dashboard — Needs attention", () => {
       (await screen.findAllByText(/All clear — nothing needs you before you close\./i))
         .length,
     ).toBeGreaterThan(0);
-    // No "N open" count when nothing is open.
     expect(screen.queryByText(/\d+ open/)).not.toBeInTheDocument();
-    // No action links inside the band.
     expect(screen.queryByRole("link", { name: /Open stock/ })).not.toBeInTheDocument();
   });
 });
 
-// ── Day Close card — still interactive from Band 5 ───────────────────
+// ── Day Close card — still interactive from its new position ─────────
 
-describe("/admin dashboard — Day Close (Band 5)", () => {
+describe("/admin dashboard — Day Close", () => {
   it("toggling today's switch calls close(date) and toasts", async () => {
     const user = userEvent.setup();
     renderScreen();
@@ -257,9 +423,6 @@ describe("/admin dashboard — Day Close (Band 5)", () => {
 
 describe("/admin dashboard — Position figures reconcile with the API", () => {
   it("renders position.cash / mpesaBank / liquidity / ownerOwedToBusiness with no transform", async () => {
-    // These four are the SAME derivations getFinancialSummary produces for
-    // its balance figures (docs/API.md "Dashboard" · S13). The screen must
-    // not round or re-derive them — it formats the decimal string as-is.
     dashState = {
       data: view({
         position: {
@@ -273,9 +436,8 @@ describe("/admin dashboard — Position figures reconcile with the API", () => {
       error: null,
     };
     renderScreen();
-    await screen.findAllByText(/position right now/i);
+    await screen.findAllByText(/right now/i);
 
-    // Desktop columns + mobile stack both render → getAllByText.
     expect(screen.getAllByText("KES 182,400.00").length).toBeGreaterThan(0); // liquidity
     expect(screen.getAllByText("KES 54,300.00").length).toBeGreaterThan(0); // cash (desktop)
     expect(screen.getAllByText("54,300.00").length).toBeGreaterThan(0); // cash (mobile)
@@ -297,7 +459,7 @@ describe("/admin dashboard — Position figures reconcile with the API", () => {
       error: null,
     };
     renderScreen();
-    await screen.findAllByText(/position right now/i);
+    await screen.findAllByText(/right now/i);
     expect(screen.getAllByText("KES 3,500.50").length).toBeGreaterThan(0);
   });
 });

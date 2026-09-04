@@ -18,3 +18,13 @@ const businessDate = z
 export const dashboardQuerySchema = z.object({
   date: businessDate.optional(),
 });
+
+/**
+ * `GET /api/admin/dashboard/trend?from=&to=` (v2 Session B). Both
+ * required, `from <= to` checked by the domain (`dailyNetSeries`
+ * rejects an inverted range the same way `getFinancialSummary` does).
+ */
+export const dashboardTrendQuerySchema = z.object({
+  from: businessDate,
+  to: businessDate,
+});

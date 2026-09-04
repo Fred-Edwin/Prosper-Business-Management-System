@@ -1,20 +1,23 @@
 "use client";
 
-// M3 S7 — the date-range control for /admin/financials, composed from the
-// FROZEN kit: <SegmentedControl> (Today / This week / This month / Custom)
-// + the existing single-date <DatePicker>, shown only when Custom is
-// selected. The kit <DatePicker> is single-date by design; a range picker
-// was explicitly NOT added to the kit (S7 brief). Presets cover the three
+// M3 S7 (Financials), promoted to shared `/admin` level in v2 Session B
+// (Dashboard) — the date-range control, composed from the FROZEN kit:
+// <SegmentedControl> (Today / This week / This month / Custom) + the
+// existing single-date <DatePicker>, shown only when Custom is selected.
+// The kit <DatePicker> is single-date by design; a range picker was
+// explicitly NOT added to the kit (S7 brief). Presets cover the three
 // spans the owner asked for; Custom is one business day.
 //
-// One instance lives in the admin header row on desktop and in the mobile
-// "Date Row" below the header — same component, the parent places it.
+// Originally `financials-range.tsx` / `FinancialsRangeControl`, Financials-
+// only. Renamed `AdminDateRangeControl` when the Dashboard needed the
+// identical control (v2 Session B) — behaviour unchanged, both screens
+// import from here now.
 
 import * as React from "react";
 import { SegmentedControl } from "@/components/kit/segmented-control";
 import { DatePicker } from "@/components/kit/date-picker";
-import type { FinancialsRange, RangePreset } from "./use-financials-range";
-import { shortBusinessDateWithYear } from "./use-financials-range";
+import type { AdminDateRange, RangePreset } from "./use-date-range";
+import { shortBusinessDateWithYear } from "./use-date-range";
 
 const PRESET_LABELS: Record<RangePreset, string> = {
   today: "Today",
@@ -47,14 +50,14 @@ function ymdOf(d: Date): string {
   }).format(d);
 }
 
-export function FinancialsRangeControl({
+export function AdminDateRangeControl({
   range,
   today,
   onPreset,
   onCustomDay,
   className,
 }: {
-  range: FinancialsRange;
+  range: AdminDateRange;
   /** Africa/Nairobi today — the max selectable custom day. */
   today: string;
   onPreset: (preset: Exclude<RangePreset, "custom">) => void;

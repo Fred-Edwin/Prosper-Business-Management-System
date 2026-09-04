@@ -1,11 +1,17 @@
 "use client";
 
-// M3 S7 — the date-range control state for /admin/financials.
+// M3 S7 (Financials) — the date-range control state, shared with
+// `/admin` v2 (Session B — Dashboard). Originally
+// `use-financials-range.ts` / `FinancialsRange` / `useFinancialsRange`;
+// promoted out of `financials/` and renamed to `AdminDateRange` /
+// `useAdminDateRange` when the Dashboard needed the identical control
+// (v2 Session B) — Financials imports from here now too, nothing about
+// its behaviour changed.
 //
-// ONE control drives the whole screen. It resolves a preset (or a custom
-// single day) to an inclusive `{ from, to }` pair of Africa/Nairobi
-// business dates (lib/time — never server-local). That pair then feeds
-// BOTH kinds of figure on the screen, differently (ADR-57):
+// ONE control drives a screen. It resolves a preset (or a custom single
+// day) to an inclusive `{ from, to }` pair of Africa/Nairobi business
+// dates (lib/time — never server-local). That pair then feeds BOTH kinds
+// of figure on a screen, differently (ADR-57):
 //
 //   • FLOWS  (revenue, COGS, profit, expenses, the transaction tables)
 //            accumulate over the WHOLE range → from..to.
@@ -28,7 +34,7 @@ import {
 
 export type RangePreset = "today" | "week" | "month" | "custom";
 
-export type FinancialsRange = {
+export type AdminDateRange = {
   preset: RangePreset;
   /** Inclusive `YYYY-MM-DD` Africa/Nairobi business dates. */
   from: string;
@@ -72,13 +78,13 @@ export function resolvePreset(
 }
 
 /** A human label for the active range, for the header / captions. */
-export function rangeLabel(range: FinancialsRange): string {
+export function rangeLabel(range: AdminDateRange): string {
   if (range.from === range.to) return shortBusinessDateWithYear(range.from);
   return `${shortBusinessDate(range.from)} – ${shortBusinessDateWithYear(range.to)}`;
 }
 
-export function useFinancialsRange(): {
-  range: FinancialsRange;
+export function useAdminDateRange(): {
+  range: AdminDateRange;
   /** Switch to a preset (today / this week / this month). */
   setPreset: (preset: Exclude<RangePreset, "custom">) => void;
   /** Pick a single custom business day (`from === to`). */
@@ -87,7 +93,7 @@ export function useFinancialsRange(): {
   today: string;
 } {
   const today = React.useMemo(() => nairobiToday(), []);
-  const [range, setRange] = React.useState<FinancialsRange>(() => ({
+  const [range, setRange] = React.useState<AdminDateRange>(() => ({
     preset: "today",
     ...resolvePreset("today", today),
   }));

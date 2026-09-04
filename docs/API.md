@@ -1502,3 +1502,41 @@ built this session** — nothing in the v2 screen docs required it yet, and
 building it speculatively would be exactly the kind of workaround the
 handoff warned against. If Session B needs it, that is a new, explicit
 ask, not an oversight here.
+
+### `GET /api/admin/dashboard/trend?from=YYYY-MM-DD&to=YYYY-MM-DD` (v2 Session B)
+
+Roles: **Admin only.** Read-only. Both `from`/`to` required (`400
+VALIDATION_ERROR` if missing, malformed, or `from > to`).
+
+A narrow, additive route added for the v2 period trend bar strip
+(`dashboard-screen.md` "Trend charts" — "Trend bucketing by period"). A
+thin exposure of `dailyNetSeries` (ADR-64) over the period control's
+**exact** `[from, to]` range — distinct from both `GET
+/api/admin/dashboard`'s always-30-days `trend` band and its
+always-this-week `week` band, neither of which is period-aligned. The
+client buckets the daily series into the bars the strip draws (daily for
+Today/This week, weekly ISO-week buckets for This month, a length-based
+default for Custom) — see `bucketTrendByPeriod` in `dashboard-client.tsx`.
+
+`GET /api/admin/dashboard` deliberately still takes only `?date=` (Session
+A's decision, above) — this is a **separate route**, not a parameter added
+to that aggregator.
+
+```jsonc
+{
+  "data": {
+    "from": "2026-08-31",
+    "to": "2026-09-06",
+    "dailyNet": [
+      { "date": "2026-08-31", "net": "4200.00" },
+      { "date": "2026-09-01", "net": "-1100.00" }
+      // … one entry per business date in [from, to] …
+    ]
+  }
+}
+```
+
+`net` is `getFinancialSummary(day, day).consolidated.netProfit` to the
+cent for each day (ADR-64's telescoping-COGS identity) — never `null`;
+every date in the requested range is in the past-or-present relative to
+the range itself, so there is no "future day" case here (unlike `week`).

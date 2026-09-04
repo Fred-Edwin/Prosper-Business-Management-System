@@ -139,14 +139,24 @@ the period profit-stack numbers above already answer "how did we do this
 period" without a second chart competing for vertical space on a long
 page). Revisit if the owner asks for it back.
 
-**Trend bucketing by period (build-session work, not fully designed
-here):** the period card's bucketing must change shape with the period
-control — daily bars for Today/This week, weekly bars for This month
-(≈4–5 bars, not 30 daily ones crammed in), and a sensible default for
-Custom. This was **explicitly deferred to the build session** by the
-owner ("we don't have to design it again... when we are building the
-screen we'll ensure we handle this properly") — implement it there, not
-by adding more Paper states.
+**Trend bucketing by period — RESOLVED (v2 Session B, 2026-09-04):**
+implemented per the guidance below, no deviation. `bucketTrendByPeriod` in
+`dashboard-client.tsx`:
+- Today / This week → one bar per day (unchanged M5 week-strip look, just
+  re-titled from the period control's label).
+- This month → one bar per ISO (Monday-first) week the range touches,
+  summed — 4–5 bars, not 30 daily ones.
+- Custom → daily under 14 days, weekly at/above it (documented as a magic
+  number in the component, not left unexplained). Financials' Custom
+  preset is always a single day today (`use-date-range.ts`), so this
+  branch does not currently fire in practice — it exists for if Custom
+  ever grows a real range picker.
+Data source: a new narrow route, `GET
+/api/admin/dashboard/trend?from=&to=` (`docs/API.md` "Dashboard"), a thin
+exposure of `dailyNetSeries` (ADR-64) over the period's exact range —
+separate from `GET /api/admin/dashboard`'s fixed 30-day/week bands, and
+separate from `GET /api/admin/dashboard` gaining `from`/`to` (Session A's
+decision, not relitigated).
 
 ### Zone — Financial performance by location (table)
 Caption "Financial performance by location" + `--text-disabled` sub-line
@@ -456,15 +466,12 @@ contract unchanged.
 
 ## Assumptions the build session should verify
 
-- **v2's period-trend bucketing is intentionally unspecified here** —
-  the owner explicitly deferred it to the build session rather than
-  designing every period state in Paper ("we don't have to design it
-  again... when we are building the screen we'll ensure we handle this
-  properly"). Implement: daily bars for Today/This week, weekly buckets
-  for This month, a sensible default for Custom (likely daily under
-  ~45 days, weekly above). This is purely a client-side bucketing
-  decision over the period's `dailyNet[]` — no new backend shape needed
-  beyond returning daily granularity for the requested span.
+- **v2's period-trend bucketing** — RESOLVED, v2 Session B. See "Trend
+  bucketing by period" above. It needed one small additive backend
+  route (`GET /api/admin/dashboard/trend`) rather than staying purely
+  client-side over an existing shape — `dailyNet[]` from the M5 bands
+  doesn't cover an arbitrary period range, only always-30-days/always-
+  this-week.
 - The dashboard is **Admin-only** (same as every other `/admin/*`
   screen).
 - "Corrections today" links into the Audit trail screen with

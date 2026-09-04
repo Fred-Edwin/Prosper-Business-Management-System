@@ -10,10 +10,14 @@ import type { DashboardView } from "@/lib/domain/dashboard";
  * `request<T>` that unwraps `{ data }` / throws on `{ error }`, plus a
  * `refresh()`.
  *
- * The dashboard has NO period picker: every figure the endpoint returns
- * is "now" / "today" / "this week so far". Money crosses the boundary as
- * decimal strings — the screen formats for display with local helpers,
- * never `Number()`-es for a domain call.
+ * v2: the Dashboard DOES now have a period picker, but this endpoint is
+ * unaffected by it — every figure here is still "now" / "today" / "this
+ * week so far" (Session A's decision: `?date=` only, no `from`/`to`). The
+ * period-scoped zones (profit stack, per-location table, owner draws,
+ * period trend) are separate reads — see `use-financials-summary.ts`
+ * (reused from Financials) and `use-dashboard-trend.ts`. Money crosses
+ * the boundary as decimal strings — the screen formats for display with
+ * local helpers, never `Number()`-es for a domain call.
  */
 
 export type ApiError = { code: string; message: string; field?: string };
