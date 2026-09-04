@@ -19,9 +19,13 @@
 // inside Opening, so Closing can never contradict the balances API again,
 // and the rule self-heals for any future null-column movement type.
 //
-// The "value" columns (closingValue, soldValue) are opening/closing × unit
-// cost — cost data the F2 wire does NOT carry for every type, so they render
-// "—" until F3/F4 (see the flag in the Session 7 wrap-up).
+// The "value" columns (closingValue, soldValue) are closing/sold quantity ×
+// unit cost, where unit cost is `product.buyingPrice` — the same per-unit
+// figure ADR-55's COGS sweep uses (ingredient/goods → buyingPrice, dish →
+// 0, so a dish's ingredients aren't double-counted). `ProductWithLocations`
+// already carries `buyingPrice` on the Admin-only wire this screen uses, so
+// no new fetch was needed (fixed this session — previously hardcoded to a
+// dash pending a cost join that turned out to already be in hand).
 //
 // Corrections need no special handling (ADR-39): correctMovement writes the
 // delta as an ordinary signed `quantity` row of the same movementType, so
@@ -116,6 +120,18 @@ function movementCell(
   return { value: signed(n), tone, ...(corrected ? { corrected: true } : {}) };
 }
 
+/** ADR-55 costValue: dish → 0 (its ingredients were already counted), else buyingPrice. */
+function costValueOf(product: ProductWithLocations | undefined): number {
+  if (!product || product.kind === "dish") return 0;
+  return num(product.buyingPrice ?? "0");
+}
+
+/** An unsigned money cell: "—" at zero (no cost data or zero quantity), else "KES 1,234". */
+function valueCell(magnitude: number): LedgerCell {
+  if (magnitude === 0) return { ...DASH };
+  return { value: `KES ${magnitude.toLocaleString("en-KE", { maximumFractionDigits: 0 })}` };
+}
+
 export type DeriveLedgerInput = {
   /** Every movement row for the active business day (already location-scoped by the API). */
   movements: StockMovementView[];
@@ -158,6 +174,8 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
   const sums = ZERO_SUMS();
   let totalOpening = 0;
   let totalClosing = 0;
+  let totalSoldValue = 0;
+  let totalClosingValue = 0;
 
   const rows: LedgerRow[] = [];
   const cellMovements = new Map<string, Partial<Record<string, string[]>>>();
@@ -221,6 +239,13 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
     totalOpening += opening;
     totalClosing += closing;
 
+    const costValue = costValueOf(product);
+    // col.sold is signed negative (an outflow); the cell shows a magnitude.
+    const soldValue = Math.abs(col.sold) * costValue;
+    const closingValue = closing * costValue;
+    totalSoldValue += soldValue;
+    totalClosingValue += closingValue;
+
     const rowId = key;
     cellMovements.set(rowId, perCell);
 
@@ -236,11 +261,9 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
       transferIn: movementCell(col.transferIn, "success", correctedCols.has("transferIn")),
       transferOut: movementCell(col.transferOut, "danger", correctedCols.has("transferOut")),
       sold: movementCell(col.sold, "danger", correctedCols.has("sold")),
-      // Value columns need per-unit cost the F2 wire doesn't carry for every
-      // type — rendered muted until F3/F4 (flagged in the Session 7 wrap-up).
-      soldValue: { ...DASH },
+      soldValue: valueCell(soldValue),
       closing: { value: closing.toFixed(1) },
-      closingValue: { ...DASH },
+      closingValue: valueCell(closingValue),
     });
   }
 
@@ -254,9 +277,9 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
     transferIn: sums.transferIn === 0 ? { ...DASH } : { value: signed(sums.transferIn), tone: "success" },
     transferOut: sums.transferOut === 0 ? { ...DASH } : { value: signed(sums.transferOut), tone: "danger" },
     sold: sums.sold === 0 ? { ...DASH } : { value: signed(sums.sold), tone: "danger" },
-    soldValue: { ...DASH },
+    soldValue: valueCell(totalSoldValue),
     closing: { value: totalClosing.toFixed(1) },
-    closingValue: { ...DASH },
+    closingValue: valueCell(totalClosingValue),
   };
 
   return { rows, totals, cellMovements };

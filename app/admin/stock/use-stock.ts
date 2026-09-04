@@ -8,6 +8,7 @@ import type {
   StockMovementView,
 } from "@/lib/domain/stock";
 import type { ProductWithLocations, Location } from "@/lib/domain/catalog";
+import { addBusinessDays } from "@/lib/time";
 
 /**
  * All Admin Stock data-fetching lives here — the ledger client, the
@@ -283,6 +284,169 @@ export function useLedger(date: string, locationId?: string) {
       setLoading(false);
     }
   }, [date, locationId]);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { data, loading, error, refresh };
+}
+
+// ── Hook: the period-summary (Week/Month) data path ────────────────────
+
+export type PeriodLedgerData = {
+  /** Every movement across the whole `from..to` range for the active scope. */
+  movements: StockMovementView[];
+  /**
+   * The closing balance AS OF `to` — i.e. `balances(asOf = to)`, the same
+   * per-pair figure `useLedger`'s `dayClosing` holds for a single day, just
+   * read at the range's last day instead. `derivePeriodSummaryRows` walks
+   * Opening backwards from this exactly as `deriveLedgerRows` does for a
+   * single day (see `LedgerData.dayClosing` for why that direction).
+   */
+  periodClosing: Map<string, string>;
+  products: ProductWithLocations[];
+  locations: Location[];
+};
+
+/**
+ * Loads everything the Week/Month period-summary view renders for a given
+ * `from`/`to` business-date range and an optional `locationId` scope.
+ * Mirrors `useLedger` — same seeding-from-the-catalogue rationale for
+ * which (product, location) pairs need a closing balance even when they
+ * didn't move during the range (a resting product with stock on hand
+ * still belongs on the summary).
+ */
+export function usePeriodLedger(from: string, to: string, locationId?: string) {
+  const [data, setData] = React.useState<PeriodLedgerData>({
+    movements: [],
+    periodClosing: new Map(),
+    products: [],
+    locations: [],
+  });
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const refresh = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [movements, products, locations] = await Promise.all([
+        stockApi.listMovements({ from, to, locationId }),
+        stockApi.listProducts(),
+        stockApi.listLocations(),
+      ]);
+
+      const pairsByLocation = new Map<string, Set<string>>();
+      const addPair = (loc: string, productId: string) => {
+        if (locationId && loc !== locationId) return;
+        if (!pairsByLocation.has(loc)) pairsByLocation.set(loc, new Set());
+        pairsByLocation.get(loc)!.add(productId);
+      };
+      for (const p of products) {
+        if (p.deletedAt) continue;
+        for (const pl of p.locations) addPair(pl.locationId, p.id);
+      }
+      for (const m of movements) addPair(m.locationId, m.productId);
+
+      const periodClosing = new Map<string, string>();
+      await Promise.all(
+        [...pairsByLocation.entries()].map(async ([loc, productIds]) => {
+          const balances = await stockApi.balances([...productIds], loc, to);
+          for (const b of balances) {
+            periodClosing.set(`${b.productId}@${b.locationId}`, b.quantity);
+          }
+        }),
+      );
+
+      setData({ movements, periodClosing, products, locations });
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Failed to load the stock ledger.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to, locationId]);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { data, loading, error, refresh };
+}
+
+// ── Hook: the period-summary's "View days →" drill-in ──────────────────
+
+export type ProductDayLedgerData = {
+  /** Every movement for this ONE product/location across the `from..to` range. */
+  movements: StockMovementView[];
+  /** Each business day's closing balance, keyed by `YYYY-MM-DD`. */
+  closingByDay: Map<string, string>;
+};
+
+/**
+ * Loads one product/location's movements across a range plus each day's
+ * own closing balance, for the period-summary's day-by-day drill-in.
+ * `stockApi.balances` has no batched "give me every day in this range"
+ * shape, so this loops `balances([productId], locationId, asOf: day)`
+ * once per day — day counts here are at most ~31 (a month), so a simple
+ * per-day loop is correctness-over-cleverness rather than a real
+ * performance concern (per the session brief).
+ */
+export function useProductDayLedger(
+  productId: string | null,
+  locationId: string | null,
+  from: string,
+  to: string,
+) {
+  const [data, setData] = React.useState<ProductDayLedgerData>({
+    movements: [],
+    closingByDay: new Map(),
+  });
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const refresh = React.useCallback(async () => {
+    if (!productId || !locationId) {
+      setData({ movements: [], closingByDay: new Map() });
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const movements = await stockApi.listMovements({
+        productId,
+        locationId,
+        from,
+        to,
+      });
+
+      const days: string[] = [];
+      for (let d = from; d <= to; d = addBusinessDays(d, 1)) days.push(d);
+
+      const closingByDay = new Map<string, string>();
+      await Promise.all(
+        days.map(async (day) => {
+          const balances = await stockApi.balances([productId], locationId, day);
+          const match = balances.find(
+            (b) => b.productId === productId && b.locationId === locationId,
+          );
+          closingByDay.set(day, match?.quantity ?? "0");
+        }),
+      );
+
+      setData({ movements, closingByDay });
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Failed to load the product's day-by-day ledger.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [productId, locationId, from, to]);
 
   React.useEffect(() => {
     void refresh();
