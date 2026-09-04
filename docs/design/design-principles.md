@@ -22,8 +22,8 @@ written, **except accent color** (§3 below). In summary:
 
 - Dense, compact-by-default, hairline dividers only — no card borders, no
   drop shadows on content containers.
-- Light mode only. Inter, 14px base, `tabular-nums` on every numeric
-  column.
+- Light mode only. Geist Sans, 14px base, `tabular-nums` on every numeric
+  column. (Switched from Inter — see §6a, `docs/design/font-family.md`.)
 - Full-bleed desktop layout, not centered/document-style.
 - One primary accent color at ≲5% of pixels; neutrals do 90%+ of the work.
 - Radius: 6px default, 4px dense controls, 8px maximum — **except tables,
@@ -166,8 +166,8 @@ standard, not exceptions:
    Session 15).** The owner asked what font / weight the ledger's
    numeric cells use and whether it is the right choice for a
    financial / stock table. Confirmed and now a stated rule:
-   - **Ledger movement + value cells use `--font-mono`** (JetBrains
-     Mono). Monospace is inherently tabular — every digit occupies the
+   - **Ledger movement + value cells use `--font-mono`** (Geist Mono,
+     switched from JetBrains Mono — see §6a). Monospace is inherently tabular — every digit occupies the
      same advance width — which is exactly the reconciliation-table
      convention: figures line up in their columns so the eye can scan
      and compare down a column without landing on a ragged edge. This
@@ -229,6 +229,27 @@ foundations.** Paper's token set and the codified foundations are
 identical (`contentHash 710ac1c5`). Colors are OKLCH (see §7's kit facts)
 — do not re-derive to hex.
 
+### 6a. Type family — Geist (switched from Inter, 2026-09-04)
+
+`--font-ui` is now **Geist Sans** and `--font-mono` is now **Geist
+Mono**, both via the `geist` npm package (`geist/font/sans`,
+`geist/font/mono` — a local variable-font load, not `next/font/google`;
+Geist is Vercel's own family, not a Google font). Owner decision — full
+rationale in `docs/design/font-family.md`. Weights and the type scale
+(§6 above) are unchanged; only the family swapped, so no layout/spacing
+values moved.
+
+**Not yet done as part of this swap** — flagged so a future session
+doesn't assume it's covered:
+- The Paper file (`01M0EZ7TAHZM26KBMWNYT0928X`) still renders Inter /
+  JetBrains Mono; `contentHash 710ac1c5` above is now stale for typography
+  specifically (colors/spacing/radius are still current). Re-sync Paper's
+  font family next time that file is opened for edits, or note the
+  divergence to whoever does.
+- `--font-display` (Newsreader, login screen only) is untouched — out of
+  scope, the owner asked about the app-wide UI/mono fonts, not the
+  display serif.
+
 ```css
 :root {
   --color-gray-50: oklch(98.5% 0 0);
@@ -286,8 +307,8 @@ identical (`contentHash 710ac1c5`). Colors are OKLCH (see §7's kit facts)
   --nav-text-strong: rgb(255 255 255 / 85%);
   --nav-border: rgb(255 255 255 / 10%);
 
-  --font-ui: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", monospace;
+  --font-ui: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), "SF Mono", monospace;
   --text-micro: 11px;   --leading-micro: 16px;
   --text-caption: 12px; --leading-caption: 16px;
   --text-sm: 13px;      --leading-sm: 18px;

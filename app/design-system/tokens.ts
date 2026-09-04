@@ -82,8 +82,8 @@ export const tokens = {
   "--nav-border": "rgb(255 255 255 / 10%)",
 
   // --- Typography: families -------------------------------------------
-  "--font-ui": 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  "--font-mono": '"JetBrains Mono", "SF Mono", monospace',
+  "--font-ui": 'var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  "--font-mono": 'var(--font-geist-mono), "SF Mono", monospace',
   "--font-display": 'Newsreader, Georgia, "Times New Roman", serif',
 
   // --- Typography: scale ---------------------------------------------

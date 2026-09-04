@@ -155,12 +155,12 @@ body {
   font-size: var(--text-body);
   line-height: var(--leading-body);
 
-  /* Foundation type rendering (M3 S7 — match the Paper mockups app-wide).
-   * The Paper artboards render Inter antialiased with `font-synthesis:
-   * none`; the browser default (`-webkit-font-smoothing: auto`) rendered
-   * Inter noticeably heavier/blurrier than the designs. `optical-sizing:
-   * none` pins Inter's variable `opsz` axis so small text (11–13px, most
-   * of the admin UI) doesn't thicken. Set once here, inherited everywhere. */
+  /* Foundation type rendering (M3 S7, Geist swap — font-family.md).
+   * Antialiased + font-synthesis:none avoids synthesized bold/italic on a
+   * variable font. optical-sizing:none pins Geist Sans's variable `opsz`
+   * axis so small text (11–13px, most of the admin UI) doesn't thicken.
+   * Set once here, inherited everywhere. Paper artboards still show Inter —
+   * not yet re-synced to Geist, see docs/design/font-family.md. */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-synthesis: none;
