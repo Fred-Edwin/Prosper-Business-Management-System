@@ -213,4 +213,50 @@ describe("deriveLedgerRows", () => {
     expect(rows[0].purchases.dash).toBe(true);
     expect(rows[0].closing.value).toBe("25.0");
   });
+
+  // Fixed this session: soldValue/closingValue were hardcoded dashes pending
+  // a cost join that was already available (product.buyingPrice, ADR-55's
+  // own costValue convention).
+  describe("soldValue / closingValue (ADR-55 costValue)", () => {
+    it("values sold and closing quantity at the product's buyingPrice (ingredient)", () => {
+      const { rows, totals } = deriveLedgerRows({
+        movements: [mv({ movementType: "sale", quantity: "-2.0000" })],
+        dayClosing: closingOf("23.0000"), // 25 opening − 2 sold
+        products,
+        locations,
+        locationId: "loc-store",
+      });
+      // beef buyingPrice = 580.00: sold 2.0 -> 1160, closing 23.0 -> 13340
+      expect(rows[0].soldValue.value).toBe("KES 1,160");
+      expect(rows[0].closingValue.value).toBe("KES 13,340");
+      expect(totals.soldValue.value).toBe("KES 1,160");
+      expect(totals.closingValue.value).toBe("KES 13,340");
+    });
+
+    it("values a dish at 0 (ADR-55 — its ingredients were already counted)", () => {
+      const dishProducts: ProductWithLocations[] = [
+        { ...products[0], id: "burger", kind: "dish", buyingPrice: null },
+      ];
+      const { rows } = deriveLedgerRows({
+        movements: [mv({ productId: "burger", movementType: "sale", quantity: "-4.0000" })],
+        dayClosing: new Map([["burger@loc-store", "6.0000"]]),
+        products: dishProducts,
+        locations,
+        locationId: "loc-store",
+      });
+      expect(rows[0].soldValue.dash).toBe(true);
+      expect(rows[0].closingValue.dash).toBe(true);
+    });
+
+    it("dashes when quantity is zero even though a cost exists", () => {
+      const { rows } = deriveLedgerRows({
+        movements: [],
+        dayClosing: new Map([["beef@loc-store", "0.0000"]]),
+        products,
+        locations,
+        locationId: "loc-store",
+      });
+      expect(rows).toHaveLength(0); // zero-balance, no movement -> no row at all
+    });
+  });
 });

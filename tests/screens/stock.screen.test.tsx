@@ -25,6 +25,29 @@ const hook = vi.hoisted(() => ({
   refresh: vi.fn(),
 }));
 
+// Ledger v2 — the period-summary / drill-in hooks always mount alongside
+// useLedger (React hooks can't be conditional on the active view), so this
+// single-day-focused spec stubs them idle/empty to keep the suite
+// deterministic and network-free; the period-summary / drill-in behaviour
+// itself is covered by stock-ledger-v2.screen.test.tsx.
+const periodHook = vi.hoisted(() => ({
+  data: {
+    movements: [] as unknown[],
+    periodClosing: new Map(),
+    products: [] as unknown[],
+    locations: [] as unknown[],
+  },
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
+const productDayHook = vi.hoisted(() => ({
+  data: { movements: [] as unknown[], closingByDay: new Map() },
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
+
 const rowsBox = vi.hoisted(() => ({
   rows: [] as LedgerRow[],
   totals: undefined as unknown,
@@ -40,7 +63,27 @@ vi.mock("@/app/admin/stock/use-stock", async () => {
   return {
     ...actual,
     useLedger: () => hook,
+    usePeriodLedger: () => periodHook,
+    useProductDayLedger: () => productDayHook,
     stockApi: { ...actual.stockApi, correct: correctFn },
+  };
+});
+
+// The KPI band now reads useFinancialSummary(from, to) — stub it idle so
+// the single-day-focused assertions below don't depend on the money
+// figures (covered by stock-ledger-v2.screen.test.tsx instead).
+vi.mock("@/app/admin/financials/use-financials", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("@/app/admin/financials/use-financials")
+  >();
+  return {
+    ...actual,
+    useFinancialSummary: () => ({
+      summary: null,
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    }),
   };
 });
 
@@ -217,16 +260,15 @@ function mobile(): HTMLElement {
 }
 
 describe("/admin/stock — mobile branch", () => {
-  it("shows the dark KPI strip, unwired (— / M3)", () => {
+  it("shows the dark KPI strip with Gross Profit and Sales Revenue (Ledger v2 — money figures)", () => {
     render(
       <ToastProvider placement="top-right">
         <StockClient />
       </ToastProvider>,
     );
     const m = within(mobile());
-    expect(m.getByText("Stock on Hand (Total)")).toBeInTheDocument();
-    expect(m.getByText("Today's Sold Value")).toBeInTheDocument();
-    expect(m.getAllByText("M3").length).toBe(2);
+    expect(m.getByText("Gross Profit")).toBeInTheDocument();
+    expect(m.getByText("Sales Revenue")).toBeInTheDocument();
   });
 
   it("shows a 'KES —' sub-line under each row's closing quantity (M3-unwired)", () => {
