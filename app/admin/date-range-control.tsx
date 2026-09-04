@@ -13,8 +13,8 @@
 import * as React from "react";
 import { SegmentedControl } from "@/components/kit/segmented-control";
 import { DatePicker } from "@/components/kit/date-picker";
-import type { FinancialsRange, RangePreset } from "./use-financials-range";
-import { shortBusinessDateWithYear } from "./use-financials-range";
+import type { FinancialsRange, RangePreset } from "./use-date-range";
+import { shortBusinessDateWithYear } from "./use-date-range";
 
 const PRESET_LABELS: Record<RangePreset, string> = {
   today: "Today",

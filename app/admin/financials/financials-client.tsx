@@ -40,12 +40,12 @@ import { ExpensesView } from "./expenses-tab";
 import { OwnerDrawsView } from "./owner-draws-tab";
 import { ProfitPanelDesktop } from "./profit-panel";
 import { ProfitPanelMobile } from "./profit-panel-mobile";
-import { FinancialsRangeControl } from "./financials-range";
+import { FinancialsRangeControl } from "@/app/admin/date-range-control";
 import {
   rangeLabel,
   shortBusinessDateWithYear,
   useFinancialsRange,
-} from "./use-financials-range";
+} from "@/app/admin/use-date-range";
 import { useFinancialSummary } from "./use-financials";
 
 export type FinancialsTabKey = TxTabKey | "expenses" | "owner-draws";

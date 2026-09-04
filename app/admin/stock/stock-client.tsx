@@ -40,8 +40,8 @@ import { useLedger, usePeriodLedger, useProductDayLedger } from "./use-stock";
 import { deriveLedgerRows } from "./derive-ledger";
 import { derivePeriodSummaryRows } from "./derive-period-summary";
 import { deriveProductDayRows } from "./derive-product-days";
-import { FinancialsRangeControl } from "@/app/admin/financials/financials-range";
-import { useFinancialsRange, shortBusinessDateWithYear } from "@/app/admin/financials/use-financials-range";
+import { FinancialsRangeControl } from "@/app/admin/date-range-control";
+import { useFinancialsRange, shortBusinessDateWithYear } from "@/app/admin/use-date-range";
 import { useFinancialSummary } from "@/app/admin/financials/use-financials";
 import {
   CorrectionDrawer,
