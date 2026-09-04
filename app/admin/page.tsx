@@ -1,8 +1,10 @@
-// The Admin Dashboard. M3-S1 gave it its first real content — the Day Close
-// card (ADR-52). More dashboard sections land in later sprints; the shell
-// (nav, top bar, maximize toggle) comes from app/admin/layout.tsx.
-import { DayCloseClient } from "./day-close/day-close-client";
+// The Admin Dashboard (`/admin`). M5 S14 gave it its full morning-triage
+// composition — five bands built from the frozen kit against
+// `GET /api/admin/dashboard` (see docs/design/flows/dashboard-screen.md).
+// The Day Close card (M3 S1 / ADR-52) still lives here, now as Band 5.
+// The shell (nav, top bar, maximize toggle) comes from app/admin/layout.tsx.
+import { DashboardClient } from "./dashboard-client";
 
 export default function AdminHomePage() {
-  return <DayCloseClient />;
+  return <DashboardClient />;
 }

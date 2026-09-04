@@ -6,17 +6,17 @@
 // so it sits above the tabs and is always visible.
 //
 // Structure (desktop):
-//   ┌ KPI row — kit-native, hairline dividers, mono figures, no box.
-//   │   "Position & balances as of <date>"  ← as-of caption (ADR-57)
-//   │   Total Business Liquidity · Cash at Hand · M-Pesa/Bank · Owed by owner
-//   ├ Panel columns
+//   ┌ Panel columns
 //   │   Left  : "Profit for <range>" — Revenue − COGS = Gross − Expenses = Net
 //   │   Right : Per location table · Debts owed to the business · Where
 //   │           unsold stock went (non-sale consumption — a VIEW INTO COGS)
 //
-// Mobile stacks the same blocks; the KPI row becomes a compact 2-tile
-// dark band (Cash at hand · M-Pesa/Bank) rendered by <KpiBandMobile> in
-// financials-client.tsx.
+// Mobile stacks the same blocks.
+//
+// M5 S14 — the "Position & balances" KPI strip (desktop <KpiRowDesktop>,
+// mobile <KpiBandMobile>) was REMOVED from this screen. "Where the money
+// is now" lives on the `/admin` dashboard (Band 1) as the single source
+// of truth; Financials is analysis-only.
 //
 // ADR-57 — FLOW figures (revenue, COGS, gross/net, expenses, non-sale)
 // take the whole range; the four position figures are point-in-time "as
@@ -78,86 +78,6 @@ function Figure({
               : "[color:var(--text-primary)]";
   return (
     <span className={`font-mono ${sizeCls} ${toneCls}`}>KES {money(dec)}</span>
-  );
-}
-
-// ── KPI row (desktop) ─────────────────────────────────────────────────
-
-type KpiTile = {
-  label: string;
-  dec: string;
-  tone: "primary" | "success" | "info" | "danger";
-};
-
-function kpiTiles(c: FinancialSummary["consolidated"]): KpiTile[] {
-  const liquidity = (Number(c.cashBalance) + Number(c.mpesaBankBalance)).toFixed(
-    2,
-  );
-  return [
-    { label: "Total Business Liquidity", dec: liquidity, tone: "primary" },
-    { label: "Cash at Hand", dec: c.cashBalance, tone: "success" },
-    { label: "M-Pesa / Bank Till", dec: c.mpesaBankBalance, tone: "info" },
-    { label: "Owed Back by the Owner", dec: c.ownerOwedToBusiness, tone: "danger" },
-  ];
-}
-
-/**
- * Desktop KPI row — kit-native: no card, a caption header, then four
- * figure columns separated by hairline vertical rules, all mono. Every
- * figure here is a BALANCE, read as of the end of the range (ADR-57) —
- * the caption spells that out.
- */
-export function KpiRowDesktop({
-  summary,
-  asOfLabel,
-  loading,
-}: {
-  summary: FinancialSummary | null;
-  /** e.g. "7 Sep 2026" — the range's end date. */
-  asOfLabel: string;
-  loading: boolean;
-}) {
-  const tiles = summary ? kpiTiles(summary.consolidated) : null;
-  return (
-    <div className="flex flex-col gap-(--sp-3)">
-      <div className="font-ui font-(--weight-medium) uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-caption/micro">
-        Position &amp; balances as of {asOfLabel}
-      </div>
-      <div className="flex">
-        {(tiles ?? [null, null, null, null]).map((tile, i) => (
-          <React.Fragment key={tile?.label ?? i}>
-            {i > 0 && (
-              <div className="w-px self-stretch shrink-0 [background-color:var(--border-strong)]" />
-            )}
-            <div
-              className={`flex flex-col gap-(--sp-3) ${
-                i === 0
-                  ? "pr-(--sp-9)"
-                  : i === 3
-                    ? "pl-(--sp-9)"
-                    : "px-(--sp-9)"
-              }`}
-            >
-              <div className="font-ui font-(--weight-medium) uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-caption/micro">
-                {tile?.label ??
-                  ["Total Business Liquidity", "Cash at Hand", "M-Pesa / Bank Till", "Owed Back by the Owner"][i]}
-              </div>
-              {tile ? (
-                <Figure dec={tile.dec} size="display" tone={tile.tone} />
-              ) : (
-                <div
-                  className={`font-mono font-(--weight-semibold) text-display/display [color:var(--text-tertiary)] ${
-                    loading ? "kit-skeleton rounded-sm w-[120px] h-[1em]" : ""
-                  }`}
-                >
-                  {loading ? "" : "—"}
-                </div>
-              )}
-            </div>
-          </React.Fragment>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -433,28 +353,25 @@ export function ProfitPanelDesktop({
   error,
   onRetry,
   rangeLabel,
-  asOfLabel,
 }: {
   summary: FinancialSummary | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
   rangeLabel: string;
-  asOfLabel: string;
 }) {
   return (
     <>
-      {/* ── Section 1: position & balances (KPI strip) ──────────────────
-          Its own band on the subtle ground, hairline-separated from the
-          Profit section below — a distinct read (a level, right now) from
-          the Profit figures (an accumulation over the range). */}
-      <div className="hidden md:flex flex-col py-(--sp-7) px-(--sp-8) [background-color:var(--surface-subtle)] border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-        <KpiRowDesktop summary={summary} asOfLabel={asOfLabel} loading={loading} />
-      </div>
+      {/* M5 S14 — the "Position & balances" KPI strip was REMOVED from this
+          screen. It now lives ONLY on the `/admin` dashboard (Band 1,
+          docs/design/flows/dashboard-screen.md). Financials is analysis
+          only: the range control, this profit report, the five tabs. A
+          balance "as of now" is on the dashboard; "as of period-end"
+          context stays in the report captions.
 
-      {/* ── Section 2: Profit (Revenue → Net + per-location + non-sale) ──
+          ── Profit (Revenue → Net + per-location + non-sale) ────────────
           On the page ground, generous top padding, so it reads as its own
-          section between the KPI strip and the transaction tables. */}
+          section above the transaction tables. */}
       <div className="hidden md:flex flex-col pt-(--sp-8) pb-(--sp-9) px-(--sp-8) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
         {error ? (
           <ErrorState

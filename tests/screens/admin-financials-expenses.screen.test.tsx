@@ -1,16 +1,17 @@
 // @vitest-environment jsdom
 //
-// M3 S4 / S7 — the Admin Financials Expenses tab + Owner Draws tab + the
-// KPI row (kit-native, redesigned in S7). Interactive bits only;
-// use-financials is mocked, no server / DB. jsdom applies no CSS, so both
-// the `md:` table branch and the `md:hidden` card branch render — queries
-// use getAllBy / within where they'd otherwise be ambiguous.
+// M3 S4 / S7 — the Admin Financials Expenses tab + Owner Draws tab.
+// Interactive bits only; use-financials is mocked, no server / DB. jsdom
+// applies no CSS, so both the `md:` table branch and the `md:hidden` card
+// branch render — queries use getAllBy / within where they'd otherwise be
+// ambiguous.
 //
 // S7: the tabs take a business-date RANGE (`from`/`to`) not a single
-// `date` — expenses / owner draws are FLOWS (ADR-57). The KPI strip
-// became <KpiRowDesktop> in profit-panel.tsx (no box, hairline dividers,
-// mono figures) and carries an "as of <date>" caption because every
-// figure in it is a point-in-time BALANCE.
+// `date` — expenses / owner draws are FLOWS (ADR-57).
+//
+// M5 S14: the "Position & balances" KPI strip was removed from this
+// screen (it moved to the `/admin` dashboard) — its specs moved with it,
+// to tests/screens/admin-dashboard.screen.test.tsx.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
@@ -18,7 +19,6 @@ import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "@/components/kit/toast";
 import type {
   ExpenseView,
-  FinancialSummary,
   OwnerTransactionView,
 } from "@/lib/domain/financials";
 
@@ -67,7 +67,6 @@ vi.mock("@/app/admin/financials/use-financials", async (importOriginal) => {
 
 import { ExpensesView } from "@/app/admin/financials/expenses-tab";
 import { OwnerDrawsView } from "@/app/admin/financials/owner-draws-tab";
-import { KpiRowDesktop } from "@/app/admin/financials/profit-panel";
 
 // ── fixtures ───────────────────────────────────────────────────────────
 
@@ -83,37 +82,6 @@ function expense(over: Partial<ExpenseView> = {}): ExpenseView {
     corrected: false,
     occurredAt: "2026-09-02T09:00:00.000Z",
     ...over,
-  };
-}
-
-function summary(over: Partial<FinancialSummary["consolidated"]> = {}): FinancialSummary {
-  return {
-    from: "2026-09-02",
-    to: "2026-09-02",
-    perLocation: [],
-    consolidated: {
-      revenue: "10000.00",
-      cogs: "4000.00",
-      grossProfit: "6000.00",
-      totalExpenses: "800.00",
-      netProfit: "5200.00",
-      debtsOwedToBusiness: "1200.00",
-      ownerOwedToBusiness: "4000.00",
-      cashBalance: "25000.00",
-      mpesaBankBalance: "15000.00",
-      ...over,
-    },
-    nonSaleConsumption: {
-      total: "0.00",
-      byReason: {
-        staffMeal: "0.00",
-        complimentary: "0.00",
-        spoiled: "0.00",
-        damaged: "0.00",
-        other: "0.00",
-      },
-      dishWasteCostPercent: "0.60",
-    },
   };
 }
 
@@ -278,42 +246,3 @@ describe("Admin Financials — Owner Draws tab", () => {
   });
 });
 
-// ── KPI row (kit-native, S7) ──────────────────────────────────────────
-
-describe("Admin Financials — KPI row", () => {
-  it("renders the four position figures from the summary, all as balances", () => {
-    render(
-      <KpiRowDesktop
-        summary={summary()}
-        asOfLabel="7 Sep 2026"
-        loading={false}
-      />,
-    );
-    // Liquidity = cash 25,000 + M-Pesa 15,000 = 40,000.
-    expect(screen.getByText("KES 40,000.00")).toBeInTheDocument();
-    expect(screen.getByText("KES 25,000.00")).toBeInTheDocument();
-    expect(screen.getByText("KES 15,000.00")).toBeInTheDocument();
-    // Owed back by the owner = ownerOwedToBusiness.
-    expect(screen.getByText("KES 4,000.00")).toBeInTheDocument();
-  });
-
-  it("captions the row 'as of <date>' so the figures read as point-in-time balances", () => {
-    render(
-      <KpiRowDesktop
-        summary={summary()}
-        asOfLabel="7 Sep 2026"
-        loading={false}
-      />,
-    );
-    expect(
-      screen.getByText(/Position & balances as of 7 Sep 2026/i),
-    ).toBeInTheDocument();
-  });
-
-  it("shows an em-dash when the summary failed to load", () => {
-    render(
-      <KpiRowDesktop summary={null} asOfLabel="7 Sep 2026" loading={false} />,
-    );
-    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
-  });
-});

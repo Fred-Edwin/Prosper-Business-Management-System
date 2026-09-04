@@ -3,12 +3,12 @@
 // M3 S7 — the mobile half of the always-on Profit panel (approved design,
 // Paper "M3 S5 — Financials redesign", mobile artboard). Same blocks as
 // desktop, stacked:
-//   • <KpiBandMobile>  — a compact 2-tile dark band: Cash at hand · M-Pesa/Bank
-//     (both BALANCES, as of the range end — ADR-57). The other two desktop
-//     KPI figures (liquidity, owed by owner) surface in the panel below.
 //   • Profit for <range> — the Revenue → Net stack (compact rows)
 //   • Per location — one line per location + the "debts owed" balance
 //   • Where unsold stock went — the non-sale consumption view into COGS
+//
+// M5 S14 — the compact 2-tile balances band (<KpiBandMobile>) was REMOVED.
+// "Where the money is now" is on the `/admin` dashboard (Band 1) only.
 //
 // The mobile date/range control lives in financials-client.tsx's "Date
 // Row" (ADR-56 mobile header stays uncrowded).
@@ -29,50 +29,6 @@ function money(dec: string): string {
 function signed(dec: string): string {
   const n = Number(dec);
   return `${n < 0 ? "− " : ""}KES ${money(Math.abs(n).toFixed(2))}`;
-}
-
-/** Compact dark 2-tile band — Cash at hand · M-Pesa/Bank, as of range end. */
-export function KpiBandMobile({
-  summary,
-  loading,
-}: {
-  summary: FinancialSummary | null;
-  loading: boolean;
-}) {
-  const c = summary?.consolidated ?? null;
-  const tiles = [
-    { label: "Cash at hand", dec: c?.cashBalance, tone: "text-success" },
-    { label: "M-Pesa / Bank", dec: c?.mpesaBankBalance, tone: "text-info" },
-  ];
-  return (
-    <div className="flex md:hidden [background-color:var(--nav-bg)]">
-      {tiles.map((t, i) => (
-        <div
-          key={t.label}
-          className={`grow basis-0 flex flex-col p-(--sp-5) gap-(--sp-2) ${
-            i === 0 ? "border-r border-r-solid border-r-(--nav-border)" : ""
-          }`}
-        >
-          <div className="font-ui uppercase [letter-spacing:var(--tracking-caps)] text-(--nav-text-label) text-micro/micro">
-            {t.label}
-          </div>
-          {t.dec != null ? (
-            <div className={`font-mono font-(--weight-semibold) ${t.tone} text-h1/h1`}>
-              KES {money(t.dec)}
-            </div>
-          ) : (
-            <div
-              className={`font-mono font-(--weight-semibold) text-(--nav-text-label) text-h1/h1 ${
-                loading ? "kit-skeleton rounded-sm w-[90px] h-[1em]" : ""
-              }`}
-            >
-              {loading ? "" : "—"}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function MRow({

@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-// Per-screen gate — /admin/financials (M3 S3 → S7). One screen; the S7
-// redesign replaced the single toolbar date picker with a RANGE control
-// (SegmentedControl: Today / This week / This month / Custom), promoted
-// the Profit panel OUT of the tab row into an always-on block, and left
-// FIVE inner tabs: Stock Purchases / Deliveries / Handovers / Expenses /
-// Owner Draws. Flows take the whole range; balances are as-of the range
-// end (ADR-57). stockApi + use-handovers + use-financials mocked.
+// Per-screen gate — /admin/financials (M3 S3 → S7, restructured M5 S14).
+// The S7 redesign replaced the single toolbar date picker with a RANGE
+// control (SegmentedControl: Today / This week / This month / Custom),
+// promoted the Profit panel OUT of the tab row into an always-on block,
+// and left FIVE inner tabs: Stock Purchases / Deliveries / Handovers /
+// Expenses / Owner Draws. M5 S14 REMOVED the Position & balances KPI
+// strip (it now lives on the /admin dashboard). Flows take the whole
+// range; balances are as-of the range end (ADR-57). stockApi +
+// use-handovers + use-financials mocked.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -106,17 +108,6 @@ function desktop(): HTMLElement {
   const node = document.querySelector<HTMLElement>(".md\\:flex.flex-col.grow");
   if (!node) throw new Error("desktop branch not found");
   return node;
-}
-
-// S7: the KPI figures live inside the always-on <ProfitPanelDesktop>
-// (`.hidden.md\:flex` container, `--surface-subtle` ground) above the tab
-// row. Scope KPI assertions to that panel.
-function kpiDesktop(): HTMLElement {
-  const nodes = document.querySelectorAll<HTMLElement>(".hidden.md\\:flex");
-  for (const n of nodes) {
-    if (n.textContent?.includes("Position & balances as of")) return n;
-  }
-  throw new Error("desktop Profit panel (KPI row) not found");
 }
 
 function movement(over: Partial<Record<string, unknown>> = {}) {
@@ -260,17 +251,16 @@ describe("/admin/financials — shell", () => {
     });
   });
 
-  it("the Profit panel KPI row is captioned 'as of <date>' and shows — per tile until the summary loads", async () => {
+  it("no longer renders a Position & balances KPI strip (moved to the /admin dashboard in M5 S14)", async () => {
     summaryState = { summary: null, loading: false, error: null };
     renderScreen();
     await waitFor(() => expect(api.listMovements).toHaveBeenCalled());
-    const panel = kpiDesktop();
     expect(
-      within(panel).getByText(/Position & balances as of/i),
-    ).toBeInTheDocument();
-    expect(within(panel).getByText("Total Business Liquidity")).toBeInTheDocument();
-    // Unresolved summary → an em-dash per position tile.
-    expect(within(panel).getAllByText("—").length).toBe(4);
+      screen.queryByText(/Position & balances as of/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Total Business Liquidity"),
+    ).not.toBeInTheDocument();
   });
 });
 

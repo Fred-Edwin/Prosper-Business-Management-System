@@ -145,6 +145,120 @@ design:**
 - `login` rows exist and are frequent — the default `group=significant`
   hides them; an "everything" view will be login-heavy.
 
+## Milestone 5 Session 14 — Build the `/admin` dashboard + financials KPI-strip removal (Developer — 2026-09-03) — DONE
+
+Full-stack session, backend already done (S13). Composition + wiring
+against the finished `GET /api/admin/dashboard` aggregator, plus one
+focused cut on `/admin/financials`. Built to the approved M5 S12 design
+(Paper "Prosper Hotel" · page "M5 — Dashboard & Audit", `Dashboard —
+desktop [M5]` + `Dashboard — mobile [M5]`; spec
+`docs/design/flows/dashboard-screen.md`). Screenshot-diffed band-by-band
+at both viewports against the Paper artboards.
+
+**Shipped — the dashboard**
+
+- `app/admin/use-dashboard.ts` — per-feature hook; one read of
+  `GET /api/admin/dashboard`, same typed-request-error shape as
+  `use-day-close` / `use-financials`.
+- `app/admin/dashboard-client.tsx` — the composed screen. Five bands,
+  each built from `components/kit/*` + screen-local mappers (never a kit
+  fork):
+  - **Band 1 — Position right now.** Four mono figure columns on
+    `--surface-subtle`, hairline vertical rules (desktop); mobile:
+    liquidity full-width, Cash + M-Pesa 2-up, Owed-by-owner.
+  - **Band 2 — This week so far.** The 7-bar week strip in its own
+    bordered box + three WTD figure columns (Revenue / Expenses / Net,
+    each with a per-tile delta line — revenue ▲ good, expenses ▲ bad, net
+    is prose "was + KES … by this point last week"). Deltas computed
+    client-side from `revenueWtd` / `revenuePriorWtd` etc.; "no
+    comparable point last week" when the prior figure is 0.
+  - **Band 3 — Needs attention.** One row per non-empty queue (open prior
+    dates / handovers awaiting receipt / open shortfalls / low-or-negative
+    stock), coloured lead dot (amber, red for stock), two-line block,
+    right-aligned action link (desktop) / inline link at end of detail
+    (mobile). Collapses to a single `--color-success` "All clear —
+    nothing needs you before you close." row when every queue is empty
+    (the band never disappears).
+  - **Band 4 — Today's activity.** Row of hairline-split count cells
+    (Sales so far / Stock movements / Purchases & receipts / Handovers
+    received-due / Corrections today). Mobile: vertical list, value in a
+    32px slot; "Sales so far" is dropped and the handovers cell becomes a
+    plain readout ("Handovers · 2 received · 1 awaiting"), matching the
+    mobile artboard.
+  - **Band 5 — Day Close + 30-day trend.** The existing Day Close card
+    (unchanged logic) alongside the 30-bar trend strip + its anchor
+    total. Two columns desktop, stacked mobile.
+- **Mobile reorders** (built explicitly, not flattened): Position · This
+  week · **Today's activity · Needs attention** · Day Close — Today's
+  activity is ABOVE Needs attention on mobile, BELOW it on desktop.
+- `app/admin/day-close/day-close-client.tsx` — extracted `<DayCloseCard>`
+  (the card body) from `<DayCloseClient>` (the page wrapper). The
+  dashboard composes the card as Band 5; the standalone client is kept
+  for a direct mount / screen spec. Card ground switched to
+  `--surface-subtle` with a `--surface-page` inset status row, per the
+  artboard.
+- `app/admin/page.tsx` — now renders `<DashboardClient />` (was
+  `<DayCloseClient />`).
+- The two inline bar strips (7-bar week, 30-bar trend) are plain flex
+  `<div>` bars — the documented S12 one-off, no charting lib, no new kit
+  component. Sign drives colour (`--color-success` / `--color-danger`);
+  future days render a faded `--border-strong` stub at `opacity 0.35`.
+
+**Shipped — the financials cut**
+
+Per `docs/design/flows/financials-screen.md` M5 section: the "Position &
+balances" KPI strip is REMOVED from `/admin/financials` — it now lives
+ONLY on the dashboard (Band 1). Financials is analysis-only (range
+control + profit report + five transaction tabs). Nothing else on that
+screen touched.
+
+- `profit-panel.tsx` — deleted `KpiRowDesktop` + `kpiTiles`;
+  `ProfitPanelDesktop` no longer renders the position band or takes
+  `asOfLabel`.
+- `profit-panel-mobile.tsx` — deleted `KpiBandMobile` (the compact
+  2-tile cash / M-Pesa dark band).
+- `financials-client.tsx` — dropped the `<KpiBandMobile>` mount + import.
+
+**Verification**
+
+- Screenshot-diff pass per band, both viewports (1440 + 390), driven as
+  Admin on `pnpm dev` against the seeded DB — every band matches the
+  approved artboard for layout, grouping, content and order. The only
+  differences are seed-data-driven (negative balances; "no comparable
+  point last week" where the seed has no prior-week activity), not
+  layout.
+- **Reconciliation:** `tests/screens/admin-dashboard.screen.test.tsx`
+  asserts the dashboard renders `position.cash` / `mpesaBank` /
+  `liquidity` / `ownerOwedToBusiness` verbatim (no rounding / transform)
+  and that `liquidity` prints as `cash + mpesaBank`. The data-layer
+  guarantee `getDashboard().position === getFinancialSummary()` balances
+  (proven in S13's `get-dashboard.test.ts`) therefore survives the UI
+  wiring — the dashboard Position and the Financials balance figures
+  agree at the same instant.
+- Screen specs (interactive bits only): needs-attention action links
+  navigate to the right routes; all-clear empty state; Day Close
+  toggle → `close(date)` + toast and a recently-closed row's Reopen →
+  `reopen(date)`, both from the card's new Band-5 position; Today's
+  Activity "Purchases & receipts" → `?tab=purchases`.
+- `financials.screen.test.tsx` KPI assertion flipped to a negative check
+  ("no Position & balances strip"); the KPI-row `describe` removed from
+  `admin-financials-expenses.screen.test.tsx`.
+- No `TODO(mock)` in touched files.
+
+**Link targets note:** "Review day →" points at `/admin` (the Day Close
+card is here — there is no per-date review screen yet); "Correction
+today →" points at `/admin/audit-trail` (the nav already forward-links
+there; the screen lands in a later M5 session). Both are best-available
+real routes, flagged here for the audit-screen session to revisit.
+
+**Test count:** 862 → 867 (+5 net: +8 new dashboard screen specs, −3
+removed with the financials KPI-row `describe`). typecheck clean, build
+clean.
+
+**Changed from plan:** none — the session prompt was the plan (still no
+`milestone-5-plan.md`). No new ADR — no architectural decision was made;
+the design was approved in S12 and the API frozen in S13.
+
 ## Milestone 5 Session 13 — Dashboard backend: the aggregator + fast trend series (Developer — 2026-09-04) — DONE (backend only)
 
 Backend only. One Admin-only, read-only aggregator for the `/admin`

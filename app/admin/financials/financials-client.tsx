@@ -10,10 +10,14 @@
 //     below the header so the ~390px header never crowds.
 //   • The Profit panel is PROMOTED OUT of the tab row — it is a summary,
 //     not a transaction log — into an always-on block above the tabs
-//     (<ProfitPanelDesktop> / <ProfitPanelMobile>). The KPI figures live
-//     inside it now (kit-native: hairline dividers, mono figures, no box).
+//     (<ProfitPanelDesktop> / <ProfitPanelMobile>).
 //   • FIVE tabs below: Stock Purchases · Deliveries · Handovers ·
 //     Expenses · Owner Draws. (Profit is no longer a tab.)
+//
+// M5 S14: the "Position & balances" KPI strip was REMOVED from this
+// screen — it now lives ONLY on the `/admin` dashboard (Band 1). This
+// screen is analysis-only: the range control, the profit report, the
+// five transaction tabs.
 //
 // DATE SEMANTICS (ADR-57). One control, presets Today / This week / This
 // month / Custom, resolving to an inclusive Africa/Nairobi business-date
@@ -35,7 +39,7 @@ import { TransactionsTab, type TxTabKey } from "./transactions-tab";
 import { ExpensesView } from "./expenses-tab";
 import { OwnerDrawsView } from "./owner-draws-tab";
 import { ProfitPanelDesktop } from "./profit-panel";
-import { ProfitPanelMobile, KpiBandMobile } from "./profit-panel-mobile";
+import { ProfitPanelMobile } from "./profit-panel-mobile";
 import { FinancialsRangeControl } from "./financials-range";
 import {
   rangeLabel,
@@ -141,15 +145,15 @@ export function FinancialsClient({
         {rangeControl}
       </div>
 
-      {/* Always-on Profit panel — promoted out of the tab row. */}
-      <KpiBandMobile summary={summary} loading={summaryLoading} />
+      {/* Always-on Profit panel — promoted out of the tab row. The
+          position/balances KPI strip that used to sit above it moved to
+          the `/admin` dashboard (M5 S14). */}
       <ProfitPanelDesktop
         summary={summary}
         loading={summaryLoading}
         error={summaryError}
         onRetry={refreshSummary}
         rangeLabel={label}
-        asOfLabel={asOfLabel}
       />
       <ProfitPanelMobile
         summary={summary}
