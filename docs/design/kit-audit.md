@@ -665,6 +665,7 @@ Required (`§2 C22`): transfer (amber) + purchase-delivery (blue) pinned
 | flagged state | `opacity-[0.7]` + actions `hidden` ✓. Spec also wants a "Flagged — awaiting admin" muted status line (`§2 C22`) — **missing** (just hides the actions). | _tbd_ |
 | keyboard | native `<button>` ✓. | keep. |
 | ARIA | container plain `<div>` — should be `role="status"` or `role="region" aria-label` (it's a pinned persistent banner with actions). Icon (none in the kit `<Banner>` — the SM hub draws its own leading icon inline). | _tbd_ |
+| Flag action | rendered **unconditionally**, even when the caller passes no `onFlag` — the two `PurchaseDeliveryBanner` callers (SM + Canteen hubs) deliberately omit it (`onFlag` → `flagTransfer`, the two-phase TRANSFER path ADR-39, which rejects a `purchase_payment` row), so a dead "Flag Variance" button showed on both delivery banners. | **DONE (Session 16, owner-approved frozen-kit exception)** — `{onFlag && <Button>Flag Variance</Button>}`. Strictly additive: every caller wanting Flag already passes `onFlag`. Covered by `store-manager-hub` / `canteen-hub` screen specs (button present on the transfer banner, absent on the delivery banner). |
 | notes | Best-practice: compose `<Button>` for the two actions so §9.5/§9.7/§9.10 come free. | |
 
 ### CalculatedImpactBanner — `components/kit/calculated-impact-banner.tsx`

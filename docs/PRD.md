@@ -71,14 +71,19 @@ product at one location:
 |---|---|---|
 | Opening stock | Carried from yesterday's closing; Admin-adjustable | auto |
 | Purchase payment | Admin pays for/orders stock — hits Cash at hand / M-Pesa, no stock effect yet | Admin |
-| Purchase receipt | Store Manager or Attendant confirms what actually arrived — this is what updates stock | Store Manager / Attendant |
-| Issue | Stock taken from the Store to be cooked | Store Manager |
+| Purchase receipt | Store Manager or Attendant confirms what actually arrived — this is what updates stock. **Ingredients land at the Store; goods land at the Restaurant/Canteen** (ADR-67). Received by **destination**, not by the receiver's home location (ADR-69): Store Manager → Store + Restaurant, Attendant → Canteen | Store Manager (Store, Restaurant) / Attendant (Canteen) |
+| Issue | **Ingredient** stock taken from the Store to be cooked (ADR-67 — never a dish or goods) | Store Manager |
 | Production | Dishes added to Restaurant stock | Store Manager |
-| Transfer | Stock moved between locations, either direction | Store Manager / Attendant |
+| Transfer | **Dish or goods** stock moved **between the Restaurant and the Canteen** (either direction). Never touches the Store; never an ingredient (ADR-67) | Store Manager / Attendant |
 | Sale | Stock sold, money due | Cashiers (direct) / Canteen (derived) |
 | Non-sale consumption | Stock gone without a sale — reason required (Staff meal, Complimentary, Spoiled, Damaged, Other) | Any staff |
 | Stock count | Physical count of what remains | Attendant / Store Manager |
 | Closing stock | What's left at day end; becomes tomorrow's opening; Admin-adjustable | auto |
+
+**Where a product lives (ADR-67).** Ingredients are stocked at the Store
+only. Dishes and goods are stocked at the Restaurant and the Canteen only
+— never at the Store, not even a goods delivery in transit. This is
+enforced in the stock domain, not just by convention.
 
 Issues and production are independent events (loose coupling) for stock
 and financial purposes — no recipe/BOM linkage drives cost or stock
@@ -162,12 +167,14 @@ cylinders, tables, POS phones) — distinct from stock; never sold or consumed.
 
 ### 4.2 Store & Stock Movements
 - As the Admin, I can record a purchase payment — supplier, what was ordered, quantity, cost, location it's destined for — which is deducted from Cash at hand or M-Pesa/Bank immediately. This does not yet affect stock.
-- As the Store Manager or Canteen Attendant, I can confirm receipt of a purchase — the quantity that actually arrived at my location. This is what updates stock, independent of whether a matching payment exists yet.
+- As the Store Manager or Canteen Attendant, I can confirm receipt of a purchase — the quantity that actually arrived. This is what updates stock, independent of whether a matching payment exists yet. **Ingredient deliveries land at the Store; goods deliveries land at the Restaurant (or Canteen) — goods never sit at the Store (ADR-67).** The Store Manager's Receive screen lists everything delivered and routes each line to the right location automatically.
+- **Who receives what is decided by the delivery's destination, not by where the receiver works (ADR-69):** the Store Manager sees and receives everything destined for the **Store or the Restaurant** (ADR-67 splits ingredients and goods between exactly those two); the Canteen Attendant sees and receives everything destined for the **Canteen**, on their own Receive Goods screen. Goods still also reach the Canteen by transfer from the Restaurant — a direct Canteen delivery is an addition to that path, not a replacement.
+- As the Admin recording a purchase payment, I can only pick a destination that is legal for the product's kind (ADR-69 §2b): an **ingredient** may only be destined for the **Store**, **goods** only for the **Restaurant or Canteen**. This stops a payment being recorded whose receipt could never be posted.
 - As the Admin, I can see any purchase payment awaiting receipt, and any receipt recorded without a matching payment, so nothing outstanding is hidden.
 - As the Admin, when a receipt's quantity differs from the quantity paid for, I can see the variance. Stock always reflects what was received; the payment record is not auto-adjusted.
-- As the Store Manager, I can record an issue — stock taken from the Store for cooking.
+- As the Store Manager, I can record an issue — ingredient stock taken from the Store for cooking (only ingredients; only from the Store — ADR-67).
 - As the Store Manager, I can record production — quantity of a Dish produced, added to Restaurant stock.
-- As the Store Manager or Canteen Attendant, I can record a transfer of stock between any two locations, in either direction.
+- As the Store Manager or Canteen Attendant, I can record a transfer of dish/goods stock between the Restaurant and the Canteen, in either direction. A transfer never touches the Store and never moves an ingredient (ADR-67); the destination is auto-resolved (Restaurant sends to Canteen and vice versa), not picked.
 - As the Admin, opening stock automatically carries forward from the prior day's closing stock, for every product/location, and I can manually adjust it.
 - As the Admin, closing stock automatically carries forward to become the next day's opening stock, and I can manually adjust it.
 - As any relevant staff member, I can record non-sale consumption of stock with a required reason (Staff meal, Complimentary, Spoiled, Damaged, Other + note).

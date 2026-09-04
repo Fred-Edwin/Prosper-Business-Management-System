@@ -295,6 +295,15 @@ describe("C1 — Cashier Today", () => {
     expect(push).toHaveBeenCalledWith("/cashier/orders/new");
   });
 
+  it("Session 16 — 'Log non-sale' link routes to /cashier/flows/non-sale", async () => {
+    const user = userEvent.setup();
+    renderC1();
+    await user.click(
+      screen.getByRole("button", { name: /Log non-sale/ }),
+    );
+    expect(push).toHaveBeenCalledWith("/cashier/flows/non-sale");
+  });
+
   it("tapping an order row routes to its detail", async () => {
     const user = userEvent.setup();
     renderC1();

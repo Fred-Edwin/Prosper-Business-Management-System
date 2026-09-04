@@ -685,85 +685,12 @@ export function useStockCard(
   return { rows, loading, error, refresh };
 }
 
-// ── Hook: per-product source balance for the SM → Canteen Transfer ─────
-
-export type TransferSourceLevel = {
-  /** Derived on-hand at this product's true source location, decimal string. */
-  quantity: string;
-  /** Where this product actually lives: dishes at the Restaurant (where
-   *  Batch Production lands them), everything else at the Store (where
-   *  deliveries land). */
-  sourceLocationId: string;
-  sourceLabel: "Restaurant" | "Store";
-};
-
-/**
- * The SM → Canteen transfer moves cooked **dishes** (which live at the
- * Restaurant) *and* sodas / shop goods (which live at the Store). A single
- * source location can't serve both, so this hook reads the derived balance
- * at BOTH locations and returns, per product, the balance at its own true
- * source. Feeds the row `available` readout and the per-source dispatch
- * batching. `store_manager` may read a `restaurant` balance (balances
- * route carve-out); the Store is their own location.
- */
-export function useTransferSourceLevels(
-  storeLocationId: string | undefined,
-  restaurantLocationId: string | undefined,
-) {
-  const [byProduct, setByProduct] = React.useState<
-    Map<string, TransferSourceLevel>
-  >(new Map());
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
-
-  const refresh = React.useCallback(async () => {
-    if (!storeLocationId || !restaurantLocationId) {
-      setByProduct(new Map());
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const products = await stockApi.listProducts();
-      const ids = products.map((p) => p.id);
-      const [storeBal, restBal] = await Promise.all([
-        stockApi.balances(ids, storeLocationId),
-        stockApi.balances(ids, restaurantLocationId),
-      ]);
-      const store = new Map(storeBal.map((b) => [b.productId, b.quantity]));
-      const rest = new Map(restBal.map((b) => [b.productId, b.quantity]));
-      const next = new Map<string, TransferSourceLevel>();
-      for (const p of products) {
-        const fromRestaurant = p.kind === "dish";
-        next.set(p.id, {
-          quantity:
-            (fromRestaurant ? rest.get(p.id) : store.get(p.id)) ?? "0.0000",
-          sourceLocationId: fromRestaurant
-            ? restaurantLocationId
-            : storeLocationId,
-          sourceLabel: fromRestaurant ? "Restaurant" : "Store",
-        });
-      }
-      setByProduct(next);
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Failed to load stock levels. Check your connection and try again.",
-      );
-      setByProduct(new Map());
-    } finally {
-      setLoading(false);
-    }
-  }, [storeLocationId, restaurantLocationId]);
-
-  React.useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  return { byProduct, loading, error, refresh };
-}
+// (Removed in ADR-67: `useTransferSourceLevels` resolved a per-product
+// source location for the old multi-source SM → Canteen transfer — dishes
+// from the Restaurant, goods from the Store. Under the location↔kind model
+// both dishes and goods live at the Restaurant, so the transfer is plain
+// single-source and reads `useStockLevels(restaurantLocationId)` like every
+// other flow.)
 
 // ── Hook: deliveries awaiting receipt (Receive flow — §3.1) ────────────
 

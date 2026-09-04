@@ -65,6 +65,33 @@ export function PaymentDrawer({
   const [error, setError] = React.useState<string | null>(null);
 
   const product = purchasableProducts.find((p) => p.id === productId);
+
+  // ADR-69 §2b — the Destination only offers locations legal for the
+  // selected product's kind under ADR-67's location↔kind model:
+  //   ingredient → the Store only
+  //   goods      → the Restaurant / Canteen (goods may not sit at a Store)
+  // Without this the Admin could pay for a delivery whose receipt R1 would
+  // later reject (goods → Store), i.e. an unreceivable dead-end row that
+  // no staff screen can clear. This is a UX narrowing; the domain guard on
+  // the receipt stays the enforcement point. Before a product is picked
+  // the list is empty — the field is `required`, so nothing can submit.
+  const validDestinations = React.useMemo(() => {
+    if (!product) return [];
+    return locations.filter((l) =>
+      product.kind === "ingredient"
+        ? l.type === "store"
+        : l.type === "restaurant" || l.type === "canteen",
+    );
+  }, [locations, product]);
+
+  // Changing the product to an incompatible kind must not leave a stale
+  // (now illegal) destination selected and submittable.
+  React.useEffect(() => {
+    if (locationId && !validDestinations.some((l) => l.id === locationId)) {
+      setLocationId("");
+    }
+  }, [validDestinations, locationId]);
+
   const validQty = /^\d+(\.\d{1,4})?$/.test(quantity.trim());
   const validCost = /^\d+(\.\d{1,2})?$/.test(cost.trim());
   const canSubmit =
@@ -168,15 +195,29 @@ export function PaymentDrawer({
         </div>
       </div>
 
-      <Select
-        label="Destination"
-        required
-        className="w-full"
-        placeholder="Select a location…"
-        value={locationId}
-        onChange={setLocationId}
-        options={locations.map((l) => ({ value: l.id, label: l.name }))}
-      />
+      <div className="flex flex-col gap-(--sp-2) w-full">
+        <Select
+          label="Destination"
+          required
+          className="w-full"
+          placeholder={
+            product ? "Select a location…" : "Select a product first…"
+          }
+          value={locationId}
+          onChange={setLocationId}
+          options={validDestinations.map((l) => ({
+            value: l.id,
+            label: l.name,
+          }))}
+        />
+        {product && (
+          <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
+            {product.kind === "ingredient"
+              ? "Ingredients are delivered to the Store"
+              : "Goods are delivered to the Restaurant or Canteen — never the Store"}
+          </div>
+        )}
+      </div>
 
       <div className="flex gap-(--sp-4)">
         <FormField label="Quantity" required className="grow">

@@ -15,6 +15,357 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 5 Session 16 — QA walkthrough: one awkward business day, end to end (Developer + Owner — 2026-09-04) — DONE
+
+A full-day reconciliation pass, not a feature session. The owner scripted
+one deliberately awkward business day — 20 steps across every role
+(`docs/sprints/session-16-qa-walkthrough-RESUME.md` §3) — against
+hand-computed **sealed predictions** (RESUME §4), to get eyes-on
+confidence that a full day reconciles. The developer was the arithmetic /
+code-investigation / bug-fix partner; the owner drove `pnpm dev` in their
+own browser. Three sub-efforts that grew out of it each got their own
+entry above + an ADR: **ADR-67** (location↔kind model enforcement),
+**ADR-68** (cashier is a location-scoped stock reader), **ADR-69**
+(receiving by destination). This entry covers the walkthrough itself, the
+15 findings, and the close-out reconciliation.
+
+### The baseline
+
+`prisma/seed.ts` was rewritten (finding #1) from a screen fixture to the
+RESUME §2 QA baseline: 10 opening-stock cells (Store: Rice 100, oil 20,
+Chicken Breast 10; Restaurant: Chapati 30, Chicken Stew 10, Soda 48,
+Water 24; Canteen: Soda 60, Water 40, Mandazi 50), model-compliant
+kinds, priced per RESUME §2.
+
+### The scenario (20 steps)
+
+Opening stock → an Admin purchase split across two destinations (Rice →
+Store, Soda ×12 → Restaurant) → kitchen issues → batch production →
+Restaurant + Canteen sales (cash / M-Pesa / credit) → a Restaurant→Canteen
+transfer → a Mandazi waste write-off → a canteen stock-count that *derives*
+a sale → two staff handovers (one short) → two more receipts → day close.
+Then the full §4 reconciliation.
+
+### 15 findings (all fixed in-session, all gated)
+
+`#1`–`#3` predate the QA-walkthrough handover chain; `#1` seed rewrite,
+`#2` COGS day-1 opening-boundary in `getFinancialSummary`, `#3` the same
+flaw in the dashboard net series (`trend-series.ts`). `#4`–`#14` are
+detailed in the ADR-67/68/69 entries above and in the handover
+(`docs/sprints/session-16-HANDOVER.md` §2). Summary:
+
+| # | One-liner | Resolution |
+|---|---|---|
+| 1 | Dev seed was a screen fixture, not a QA baseline | `prisma/seed.ts` → RESUME §2 baseline |
+| 2 | COGS day-1 opening-boundary: `occurredAt < start` (strict) excluded the day-1 `opening` rows from the opening term but kept them in closing → COGS dragged ≈ −32,700, Gross/Net inflated | `get-financial-summary.ts` opening term also matches `{ occurredAt: start, movementType: "opening" }`. `cogs-opening-boundary.test.ts` (new, 4). |
+| 3 | Same flaw in the dashboard net series (telescoping-COGS, ADR-64) → fake +32,700 net on day 1 | `trend-series.ts` skips `opening` rows dated exactly at their day start. `trend-series-opening-boundary.test.ts` (new). |
+| 4 | Production/Receive painted a false §9.8 "over stock" block on additive rows | screen-local `AdditiveStepperRow` / `AdditiveProductRow` — no ceiling, no block; kit untouched |
+| 5 | *(not a bug)* stale M-Pesa view | — |
+| 6 | No Canteen/Restaurant non-sale UI despite PRD §3 "any staff" | `canteen-non-sale` + `restaurant-non-sale` modes + routes + hub entries. **ADR-68** |
+| 7 | Stock Count "Confirm count" pushed off-screen | `min-h-screen` → `grow min-h-0` (shell already `h-screen`) |
+| 8 | Cashier non-sale 403 — `listMovements` denied `cashier` outright | location-scoped like every staff role. **ADR-68**; inverted `locations/route.test.ts` |
+| 9 | Cashier non-sale entry too easy to miss | text link → full-width secondary `<Button>` |
+| 10 | "Confirm count" button narrow | one-off `h-(--control-xl)` → `size="lg"` + `w-full` |
+| 11 | SM delivery banner wired to an empty fixture (live `TODO(mock)`) — Admin purchases unreceivable | real `useOutstandingDeliveries()`; tile badge fixed; Flag action dropped (wrong domain path) |
+| 12 | Canteen Review & Receive blocked receiving MORE than dispatched | screen-local `ReceiveLineRow` (same root cause as #4) |
+| 13 | *(enhancement, owner)* review screens didn't show resulting balance | shared `<ResultingBalanceLine>` — "60 → 72" second line on additive flows |
+| 14 | Receiving scoped to the receiver's HOME location (ADR-67 fallout) — a Restaurant/Canteen-destined purchase was a dead end | receiving by DESTINATION; `lib/domain/stock/receiving-scope.ts` single source for read + write. **ADR-69** |
+| 15 | SM Receive Goods read every non-Store product's on-hand as 0 — a single-location balance read on an inherently two-destination flow (ADR-67: ingredients→Store, goods→Restaurant) | **This session.** See below. |
+
+### Finding #15 — SM Receive Goods on-hand (this session)
+
+**Symptom.** On `/store-manager/flows/receive`, goods rows (Soda, Water,
+Mandazi) showed "On hand: 0" and a resulting balance of "0 → N". Only
+Store products (Rice, oil, Chicken Breast) read a real balance.
+
+**Root cause.** `movement-picker-flow.tsx` resolved a single
+`balanceLocationId` (the Store for `receive`) and read
+`useStockLevels(that)`. But post-ADR-67 the Receive flow is inherently
+**two-destination** — its submit already kind-splits into a Store batch
+(ingredients) and a Restaurant batch (goods). The on-hand readout never
+got that split, so goods rows looked up the Store, found nothing, and
+rendered 0. `useStockLevels` / `GET …/balances` are both single-location
+by design (`locationId: z.string().min(1)`).
+
+**Fix (owner chose the client-side per-row option; plain defect, no ADR).**
+`movement-picker-flow.tsx`:
+
+- A second `useStockLevels(restaurantLocationId)` read, active for
+  `mode === "receive"` only — `useStockLevels(undefined)` is a no-op, so
+  every other mode pays nothing.
+- New `onHandFor(productId, kind)`: `receive` + `kind === "goods"` → the
+  Restaurant balance; everything else → the existing Store/source
+  balance. The exact mirror of the submit-time kind-split.
+- The second read's loading/error folded into the screen's, same as the
+  first.
+- The resulting-balance line (#13) is `before + added`, so a correct
+  `before` makes the goods "after" correct for free.
+- `canteen-receive` (ADR-69) verified unaffected: it is `CANTEEN_SOURCED`,
+  single-location, and both new guards are `mode === "receive"`.
+
+**Also fixed this session — dead "Flag Variance" button** (owner-approved
+frozen-kit exception). `components/kit/banner.tsx` rendered its "Flag
+Variance" button unconditionally, even when a caller passed no `onFlag`.
+The two `PurchaseDeliveryBanner` callers (SM + Canteen hubs) deliberately
+omit `onFlag` — it calls `flagTransfer`, the two-phase **transfer**
+variance path (ADR-39), which rejects a `purchase_payment` row — so both
+delivery banners showed a button that silently did nothing. Guard added:
+`{onFlag && <Button>Flag Variance</Button>}`. Strictly additive — every
+caller wanting Flag already passes `onFlag`. Note added to the Banner
+section of `docs/design/kit-audit.md` (co-owned with the audit session;
+additive table row, no collision).
+
+**Tests (this session).** `store-manager-flows.screen.test.tsx`: the
+`useStockLevels` mock made location-aware (`loc-rest` → a distinct
+Restaurant balance set); two new `bug #15` cases (ingredient rows read
+the Store, goods rows read the Restaurant; a selected goods row's
+resulting balance is off the Restaurant on-hand); one production test
+fixed to mutate the Restaurant object. Negative Flag-button assertions
+added to `store-manager-hub` + `canteen-hub` screen specs (absent on the
+delivery banner, still present on the transfer banner).
+
+### The close-out reconciliation — every sealed figure MATCHED
+
+After day close, the app was reconciled against the RESUME §4 sealed
+predictions (frozen; not recomputed to match the app):
+
+| Figure | Predicted | App (`/admin/financials` + `/admin`) | |
+|---|---|---|---|
+| COGS | 7,100.00 | 7,100.00 | ✓ |
+| Gross Profit | −4,560.00 | −4,560.00 (both screens agree) | ✓ |
+| Net Profit | −5,760.00 | −5,760.00 (Dashboard + Financials + 30-day) | ✓ |
+| Revenue | 2,540.00 | 2,540.00 | ✓ |
+| Cash at hand | 3,320.00 | 3,320.00 (handover shortfall did NOT move cash — ADR-53/54) | ✓ |
+| M-Pesa / bank till | −3,040.00 | −3,040.00 (renders cleanly, no clamp) | ✓ |
+| Owed back by owner | −3,000.00 | −3,000.00 ("business owes owner") | ✓ |
+| Debts owed to business | derived | 520.00 | ✓ |
+| Non-sale ("unsold stock went") | 60.00, a view INTO COGS | 60.00 spoiled, "already inside the COGS figure" | ✓ |
+| Restaurant Soda 300ml closing | 44 | 44 | ✓ |
+| Canteen Soda 300ml closing | 60 | 60 (opening 60, +12 transfer-in, −12 derived sale) | ✓ |
+| `/admin/stock` total closing | — | 422.0, every line matches the handover "expects at close" column | ✓ |
+
+Negative Gross/Net and negative M-Pesa render cleanly on both screens (no
+crash, no clamp to 0). A stale hand-written local QA note showed a
+pre-#2-fix COGS; disregarded — the sealed predictions in the RESUME are
+the source of truth and the running (fixed) app matches them.
+
+### Logged for their own future handoffs (NOT built here)
+
+- **`account_transfer` (Cash↔M-Pesa) is UNBUILT** — the enum value exists,
+  but no domain fn / route / UI. PRD §4.7 calls for it. Needs its own
+  session.
+- **Finding #15 aside — cross-location on-hand.** The SM Receive screen
+  still shows "On hand: 0" for a product whose only stock is at the
+  *Canteen* (e.g. Mandazi, 45 at Canteen). This is *correct* for the
+  screen — an SM receipt can only land at the Store or Restaurant
+  (ADR-67) — but a "0 here / N elsewhere" hint could reduce confusion.
+  Design question, deferred.
+- **Test-DB isolation (ADR-61 territory).** The cross-file `DayClose`
+  race persists — under the full parallel run one suite briefly seals
+  "today" and a concurrent suite writing a "today" row can time out or
+  500. `lib/domain/financials/get-account-balances.test.ts` timed out
+  once in this session's final full run; green in 2.6s isolated. Same
+  class as the known `correct-order.test.ts` flake. Not introduced here.
+
+### Gates
+
+`pnpm test` — 973 passed / 974 (120 files). The one failure is
+`get-account-balances.test.ts` **timing out** (15s) under parallel DB
+load — passes isolated; unrelated to this work (financials domain,
+untouched). `pnpm typecheck` 0 errors. `pnpm build` clean after
+`rm -rf .next`. No `TODO(mock)` in `app` / `lib` / `components` — this
+session cleared the last one (#11).
+
+### Optional (owner's call, not done)
+
+Re-run the script as a full scripted **week** to check day-boundary
+carry-over — Tuesday's opening == Monday's closing, and a week crossing
+month-end.
+
+### Docs
+
+`docs/PROGRESS.md` (this entry). ADR-67 / ADR-68 / ADR-69 written (see
+those entries above). `docs/design/kit-audit.md` Banner note. The three
+`session-16-*.md` handoff / resume docs remain in the tree as the
+walkthrough's durable record for the optional week-long re-run; they can
+be dropped once that's done or explicitly skipped.
+
+---
+
+## Milestone 5 — ADR-69: delivery receiving by destination (Developer — 2026-09-04) — DONE
+
+Backend + frontend bug fix, one session, run alongside the owner's manual
+QA walkthrough. Not on the M5 plan's session table — a defect the
+walkthrough surfaced. Full detail in **ADR-69**; handoff was
+`docs/sprints/session-16-adr69-delivery-receiving-HANDOFF.md`.
+
+**The bug (owner, live).** A purchase payment for Soda 300ml ×12 destined
+for the **Restaurant** showed as "Awaiting delivery" on
+`/admin/financials` and **no staff role could receive it** — no SM hub
+banner, an empty "Deliveries awaiting receipt" list in the SM Receive
+flow. ADR-67 fallout: it moved goods deliveries to land at the Restaurant
+and updated the WRITE path, but `listOutstandingPurchasesForLocation`
+still filtered on the caller's single assigned location — so the SM,
+assigned to the Store, could post a Restaurant receipt but never see one
+was pending. The Canteen was worse: `/outstanding` `403`'d the attendant
+outright, so a Canteen-destined purchase had no receive screen at all.
+
+**Shipped — backend**
+
+- `lib/domain/stock/receiving-scope.ts` (new) —
+  `resolveReceivingDestinationIds(role)`, the single source of truth for
+  the destination map: admin → unfiltered, `store_manager` → Store +
+  Restaurant, `canteen_attendant` → Canteen. Resolves by `Location.type`
+  (active only), never by name.
+- `listOutstandingPurchasesForLocation` takes a **list** (`string |
+  readonly string[]`, normalised) → `{ locationId: { in: [...] } }`;
+  `undefined` still means no filter (the Admin read, unchanged).
+- `GET /api/stock-movements/outstanding` widened to
+  `["admin", "store_manager", "canteen_attendant"]` and resolves through
+  the map. Misconfigured staff (no location link) still `403`.
+- `resolveBatchActor` gains **`guardReceivingDestination(target)`**,
+  checking the same map. The receipts batch route's inline "is the target
+  a restaurant?" ADR-67 carve-out is **deleted** in favour of it — read
+  and write can no longer drift. `guardLocation` untouched for the other
+  batch routes. The single-movement `purchase_receipt` case had the
+  identical hole and now uses the map too. R1 stays the backstop.
+
+**Shipped — frontend**
+
+- New mode **`canteen-receive`** in the shared `MovementPickerFlow`
+  (`FLOW_CONFIG` entry + `CANTEEN_SOURCED` membership + an `isReceive`
+  helper replacing the `mode === "receive"` literals), and the thin
+  wrapper route `app/canteen/flows/receive/page.tsx`. One
+  `receiptBatch` at the Canteen — **no kind split** (the Canteen only
+  holds dish/goods). No kit change.
+- Canteen hub — a **"Receive Goods"** tile (`PackagePlus`, "N deliveries
+  pending" + badge) and pinned **`<PurchaseDeliveryBanner>`** rows,
+  mirroring the SM hub. Primary "Review & receive" routes into the flow
+  (never a one-tap receipt — a delivery can arrive short); no `onFlag`
+  (that is the two-phase transfer path and rejects a `purchase_payment`).
+- Admin payment drawer — the **Destination** `<Select>` now offers only
+  locations legal for the product's kind (ingredient → Store; goods →
+  Restaurant/Canteen), and clears a stale destination when the product
+  changes kind. Stops the Admin creating an unreceivable dead-end row.
+  Dishes were already excluded from the picker (ADR-46 §6).
+
+**Tests.** `list-outstanding-destination-scope.test.ts` (new, 5);
+`canteen-receive-goods.screen.test.tsx` (new, 10); +6 canteen-hub cases,
++3 financials destination cases, +3 batch-route cases (SM sees the
+Restaurant payment — the exact bug; SM→Canteen and attendant→Store
+receipts `403`). **One test inverted:** `batch.route.test.ts`'s "canteen
+attendant → 403 (route not widened to them)" encoded the reversed rule
+and is now "canteen attendant sees the Canteen's payments, and only
+those".
+
+**Gates.** `pnpm test` 972/972 (118 files → 120), `pnpm typecheck` 0
+errors, clean `pnpm build` green, no `TODO(mock)`. No schema change.
+
+**Unblocks** scripted step 3 of the Session 16 QA walkthrough
+(`docs/sprints/session-16-qa-walkthrough-RESUME.md`).
+
+---
+
+## Milestone 5 — Enforce the location ↔ product-kind stock model (Developer — 2026-09-04) — DONE
+
+Backend + frontend modelling correction, one session. Not on the M5 plan's
+session table — a cross-cutting invariant the owner clarified during the
+Session 16 QA walkthrough that was held up only by convention (the seed +
+per-flow UI product filters). Made it a real, enforced domain rule and
+changed the SM/Canteen UI flows to match. Full detail in **ADR-67**;
+handoff was `docs/sprints/location-stock-model-enforcement-handoff.md`.
+
+**The model (now enforced, not just implied).** Ingredients live only at
+the Store; dishes and goods live only at the Restaurant/Canteen; a
+transfer is Restaurant↔Canteen and carries dish/goods only.
+
+**Shipped — backend**
+
+- `lib/domain/stock/guards.ts` — three new guards:
+  `assertKindAllowedAtLocation` (R1: ingredient⇒store, dish/goods⇒
+  restaurant/canteen), `assertTransferLocations` (R2: both endpoints
+  restaurant/canteen, never the store), `assertTransferableKind` (R3:
+  dish/goods only). Same shape as `assertProductIsDish` — minimal
+  `select`, `NOT_FOUND` for missing/deleted, `VALIDATION_ERROR` for the
+  rule.
+- Wired in: `setOpeningStock`; `recordPurchaseReceipt` + batch (shared
+  `receiptLineCore`); `recordKitchenIssue` + batch (`issueLineCore` — now
+  also pins the product to `ingredient`); `recordNonSaleConsumption` +
+  batch (`nonSaleLineCore`); `recordTransfer` + `recordTransferBatch`
+  (R2 once per call before any write; R3 per line in
+  `transferDispatchLineCore`). `recordProduction` already satisfied R1 —
+  one-line comment added. `acceptTransfer` / `flagTransfer` /
+  `correctMovement` deliberately **not** guarded (they derive
+  location/product from an already-validated row and can't change
+  either).
+- `POST /api/stock-movements/receipts/batch` — new "SM → Restaurant"
+  carve-out (mirrors the `production` / `transfer` batch routes): a
+  `store_manager` may post a receipt batch at a `restaurant`, for goods
+  deliveries. Domain R1 is the backstop.
+- **Sales (`sale` / `stock_count`) — no new guard.** Both `createOrder`
+  and `recordStockCount` already require an active `ProductLocation` with
+  a non-null `sellingPrice`, and an ingredient can never have one.
+  Confirmed by `lib/domain/sales/ingredient-not-sellable.test.ts` (locks
+  it in — goes red if a future change lets an ingredient carry a selling
+  price).
+
+**Shipped — frontend (`app/store-manager/flows/movement-picker-flow.tsx`)**
+
+- **SM Transfer is single-source from the Restaurant.** Was per-product
+  multi-source (dishes from the Restaurant, goods from the Store) via
+  `useTransferSourceLevels` + a per-source batch split — both **deleted**.
+  Now one `transferBatch { fromLocationId: restaurant, ... }`.
+- **Transfer / Canteen Dispatch destination is auto-resolved, no picker.**
+  `validDestinations = locations.filter(not source && not store)`; with
+  exactly one it auto-sets `destId` and the direction badge shows it
+  ("Restaurant → Canteen" / "Canteen → Restaurant"). `<Select>` kept only
+  for the 2+ case; `EmptyState` for the 0 case.
+- **Receive splits by kind (3c decision — owner chose "option 2"
+  in-session).** One screen lists every delivered item; on submit,
+  ingredient lines → one `receiptBatch` at the Store, goods lines → one
+  `receiptBatch` at the Restaurant. Chosen because goods can't sit at the
+  Store *at all* under R1, and no legal movement gets them out afterwards
+  — so they must land at a selling location on receipt, no intermediate
+  hop. (Rejected: a second dedicated goods screen; honouring the
+  `purchase_payment` "Destination" column — leaves unmatched manual goods
+  lines with no target.)
+
+**Regression budget — COGS/balances unchanged (ADR-55).** Guards are a
+pure gate — reject illegal combos, never alter a written row.
+`prisma/seed.ts` (Session-16 QA baseline, already model-compliant)
+unchanged and still seeds. New
+`lib/domain/financials/cogs-model-guards-regression.test.ts` drives a
+model-compliant world through the guarded domain fns and asserts (a) every
+legal movement accepted, (b) COGS delta == hand-computed figure, incl. a
+Restaurant→Canteen transfer netting to zero across COGS.
+
+**Tests.** Stock-domain transfer fixtures rewritten from `store→canteen`
+ingredient transfers to `restaurant→canteen` goods transfers;
+`setupStockTestData` gains `goodsProductId`. R1/R2/R3 cases added to
+`transfer.test.ts`, `movement-batch.test.ts`, `movement-guards.test.ts`.
+`derived-balance.test.ts` / `correct-movement.test.ts` fixtures that put a
+non-ingredient at the Store (or an ingredient at Restaurant/Canteen)
+switched to model-compliant kinds. `batch.route.test.ts` gains the
+SM→Restaurant receipt carve-out cases. Screen specs
+(`store-manager-flows`, `canteen-transfer-dispatch`) updated: no
+Destination `<Select>`, single-source transfer, the receive split.
+
+**Gate.** `pnpm typecheck` 0, `pnpm build` clean, no `TODO(mock)` in
+touched files. `pnpm test` green on the clean run. **Known pre-existing
+flake (not introduced here):** a cross-file race on the global `DayClose`
+table — one suite briefly seals "today", and a concurrent suite writing a
+"today" `StockMovement` can 500 with "This day is closed". Recurred once
+across ~4 full runs during this session, always passing on re-run. ADR-61
+(test DB isolation) territory; out of scope for this handoff.
+
+**No schema migration** (no schema change).
+
+**Docs.** ADR-67 (new). PRD §3 movement table + §4.2 tightened. SCHEMA §3
+note under `StockMovement`. `docs/design/flows/staff-stock-movements-flow.md`
+updated (no destination picker; single-source transfer; receive split).
+
+---
+
 ## Milestone 5 Session 15 — Build the audit-trail screen + batch grouping (Developer — 2026-09-04) — DONE
 
 Full-stack. The read backend existed (S11) but ignored `correlationId`;

@@ -9,7 +9,11 @@ import type {
 } from "./types";
 import { toMagnitude, toMoney, toMovementView } from "./internal";
 import { DomainError } from "./errors";
-import { assertLocationExists, assertProductExists } from "./guards";
+import {
+  assertKindAllowedAtLocation,
+  assertLocationExists,
+  assertProductExists,
+} from "./guards";
 import {
   newCorrelationId,
   parseBatchLines,
@@ -146,6 +150,9 @@ async function receiptLineCore(
 ) {
   await assertProductExists(tx, line.productId);
   await assertLocationExists(tx, line.locationId);
+  // R1 (ADR-67): a receipt lands stock — ingredient ⇒ Store, dish/goods ⇒
+  // Restaurant/Canteen. Shared by the single and batch receipt paths.
+  await assertKindAllowedAtLocation(tx, line.productId, line.locationId);
 
   const linkedId =
     line.purchasePaymentId != null && line.purchasePaymentId !== ""

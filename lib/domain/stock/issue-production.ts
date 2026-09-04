@@ -7,6 +7,7 @@ import type {
 } from "./types";
 import { toMagnitude, toMovementView } from "./internal";
 import {
+  assertKindAllowedAtLocation,
   assertLocationExists,
   assertLocationOfType,
   assertProductExists,
@@ -36,6 +37,10 @@ async function issueLineCore(
 ) {
   await assertProductExists(tx, line.productId);
   await assertLocationExists(tx, line.locationId);
+  // R1 (ADR-67): an issue draws down Store stock — and only the Store
+  // holds ingredients, so this also pins `productId` to `kind =
+  // "ingredient"` (a dish/goods can never sit at the Store to be issued).
+  await assertKindAllowedAtLocation(tx, line.productId, line.locationId);
   return writeMovementLine(
     tx,
     {
@@ -61,6 +66,8 @@ async function productionLineCore(
 ) {
   await assertProductIsDish(tx, line.productId);
   await assertLocationOfType(tx, line.locationId, "restaurant");
+  // R1 (ADR-67) is already satisfied here: a dish at the Restaurant is a
+  // legal kind↔location pair, and the two asserts above are stricter.
   return writeMovementLine(
     tx,
     {

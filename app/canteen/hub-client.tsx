@@ -9,21 +9,36 @@
 //     "N items incoming — Review & Receive" → navigates to
 //     /canteen/transfer/receive, where the attendant confirms/adjusts the
 //     quantities and accepts. No inline one-tap accept, no flag-to-admin.
-//   • <ActionTileGrid> — Transfer Dispatch / Stock Count / Stock Levels.
+//   • pinned <PurchaseDeliveryBanner> per Canteen-destined delivery the
+//     Admin has paid for (ADR-69 — receiving is by DESTINATION, so the
+//     attendant sees the Canteen's; `useOutstandingDeliveries`). "Review
+//     & receive" routes to the Receive flow rather than one-tap writing a
+//     receipt — a delivery can arrive short. No Flag action: that is the
+//     two-phase TRANSFER variance path and rejects a `purchase_payment`.
+//   • <ActionTileGrid> — Receive Goods / Transfer Dispatch / Stock Count /
+//     Stock Levels / Non-sale.
 //   • <ActivityTimeline> — today's canteen movement log / empty line.
 //   • <ErrorState> on a fetch failure.
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, ClipboardList, Boxes } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ClipboardList,
+  Boxes,
+  Trash2,
+  PackagePlus,
+} from "lucide-react";
 import { ActionTileGrid, type ActionTile } from "@/components/kit/action-tile-grid";
 import { ActivityTimeline } from "@/components/kit/activity-timeline";
 import { InstructionalBanner } from "@/components/kit/instructional-banner";
+import { PurchaseDeliveryBanner } from "@/components/kit/banner";
 import { Button } from "@/components/kit/button";
 import { ErrorState } from "@/components/kit/error-state";
 import { useToast } from "@/components/kit/toast";
 import {
   useStaffStock,
+  useOutstandingDeliveries,
   deriveIncomingTransfers,
 } from "@/app/store-manager/use-staff-stock";
 import {
@@ -43,6 +58,10 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
   const router = useRouter();
   const { toast } = useToast();
   const { data, loading, error, refresh } = useStaffStock();
+  // Canteen-destined deliveries the Admin has paid for and nobody has
+  // received yet (ADR-69 destination scoping). Non-fatal on failure — the
+  // hub still renders without the banner, same as the SM hub treats it.
+  const outstanding = useOutstandingDeliveries();
 
   // F7-3 (QA S7) — today's canteen stock counts, so the attendant can
   // undo a mistaken same-day count (the `voidStockCount` recovery path,
@@ -96,7 +115,29 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
     0,
   );
 
+  const productName = (id: string) =>
+    data.products.find((p) => p.id === id)?.name ?? "stock";
+  const productUnit = (id: string) =>
+    data.products.find((p) => p.id === id)?.unitLabel ?? "";
+
+  // Deliveries awaiting receipt, once the read has settled cleanly.
+  const pendingDeliveries =
+    outstanding.loading || outstanding.error ? [] : outstanding.rows;
+  const pendingCount = pendingDeliveries.length;
+
   const tiles: ActionTile[] = [
+    {
+      // Session 16 / ADR-69 — a supplier delivery destined for the Canteen
+      // is received here directly (goods can't sit at the Store, and the
+      // Restaurant transfer path is not the only way in any more).
+      icon: <PackagePlus {...TILE_ICON_PROPS} stroke="var(--color-accent)" />,
+      label: "Receive Goods",
+      subLabel: pendingCount
+        ? `${pendingCount} ${pendingCount === 1 ? "delivery" : "deliveries"} pending`
+        : "Log a supplier delivery",
+      badge: pendingCount > 0,
+      onClick: () => router.push("/canteen/flows/receive"),
+    },
     {
       icon: <ArrowLeftRight {...TILE_ICON_PROPS} stroke="var(--color-info)" />,
       label: "Transfer Dispatch",
@@ -115,6 +156,16 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
       label: "Stock Levels",
       subLabel: "Current on-hand",
       onClick: () => router.push("/canteen/stock"),
+    },
+    {
+      // Session 16: the Canteen-side non-sale-consumption flow (PRD §3
+      // "any staff"; ADR-67 non_sale_consumption legal outbound at the
+      // Canteen). "Non-sale" is the domain term — spoilage, staff meals,
+      // complimentary, damage all fall under it.
+      icon: <Trash2 {...TILE_ICON_PROPS} stroke="var(--color-warning)" />,
+      label: "Non-sale",
+      subLabel: "Spoilage & staff meals",
+      onClick: () => router.push("/canteen/flows/non-sale"),
     },
   ];
 
@@ -141,6 +192,24 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
           </Button>
         </div>
       )}
+
+      {pendingDeliveries.map((d) => {
+        const qty = d.purchaseOrderedQty ? trimQty(d.purchaseOrderedQty) : "?";
+        const unit = productUnit(d.productId);
+        return (
+          <PurchaseDeliveryBanner
+            key={d.id}
+            title={`Purchase delivery pending · ${productName(d.productId)}`}
+            detail={`${qty} ${unit} · ${d.purchaseSupplier ?? "Supplier"}`}
+            primaryLabel="Review & receive"
+            onPrimary={() => router.push("/canteen/flows/receive")}
+            // No Flag action: `onFlag` is the two-phase TRANSFER variance
+            // path (`flagTransfer`, ADR-39) and would reject a
+            // `purchase_payment` row. A short delivery is reported by
+            // receiving the actual quantity in the Receive flow.
+          />
+        );
+      })}
 
       <div className="flex flex-col gap-(--sp-4)">
         <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-caption/micro">

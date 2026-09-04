@@ -155,7 +155,14 @@ export function StockCountClient() {
   const canConfirm = selected !== null && !submitting && !blocked;
 
   return (
-    <div className="flex flex-col min-h-screen bg-(--surface-page)">
+    // Fill the staff shell's scroll region — NOT `min-h-screen`. The shell
+    // (components/shells/staff-shell.tsx) is already `h-screen` with a
+    // fixed header + bottom nav; a `min-h-screen` child overflows that and
+    // pushes the sticky "Confirm count" footer below the visible viewport
+    // (Session 16 finding — same failure the FlowScaffold header comment
+    // documents). `grow min-h-0` + an inner `overflow-y-auto` body +
+    // `shrink-0` footer keeps Confirm pinned and always visible.
+    <div className="flex flex-col grow min-h-0 bg-(--surface-page)">
       {/* Header — matches Paper: back arrow + "Stock Count" title */}
       <div className="flex items-center h-(--control-xl) px-(--sp-6) gap-(--sp-4) shrink-0 border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
         <button
@@ -190,8 +197,9 @@ export function StockCountClient() {
         </h1>
       </div>
 
-      {/* Body — switches between picker and counting */}
-      <div className="flex flex-col grow basis-0 overflow-auto">
+      {/* Body — switches between picker and counting. The only scroll
+          region; `min-h-0` lets it actually shrink so the footer stays put. */}
+      <div className="flex flex-col grow min-h-0 overflow-y-auto">
         {screen === "picker" ? (
           <PickerScreen
             products={filtered}
@@ -220,15 +228,18 @@ export function StockCountClient() {
         ) : null}
       </div>
 
-      {/* Sticky footer — "Confirm count" */}
-      <div className="flex flex-col py-(--sp-5) px-(--sp-6) bg-(--surface-page) border-t border-t-solid [border-top-color:var(--border-subtle)] shrink-0">
+      {/* Sticky footer — "Confirm count". Same chrome as every other staff
+          flow's submit bar (flow-scaffold.tsx): shrink-0, --sp-6/--sp-4
+          padding, a full-width size="lg" primary. */}
+      <div className="flex items-center shrink-0 px-(--sp-6) py-(--sp-4) bg-(--surface-page) border-t border-t-solid [border-top-color:var(--border-subtle)]">
         <Button
           id="k1-confirm-count"
           variant="primary"
+          size="lg"
           disabled={!canConfirm}
           loading={submitting}
           onClick={confirmCount}
-          className="w-full h-(--control-xl)"
+          className="w-full"
         >
           Confirm count
         </Button>

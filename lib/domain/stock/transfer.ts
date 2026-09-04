@@ -8,7 +8,12 @@ import type {
 } from "./types";
 import { toMagnitude, toMovementView } from "./internal";
 import { DomainError } from "./errors";
-import { assertLocationExists, assertProductExists } from "./guards";
+import {
+  assertLocationExists,
+  assertProductExists,
+  assertTransferLocations,
+  assertTransferableKind,
+} from "./guards";
 import {
   assertRemovalWouldNotGoNegative,
   newCorrelationId,
@@ -38,6 +43,9 @@ async function transferDispatchLineCore(
   audit: LineAuditMeta,
 ) {
   await assertProductExists(tx, line.productId);
+  // R3 (ADR-67): only a dish or goods may be transferred — an ingredient
+  // is issued from the Store, never moved location to location.
+  await assertTransferableKind(tx, line.productId);
   return writeMovementLine(
     tx,
     {
@@ -101,6 +109,9 @@ export async function recordTransfer(
   const row = await prisma.$transaction(async (tx) => {
     await assertLocationExists(tx, input.fromLocationId, "fromLocationId");
     await assertLocationExists(tx, input.toLocationId, "toLocationId");
+    // R2 (ADR-67): both endpoints must be Restaurant or Canteen — a
+    // transfer never touches the Store.
+    await assertTransferLocations(tx, input.fromLocationId, input.toLocationId);
 
     return transferDispatchLineCore(
       tx,
@@ -154,10 +165,16 @@ export async function recordTransferBatch(
   const rows = await prisma.$transaction(async (tx) => {
     await assertLocationExists(tx, input.fromLocationId, "fromLocationId");
     await assertLocationExists(tx, input.toLocationId, "toLocationId");
+    // R2 (ADR-67): both endpoints must be Restaurant or Canteen. Checked
+    // once for the whole batch, before any line is written.
+    await assertTransferLocations(tx, input.fromLocationId, input.toLocationId);
 
     // Phase 1: BLOCK.
     for (let i = 0; i < input.lines.length; i++) {
       await assertProductExists(tx, input.lines[i].productId);
+      // R3 (ADR-67): every line must be a dish or goods — one ingredient
+      // line rejects the whole batch, nothing written.
+      await assertTransferableKind(tx, input.lines[i].productId);
       const product = await tx.product.findUnique({
         where: { id: input.lines[i].productId },
         select: { name: true },

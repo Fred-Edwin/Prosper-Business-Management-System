@@ -3210,3 +3210,398 @@ kind) over matching that one artboard detail. Flagged in the S15 report.
 - If a screen ever genuinely needs 6+ filters, revisit — a grouped or
   collapsible affordance may be worth reintroducing behind a prop, but
   not on spec.
+
+---
+
+## ADR-67: Stock movements enforce a location ↔ product-kind model — ingredients only at the Store; dishes and goods only at the Restaurant/Canteen; transfers are Restaurant↔Canteen, dish/goods only (Owner + Developer, Milestone 5 — location-stock-model-enforcement session, 2026-09-04)
+
+**Context.** Session 16 (manual QA walkthrough). While scripting the QA
+day the owner clarified the intended location model, and it was not
+actually enforced anywhere — only *implied* by the seed and by each SM/
+Canteen flow's product-kind filter. The domain would happily record an
+`opening` for a dish at the Store, an `issue` of a soda, a `transfer` of
+an ingredient, or a `transfer` with the Store on either end. PRD §3's
+movement table ("Issue = stock taken from the Store to be cooked",
+"Transfer = stock moved between locations") described the intent without
+the kind/location constraints. This ADR makes the model a real, enforced
+domain rule and tightens PRD §3 to match.
+
+**Decision — the model.**
+
+| Location `type` | May hold (`Product.kind`) | Inbound | Outbound |
+|---|---|---|---|
+| `store` | **`ingredient` only** | `opening`, `purchase_receipt` | `issue` (→ kitchen), `non_sale_consumption`, `opening` adj. |
+| `restaurant` | **`dish` + `goods`** (never `ingredient`) | `opening`, `production` (dishes), `purchase_receipt` (goods), `transfer` in | `sale`, `transfer` out (→ Canteen), `non_sale_consumption` |
+| `canteen` | **`dish` + `goods`** (never `ingredient`) | `opening`, `purchase_receipt` (goods), `transfer` in | `sale` (from `stock_count`), `transfer` out (→ Restaurant), `non_sale_consumption` |
+
+Three rules, enforced in `lib/domain/stock/guards.ts`:
+
+- **R1 — kind ↔ location** (`assertKindAllowedAtLocation`): an
+  `ingredient` movement may only target a `store`; a `dish`/`goods`
+  movement may only target a `restaurant`/`canteen`. Wired into
+  `setOpeningStock`, `recordPurchaseReceipt` (+batch, via the shared
+  `receiptLineCore`), `recordKitchenIssue` (+batch, via `issueLineCore` —
+  which now also pins the product to `ingredient`), and
+  `recordNonSaleConsumption` (+batch, via `nonSaleLineCore`).
+  `recordProduction` already satisfied R1 via
+  `assertProductIsDish` + `assertLocationOfType(..., "restaurant")`.
+- **R2 — transfer endpoints** (`assertTransferLocations`): both
+  `fromLocationId` and `toLocationId` must be `restaurant`/`canteen`. Any
+  transfer touching a `store` on either side is rejected. Wired into
+  `recordTransfer` and `recordTransferBatch` (once per call, before any
+  write). `from !== to` is unchanged.
+- **R3 — transferable kind** (`assertTransferableKind`): the transferred
+  product must be `dish`/`goods`. An `ingredient` transfer is rejected —
+  ingredients are issued from the Store, never moved location-to-location.
+  Wired into `transferDispatchLineCore` (covers single + batch).
+
+Error shape: `DomainError("VALIDATION_ERROR", <message>, <field>)`, matching
+the existing guards. `acceptTransfer` / `flagTransfer` / `correctMovement`
+are **not** guarded — they derive their location/product from an
+already-validated row and cannot change either, so a guard there would only
+reject rows that could never have been written.
+
+**Not a DB CHECK.** The constraint spans three tables
+(`stock_movement` → `product.kind`, `stock_movement` → `location.type`)
+and a cross-table CHECK is not expressible in Postgres without a trigger.
+`ProductLocation` already models "sold here", not "stocked here", so it
+can't carry it either. Domain-layer enforcement is consistent with every
+other invariant in this codebase (ledgers-not-totals, corrections-as-rows,
+the 2-phase transfer of ADR-39).
+
+**Sales domain (`sale` / `stock_count`).** These rows are written by
+`lib/domain/sales`, not the stock domain. Both `createOrder` (Restaurant)
+and `recordStockCount` (Canteen) already require an **active
+`ProductLocation` with a non-null `sellingPrice`**, and `selling_price` is
+Dish/Goods-only per SCHEMA §2 — so an `ingredient` has no selling price
+anywhere and already cannot be sold or counted. **No new guard was added
+in sales**; `lib/domain/sales/ingredient-not-sellable.test.ts` locks that
+in (if a future change lets an ingredient carry a selling price, it goes
+red and `assertKindAllowedAtLocation` should be wired into the sales
+path).
+
+**Goods deliveries now land at the Restaurant, not the Store (3c —
+resolved with the owner in-session, "option 2").** Under R1 a goods
+delivery can no longer be received into the Store, and there is **no
+legal movement that gets goods out of the Store afterwards** (transfer is
+Restaurant↔Canteen; issue is ingredients only) — so goods must land at a
+selling location on receipt, with no intermediate hop. The SM "Receive
+Goods" flow stays a single screen listing every delivered item; on submit
+the batch **splits by kind** — `ingredient` lines → one
+`receiptBatch` at the Store, `goods` lines → one `receiptBatch` at the
+Restaurant. `POST /api/stock-movements/receipts/batch` gains the same
+"SM → Restaurant" carve-out the `production` / `transfer` batch routes
+already have (a `store_manager` may post a receipt batch at a
+`restaurant`); R1 in the domain is the backstop. Goods still reach the
+**Canteen** by `transfer` from the Restaurant, unchanged. (Options
+considered and rejected: a second dedicated goods-receipt screen — most
+new UI; honouring the `purchase_payment`'s "Destination" column — leaves
+unmatched manual goods lines with no target.)
+
+**Store Manager UI, other changes.**
+
+- **SM Transfer is single-source from the Restaurant.** It used to be
+  per-product multi-source (dishes from the Restaurant, goods from the
+  Store) via `useTransferSourceLevels` + a per-source batch split. With
+  goods now at the Restaurant, everything the SM transfers leaves the
+  Restaurant — one `transferBatch` `{ fromLocationId: restaurant, ... }`.
+  `useTransferSourceLevels` and the split are deleted.
+- **The transfer destination is auto-resolved, not chosen.** With exactly
+  one Restaurant and one Canteen, a transfer's destination is whichever of
+  the two the source isn't — nothing to pick. The Destination `<Select>`
+  is dropped for both the SM Transfer and the Canteen Dispatch; the
+  direction badge ("Restaurant → Canteen" / "Canteen → Restaurant") shows
+  where it's going. The `<Select>` is kept only for the (currently
+  impossible) case of 2+ valid destinations; an `EmptyState` shows if none
+  exists.
+
+**Regression budget — COGS and balances unchanged (ADR-55).** The guards
+are a pure gate: they reject illegal kind/location combinations but never
+alter, reorder, or add columns to a row that IS written. COGS sums every
+`StockMovement`, so for model-compliant data every figure is
+byte-identical. `prisma/seed.ts` (the Session-16 QA baseline — 8 products,
+zero ledger data, already model-compliant) is unchanged and still seeds.
+`lib/domain/financials/cogs-model-guards-regression.test.ts` drives a
+small model-compliant world **through the guarded domain functions** and
+asserts (a) every legal movement is accepted and (b) the COGS the sweep
+derives is exactly the hand-computed figure, including a Restaurant→Canteen
+transfer netting to zero across COGS.
+
+**Consequences.**
+
+- `docs/PRD.md` §3 movement-type table + §4.2 tightened.
+- `docs/SCHEMA.md` §3 gains a note under `StockMovement` that
+  `movement_type` + `product.kind` + `location.type` are constrained in
+  the domain layer.
+- `docs/design/flows/staff-stock-movements-flow.md` updated: no transfer
+  destination picker; the receive flow's ingredient/goods split.
+- Stock-domain tests rewrote their transfer fixtures from
+  `store → canteen` ingredient transfers to `restaurant → canteen` goods
+  transfers; `setupStockTestData` gains a `goodsProductId`. R1/R2/R3 cases
+  added to `transfer.test.ts` and `movement-guards.test.ts`. Screen specs
+  for the SM/Canteen flows updated (no Destination `<Select>`;
+  single-source transfer; the receive split). `pnpm test` /
+  `pnpm typecheck` / `pnpm build` green.
+- No schema migration (no schema change).
+
+---
+
+## ADR-68: Non-sale consumption is recordable by the staff who witness it — the Canteen Attendant and the Cashier get their own screens, and `cashier` becomes a location-scoped stock reader (Owner + Developer, Milestone 5 — Session 16 QA walkthrough, 2026-09-04)
+
+**Context.** Session 16 (the manual QA walkthrough) reached scripted step
+14 — *Canteen Attendant logs Mandazi ×5 as spoiled* — and there was no
+way to do it. PRD §3's movement table records non-sale consumption as
+**"Recorded by: Any staff"**, and ADR-67's location table lists
+`non_sale_consumption` as a legal **outbound** at `store`, `restaurant`
+*and* `canteen`. But the only screen was
+`/store-manager/flows/non-sale` — Store-scoped and behind the
+`store_manager` route gate. The backend was already complete: `POST
+/api/stock-movements/non-sale/batch` accepted `canteen_attendant`, and
+`recordNonSaleConsumptionBatch` passed ADR-67's R1 guard for dish/goods
+at a canteen. A pure UI gap; the owner asked for the Cashier side too
+("in the same way the canteen attendant can do this, they should also be
+able to do this").
+
+**Decision.**
+
+### 1. One shared flow, three sourced modes
+
+`MovementPickerFlow` (`app/store-manager/flows/movement-picker-flow.tsx`)
+gains two modes alongside the existing `non-sale`:
+
+| Mode | Source | Product scope | Route | Redirect |
+|---|---|---|---|---|
+| `non-sale` | Store | `all` | `/store-manager/flows/non-sale` | `/store-manager` |
+| `canteen-non-sale` | Canteen | `canteen` (GET /api/canteen/products) | `/canteen/flows/non-sale` | `/canteen` |
+| `restaurant-non-sale` | Restaurant | `dish-or-goods` | `/cashier/flows/non-sale` | `/cashier` |
+
+All three share the reason `<Select>` + note `<Textarea>` (note required
+iff reason `other`) and the same `…/non-sale/batch` endpoint. The
+Store-hard-coding in the shared body (`storeLocationId`, the literal
+"Store" in the impact copy, `mode === "non-sale"` branches) was replaced
+by `sourceLocationId` / `sourceLabel` / an `isNonSale` helper, so the SM
+flow is behaviourally unchanged. **No kit change** — the modes are
+`FLOW_CONFIG` entries, per CONVENTIONS §6.
+
+Entry points: a **"Non-sale"** tile on the Canteen hub (`Trash2`, warning
+tone) and a full-width secondary **`<Button>`** on the Cashier "Today"
+hub. The Cashier entry was first built as a text link and the owner
+rejected it as too easy to miss.
+
+### 2. `cashier` becomes a location-scoped stock reader — reversing an explicit rule
+
+`listMovements` documented and enforced **`cashier` → no stock-movement
+access → `FORBIDDEN`** ("a cashier sells, they don't manage stock"). The
+non-sale picker loads via `useStaffStock`, which reads `GET
+/api/stock-movements` and `GET /api/locations` — so the Cashier screen
+403'd before rendering.
+
+**The old rule predates this feature and is now wrong.** A cashier who
+sees a dropped plate is exactly the right person to log it — PRD §3 says
+so. So `cashier` is added to the location-bound branch of
+`listMovements`, receiving **the same treatment `store_manager` /
+`canteen_attendant` already have**: own-location rows only, a foreign
+`locationId` filter returns `[]`, no `locationId` link → `FORBIDDEN`.
+
+**Why this is a narrow widening, not a hole:** `GET /api/products` and
+`GET /api/stock-movements/balances` **already** permitted `cashier`. The
+role could already see every Restaurant product and its live derived
+balance. This adds only the *movement history* for those same products at
+the one location the cashier works at. `GET /api/locations` (widened
+too) is the non-sensitive active-only list; its mutations stay admin-only.
+
+Write paths widened in lockstep, both location-bound: the
+`non_sale_consumption` entry of the `POST /api/stock-movements` per-type
+role map, and `POST …/non-sale/batch` (`cashier` added to `ROLES`, and to
+`isLocationBound` in `lib/api/stock-batch-auth.ts` so it is pinned to the
+Restaurant). Every **other** batch route rejects `cashier` on its own
+`ROLES` list before location binding matters — unchanged.
+
+**Not widened:** issue / production / transfer / purchase-receipt remain
+closed to the Cashier. The role gains non-sale only.
+
+**Consequences.**
+
+- `docs/PRD.md` §3's "Any staff" is now true in the product, not just on
+  paper.
+- Tests: `lib/domain/stock/list-movements-cashier-scope.test.ts` (new — 4
+  cases pinning the scope: Restaurant yes, Store/Canteen no, foreign
+  filter → `[]`, no location → `FORBIDDEN`);
+  `tests/screens/canteen-non-sale.screen.test.tsx` (new, 8);
+  `tests/screens/cashier-non-sale.screen.test.tsx` (new, 5); hub-link
+  cases in `canteen-hub` / `cashier-orders`; two cashier cases in
+  `batch.route.test.ts`. `app/api/locations/route.test.ts`'s "cashier is
+  still 403" was **inverted** — it encoded the rule this ADR reverses.
+- No schema change. No migration. No `TODO(mock)`.
+
+---
+
+## ADR-69: Deliveries are received by DESTINATION, not by the receiver's home location — the Store Manager receives at the Store *and* the Restaurant, the Canteen Attendant at the Canteen, and a purchase payment's destination is constrained to the legal ones for the product's kind (Owner + Developer, Milestone 5 — Session 16 QA walkthrough, 2026-09-04)
+
+**Context — the bug, found live.** Mid-walkthrough the owner recorded a
+purchase payment for *Soda 300ml ×12* from "Coast Bottlers", destined for
+the **Restaurant**. `/admin/financials` → Stock Purchases showed it as
+**"Awaiting delivery"** — and no staff role had any way to receive it.
+The Store Manager hub showed no banner; the SM Receive flow's "Deliveries
+awaiting receipt" list was empty. The row was a dead end.
+
+**Root cause — ADR-67 fallout, a half-applied change.**
+`listOutstandingPurchasesForLocation(locationId)` filtered
+`purchase_payment` rows on the caller's **single assigned location**. The
+Store Manager is assigned to the Store, so a Restaurant-destined delivery
+was invisible to them.
+
+ADR-67 had moved goods deliveries to land at the **Restaurant** (goods
+may not sit at the Store) and updated the **write** path for it — the
+Receive flow kind-splits the batch and sends goods lines to the
+Restaurant, and `POST …/receipts/batch` gained an "SM may post at a
+restaurant" carve-out. **It never updated this read.** So the SM could
+write a Restaurant receipt but could not see that one was pending. A
+Restaurant- **or** Canteen-destined purchase was unreceivable.
+
+Worse for the Canteen: `GET /api/stock-movements/outstanding` was
+`["admin", "store_manager"]`, so the Canteen Attendant was `403`'d
+outright and had no receive screen at all. Under ADR-67 the only way
+goods reached the Canteen was a transfer from the Restaurant — fine when
+a supplier delivers to the Restaurant, useless when they deliver to the
+Canteen, which is what the owner was actually recording.
+
+**Decision.**
+
+### 1. Receiving is scoped by destination
+
+| Role | May see / receive deliveries destined for |
+|---|---|
+| `admin` | every location (unchanged — unfiltered read) |
+| `store_manager` | **Store + Restaurant** |
+| `canteen_attendant` | **Canteen** |
+
+ADR-67 lands ingredients at the Store and goods at the Restaurant, and
+**both are the Store Manager's operational responsibility** — the split
+is a property of the goods, not of who handles them. The Canteen is the
+attendant's. Every other role receives nothing.
+
+The map is **one function**, `resolveReceivingDestinationIds(role)` in
+`lib/domain/stock/receiving-scope.ts`, resolving by `Location.type`
+(`active: true` only) — never by name, never by assuming
+`resolveActorLocationId` is the Store. Both the read and the write go
+through it, so **what a role can SEE and what it can RECEIVE cannot
+drift apart** — which is exactly the failure this ADR is fixing.
+
+Goods still reach the Canteen by **transfer from the Restaurant**
+(ADR-67), unchanged. Direct Canteen deliveries are an **addition** to
+that path, not a replacement.
+
+### 2. `listOutstandingPurchasesForLocation` takes a LIST
+
+`(locationIds: string | readonly string[])`, normalised to an array;
+`locationFilter` becomes `{ locationId: { in: [...] } }`. `undefined`
+still means "no filter" (the Admin's `listOutstandingPurchases`, byte
+-identical behaviour). A bare `string` is still accepted, so no call site
+had to change to keep compiling. The role → locations map lives at the
+route, not in the domain read — the read just filters.
+
+### 3. The write guard learns the same notion, instead of a second bypass
+
+`lib/api/stock-batch-auth.ts` `guardLocation` is a single-location
+equality check, so it would reject an SM posting at the Restaurant. ADR-67
+had worked around that with an inline "is the target a `restaurant`?"
+`prisma.location` lookup inside the receipts route. That one-off is
+**deleted**; `resolveBatchActor` now also returns
+**`guardReceivingDestination(target)`**, which checks `target` against
+`resolveReceivingDestinationIds(role)`. The receipts batch route calls it
+instead. `guardLocation` is untouched for every other batch route (issues
+/ transfers / non-sale), whose semantics really are "your own location".
+
+The single-movement `POST /api/stock-movements` `purchase_receipt` case
+had the identical hole — the UI posts batches, but leaving the two
+endpoints disagreeing meant the same dead end via a different door — so
+it resolves through the same map.
+
+ADR-67's **R1 domain guard (`assertKindAllowedAtLocation`) stays the
+backstop** and still rejects goods → Store and ingredient → Restaurant.
+The destination guard is about *authorisation*; R1 is about *the model*.
+
+### 4. A Canteen "Receive Goods" flow
+
+New route `/canteen/flows/receive` — a thin `mode` wrapper over the shared
+`MovementPickerFlow`, exactly like this session's two non-sale wrappers.
+New mode **`canteen-receive`**: a `FLOW_CONFIG` entry plus
+`CANTEEN_SOURCED` membership and an `isReceive` helper (the mirror of
+`isNonSale`), which replaced the `mode === "receive"` literals guarding
+the "Deliveries awaiting receipt" `<MatchCard>` list and the additive
+`+` total. Scoped to the canteen-sellable set (`GET
+/api/canteen/products`), additive (`spend: false`), redirects to
+`/canteen`.
+
+**No kind split** — the SM `receive` mode splits its batch because ADR-67
+sends ingredients and goods to different places; the Canteen only ever
+holds dish/goods, so the whole batch posts as **one** `receiptBatch` at
+the Canteen. **No kit change** (CONVENTIONS §6).
+
+Entry points on the Canteen hub, mirroring the SM hub exactly: a
+**"Receive Goods"** tile (`PackagePlus`, accent stroke, "N deliveries
+pending" + badge when any are outstanding) and a pinned
+**`<PurchaseDeliveryBanner>`** per awaiting delivery. The banner's primary
+is **"Review & receive"** routing into the flow — never a one-tap
+receipt, because **a delivery can arrive short** and the flow is where
+what *actually* turned up is confirmed. **No `onFlag`**: that is the
+two-phase TRANSFER variance path (`flagTransfer`, ADR-39) and would
+reject a `purchase_payment` row.
+
+### 5. The Admin's purchase destination is constrained to ADR-67's model
+
+| Product kind | Selectable destinations |
+|---|---|
+| `ingredient` | Store only |
+| `dish` | not purchasable — already excluded from the picker (ADR-46 §6) |
+| `goods` | Restaurant, Canteen |
+
+Before this, the Admin could record a payment whose receipt R1 would
+later reject (goods → Store): an **unreceivable dead-end row** no staff
+screen could ever clear — the same class of defect as the bug above,
+created at the other end. The `Destination` `<Select>` now derives its
+options from the selected product's kind, and an effect **clears a stale
+destination** when the product changes to an incompatible kind so an
+illegal value can't survive into a submit. With no product picked the
+list is empty and the field's `required` blocks submission. This is a
+**UX narrowing**; the domain guard on the receipt stays the enforcement
+point.
+
+Dishes needed no decision: `buyingPrice` is fixed at 0 and a dish is
+produced, not bought, so the payment drawer's product picker already
+excluded `kind === "dish"` (ADR-46 §6).
+
+**Consequences.**
+
+- `docs/PRD.md` §3 (movement table) + §4.2 — who receives what, and the
+  destination constraint on a purchase payment.
+- `docs/API.md` — `GET …/outstanding` roles + destination scoping and its
+  history; `purchase_receipt` (single + batch) role columns.
+- Files: `lib/domain/stock/receiving-scope.ts` (new),
+  `lib/domain/stock/list-movements.ts`,
+  `app/api/stock-movements/outstanding/route.ts`,
+  `app/api/stock-movements/receipts/batch/route.ts`,
+  `app/api/stock-movements/route.ts`, `lib/api/stock-batch-auth.ts`,
+  `app/store-manager/flows/movement-picker-flow.tsx`,
+  `app/canteen/flows/receive/page.tsx` (new),
+  `app/canteen/hub-client.tsx`, `app/admin/financials/payment-drawer.tsx`.
+- Tests: `lib/domain/stock/list-outstanding-destination-scope.test.ts`
+  (new, 5 — multi-location returns both, Canteen-only excludes the
+  others, a bare string still works, the Admin read is unchanged, a
+  received payment stays excluded);
+  `tests/screens/canteen-receive-goods.screen.test.tsx` (new, 10);
+  6 banner/tile cases in `tests/screens/canteen-hub.screen.test.tsx`;
+  3 destination cases in `tests/screens/financials.screen.test.tsx`;
+  and in `app/api/stock-movements/batch.route.test.ts` — the SM sees the
+  Restaurant-destined payment (the exact bug), SM→Canteen receipt `403`,
+  attendant→Store receipt `403`.
+- **Test inverted:** `batch.route.test.ts`'s *"canteen attendant → 403
+  (route not widened to them)"* encoded the rule this ADR reverses —
+  under it a Canteen-destined delivery could be paid for by the Admin and
+  received by nobody. It is now *"canteen attendant sees the Canteen's
+  payments, and only those"*. (Same shape as ADR-68 inverting the
+  locations-route cashier case.) Nothing else was inverted or deleted;
+  the SM's own-location case was **widened**, not reversed — it still
+  asserts the Canteen is not in scope.
+- No schema change. No migration. No `TODO(mock)`.

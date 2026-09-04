@@ -23,6 +23,17 @@ const hook = vi.hoisted(() => ({
   error: null as string | null,
   refresh: vi.fn(),
 }));
+// Session 16 / ADR-69 — the hub reads Canteen-destined deliveries
+// awaiting receipt. Receiving is by DESTINATION, so the attendant now sees
+// (and can receive) a purchase the Admin paid for against the Canteen;
+// before, `/outstanding` 403'd the role outright and the row was a dead
+// end. Mirrors the SM hub's banner.
+const outstanding = vi.hoisted(() => ({
+  rows: [] as StockMovementView[],
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
 const acceptFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 const flagFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 
@@ -33,6 +44,7 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
   return {
     ...actual,
     useStaffStock: () => hook,
+    useOutstandingDeliveries: () => outstanding,
     stockApi: { ...actual.stockApi, acceptTransfer: acceptFn, flagTransfer: flagFn },
   };
 });
@@ -114,6 +126,9 @@ beforeEach(() => {
   hook.data.products = [
     { id: "prod-rice", name: "Rice Basmati", unitLabel: "kg" },
   ];
+  outstanding.rows = [];
+  outstanding.loading = false;
+  outstanding.error = null;
   derivedHook.rows = [];
   derivedHook.error = null;
   voidCountFn.mockResolvedValue(undefined);
@@ -171,6 +186,13 @@ describe("/canteen hub — kit composition", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Stock Count/ }));
     expect(push).toHaveBeenCalledWith("/canteen/stock-count");
+  });
+
+  it("navigates from the Non-sale tile to /canteen/flows/non-sale (Session 16)", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Non-sale/ }));
+    expect(push).toHaveBeenCalledWith("/canteen/flows/non-sale");
   });
 
   it("F7-3: no 'Today's stock counts' section when nothing was counted today", () => {
@@ -270,6 +292,80 @@ describe("/canteen hub — kit composition", () => {
     expect(value).toBeInTheDocument();
     // never the danger tone for a derived sale.
     expect(value.className).not.toMatch(/text-danger/);
+  });
+
+  // ── Session 16 / ADR-69: Canteen-destined delivery banner + tile ─────
+
+  it("no delivery banner when nothing is awaiting receipt", () => {
+    renderScreen();
+    expect(
+      screen.queryByText(/Purchase delivery pending/),
+    ).not.toBeInTheDocument();
+    // …and the Receive tile carries its default sub-label, unbadged.
+    expect(screen.getByText("Log a supplier delivery")).toBeInTheDocument();
+  });
+
+  it("an awaiting Canteen delivery pins a banner and badges the Receive tile", () => {
+    outstanding.rows = [
+      mv({
+        id: "pay-1",
+        movementType: "purchase_payment",
+        quantity: "0.0000",
+        purchaseSupplier: "Coast Bottlers",
+        purchaseOrderedQty: "12.0000",
+      }),
+    ];
+    renderScreen();
+    expect(
+      screen.getByText(/Purchase delivery pending · Rice Basmati/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/12 kg · Coast Bottlers/)).toBeInTheDocument();
+    expect(screen.getByText("1 delivery pending")).toBeInTheDocument();
+    // Session 16: the delivery banner passes no `onFlag` — "Flag Variance"
+    // is the two-phase TRANSFER path (ADR-39) and rejects a
+    // purchase_payment row. The kit Banner now renders that button only
+    // when a handler is wired, so it must be absent here.
+    expect(
+      screen.queryByRole("button", { name: /Flag Variance/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("two awaiting deliveries pluralise the tile sub-label", () => {
+    outstanding.rows = [
+      mv({ id: "pay-1", purchaseSupplier: "A", purchaseOrderedQty: "5.0000" }),
+      mv({ id: "pay-2", purchaseSupplier: "B", purchaseOrderedQty: "8.0000" }),
+    ];
+    renderScreen();
+    expect(screen.getByText("2 deliveries pending")).toBeInTheDocument();
+  });
+
+  // A delivery can arrive short, so the banner does NOT one-tap write a
+  // receipt for the ordered qty — it routes to the Receive flow.
+  it("'Review & receive' routes to the Canteen Receive flow", async () => {
+    outstanding.rows = [
+      mv({ id: "pay-1", purchaseSupplier: "A", purchaseOrderedQty: "12.0000" }),
+    ];
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Review & receive/ }));
+    expect(push).toHaveBeenCalledWith("/canteen/flows/receive");
+  });
+
+  it("navigates from the Receive Goods tile", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Receive Goods/ }));
+    expect(push).toHaveBeenCalledWith("/canteen/flows/receive");
+  });
+
+  it("a failed deliveries read is non-fatal — hub still renders, no banner", () => {
+    outstanding.error = "boom";
+    outstanding.rows = [];
+    renderScreen();
+    expect(
+      screen.queryByText(/Purchase delivery pending/),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Canteen workflows")).toBeInTheDocument();
   });
 
   it("F7-7: a non-canteen-sale movement still renders unchanged (signed qty, its own tone)", () => {

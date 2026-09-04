@@ -59,6 +59,20 @@ const levels = vi.hoisted(() => ({
   error: null as string | null,
   refresh: vi.fn(),
 }));
+// Bug #15 (Session 16): the `receive` flow now calls
+// `useStockLevels(storeLocationId)` AND `useStockLevels(restaurantLocationId)`
+// and picks each row's on-hand by product kind. `production` also reads the
+// Restaurant as its PRIMARY balance. This second object is the Restaurant
+// read; the mock below dispatches on the `locationId` argument. It defaults
+// to the same rows as `levels` (so `production` sees the same LEVELS it
+// always has) — the #15 test overrides `restLevels.rows` to a distinct
+// Restaurant-specific set to prove goods rows read here, not at the Store.
+const restLevels = vi.hoisted(() => ({
+  rows: [] as unknown[],
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
 // `transfer` mode: per-product source balance (dish → Restaurant, else →
 // Store). Built from LEVELS in beforeEach.
 const transferLevels = vi.hoisted(() => ({
@@ -70,6 +84,10 @@ const transferLevels = vi.hoisted(() => ({
   error: null as string | null,
   refresh: vi.fn(),
 }));
+// (ADR-67: the SM transfer is single-source from the Restaurant now —
+// `useTransferSourceLevels` and its per-product source split are gone. The
+// transfer flow reads `useStockLevels(restaurantLocationId)` like every
+// other flow, so `transferLevels` no longer exists.)
 const outstanding = vi.hoisted(() => ({
   rows: [] as unknown[],
   loading: false,
@@ -91,8 +109,11 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
   return {
     ...actual,
     useStaffStock: () => staff,
-    useStockLevels: () => levels,
-    useTransferSourceLevels: () => transferLevels,
+    // Location-aware (bug #15): the Restaurant id → `restLevels`, anything
+    // else (the Store, or `undefined` when a mode doesn't read a second
+    // location) → the default `levels`.
+    useStockLevels: (locationId?: string) =>
+      locationId === "loc-rest" ? restLevels : levels,
     useOutstandingDeliveries: () => outstanding,
     stockApi: { ...actual.stockApi, ...api },
   };
@@ -120,24 +141,11 @@ beforeEach(() => {
   levels.rows = LEVELS;
   levels.loading = false;
   levels.error = null;
-  // Same figures as LEVELS, tagged by each product's true source: dishes
-  // at the Restaurant, everything else at the Store.
-  transferLevels.byProduct = new Map(
-    LEVELS.map((l) => {
-      const p = PRODUCTS.find((x) => x.id === l.productId);
-      const fromRestaurant = p?.kind === "dish";
-      return [
-        l.productId,
-        {
-          quantity: l.quantity,
-          sourceLocationId: fromRestaurant ? "loc-rest" : "loc-store",
-          sourceLabel: fromRestaurant ? "Restaurant" : "Store",
-        },
-      ];
-    }),
-  );
-  transferLevels.loading = false;
-  transferLevels.error = null;
+  // Restaurant read defaults to the same balances (production relies on
+  // this); the #15 test overrides it.
+  restLevels.rows = LEVELS;
+  restLevels.loading = false;
+  restLevels.error = null;
   outstanding.rows = [];
   outstanding.loading = false;
   outstanding.error = null;
@@ -172,7 +180,7 @@ describe("SM movement flows — no money / cost / margin anywhere", () => {
 
 // ── Receive ─────────────────────────────────────────────────────────
 describe("SM — Receive Goods", () => {
-  it("populated: 2 rows → impact banner sums → one receiptBatch POST", async () => {
+  it("populated: 2 ingredient rows → impact banner sums → one receiptBatch POST to the Store", async () => {
     renderFlow(<MovementPickerFlow mode="receive" />);
     const user = userEvent.setup();
 
@@ -180,7 +188,9 @@ describe("SM — Receive Goods", () => {
     await pickRow(user, "Rice Basmati", "50");
 
     expect(
-      screen.getByText(/Adds 90 kg across 2 products to Store stock now\./),
+      screen.getByText(
+        /Adds 90 kg across 2 products to stock now — ingredients to the Store, goods to the Restaurant\./,
+      ),
     ).toBeInTheDocument();
 
     await user.click(
@@ -195,13 +205,112 @@ describe("SM — Receive Goods", () => {
         ],
       }),
     );
+    // Only the Store batch — no goods lines, so no Restaurant batch.
+    expect(api.receiptBatch).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(push).toHaveBeenCalledWith("/store-manager"));
+  });
+
+  it("ADR-67: a mixed delivery splits — ingredients → Store, goods → Restaurant, one batch each", async () => {
+    renderFlow(<MovementPickerFlow mode="receive" />);
+    const user = userEvent.setup();
+
+    await pickRow(user, "Beef Fillet", "40"); // ingredient
+    await pickRow(user, "Soda 300ml", "24"); // goods
+
+    await user.click(
+      screen.getByRole("button", { name: /^Confirm Receipt/ }),
+    );
+    await waitFor(() => expect(api.receiptBatch).toHaveBeenCalledTimes(2));
+    expect(api.receiptBatch).toHaveBeenCalledWith({
+      locationId: "loc-store",
+      lines: [{ productId: "p-beef", quantity: "40", purchasePaymentId: null }],
+    });
+    expect(api.receiptBatch).toHaveBeenCalledWith({
+      locationId: "loc-rest",
+      lines: [{ productId: "p-soda", quantity: "24", purchasePaymentId: null }],
+    });
+  });
+
+  it("ADR-67: a goods-only delivery posts one batch to the Restaurant", async () => {
+    renderFlow(<MovementPickerFlow mode="receive" />);
+    const user = userEvent.setup();
+
+    await pickRow(user, "Soda 300ml", "24");
+    await pickRow(user, "Mineral Water 500ml", "12");
+
+    await user.click(
+      screen.getByRole("button", { name: /^Confirm Receipt/ }),
+    );
+    await waitFor(() => expect(api.receiptBatch).toHaveBeenCalledTimes(1));
+    expect(api.receiptBatch).toHaveBeenCalledWith({
+      locationId: "loc-rest",
+      lines: [
+        { productId: "p-soda", quantity: "24", purchasePaymentId: null },
+        { productId: "p-water", quantity: "12", purchasePaymentId: null },
+      ],
+    });
   });
 
   it("row readout shows On hand: N from the derived balance", () => {
     renderFlow(<MovementPickerFlow mode="receive" />);
     expect(
       screen.getByRole("group", { name: /^Beef Fillet, On hand: 46\.5 kg/ }),
+    ).toBeInTheDocument();
+  });
+
+  // Bug #15 (Session 16): the Receive flow is two-destination (ADR-67) —
+  // ingredient deliveries land at the Store, goods deliveries at the
+  // Restaurant, and submit already kind-splits into two batches. The
+  // on-hand readout must mirror that: an INGREDIENT row reads its balance
+  // at the Store, a GOODS row at the Restaurant. Before the fix every
+  // goods row read the Store (where goods can't sit) and showed "On hand:
+  // 0".
+  it("bug #15: ingredient rows read on-hand at the Store, goods rows at the Restaurant", () => {
+    // Distinct Store vs Restaurant balances for the same products.
+    levels.rows = [
+      { productId: "p-rice", name: "Rice Basmati", unitLabel: "kg", quantity: "100.0000" },
+      { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", quantity: "0.0000" },
+      { productId: "p-water", name: "Mineral Water 500ml", unitLabel: "pcs", quantity: "0.0000" },
+    ];
+    restLevels.rows = [
+      { productId: "p-rice", name: "Rice Basmati", unitLabel: "kg", quantity: "999.0000" },
+      { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", quantity: "32.0000" },
+      { productId: "p-water", name: "Mineral Water 500ml", unitLabel: "pcs", quantity: "22.0000" },
+    ];
+    renderFlow(<MovementPickerFlow mode="receive" />);
+
+    // Ingredient → Store balance (100), NOT the Restaurant's 999.
+    expect(
+      screen.getByRole("group", { name: /^Rice Basmati, On hand: 100 kg/ }),
+    ).toBeInTheDocument();
+    // Goods → Restaurant balance (32 / 22), NOT the Store's 0.
+    expect(
+      screen.getByRole("group", { name: /^Soda 300ml, On hand: 32 pcs/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", {
+        name: /^Mineral Water 500ml, On hand: 22 pcs/,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  // The resulting-balance line (#13) is `before + added`, so a wrong
+  // `before` silently produced a wrong "after". With #15 fixed, a goods
+  // row's "after" is computed off the Restaurant balance.
+  it("bug #15: a selected goods row's resulting balance is off the Restaurant on-hand", async () => {
+    levels.rows = [
+      { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", quantity: "0.0000" },
+    ];
+    restLevels.rows = [
+      { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", quantity: "32.0000" },
+    ];
+    renderFlow(<MovementPickerFlow mode="receive" />);
+    const user = userEvent.setup();
+
+    await pickRow(user, "Soda 300ml", "12");
+    // 32 (Restaurant) + 12 → 44, not 0 + 12 → 12.
+    expect(
+      screen.getByLabelText("32 pcs on hand, 44 pcs after this"),
     ).toBeInTheDocument();
   });
 
@@ -252,7 +361,7 @@ describe("SM — Receive Goods", () => {
     staff.error = "Network unreachable";
     renderFlow(<MovementPickerFlow mode="receive" />);
     const alert = screen.getByRole("alert");
-    expect(within(alert).getByText("Couldn't load Store stock")).toBeInTheDocument();
+    expect(within(alert).getByText("Couldn't load stock")).toBeInTheDocument();
     expect(within(alert).getByText("Network unreachable")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
@@ -401,6 +510,67 @@ describe("SM — Record Batch Production", () => {
       screen.queryByRole("group", { name: /In Rest\./ }),
     ).not.toBeInTheDocument();
   });
+
+  // Session 16 (owner): "during the review, show what's available and
+  // what's being added" — each selected additive row carries the
+  // resulting balance on its own line, live as the stepper moves.
+  it("a selected row shows the resulting balance (on-hand → after)", async () => {
+    renderFlow(<MovementPickerFlow mode="production" />);
+    const user = userEvent.setup();
+
+    // Grilled Chicken on-hand = 6 (LEVELS); produce 40 → 46.
+    await pickRow(user, "Grilled Chicken", "40");
+    expect(
+      screen.getByLabelText("6 pcs on hand, 46 pcs after this"),
+    ).toBeInTheDocument();
+
+    // Live: step down to 39 → 45.
+    const field = within(
+      screen.getByRole("group", { name: /^Grilled Chicken,/ }),
+    ).getByRole("spinbutton");
+    await user.clear(field);
+    await user.type(field, "39");
+    await user.tab();
+    expect(
+      screen.getByLabelText("6 pcs on hand, 45 pcs after this"),
+    ).toBeInTheDocument();
+  });
+
+  it("an unselected row shows no resulting-balance line", () => {
+    renderFlow(<MovementPickerFlow mode="production" />);
+    expect(
+      screen.queryByLabelText(/on hand, .* after this/),
+    ).not.toBeInTheDocument();
+  });
+
+  // Session 16 step 6 finding: producing MORE than on-hand is the normal
+  // case (you're adding stock). It must NOT paint the §9.8 over-stock
+  // block — no danger row, no "reduce or remove this line", submit stays
+  // live, impact banner reads the additive copy.
+  it("producing above on-hand is not blocked (additive flow)", async () => {
+    renderFlow(<MovementPickerFlow mode="production" />);
+    const user = userEvent.setup();
+
+    // Grilled Chicken on-hand = 6; produce 40.
+    await pickRow(user, "Grilled Chicken", "40");
+
+    expect(
+      screen.queryByText(/reduce or remove this line/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/over available stock/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Adds 40 pcs across 1 dish to Restaurant stock now\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Log Batch Production \(\+40 pcs\)/ }),
+    ).toBeEnabled();
+    // The row still shows the honest on-hand readout.
+    expect(
+      screen.getByRole("group", { name: /^Grilled Chicken, Available: 6 pcs/ }),
+    ).toBeInTheDocument();
+  });
 });
 
 // ── Transfer ────────────────────────────────────────────────────────
@@ -423,9 +593,15 @@ describe("SM — Transfer Stock", () => {
     ).not.toBeInTheDocument(); // ingredient
   });
 
-  it("category tabs filter; destination Select feeds the batch + badge", async () => {
+  it("category tabs filter; destination is auto-resolved to the Canteen (ADR-67) and feeds the batch + badge", async () => {
     renderFlow(<MovementPickerFlow mode="transfer" />);
     const user = userEvent.setup();
+
+    // No Destination <Select> — the only valid target is the Canteen.
+    expect(
+      screen.queryByRole("combobox", { name: /Destination/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Restaurant → Canteen/)).toBeInTheDocument();
 
     // Category tab: Beverages & Soda leaves only the two soda/water rows.
     await user.click(screen.getByRole("tab", { name: "Beverages & Soda" }));
@@ -434,12 +610,10 @@ describe("SM — Transfer Stock", () => {
 
     await pickRow(user, "Soda 300ml", "48");
     await pickRow(user, "Mineral Water 500ml", "24");
-    await user.click(screen.getByRole("combobox", { name: /Destination/ }));
-    await user.click(await screen.findByRole("option", { name: "Canteen" }));
 
     expect(
       screen.getByText(
-        /Removes 72 pcs from Store \/ Restaurant now; lands at Canteen once they accept\./,
+        /Removes 72 pcs from Restaurant now; lands at Canteen once they accept\./,
       ),
     ).toBeInTheDocument();
 
@@ -448,11 +622,10 @@ describe("SM — Transfer Stock", () => {
         name: /Dispatch Transfer to Canteen \(−72 pcs\)/,
       }),
     );
-    // Goods dispatch FROM the Store (where deliveries land) — one batch,
-    // since both selected lines are goods.
+    // Single-source: everything leaves the Restaurant now (ADR-67).
     await waitFor(() =>
       expect(api.transferBatch).toHaveBeenCalledWith({
-        fromLocationId: "loc-store",
+        fromLocationId: "loc-rest",
         toLocationId: "loc-canteen",
         lines: [
           { productId: "p-soda", quantity: "48" },
@@ -462,29 +635,25 @@ describe("SM — Transfer Stock", () => {
     );
   });
 
-  it("splits the dispatch by source: dishes leave the Restaurant, goods the Store", async () => {
+  it("dishes AND goods dispatch in ONE batch from the Restaurant (no per-source split, ADR-67)", async () => {
     renderFlow(<MovementPickerFlow mode="transfer" />);
     const user = userEvent.setup();
 
-    await pickRow(user, "Soda 300ml", "10"); // goods → Store
-    await pickRow(user, "Grilled Chicken", "4"); // dish → Restaurant
-    await user.click(screen.getByRole("combobox", { name: /Destination/ }));
-    await user.click(await screen.findByRole("option", { name: "Canteen" }));
+    await pickRow(user, "Soda 300ml", "10"); // goods
+    await pickRow(user, "Grilled Chicken", "4"); // dish
 
     await user.click(
       screen.getByRole("button", { name: /^Dispatch Transfer to Canteen/ }),
     );
 
-    await waitFor(() => expect(api.transferBatch).toHaveBeenCalledTimes(2));
-    expect(api.transferBatch).toHaveBeenCalledWith({
-      fromLocationId: "loc-store",
-      toLocationId: "loc-canteen",
-      lines: [{ productId: "p-soda", quantity: "10" }],
-    });
+    await waitFor(() => expect(api.transferBatch).toHaveBeenCalledTimes(1));
     expect(api.transferBatch).toHaveBeenCalledWith({
       fromLocationId: "loc-rest",
       toLocationId: "loc-canteen",
-      lines: [{ productId: "p-chicken", quantity: "4" }],
+      lines: [
+        { productId: "p-soda", quantity: "10" },
+        { productId: "p-chicken", quantity: "4" },
+      ],
     });
   });
 
@@ -500,10 +669,28 @@ describe("SM — Transfer Stock", () => {
     ).toBeDisabled();
   });
 
-  it("submit blocked until a destination is chosen", async () => {
+  it("submit is enabled with a selected line — the destination needs no manual pick (ADR-67)", async () => {
     renderFlow(<MovementPickerFlow mode="transfer" />);
     const user = userEvent.setup();
     await pickRow(user, "Soda 300ml", "10");
+    expect(
+      screen.getByRole("button", { name: /^Dispatch Transfer to Canteen/ }),
+    ).toBeEnabled();
+  });
+
+  it("no valid destination (no Canteen) → helper shown, submit disabled", async () => {
+    staff.data = {
+      movements: [],
+      products: PRODUCTS,
+      locations: [
+        { id: "loc-store", name: "Store", type: "store" },
+        { id: "loc-rest", name: "Restaurant", type: "restaurant" },
+      ],
+    };
+    renderFlow(<MovementPickerFlow mode="transfer" />);
+    const user = userEvent.setup();
+    await pickRow(user, "Soda 300ml", "10");
+    expect(screen.getByText("No destination available")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /^Dispatch Transfer/ }),
     ).toBeDisabled();
@@ -560,7 +747,8 @@ describe("SM movement flows — a zero balance reads honestly", () => {
   });
 
   it("additive (Production): a never-produced dish is selectable at 0", async () => {
-    levels.rows = LEVELS.map((l) =>
+    // Production reads its balance at the Restaurant (bug #15 mock split).
+    restLevels.rows = LEVELS.map((l) =>
       l.productId === "p-stew" ? { ...l, quantity: "0.0000" } : l,
     );
     renderFlow(<MovementPickerFlow mode="production" />);

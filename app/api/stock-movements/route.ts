@@ -19,15 +19,20 @@ import {
   recordProduction,
   recordTransfer,
   recordNonSaleConsumption,
+  resolveReceivingDestinationIds,
 } from "@/lib/domain/stock";
 
 // Route Handlers are dynamic by default (they hit the DB and the session);
 // no caching config needed.
 
+// `cashier` added Session 16 (ADR-68) — the Restaurant non-sale flow.
+// `listMovements` scopes the role to its own location, exactly like
+// `store_manager` / `canteen_attendant`.
 const STOCK_ROLES: readonly Role[] = [
   "admin",
   "store_manager",
   "canteen_attendant",
+  "cashier",
 ];
 
 /** GET /api/stock-movements — role-scoped list. */
@@ -98,7 +103,15 @@ export async function POST(req: NextRequest) {
     issue: ["store_manager"],
     production: ["store_manager"],
     transfer: ["store_manager", "canteen_attendant"],
-    non_sale_consumption: ["admin", "store_manager", "canteen_attendant"],
+    // `cashier` — Session 16 (ADR-68), matching the batch sibling
+    // (…/non-sale/batch). Location-bound below, so a cashier can only
+    // write at the Restaurant.
+    non_sale_consumption: [
+      "admin",
+      "store_manager",
+      "canteen_attendant",
+      "cashier",
+    ],
   };
   if (!allowed[input.movementType].includes(role)) {
     return fail(
@@ -111,7 +124,9 @@ export async function POST(req: NextRequest) {
   // location. `resolveActorLocationId` is null for admin.
   const actorLocationId = await resolveActorLocationId(userId);
   const isLocationBound =
-    role === "store_manager" || role === "canteen_attendant";
+    role === "store_manager" ||
+    role === "canteen_attendant" ||
+    role === "cashier";
   if (isLocationBound && !actorLocationId) {
     return fail("FORBIDDEN", "Your account is not assigned to a location.");
   }
@@ -147,8 +162,20 @@ export async function POST(req: NextRequest) {
         return ok(r, { status: 201 });
       }
       case "purchase_receipt": {
-        const bad = guardLocation(input.locationId);
-        if (bad) return bad;
+        // ADR-69: a receipt is guarded by DESTINATION, not by the
+        // caller's home location — the goods land where they land. The
+        // SM receives at the Store AND the Restaurant (ADR-67 splits
+        // ingredients / goods between them), the attendant at the
+        // Canteen. Same shared map the batch sibling and the
+        // `/outstanding` read use, so this endpoint can't be the one
+        // place a legal receipt is still refused.
+        const destinations = await resolveReceivingDestinationIds(role);
+        if (isLocationBound && !destinations.includes(input.locationId)) {
+          return fail(
+            "FORBIDDEN",
+            "You can only receive deliveries at your own locations.",
+          );
+        }
         const r = await recordPurchaseReceipt({
           productId: input.productId,
           locationId: input.locationId,

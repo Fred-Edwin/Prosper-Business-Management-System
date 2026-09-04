@@ -59,7 +59,7 @@ describe("correctMovement", () => {
   });
 
   it("closed day, non-admin: FORBIDDEN; admin: succeeds", async () => {
-    const { productId, locationIds, recorderId, adminId, prefix } = ctx;
+    const { goodsProductId: productId, locationIds, recorderId, adminId, prefix } = ctx;
     const locationId = locationIds.canteen;
 
     // A movement dated to a day we then close.
@@ -100,7 +100,7 @@ describe("correctMovement", () => {
   });
 
   it("open day, a different non-admin staff member: FORBIDDEN", async () => {
-    const { productId, locationIds, recorderId, otherStaffId } = ctx;
+    const { goodsProductId: productId, locationIds, recorderId, otherStaffId } = ctx;
     const locationId = locationIds.restaurant;
 
     const receipt = await recordPurchaseReceipt({
@@ -144,7 +144,7 @@ describe("correctMovement", () => {
   });
 
   it("F-1: a repeated identical correction is a no-op against the current derived value, not the original", async () => {
-    const { productId, locationIds, recorderId } = ctx;
+    const { goodsProductId: productId, locationIds, recorderId } = ctx;
     const locationId = locationIds.canteen;
     const receipt = await recordPurchaseReceipt({
       productId,
@@ -176,7 +176,7 @@ describe("correctMovement", () => {
   });
 
   it("F-1: a correction delta row cannot itself be corrected", async () => {
-    const { productId, locationIds, recorderId } = ctx;
+    const { goodsProductId: productId, locationIds, recorderId } = ctx;
     const locationId = locationIds.restaurant;
     const receipt = await recordPurchaseReceipt({
       productId,

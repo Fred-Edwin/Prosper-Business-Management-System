@@ -163,6 +163,21 @@ export function CashierTodayClient() {
           </span>
         </div>
 
+        {/* Session 16: the Restaurant non-sale-consumption flow (PRD §3
+            "recorded by: any staff"; ADR-67 non_sale_consumption legal
+            outbound at the Restaurant). A secondary <Button>, not a text
+            link — the owner flagged the link as easy to miss. Full-width
+            so it reads as a real action alongside the sticky "New order"
+            primary, without competing with it for primacy. */}
+        <Button
+          variant="secondary"
+          size="md"
+          className="w-full"
+          onClick={() => router.push("/cashier/flows/non-sale")}
+        >
+          Log non-sale (spoilage / staff meal)
+        </Button>
+
         {/* Day-closed banner — dormant in M2 (isPastDay always false). */}
         {isPastDay && (
           <div className="flex items-start gap-(--sp-4) py-(--sp-5) px-(--sp-5) rounded-md bg-warning-bg">

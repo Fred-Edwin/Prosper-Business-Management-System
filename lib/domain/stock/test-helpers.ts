@@ -20,8 +20,12 @@ export type StockTestCtx = {
   recorderId: string;
   /** Another non-admin user — a "different staff member". */
   otherStaffId: string;
+  /** An `ingredient` product — only ever legal at the Store (ADR-67). */
   productId: string;
+  /** A `dish` product — only ever legal at the Restaurant/Canteen. */
   dishProductId: string;
+  /** A `goods` product — only ever legal at the Restaurant/Canteen. */
+  goodsProductId: string;
 };
 
 function prefixFor(scope: string): string {
@@ -78,6 +82,14 @@ export async function setupStockTestData(scope: string): Promise<StockTestCtx> {
       buyingPrice: 0,
     },
   });
+  const goods = await prisma.product.create({
+    data: {
+      name: `${prefix} Soda`,
+      kind: "goods",
+      unitLabel: "pcs",
+      buyingPrice: 45,
+    },
+  });
 
   return {
     prefix,
@@ -91,6 +103,7 @@ export async function setupStockTestData(scope: string): Promise<StockTestCtx> {
     otherStaffId: otherStaff.id,
     productId: product.id,
     dishProductId: dish.id,
+    goodsProductId: goods.id,
   };
 }
 

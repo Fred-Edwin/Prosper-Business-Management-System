@@ -98,9 +98,19 @@ function Banner({
           >
             {primaryLabel}
           </Button>
-          <Button variant="secondary" onClick={onFlag}>
-            Flag Variance
-          </Button>
+          {/* Session 16: the Flag Variance action is the two-phase
+              TRANSFER variance path (ADR-39). The delivery banners
+              (PurchaseDeliveryBanner) deliberately omit `onFlag` — a
+              purchase_payment row has no transfer to flag — so an
+              unconditional button rendered a control that silently did
+              nothing. Render it only when a handler is wired. Every
+              existing caller that wants Flag passes `onFlag`, so this is
+              strictly additive. */}
+          {onFlag && (
+            <Button variant="secondary" onClick={onFlag}>
+              Flag Variance
+            </Button>
+          )}
         </div>
       )}
     </div>

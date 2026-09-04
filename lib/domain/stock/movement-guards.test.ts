@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { toBusinessDate, businessDateOnly } from "@/lib/time";
 import { recordNonSaleConsumption } from "./consumption";
-import { recordProduction } from "./issue-production";
+import { recordKitchenIssue, recordProduction } from "./issue-production";
 import { recordPurchaseReceipt } from "./purchases";
 import { setOpeningStock } from "./opening-stock";
 import { DomainError } from "./errors";
@@ -113,12 +113,13 @@ describe("stock movement guards", () => {
   it("setOpeningStock a second time for the same product/location/date writes a correction delta, not a second independent opening", async () => {
     const product = await prisma.product.create({
       data: {
-        name: `${ctx.prefix} Sugar`,
-        kind: "ingredient",
-        unitLabel: "kg",
+        name: `${ctx.prefix} Bottled Water`,
+        kind: "goods",
+        unitLabel: "pcs",
         buyingPrice: 150,
       },
     });
+    // A goods product at the Canteen — a legal kind↔location pair (ADR-67).
     const locationId = ctx.locationIds.canteen;
 
     const first = await setOpeningStock({
@@ -205,5 +206,105 @@ describe("stock movement guards", () => {
       constructor: DomainError,
       code: "VALIDATION_ERROR",
     });
+  });
+
+  // ── ADR-67 R1: assertKindAllowedAtLocation, exercised through the domain ──
+
+  it("R1 — a goods delivery INTO the Store is rejected", async () => {
+    await expect(
+      recordPurchaseReceipt({
+        productId: ctx.goodsProductId,
+        locationId: ctx.locationIds.store,
+        quantity: "10",
+        recordedById: ctx.recorderId,
+      }),
+    ).rejects.toMatchObject({
+      constructor: DomainError,
+      code: "VALIDATION_ERROR",
+      field: "locationId",
+    });
+  });
+
+  it("R1 — a goods delivery INTO the Canteen succeeds", async () => {
+    const r = await recordPurchaseReceipt({
+      productId: ctx.goodsProductId,
+      locationId: ctx.locationIds.canteen,
+      quantity: "10",
+      recordedById: ctx.recorderId,
+    });
+    expect(r.quantity).toBe("10.0000");
+  });
+
+  it("R1 — an ingredient delivery INTO the Restaurant is rejected", async () => {
+    await expect(
+      recordPurchaseReceipt({
+        productId: ctx.productId, // an ingredient
+        locationId: ctx.locationIds.restaurant,
+        quantity: "10",
+        recordedById: ctx.recorderId,
+      }),
+    ).rejects.toMatchObject({
+      constructor: DomainError,
+      code: "VALIDATION_ERROR",
+      field: "locationId",
+    });
+  });
+
+  it("R1 — an ingredient delivery INTO the Store succeeds", async () => {
+    const r = await recordPurchaseReceipt({
+      productId: ctx.productId,
+      locationId: ctx.locationIds.store,
+      quantity: "10",
+      recordedById: ctx.recorderId,
+    });
+    expect(r.quantity).toBe("10.0000");
+  });
+
+  it("R1 — a kitchen issue of an ingredient at the Store succeeds; a goods issue is rejected", async () => {
+    // A fresh ingredient with stock, so the issue has something to draw.
+    const ingredient = await prisma.product.create({
+      data: {
+        name: `${ctx.prefix} Maize Flour`,
+        kind: "ingredient",
+        unitLabel: "kg",
+        buyingPrice: 90,
+      },
+    });
+    await recordPurchaseReceipt({
+      productId: ingredient.id,
+      locationId: ctx.locationIds.store,
+      quantity: "50",
+      recordedById: ctx.recorderId,
+    });
+    const ok = await recordKitchenIssue({
+      productId: ingredient.id,
+      locationId: ctx.locationIds.store,
+      quantity: "5",
+      recordedById: ctx.recorderId,
+    });
+    expect(ok.quantity).toBe("-5.0000");
+
+    await expect(
+      recordKitchenIssue({
+        productId: ctx.goodsProductId, // goods can't sit at the Store to be issued
+        locationId: ctx.locationIds.store,
+        quantity: "1",
+        recordedById: ctx.recorderId,
+      }),
+    ).rejects.toMatchObject({
+      constructor: DomainError,
+      code: "VALIDATION_ERROR",
+    });
+  });
+
+  it("R1 — a missing product / location surfaces NOT_FOUND", async () => {
+    await expect(
+      recordPurchaseReceipt({
+        productId: "does-not-exist",
+        locationId: ctx.locationIds.store,
+        quantity: "1",
+        recordedById: ctx.recorderId,
+      }),
+    ).rejects.toMatchObject({ constructor: DomainError, code: "NOT_FOUND" });
   });
 });

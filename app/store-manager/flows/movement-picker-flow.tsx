@@ -43,7 +43,6 @@ import { useToast } from "@/components/kit/toast";
 import {
   useStaffStock,
   useStockLevels,
-  useTransferSourceLevels,
   useOutstandingDeliveries,
   stockApi,
   StockRequestError,
@@ -60,26 +59,63 @@ export type MovementMode =
   | "transfer"
   | "non-sale"
   // M2-3d: the Canteen Transfer Dispatch flow. Behaves exactly like
-  // `transfer` (multi-row picker, category tabs, a Destination <Select>,
-  // the two-phase-transfer rule, POST …/transfers/batch) but the SOURCE
-  // is the Canteen, not the Store: balances, the batch `fromLocationId`
-  // and the "Canteen → {dest}" badge all read the Canteen. Role: Canteen
-  // Attendant (+ Admin). On success it returns to `/canteen`.
-  | "dispatch";
+  // `transfer` (multi-row picker, category tabs, an auto-resolved
+  // destination per ADR-67, the two-phase-transfer rule, POST
+  // …/transfers/batch) but the SOURCE is the Canteen: balances, the batch
+  // `fromLocationId` and the "Canteen → {dest}" badge all read the
+  // Canteen. Role: Canteen Attendant (+ Admin). On success → `/canteen`.
+  | "dispatch"
+  // Session 16: the Canteen non-sale / waste flow. Behaves exactly like
+  // `non-sale` (multi-row picker, reason <Select> + note <Textarea>, POST
+  // …/non-sale/batch) but the SOURCE is the Canteen: balances, the batch
+  // `locationId` and the copy all read the Canteen, and the picker is
+  // scoped to the canteen-sellable set (GET /api/canteen/products) rather
+  // than the whole catalogue. PRD §3 ("recorded by: any staff") + ADR-67
+  // (non_sale_consumption is legal outbound at the canteen). Role: Canteen
+  // Attendant (+ Admin). On success → `/canteen`.
+  | "canteen-non-sale"
+  // Session 16: the Restaurant non-sale / waste flow — the Cashier's
+  // equivalent. Same as `canteen-non-sale` but the SOURCE is the
+  // Restaurant. The Restaurant holds dishes + goods (ADR-67); the picker
+  // lists off the shared catalogue filtered to dish-or-goods (no
+  // /api/canteen/products equivalent for the Restaurant). Role: Cashier
+  // (+ Admin). On success → `/cashier`.
+  | "restaurant-non-sale"
+  // Session 16 / ADR-69: the Canteen "Receive Goods" flow. Behaves like
+  // `receive` (the "Deliveries awaiting receipt" <MatchCard> list, the
+  // additive picker, POST …/receipts/batch) but the destination is the
+  // CANTEEN and there is no kind split: the Canteen only ever holds
+  // dish/goods, so the whole batch posts at one location. Exists because
+  // receiving is by destination, not by the receiver's home location —
+  // a Canteen-destined purchase used to be a dead end (no role could see
+  // or receive it). Goods still ALSO reach the Canteen by transfer from
+  // the Restaurant (ADR-67), unchanged. Role: Canteen Attendant (+ Admin).
+  // On success → `/canteen`.
+  | "canteen-receive";
 
-/** Modes whose source location is the Canteen (not the Store). */
-const CANTEEN_SOURCED = new Set<MovementMode>(["dispatch"]);
 /**
- * `transfer` (SM → Canteen) is **per-product multi-source**: cooked dishes
- * dispatch from the Restaurant (where Batch Production lands them), sodas /
- * shop goods dispatch from the Store (where deliveries land). There is no
- * single source location — the row `available` and the phase-1 dispatch
- * are both resolved per product by `useTransferSourceLevels` (a dish reads
- * / leaves the Restaurant; everything else the Store). The badge shows
- * "Store / Restaurant → {dest}". (An earlier fix made the whole flow
- * Restaurant-sourced, which zeroed every goods row — reverted here.)
+ * Which single location a flow's stock leaves from.
+ *   - `dispatch` (Canteen Attendant): the Canteen.
+ *   - `transfer` (Store Manager): the Restaurant. Under the location↔kind
+ *     model (ADR-67) both dishes AND goods live at the Restaurant — goods
+ *     are received there now, not into the Store — so the SM transfer is a
+ *     plain single-source Restaurant → Canteen dispatch. (It used to be
+ *     per-product multi-source: dishes from the Restaurant, goods from the
+ *     Store. That split is gone with the model change.)
+ *   - every other SM flow: the Store.
  */
-const MULTI_SOURCED = new Set<MovementMode>(["transfer"]);
+// (`canteen-receive` is Canteen-*destined* rather than Canteen-sourced,
+// but the single location it reads balances from and posts at is the
+// Canteen either way — so it rides the same resolution.)
+const CANTEEN_SOURCED = new Set<MovementMode>([
+  "dispatch",
+  "canteen-non-sale",
+  "canteen-receive",
+]);
+const RESTAURANT_SOURCED = new Set<MovementMode>([
+  "transfer",
+  "restaurant-non-sale",
+]);
 
 // ── Per-flow configuration ─────────────────────────────────────────────
 
@@ -126,7 +162,10 @@ type FlowConfig = {
 export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
   receive: {
     title: "Receive Goods",
-    direction: "Supplier → Store",
+    // ADR-67: ingredient deliveries land at the Store, goods deliveries at
+    // the Restaurant (goods can't sit at the Store). One flow, the batch
+    // splits by kind on submit.
+    direction: "Supplier → Store / Restaurant",
     tone: "success",
     productKinds: "non-dish",
     searchPlaceholder: "Search products…",
@@ -137,7 +176,7 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     emptyTitle: "No products set up",
     emptyDescription:
       "Add ingredients or goods in the Catalog before recording a delivery.",
-    errorTitle: "Couldn't load Store stock",
+    errorTitle: "Couldn't load stock",
   },
   issue: {
     title: "Issue Ingredients",
@@ -170,13 +209,13 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
   },
   transfer: {
     title: "Transfer Stock",
-    direction: "Store / Restaurant → …",
+    direction: "Restaurant → …",
     tone: "info",
-    // The SM sends sellable output to the Canteen — cooked dishes + shop
-    // goods (sodas, snacks, packaged items), never raw ingredients. Each
-    // line dispatches from its own true source: dishes from the Restaurant
-    // (Batch Production's landing spot), goods from the Store (deliveries).
-    // See MULTI_SOURCED / useTransferSourceLevels.
+    // The SM sends sellable output from the Restaurant to the Canteen —
+    // cooked dishes + shop goods (sodas, snacks, packaged items), never
+    // raw ingredients. Single-source: everything leaves the Restaurant,
+    // where both production lands dishes and deliveries land goods
+    // (ADR-67). The destination is auto-resolved (see validDestinations).
     productKinds: "dish-or-goods",
     searchPlaceholder: "Search sodas, goods, stock…",
     sectionLabel: "Select items to transfer",
@@ -220,6 +259,61 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     emptyDescription: "The Canteen has no stock to send right now.",
     errorTitle: "Couldn't load Canteen stock",
   },
+  "canteen-non-sale": {
+    title: "Log Non-Sale",
+    direction: "Staff meals & spoilage",
+    tone: "warning",
+    // The Canteen holds dishes + goods (ADR-67) — the canteen-sellable
+    // set, from GET /api/canteen/products, same scope as `dispatch`.
+    // Ingredients never live here, so "all" would just be that same set.
+    productKinds: "canteen",
+    searchPlaceholder: "Search items to log…",
+    sectionLabel: "Select items to log",
+    availPrefix: "Avail:",
+    spend: true,
+    categoryTabs: false,
+    emptyTitle: "Nothing to log",
+    emptyDescription: "The Canteen has no stock on hand to write off.",
+    errorTitle: "Couldn't load Canteen stock",
+  },
+  "canteen-receive": {
+    title: "Receive Goods",
+    // ADR-69: a goods delivery destined for the Canteen lands there
+    // directly — no Store hop (goods may not sit at the Store, ADR-67)
+    // and no transfer required.
+    direction: "Supplier → Canteen",
+    tone: "success",
+    // The Canteen holds dish/goods only, and only what it actually sells
+    // — the canteen-sellable set from GET /api/canteen/products, same
+    // scope as `dispatch` / `canteen-non-sale`.
+    productKinds: "canteen",
+    searchPlaceholder: "Search products…",
+    sectionLabel: "Products delivered",
+    availPrefix: "On hand:",
+    spend: false,
+    categoryTabs: false,
+    emptyTitle: "No products set up",
+    emptyDescription:
+      "Nothing is sold at the Canteen yet — add it in the Catalog before recording a delivery.",
+    errorTitle: "Couldn't load Canteen stock",
+  },
+  "restaurant-non-sale": {
+    title: "Log Non-Sale",
+    direction: "Staff meals & spoilage",
+    tone: "warning",
+    // The Restaurant holds dishes + goods (ADR-67), never ingredients —
+    // dish-or-goods, off the shared catalogue (no canteen-products
+    // equivalent for the Restaurant).
+    productKinds: "dish-or-goods",
+    searchPlaceholder: "Search items to log…",
+    sectionLabel: "Select items to log",
+    availPrefix: "Avail:",
+    spend: true,
+    categoryTabs: false,
+    emptyTitle: "Nothing to log",
+    emptyDescription: "The Restaurant has no stock on hand to write off.",
+    errorTitle: "Couldn't load Restaurant stock",
+  },
 };
 
 // The Transfer category tab row (flow doc §"Body composition" item 3).
@@ -249,15 +343,25 @@ const CATEGORY_TABS = [
 // screen of fake `1`s (m2-followups #16), and what the owner hit on
 // Carrots at the Store on the 2026-09-02 walkthrough.
 //
-// So: pass the TRUE `onHand` to the kit and let it render honestly. The
-// kit's inert branch is the only thing that needs intercepting, and only
-// for an unselected 0-on-hand row — this wrapper renders that one case
-// locally (same markup as the kit's unselected row, minus the muting) and
-// delegates every other state to the kit unchanged. `max={Infinity}`
-// keeps the stepper's `+` unbounded, and `blocked` never fires because
-// the kit only blocks when `quantity > available` with `available` used
-// as the ceiling — which for a selected row here is still the true
-// on-hand, so `handleBlockedChange`'s additive no-op remains the guard.
+// So: pass the TRUE `onHand` to every readout and never fake it. The kit
+// computes `blocked = selected && quantity > available` internally
+// (selectable-product-row.tsx) — `max` lifts only the stepper `+`
+// ceiling and `aria-valuemax`, NOT the block. So the kit's SELECTED
+// branch would paint the §9.8 danger treatment + "Only N … on hand —
+// reduce or remove this line" the moment an additive quantity exceeds
+// on-hand (produce 40 chapati with 30 in stock → false error; Session 16
+// step 6). That is wrong for an additive flow: on-hand is a readout, not
+// a ceiling.
+//
+// So this wrapper delegates to the kit ONLY for the states where the kit
+// cannot block — the not-selected row (0 or non-zero on-hand) — and
+// renders the SELECTED row locally in `AdditiveStepperRow` (same markup
+// + the ADR-43 / ADR-48 stepper contract, no ceiling, no block). The
+// on-hand-0 not-selected row is also local (the kit mutes it inert,
+// wrong when receiving a first-ever delivery / producing a never-made
+// dish). `handleBlockedChange` is a no-op for additive flows anyway, so
+// submit was never gated — this fix is purely the spurious per-row
+// error.
 //
 // A kit `neverBlocks` / `additive` prop (m2-followups #1) would delete
 // this wrapper. Not taken here: it needs owner sign-off and the kit is
@@ -285,36 +389,31 @@ function AdditiveProductRow({
   onQuantityChange: (productId: string, next: number) => void;
   availableLabelPrefix: string;
 }) {
-  // A non-zero balance is the kit's own territory — delegate untouched.
-  // `available` is the TRUE on-hand (an honest readout); `max={Infinity}`
-  // lifts the stepper ceiling, since an additive quantity is not bounded
-  // by what is already there.
-  if (onHand !== 0) {
-    return (
-      <SelectableProductRow
-        productId={productId}
-        name={name}
-        unit={unit}
-        available={onHand}
-        selected={selected}
-        quantity={quantity}
-        max={Infinity}
-        onSelect={onSelect}
-        onDeselect={onDeselect}
-        onQuantityChange={onQuantityChange}
-        availableLabelPrefix={availableLabelPrefix}
-      />
-    );
-  }
+  const availLabel = `${availableLabelPrefix} ${formatQty(onHand)} ${unit}`;
 
-  // on-hand 0. The kit's `available === 0` branch fires ahead of both its
-  // unselected and selected branches, so it would mute the row and drop
-  // the stepper entirely. Render the row here instead — same markup and
-  // the same stepper interaction contract, with the readout telling the
-  // truth ("On hand: 0") and the row fully live.
-  const availLabel = `${availableLabelPrefix} 0 ${unit}`;
-
+  // NOT SELECTED — the kit cannot block a row it isn't stepping, so
+  // delegate the non-zero not-selected row to the kit untouched (honest
+  // "Available: N unit" readout, `+ Select`). The on-hand-0 not-selected
+  // row is rendered locally: the kit's `available === 0` branch mutes it
+  // inert, wrong when this is a first-ever delivery / a never-made dish.
   if (!selected) {
+    if (onHand !== 0) {
+      return (
+        <SelectableProductRow
+          productId={productId}
+          name={name}
+          unit={unit}
+          available={onHand}
+          selected={false}
+          quantity={quantity}
+          max={Infinity}
+          onSelect={onSelect}
+          onDeselect={onDeselect}
+          onQuantityChange={onQuantityChange}
+          availableLabelPrefix={availableLabelPrefix}
+        />
+      );
+    }
     return (
       <div
         role="group"
@@ -340,12 +439,19 @@ function AdditiveProductRow({
     );
   }
 
+  // SELECTED — rendered locally for ANY on-hand value. The kit's selected
+  // branch computes `blocked = quantity > available` and paints the §9.8
+  // danger treatment + "Only N … on hand — reduce or remove this line"
+  // when an additive quantity exceeds on-hand — a false error for a flow
+  // that ADDS stock (Session 16 step 6). This row keeps the honest
+  // on-hand readout, has no ceiling, and never blocks.
   return (
-    <ZeroStockAdditiveStepperRow
+    <AdditiveStepperRow
       productId={productId}
       name={name}
       unit={unit}
       availLabel={availLabel}
+      onHand={onHand}
       quantity={quantity}
       onDeselect={onDeselect}
       onQuantityChange={onQuantityChange}
@@ -354,19 +460,21 @@ function AdditiveProductRow({
 }
 
 /**
- * The selected half of `AdditiveProductRow`'s on-hand-0 case. Mirrors the
- * kit's selected row (tint + accent border + the compact `− [n] +`
- * stepper, ADR-43 / ADR-48 interaction contract: tap-to-type, commit on
- * blur / Enter, ↑ / ↓ step, stepping to 0 deselects) with two additive
- * differences: the readout stays "On hand: 0" rather than the kit's
- * "None on hand", and there is no ceiling — you are adding stock, so
- * nothing here can be "over available" and the §9.8 block never applies.
+ * The SELECTED row for every additive flow (Receive / Production),
+ * regardless of on-hand. Mirrors the kit's selected row (tint + accent
+ * border + the compact `− [n] +` stepper, ADR-43 / ADR-48 interaction
+ * contract: tap-to-type, commit on blur / Enter, ↑ / ↓ step, stepping to
+ * 0 deselects) with two additive differences: the readout is the honest
+ * on-hand ("Available: 30 pcs") rather than being suppressed, and there
+ * is no ceiling — you are ADDING stock, so nothing here is "over
+ * available" and the §9.8 block never applies.
  */
-function ZeroStockAdditiveStepperRow({
+function AdditiveStepperRow({
   productId,
   name,
   unit,
   availLabel,
+  onHand,
   quantity,
   onDeselect,
   onQuantityChange,
@@ -375,6 +483,7 @@ function ZeroStockAdditiveStepperRow({
   name: string;
   unit: string;
   availLabel: string;
+  onHand: number;
   quantity: number;
   onDeselect: (productId: string) => void;
   onQuantityChange: (productId: string, next: number) => void;
@@ -465,7 +574,45 @@ function ZeroStockAdditiveStepperRow({
           </div>
         </span>
       </div>
+
+      {/* Session 16 (owner) — "during the review, show what's available and
+          what's being added". The resulting balance, live as the stepper
+          moves, on its own line: the narrow readout slot can't carry it
+          without clipping longer product names, and the summary banner is
+          too far from the line you're editing. The kit row has no slot for
+          this, and the kit is frozen (CONVENTIONS §6) — which is why this
+          screen-local row exists. */}
+      <ResultingBalanceLine before={onHand} added={quantity} unit={unit} />
     </div>
+  );
+}
+
+/**
+ * "60 → 72" — the before/after balance for one additive line. Shared by
+ * the picker's additive row and the Canteen's Receive-Transfer row so the
+ * three additive review screens read identically.
+ */
+export function ResultingBalanceLine({
+  before,
+  added,
+  unit,
+}: {
+  before: number;
+  added: number;
+  unit: string;
+}) {
+  const after = before + added;
+  return (
+    <p
+      className="font-mono [font-feature-settings:'tnum'] [color:var(--text-secondary)] text-caption/micro"
+      // One readable string for AT, rather than the arrow glyph.
+      aria-label={`${formatQty(before)} ${unit} on hand, ${formatQty(
+        after,
+      )} ${unit} after this`}
+    >
+      {formatQty(before)} → <span className="text-accent">{formatQty(after)}</span>{" "}
+      {unit}
+    </p>
   );
 }
 
@@ -495,33 +642,25 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
     data.locations.find((l) => l.type === "restaurant")?.id ?? "";
   const canteenLocationId =
     data.locations.find((l) => l.type === "canteen")?.id ?? "";
-  const isMultiSource = MULTI_SOURCED.has(mode);
-  // The SOURCE location for the single-source flows: the Canteen for
-  // Dispatch, the Store for every other SM flow. Feeds the batch
-  // `locationId` / `fromLocationId`, the destination-picker exclusion, and
-  // the badge. `transfer` is multi-source — see MULTI_SOURCED — and does
-  // not use this (its per-product source comes from `transferLevels`).
+  // The SOURCE location — every flow here is single-source: the Canteen
+  // for Dispatch, the Restaurant for the SM Transfer (ADR-67), the Store
+  // for every other SM flow. Feeds the batch `fromLocationId`, the
+  // destination exclusion, and the badge.
   const sourceLocationId = CANTEEN_SOURCED.has(mode)
     ? canteenLocationId
-    : storeLocationId;
+    : RESTAURANT_SOURCED.has(mode)
+      ? restaurantLocationId
+      : storeLocationId;
   const sourceLabel = CANTEEN_SOURCED.has(mode)
     ? "Canteen"
-    : isMultiSource
-      ? "Store / Restaurant"
+    : RESTAURANT_SOURCED.has(mode)
+      ? "Restaurant"
       : "Store";
-  // The location whose derived balances feed the row `available` readouts
-  // for the SINGLE-source flows: Production reads the Restaurant (the
-  // dish's landing stock); Dispatch reads the Canteen; every other reads
-  // the Store. `transfer` resolves `available` per product instead.
+  // The location whose derived balances feed the row `available` readouts:
+  // Production reads the Restaurant (the dish's landing stock); every
+  // other flow reads its own source.
   const balanceLocationId =
     mode === "production" ? restaurantLocationId : sourceLocationId;
-
-  // `transfer` only: per-product source balance (dish → Restaurant, else
-  // → Store). Empty map for every other mode.
-  const transferLevels = useTransferSourceLevels(
-    isMultiSource ? storeLocationId || undefined : undefined,
-    isMultiSource ? restaurantLocationId || undefined : undefined,
-  );
 
   // Canteen dispatch scopes its picker to the canteen-sellable set
   // (GET /api/canteen/products); every other mode lists off `data.products`.
@@ -538,40 +677,63 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   // the same way, and never flashes an "empty" state mid-fetch.
   const canteenLoading = isCanteenScoped && canteen.loading;
 
-  // The single-source flows read their row `available` from this hook.
-  // `undefined` for the multi-source `transfer` mode, which resolves a
-  // per-product source balance through `transferLevels` instead.
-  const stockLevels = useStockLevels(
-    isMultiSource ? undefined : balanceLocationId || undefined,
-  );
+  // Every flow reads its row `available` from this hook, at its source
+  // (or the Restaurant, for Production).
+  const stockLevels = useStockLevels(balanceLocationId || undefined);
   const levelRows = stockLevels.rows;
+
+  // Bug #15 (Session 16): the SM `receive` flow is inherently
+  // TWO-destination — ADR-67 lands ingredient deliveries at the Store and
+  // goods deliveries at the Restaurant, and `onSubmit` already kind-splits
+  // into two batches. A single-location balance read (the Store) makes
+  // every goods row read "On hand: 0". So for `receive` only, also read
+  // the Restaurant's balances and pick each row's on-hand by the product's
+  // `kind` — the exact mirror of the submit-time split. No API change:
+  // `useStockLevels` stays single-location; we just call it twice.
+  // `useStockLevels(undefined)` is a no-op, so every other mode pays
+  // nothing. `canteen-receive` is one-destination (the Canteen) and rides
+  // the single `stockLevels` read above, unchanged.
+  const receiveRestaurantLevels = useStockLevels(
+    mode === "receive" ? restaurantLocationId || undefined : undefined,
+  );
 
   // The balance read is not optional chrome — it IS the row readout. A
   // slow or failed GET /api/stock-movements/balances used to settle into a
   // screen of honest-looking zeros; fold it into the screen's loading /
   // error the same way `transferLevels` / `canteen` already are, so it
   // shows skeletons then <ErrorState> instead.
-  const balanceLoading = isMultiSource
-    ? transferLevels.loading
-    : stockLevels.loading;
-  const balanceError = isMultiSource ? transferLevels.error : stockLevels.error;
+  const balanceLoading = stockLevels.loading || receiveRestaurantLevels.loading;
+  const balanceError = stockLevels.error ?? receiveRestaurantLevels.error;
 
   const loading = stockLoading || canteenLoading || balanceLoading;
   const error =
     stockError ?? (isCanteenScoped ? canteen.error : null) ?? balanceError;
   const availableById = React.useMemo(() => {
     const m = new Map<string, number>();
-    if (isMultiSource) {
-      for (const [pid, lvl] of transferLevels.byProduct) {
-        m.set(pid, Number.parseFloat(lvl.quantity));
-      }
-    } else {
-      for (const r of levelRows) {
-        m.set(r.productId, Number.parseFloat(r.quantity));
-      }
+    for (const r of levelRows) {
+      m.set(r.productId, Number.parseFloat(r.quantity));
     }
     return m;
-  }, [isMultiSource, transferLevels.byProduct, levelRows]);
+  }, [levelRows]);
+  // Bug #15: goods rows on the SM `receive` flow read their on-hand at the
+  // Restaurant (where they'll land), not the Store. Empty for every other
+  // mode.
+  const receiveRestaurantById = React.useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of receiveRestaurantLevels.rows) {
+      m.set(r.productId, Number.parseFloat(r.quantity));
+    }
+    return m;
+  }, [receiveRestaurantLevels.rows]);
+  const onHandFor = React.useCallback(
+    (productId: string, kind: string | undefined): number => {
+      if (mode === "receive" && kind === "goods") {
+        return receiveRestaurantById.get(productId) ?? 0;
+      }
+      return availableById.get(productId) ?? 0;
+    },
+    [mode, availableById, receiveRestaurantById],
+  );
 
   // Receive only — deliveries awaiting receipt (non-fatal on failure).
   const outstanding = useOutstandingDeliveries();
@@ -588,6 +750,31 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   >(new Map());
   const [submitting, setSubmitting] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
+
+  // ── Transfer destination (ADR-67: auto-resolved, not chosen) ─────────
+  //
+  // A transfer moves stock between the Restaurant and the Canteen only —
+  // never the Store. With exactly one Restaurant and one Canteen (the real
+  // world today) the destination is whichever of the two the source
+  // isn't, so there is nothing to pick: drop the <Select>, auto-set
+  // `destId`, and let the direction badge ("Restaurant → Canteen") show
+  // where it's going. The <Select> is kept only for the (currently
+  // impossible) case of 2+ valid destinations.
+  const isTransferLike = mode === "transfer" || mode === "dispatch";
+  const validDestinations = React.useMemo(
+    () =>
+      isTransferLike
+        ? data.locations.filter(
+            (l) => l.id !== sourceLocationId && l.type !== "store",
+          )
+        : [],
+    [isTransferLike, data.locations, sourceLocationId],
+  );
+  const autoDestId =
+    validDestinations.length === 1 ? validDestinations[0].id : "";
+  React.useEffect(() => {
+    if (autoDestId && destId !== autoDestId) setDestId(autoDestId);
+  }, [autoDestId, destId]);
 
   // Products in scope for this flow.
   const flowProducts = React.useMemo(
@@ -691,12 +878,28 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   const selectedLines = lines.filter((l) => l.quantity > 0);
   const hasBlankLine = lines.some((l) => !(l.quantity > 0));
   const hasBlockedLine = blockedIds.size > 0;
-  const noteRequired = mode === "non-sale" && reason === "other";
+  // Both delivery-receiving flows share the "Deliveries awaiting receipt"
+  // <MatchCard> list and the …/receipts/batch endpoint; they differ only
+  // in destination (ADR-69: SM → Store + Restaurant with a kind split,
+  // Canteen Attendant → the Canteen, one batch).
+  const isReceive = mode === "receive" || mode === "canteen-receive";
+  // All non-sale flows (SM at the Store, Canteen Attendant at the Canteen,
+  // Cashier at the Restaurant) share the reason <Select> + note <Textarea>
+  // and the same …/non-sale/batch endpoint — they differ only in source
+  // location and product scope (handled by CANTEEN_SOURCED /
+  // RESTAURANT_SOURCED / FLOW_CONFIG).
+  const isNonSale =
+    mode === "non-sale" ||
+    mode === "canteen-non-sale" ||
+    mode === "restaurant-non-sale";
+  const noteRequired = isNonSale && reason === "other";
   const noteValid = !noteRequired || note.trim() !== "";
-  const isTransferLike = mode === "transfer" || mode === "dispatch";
+  // A transfer needs a resolved destination — normally auto-set, so this
+  // is only ever unmet when no valid destination exists (no Canteen, or
+  // no Restaurant).
   const secondaryValid = isTransferLike
     ? destId !== ""
-    : mode === "non-sale"
+    : isNonSale
       ? reason !== ""
       : true;
 
@@ -709,9 +912,10 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   );
   const batchUnit =
     unitLabels.size === 1 ? [...unitLabels][0] || "units" : "units";
-  // Additive flows (Receive / Production) add to a ledger → `+`; the spend
-  // flows (Issue / Transfer / Non-sale / Dispatch) remove → `−`.
-  const additive = mode === "receive" || mode === "production";
+  // Both receive flows are additive (Receive / Canteen Receive), as is
+  // Production — they add to a ledger → `+`; the spend flows (Issue /
+  // Transfer / Non-sale / Dispatch) remove → `−`.
+  const additive = isReceive || mode === "production";
   const signedTotal = `${additive ? "+" : "−"}${formatQty(batchTotal)} ${batchUnit}`;
 
   const canSubmit =
@@ -731,6 +935,9 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
     transfer: `Dispatch Transfer${destName() ? ` to ${destName()}` : ""}`,
     "non-sale": "Log Non-Sale",
     dispatch: `Dispatch Transfer${destName() ? ` to ${destName()}` : ""}`,
+    "canteen-non-sale": "Log Non-Sale",
+    "restaurant-non-sale": "Log Non-Sale",
+    "canteen-receive": "Confirm Receipt",
   };
   function destName(): string {
     return data.locations.find((l) => l.id === destId)?.name ?? "";
@@ -753,8 +960,44 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
       }));
       let written: StockMovementView[];
       if (mode === "receive") {
+        // ADR-67: split the delivery by kind — ingredient lines land at
+        // the Store, goods lines at the Restaurant (goods can't sit at the
+        // Store). One `receiptBatch` per target that has lines; the domain
+        // R1 guard rejects a mis-targeted line.
+        const kindOf = (id: string) =>
+          data.products.find((p) => p.id === id)?.kind;
+        const toReceiptLine = (l: Line) => ({
+          productId: l.productId,
+          quantity: formatQty(l.quantity),
+          purchasePaymentId: matchedPaymentByProduct.get(l.productId) ?? null,
+        });
+        const storeLines = selectedLines
+          .filter((l) => kindOf(l.productId) === "ingredient")
+          .map(toReceiptLine);
+        const restaurantLines = selectedLines
+          .filter((l) => kindOf(l.productId) === "goods")
+          .map(toReceiptLine);
+        const batches = await Promise.all([
+          storeLines.length > 0
+            ? stockApi.receiptBatch({
+                locationId: storeLocationId,
+                lines: storeLines,
+              })
+            : Promise.resolve<StockMovementView[]>([]),
+          restaurantLines.length > 0
+            ? stockApi.receiptBatch({
+                locationId: restaurantLocationId,
+                lines: restaurantLines,
+              })
+            : Promise.resolve<StockMovementView[]>([]),
+        ]);
+        written = batches.flat();
+      } else if (mode === "canteen-receive") {
+        // ADR-69: a Canteen-destined delivery lands at the Canteen, whole.
+        // No kind split — the Canteen only ever holds dish/goods (ADR-67),
+        // so every line has the same target.
         written = await stockApi.receiptBatch({
-          locationId: storeLocationId,
+          locationId: canteenLocationId,
           lines: selectedLines.map((l) => ({
             productId: l.productId,
             quantity: formatQty(l.quantity),
@@ -771,35 +1014,21 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
           locationId: restaurantLocationId,
           lines: plain,
         });
-      } else if (isMultiSource) {
-        // SM → Canteen transfer: dishes leave the Restaurant, goods leave
-        // the Store. Split the batch by each line's true source and fire
-        // one phase-1 dispatch per source that has lines.
-        const bySource = new Map<string, BatchLine[]>();
-        for (const l of plain) {
-          const src =
-            transferLevels.byProduct.get(l.productId)?.sourceLocationId ??
-            storeLocationId;
-          const arr = bySource.get(src) ?? [];
-          arr.push(l);
-          bySource.set(src, arr);
-        }
-        const batches = await Promise.all(
-          [...bySource.entries()].map(([fromLocationId, lines]) =>
-            stockApi.transferBatch({ fromLocationId, toLocationId: destId, lines }),
-          ),
-        );
-        written = batches.flat();
       } else if (isTransferLike) {
-        // Canteen Dispatch (Canteen → …): single source.
+        // Both transfer flows are single-source now (ADR-67): the SM
+        // Transfer leaves the Restaurant, the Canteen Dispatch leaves the
+        // Canteen. One phase-1 dispatch batch.
         written = await stockApi.transferBatch({
           fromLocationId: sourceLocationId,
           toLocationId: destId,
           lines: plain,
         });
       } else {
+        // non-sale / canteen-non-sale — the source is the Store for the SM
+        // flow, the Canteen for the attendant flow (sourceLocationId, via
+        // CANTEEN_SOURCED).
         written = await stockApi.nonSaleBatch({
-          locationId: storeLocationId,
+          locationId: sourceLocationId,
           reason: reason as NonSaleReason,
           note,
           lines: plain,
@@ -808,7 +1037,15 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
       toast(successToast(mode, written.length, batchTotal, batchUnit, destName()), {
         tone: "success",
       });
-      router.push(mode === "dispatch" ? "/canteen" : "/store-manager");
+      router.push(
+        mode === "dispatch" ||
+          mode === "canteen-non-sale" ||
+          mode === "canteen-receive"
+          ? "/canteen"
+          : mode === "restaurant-non-sale"
+            ? "/cashier"
+            : "/store-manager",
+      );
     } catch (e) {
       const msg =
         e instanceof StockRequestError
@@ -856,7 +1093,7 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
       onSubmit={onSubmit}
     >
       {/* Receive — deliveries awaiting receipt (hidden when none / errored) */}
-      {mode === "receive" &&
+      {isReceive &&
         !outstanding.loading &&
         !outstanding.error &&
         outstanding.rows.length > 0 && (
@@ -939,7 +1176,7 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
             ) : (
               visibleProducts.map((p) => {
                 const line = lineByProduct.get(p.id);
-                const onHand = availableById.get(p.id) ?? 0;
+                const onHand = onHandFor(p.id, p.kind);
                 const lineQty = line?.quantity ?? 0;
                 if (!cfg.spend) {
                   return (
@@ -979,14 +1216,25 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
           </div>
 
           {/* Per-flow secondary fields */}
-          {isTransferLike && (
+          {/* Transfer destination (ADR-67). Auto-resolved when exactly one
+              valid target exists (the norm) — the direction badge shows
+              it, no picker. A <Select> only appears if a 4th selling
+              location is ever added; an empty helper if none exists. */}
+          {isTransferLike && validDestinations.length === 0 && (
+            <EmptyState
+              title="No destination available"
+              description="A Restaurant and a Canteen must both exist to transfer stock between them."
+            />
+          )}
+          {isTransferLike && validDestinations.length >= 2 && (
             <Select
               label="Destination"
               required
               placeholder="Send to…"
-              options={data.locations
-                .filter((l) => l.id !== sourceLocationId)
-                .map((l) => ({ value: l.id, label: l.name }))}
+              options={validDestinations.map((l) => ({
+                value: l.id,
+                label: l.name,
+              }))}
               value={destId}
               onChange={setDestId}
               error={touched && destId === ""}
@@ -996,7 +1244,7 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
               className="w-full"
             />
           )}
-          {mode === "non-sale" && (
+          {isNonSale && (
             <>
               <Select
                 label="Consumption reason"
@@ -1120,7 +1368,11 @@ function impactCopy(
   const t = `${formatQty(total)} ${unit}`;
   switch (mode) {
     case "receive":
-      return `Adds ${t} across ${nProducts(mode, n)} to Store stock now.`;
+      // ADR-67: ingredients land at the Store, goods at the Restaurant.
+      return `Adds ${t} across ${nProducts(mode, n)} to stock now — ingredients to the Store, goods to the Restaurant.`;
+    case "canteen-receive":
+      // ADR-69: a Canteen-destined delivery lands at the Canteen, whole.
+      return `Adds ${t} across ${nProducts(mode, n)} to Canteen stock now.`;
     case "issue":
       return `Removes ${t} across ${nProducts(
         mode,
@@ -1134,7 +1386,9 @@ function impactCopy(
         dest || "the destination"
       } once they accept.`;
     case "non-sale":
-      return `Removes ${t} from Store as staff meals / spoilage. This is not a sale.`;
+    case "canteen-non-sale":
+    case "restaurant-non-sale":
+      return `Removes ${t} from ${source} as staff meals / spoilage. This is not a sale.`;
   }
 }
 
@@ -1149,6 +1403,8 @@ function successToast(
   switch (mode) {
     case "receive":
       return `Received · ${nProducts(mode, n)} · +${t}`;
+    case "canteen-receive":
+      return `Received · ${nProducts(mode, n)} · +${t} at Canteen`;
     case "issue":
       return `Issued · ${nProducts(mode, n)} · ${t} to Kitchen`;
     case "production":
@@ -1159,6 +1415,8 @@ function successToast(
         dest || "destination"
       } accept`;
     case "non-sale":
+    case "canteen-non-sale":
+    case "restaurant-non-sale":
       return `Logged · ${nProducts(mode, n)} · −${t} non-sale`;
   }
 }

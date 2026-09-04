@@ -149,6 +149,7 @@ const PROD_1 = {
   locations: [],
 };
 const DISH_1 = { ...PROD_1, id: "dish-1", name: "Pilau", kind: "dish", unitLabel: "plate" };
+const GOODS_1 = { ...PROD_1, id: "goods-1", name: "Soda 300ml", kind: "goods", unitLabel: "pcs" };
 const LOC_1 = {
   id: "loc-1",
   name: "Store",
@@ -157,6 +158,9 @@ const LOC_1 = {
   createdAt: new Date("2026-08-01"),
   updatedAt: new Date("2026-08-01"),
 };
+const LOC_REST = { ...LOC_1, id: "loc-2", name: "Restaurant", type: "restaurant" };
+const LOC_CANTEEN = { ...LOC_1, id: "loc-3", name: "Canteen", type: "canteen" };
+const ALL_LOCATIONS = [LOC_1, LOC_REST, LOC_CANTEEN];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -382,6 +386,74 @@ describe("/admin/financials — payment drawer", () => {
     expect(
       screen.queryByRole("option", { name: /Pilau/ }),
     ).not.toBeInTheDocument();
+  });
+
+  // ADR-69 §2b — the Destination only offers locations legal for the
+  // selected product's kind under ADR-67's location↔kind model. Without
+  // this the Admin could pay for a delivery whose receipt R1 would later
+  // reject (goods → Store): an unreceivable dead-end row no staff screen
+  // can clear.
+  async function openDrawerAndPick(
+    user: ReturnType<typeof userEvent.setup>,
+    productLabel: RegExp,
+  ) {
+    await screen.findByRole("table");
+    await user.click(screen.getAllByRole("button", { name: "Record Payment" })[0]);
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("combobox", { name: /Product/ }));
+    await user.click(await screen.findByRole("option", { name: productLabel }));
+    return dialog;
+  }
+
+  it("an ingredient offers the Store as the only destination", async () => {
+    api.listProducts.mockResolvedValue([PROD_1, GOODS_1]);
+    api.listLocations.mockResolvedValue(ALL_LOCATIONS);
+    renderScreen();
+    const user = userEvent.setup();
+    const dialog = await openDrawerAndPick(user, /Rice Basmati/);
+
+    await user.click(within(dialog).getByRole("combobox", { name: /Destination/ }));
+    expect(await screen.findByRole("option", { name: "Store" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Restaurant" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Canteen" })).not.toBeInTheDocument();
+  });
+
+  it("goods offer the Restaurant and Canteen, never the Store", async () => {
+    api.listProducts.mockResolvedValue([PROD_1, GOODS_1]);
+    api.listLocations.mockResolvedValue(ALL_LOCATIONS);
+    renderScreen();
+    const user = userEvent.setup();
+    const dialog = await openDrawerAndPick(user, /Soda 300ml/);
+
+    await user.click(within(dialog).getByRole("combobox", { name: /Destination/ }));
+    expect(await screen.findByRole("option", { name: "Restaurant" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Canteen" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Store" })).not.toBeInTheDocument();
+  });
+
+  it("switching product to an incompatible kind clears a now-illegal destination", async () => {
+    api.listProducts.mockResolvedValue([PROD_1, GOODS_1]);
+    api.listLocations.mockResolvedValue(ALL_LOCATIONS);
+    renderScreen();
+    const user = userEvent.setup();
+    const dialog = await openDrawerAndPick(user, /Rice Basmati/);
+
+    await user.click(within(dialog).getByRole("combobox", { name: /Destination/ }));
+    await user.click(await screen.findByRole("option", { name: "Store" }));
+    expect(
+      within(dialog).getByRole("combobox", { name: /Destination/ }),
+    ).toHaveTextContent("Store");
+
+    // Rice → Soda: the Store is no longer legal, so the stale value goes.
+    await user.click(within(dialog).getByRole("combobox", { name: /Product/ }));
+    await user.click(await screen.findByRole("option", { name: /Soda 300ml/ }));
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("combobox", { name: /Destination/ }),
+      ).not.toHaveTextContent("Store"),
+    );
+    // …and with no destination the form can't submit.
+    expect(within(dialog).getByRole("button", { name: /Disburse/ })).toBeDisabled();
   });
 
   it("records a payment and fires a toast", async () => {

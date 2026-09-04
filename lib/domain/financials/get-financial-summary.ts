@@ -256,7 +256,8 @@ const COST_VALUE_ZERO_KINDS = new Set(["dish"]);
  * value`, over every product at that location.
  *
  *   opening value  = Σ over products of (Σ quantity where occurredAt <
- *                    period start) × costValue(product)
+ *                    period start, PLUS any `opening`-type row dated
+ *                    exactly at period start) × costValue(product)
  *   closing value  = same, occurredAt < period end
  *   purchases      = Σ over products of (Σ `purchase_receipt` quantity in
  *                    the period) × costValue(product)
@@ -267,6 +268,17 @@ const COST_VALUE_ZERO_KINDS = new Set(["dish"]);
  * to `purchase_receipt` explicitly rather than leaning on that. Transfers
  * are never in the purchases term, so an internal Store→Canteen move
  * nets to zero across the opening/closing deltas and doesn't touch COGS.
+ *
+ * **The opening-boundary carve-out.** `setOpeningStock` stamps every
+ * `opening` row at `businessDateStartUtc(businessDate)` — the exact
+ * instant this sweep uses as `start`. A strict `occurredAt < start` would
+ * drop that row from the opening term while the closing term (`< end`)
+ * still counts it, so on the first day opening stock is entered COGS is
+ * dragged negative by the entire opening-stock valuation. An `opening`
+ * row dated at `start` IS the period's starting position, so it belongs
+ * in the opening term. It cannot leak into the purchases term (that is
+ * `purchase_receipt` only), and nothing but `setOpeningStock` ever writes
+ * at exactly `start`, so this does not double-count anything.
  */
 async function cogsByLocationSweep(
   start: Date,
@@ -286,7 +298,15 @@ async function cogsByLocationSweep(
     prisma.stockMovement.groupBy({
       by: ["productId", "locationId"],
       _sum: { quantity: true },
-      where: { occurredAt: { lt: start } },
+      where: {
+        OR: [
+          { occurredAt: { lt: start } },
+          // The opening-boundary carve-out (see the doc comment above): an
+          // `opening` row dated exactly at `start` is the period's starting
+          // position and belongs in the opening term.
+          { occurredAt: start, movementType: "opening" },
+        ],
+      },
     }),
     prisma.stockMovement.groupBy({
       by: ["productId", "locationId"],

@@ -24,6 +24,14 @@ const hook = vi.hoisted(() => ({
 }));
 const acceptFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 const flagFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+// Session 16: the hub reads real outstanding deliveries (it used to read
+// an empty `MOCK_PENDING_DELIVERIES` fixture, so the banner never showed).
+const outstanding = vi.hoisted(() => ({
+  rows: [] as StockMovementView[],
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
 
 vi.mock("@/app/store-manager/use-staff-stock", async () => {
   const actual = await vi.importActual<
@@ -32,6 +40,7 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
   return {
     ...actual,
     useStaffStock: () => hook,
+    useOutstandingDeliveries: () => outstanding,
     stockApi: {
       ...actual.stockApi,
       acceptTransfer: acceptFn,
@@ -101,6 +110,9 @@ beforeEach(() => {
   hook.data.products = [
     { id: "prod-soda", name: "Soda 300ml", unitLabel: "pcs" },
   ];
+  outstanding.rows = [];
+  outstanding.loading = false;
+  outstanding.error = null;
 });
 
 describe("/store-manager hub — kit composition", () => {
@@ -210,5 +222,76 @@ describe("/store-manager hub — kit composition", () => {
     expect(screen.getByText(/Batch production ·/)).toBeInTheDocument();
     // no revenue string leaks into the SM hub.
     expect(container.textContent).not.toMatch(/KES/);
+  });
+  // ── Session 16: real outstanding-delivery banner ────────────────────
+  // The hub used to read an EMPTY `MOCK_PENDING_DELIVERIES` fixture
+  // (a live TODO(mock)), so an Admin purchase gave the SM no staff-facing
+  // way to receive it. Now it reads `useOutstandingDeliveries()`.
+
+  it("no delivery banner when nothing is awaiting receipt", () => {
+    renderScreen();
+    expect(
+      screen.queryByText(/Purchase delivery pending/),
+    ).not.toBeInTheDocument();
+    // …and the Receive tile carries its default sub-label, unbadged.
+    expect(screen.getByText("Log a supplier delivery")).toBeInTheDocument();
+  });
+
+  it("an awaiting delivery pins a banner and badges the Receive tile", () => {
+    outstanding.rows = [
+      mv({
+        id: "pay-1",
+        movementType: "purchase_payment",
+        quantity: "0.0000",
+        purchaseSupplier: "Kimani Wholesale",
+        purchaseOrderedQty: "20.0000",
+      }),
+    ];
+    renderScreen();
+    expect(
+      screen.getByText(/Purchase delivery pending · Soda 300ml/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/20 pcs · Kimani Wholesale/)).toBeInTheDocument();
+    expect(screen.getByText("1 delivery pending")).toBeInTheDocument();
+    // Session 16: the delivery banner passes no `onFlag` (Flag Variance is
+    // the two-phase TRANSFER path, ADR-39, which rejects a
+    // purchase_payment). The kit Banner renders that button only when a
+    // handler is wired — so it's absent here, while the incoming-transfer
+    // <TransferBanner> above still shows it (that test passes `onFlag`).
+    expect(
+      screen.queryByRole("button", { name: /Flag Variance/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("two awaiting deliveries pluralise the tile sub-label", () => {
+    outstanding.rows = [
+      mv({ id: "pay-1", purchaseSupplier: "A", purchaseOrderedQty: "5.0000" }),
+      mv({ id: "pay-2", purchaseSupplier: "B", purchaseOrderedQty: "8.0000" }),
+    ];
+    renderScreen();
+    expect(screen.getByText("2 deliveries pending")).toBeInTheDocument();
+  });
+
+  // A delivery can arrive short, so the banner does NOT one-tap write a
+  // receipt for the ordered qty — it routes to the Receive flow where the
+  // SM confirms what actually turned up.
+  it("'Review & receive' routes to the Receive flow (no one-tap receipt)", async () => {
+    outstanding.rows = [
+      mv({ id: "pay-1", purchaseSupplier: "A", purchaseOrderedQty: "20.0000" }),
+    ];
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Review & receive/ }));
+    expect(push).toHaveBeenCalledWith("/store-manager/flows/receive");
+  });
+
+  it("a failed deliveries read is non-fatal — hub still renders, no banner", () => {
+    outstanding.error = "boom";
+    outstanding.rows = [];
+    renderScreen();
+    expect(
+      screen.queryByText(/Purchase delivery pending/),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Quick store operations")).toBeInTheDocument();
   });
 });

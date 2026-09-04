@@ -42,3 +42,4 @@ export {
   listOutstandingPurchases,
   listOutstandingPurchasesForLocation,
 } from "./list-movements";
+export { resolveReceivingDestinationIds } from "./receiving-scope";

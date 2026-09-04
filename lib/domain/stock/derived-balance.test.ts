@@ -70,9 +70,9 @@ describe("getDerivedStockBalance", () => {
     const locationId = locationIds.canteen;
     const product = await prisma.product.create({
       data: {
-        name: `${prefix} Beans`,
-        kind: "ingredient",
-        unitLabel: "kg",
+        name: `${prefix} Bottled Juice`,
+        kind: "goods",
+        unitLabel: "pcs",
         buyingPrice: 90,
       },
     });
@@ -109,9 +109,9 @@ describe("getDerivedStockBalance", () => {
     const locationId = locationIds.restaurant;
     const product = await prisma.product.create({
       data: {
-        name: `${prefix} Oil`,
-        kind: "ingredient",
-        unitLabel: "L",
+        name: `${prefix} Canned Soda`,
+        kind: "goods",
+        unitLabel: "pcs",
         buyingPrice: 300,
       },
     });
@@ -207,16 +207,16 @@ describe("getDerivedStockBalance", () => {
     const { locationIds, prefix, recorderId } = ctx;
     const p = await prisma.product.create({
       data: {
-        name: `${prefix} Yeast`,
-        kind: "ingredient",
-        unitLabel: "g",
+        name: `${prefix} Packaged Snack`,
+        kind: "goods",
+        unitLabel: "pcs",
         buyingPrice: 10,
       },
     });
-    // Same product, stock at TWO locations.
+    // Same product, stock at TWO locations (both legal for goods — ADR-67).
     await setOpeningStock({
       productId: p.id,
-      locationId: locationIds.store,
+      locationId: locationIds.restaurant,
       businessDate: "2026-08-01",
       quantity: "80",
       recordedById: recorderId,
@@ -229,13 +229,16 @@ describe("getDerivedStockBalance", () => {
       recordedById: recorderId,
     });
 
-    const [atStore] = await getDerivedStockBalances([p.id], locationIds.store);
+    const [atRestaurant] = await getDerivedStockBalances(
+      [p.id],
+      locationIds.restaurant,
+    );
     const [atCanteen] = await getDerivedStockBalances(
       [p.id],
       locationIds.canteen,
     );
-    expect(atStore.quantity).toBe("80.0000"); // NOT 92 — canteen rows excluded
-    expect(atStore.locationId).toBe(locationIds.store);
+    expect(atRestaurant.quantity).toBe("80.0000"); // NOT 92 — canteen rows excluded
+    expect(atRestaurant.locationId).toBe(locationIds.restaurant);
     expect(atCanteen.quantity).toBe("12.0000");
   });
 

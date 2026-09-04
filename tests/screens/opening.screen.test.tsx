@@ -27,6 +27,12 @@ vi.mock("next/navigation", () => ({
 import { OpeningClient } from "@/app/admin/stock/opening/opening-client";
 
 const NOW = "2026-08-28T00:00:00Z";
+const pl = (
+  locationId: string,
+  locationName: string,
+  locationType: "store" | "restaurant" | "canteen",
+) => ({ locationId, locationName, locationType, sellingPrice: null, active: true });
+
 const PRODUCTS = [
   {
     id: "prod-beef",
@@ -34,10 +40,11 @@ const PRODUCTS = [
     kind: "ingredient",
     unitLabel: "kg",
     buyingPrice: "580.00",
+    category: null,
     deletedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
-    locations: [],
+    locations: [pl("loc-store", "Store", "store")],
   },
   {
     id: "prod-chicken",
@@ -45,10 +52,27 @@ const PRODUCTS = [
     kind: "dish",
     unitLabel: "pcs",
     buyingPrice: null,
+    category: null,
     deletedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
-    locations: [],
+    locations: [pl("loc-rest", "Restaurant", "restaurant")],
+  },
+  {
+    // Goods sold at BOTH the Restaurant and the Canteen — two editable cells.
+    id: "prod-soda",
+    name: "Soda 300ml",
+    kind: "goods",
+    unitLabel: "pcs",
+    buyingPrice: "45.00",
+    category: null,
+    deletedAt: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    locations: [
+      pl("loc-rest", "Restaurant", "restaurant"),
+      pl("loc-canteen", "Canteen", "canteen"),
+    ],
   },
 ];
 const LOCATIONS = [
@@ -64,6 +88,14 @@ const LOCATIONS = [
     id: "loc-rest",
     name: "Restaurant",
     type: "restaurant",
+    active: true,
+    createdAt: new Date(NOW),
+    updatedAt: new Date(NOW),
+  },
+  {
+    id: "loc-canteen",
+    name: "Canteen",
+    type: "canteen",
     active: true,
     createdAt: new Date(NOW),
     updatedAt: new Date(NOW),
@@ -136,6 +168,62 @@ describe("/admin/stock/opening — kit composition", () => {
     await user.click(screen.getAllByRole("tab", { name: /^Kitchen Ingredients/ })[0]);
     // Grilled Chicken is a dish — gone from the Ingredients tab.
     expect(screen.queryByText("Grilled Chicken")).not.toBeInTheDocument();
+  });
+
+  it("gives a goods item stocked at two locations a row NAMED per location", async () => {
+    renderScreen();
+    const grid = await screen.findByRole("grid");
+    // The row header carries the location — "Soda 300ml — Restaurant" /
+    // "Soda 300ml — Canteen" — so the two rows are unambiguous. The
+    // category column shows just the kind ("Goods"), not the location.
+    const headers = within(grid)
+      .getAllByRole("rowheader")
+      .map((h) => h.textContent);
+    expect(headers).toEqual(
+      expect.arrayContaining([
+        "Soda 300ml — Restaurant",
+        "Soda 300ml — Canteen",
+      ]),
+    );
+  });
+
+  it("saves the two Soda cells independently — one POST per (product × location)", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    const grid = await screen.findByRole("grid");
+
+    // Each multi-location row's editable input is labelled by its row
+    // header + column; match on the location substring.
+    await user.type(
+      within(grid).getByLabelText(/Soda 300ml — Restaurant — Restaurant/),
+      "48",
+    );
+    await user.type(
+      within(grid).getByLabelText(/Soda 300ml — Canteen — Canteen/),
+      "144",
+    );
+    await user.click(
+      (await screen.findAllByRole("button", { name: /Save 2 Opening Counts/ }))[0],
+    );
+
+    await waitFor(() =>
+      expect(api.setOpeningStock).toHaveBeenCalledTimes(2),
+    );
+    const calls = api.setOpeningStock.mock.calls.map((c) => c[0]);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          productId: "prod-soda",
+          locationId: "loc-rest",
+          quantity: "48",
+        }),
+        expect.objectContaining({
+          productId: "prod-soda",
+          locationId: "loc-canteen",
+          quantity: "144",
+        }),
+      ]),
+    );
   });
 });
 
@@ -212,10 +300,12 @@ describe("/admin/stock/opening — mobile stacked-card branch", () => {
   });
 
   it("renders the kit EmptyState when the active category has no products", async () => {
+    // Only the ingredient + dish fixtures for this one — no goods.
+    api.listProducts.mockResolvedValueOnce(PRODUCTS.slice(0, 2));
     renderScreen();
     const user = userEvent.setup();
     await within(mobile()).findByLabelText("Beef Fillet — Store");
-    // "Goods" tab — neither fixture product is a goods item.
+    // "Goods" tab — neither remaining fixture product is a goods item.
     await user.click(
       within(mobile()).getByRole("tab", { name: "Goods" }),
     );

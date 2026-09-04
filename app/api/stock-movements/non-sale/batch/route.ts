@@ -5,7 +5,16 @@ import { ok, fail } from "@/lib/api/response";
 import { recordNonSaleConsumptionBatchSchema } from "@/lib/validation/stock";
 import { DomainError, recordNonSaleConsumptionBatch } from "@/lib/domain/stock";
 
-const ROLES: readonly Role[] = ["admin", "store_manager", "canteen_attendant"];
+// Session 16: `cashier` added — the Restaurant non-sale flow
+// (/cashier/flows/non-sale). PRD §3 "recorded by: any staff"; ADR-67
+// non_sale_consumption is a legal outbound at the Restaurant. The cashier
+// is location-bound to the Restaurant (see stock-batch-auth.ts).
+const ROLES: readonly Role[] = [
+  "admin",
+  "store_manager",
+  "canteen_attendant",
+  "cashier",
+];
 
 /**
  * POST /api/stock-movements/non-sale/batch

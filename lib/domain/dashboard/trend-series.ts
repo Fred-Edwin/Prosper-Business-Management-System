@@ -38,6 +38,20 @@ import {
  * date in memory — the query count does not grow with the number of
  * days.
  *
+ * ── The opening-boundary carve-out ──────────────────────────────────
+ * The telescoping identity assumes a STRICT `< dayStart` opening term.
+ * `setOpeningStock` stamps `opening` rows at exactly
+ * `businessDateStartUtc(date)` = that day's `dayStart`, and
+ * `getFinancialSummary` carves those rows INTO its opening term (they are
+ * carried-in balance, not that day's flow). To keep this series in
+ * lock-step with it, an `opening` row dated exactly at its business-day
+ * start is EXCLUDED from `movementValue` here — it never was same-day
+ * activity. Without this, day 1's `movementValue` would swallow the whole
+ * opening-stock valuation and `cogsDay = 0 − openingValue` would fake a
+ * large negative COGS (hence a large positive net) on the first day
+ * opening stock is entered. (An `opening` correction dated mid-day is
+ * ordinary flow and still counts.)
+ *
  * Revenue and expenses are already per-day-additive in
  * `getFinancialSummary`, so they are computed here with the SAME rules:
  *   - restaurant revenue = Σ `Order.total` over LIVE order rows (a row
@@ -185,7 +199,18 @@ export async function dailyNetSeries(
   };
 
   for (const m of movements) {
-    const b = bucket(toBusinessDate(m.occurredAt));
+    const date = toBusinessDate(m.occurredAt);
+    // Opening-boundary carve-out (see header): an `opening` row dated
+    // exactly at its business-day start is carried-in balance, not that
+    // day's flow — `getFinancialSummary` puts it in the opening term, so
+    // it must NOT land in this day's `movementValue`.
+    if (
+      m.movementType === "opening" &&
+      m.occurredAt.getTime() === businessDateStartUtc(date).getTime()
+    ) {
+      continue;
+    }
+    const b = bucket(date);
     const value = m.quantity.mul(costValueById.get(m.productId) ?? ZERO);
     b.movementValue = b.movementValue.add(value);
     if (m.movementType === "purchase_receipt") {

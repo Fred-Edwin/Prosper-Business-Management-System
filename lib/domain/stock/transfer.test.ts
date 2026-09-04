@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import {
   recordTransfer,
+  recordTransferBatch,
   acceptTransfer,
   flagTransfer,
 } from "./transfer";
@@ -28,13 +29,19 @@ describe("recordTransfer (2-phase)", () => {
     await prisma.$disconnect();
   });
 
-  async function freshProductWithOpening(qty: string, locationId: string) {
+  // Under the location↔kind model (ADR-67) a transfer is Restaurant↔Canteen
+  // and moves dish/goods only — so the fixture stocks a `goods` product at
+  // the Restaurant and every transfer below runs Restaurant → Canteen.
+  async function freshProductWithOpening(
+    qty: string,
+    locationId: string = ctx.locationIds.restaurant,
+  ) {
     const p = await prisma.product.create({
       data: {
         name: `${ctx.prefix} P-${Math.random().toString(36).slice(2)}`,
-        kind: "ingredient",
-        unitLabel: "kg",
-        buyingPrice: 100,
+        kind: "goods",
+        unitLabel: "pcs",
+        buyingPrice: 45,
       },
     });
     await setOpeningStock({
@@ -48,12 +55,12 @@ describe("recordTransfer (2-phase)", () => {
   }
 
   it("phase 1 writes one −q row at `from`; balance leaves `from` and does NOT yet land at `to`", async () => {
-    const { store, canteen } = ctx.locationIds;
-    const productId = await freshProductWithOpening("100", store);
+    const { restaurant, canteen } = ctx.locationIds;
+    const productId = await freshProductWithOpening("100", restaurant);
 
     const dispatch = await recordTransfer({
       productId,
-      fromLocationId: store,
+      fromLocationId: restaurant,
       toLocationId: canteen,
       quantity: "30",
       recordedById: ctx.recorderId,
@@ -63,19 +70,19 @@ describe("recordTransfer (2-phase)", () => {
     expect(dispatch.transferCounterpartLocationId).toBe(canteen);
     expect(dispatch.correctsMovementId).toBeNull();
 
-    const fromBal = await getDerivedStockBalance({ productId, locationId: store });
+    const fromBal = await getDerivedStockBalance({ productId, locationId: restaurant });
     const toBal = await getDerivedStockBalance({ productId, locationId: canteen });
     expect(fromBal.quantity).toBe("70.0000"); // 100 − 30
     expect(toBal.quantity).toBe("0.0000"); // nothing yet
   });
 
   it("phase 2 writes the +q counterpart at `to`, linked to the dispatch; balance lands only now", async () => {
-    const { store, canteen } = ctx.locationIds;
-    const productId = await freshProductWithOpening("100", store);
+    const { restaurant, canteen } = ctx.locationIds;
+    const productId = await freshProductWithOpening("100", restaurant);
 
     const dispatch = await recordTransfer({
       productId,
-      fromLocationId: store,
+      fromLocationId: restaurant,
       toLocationId: canteen,
       quantity: "40",
       recordedById: ctx.recorderId,
@@ -87,21 +94,21 @@ describe("recordTransfer (2-phase)", () => {
 
     expect(accepted.quantity).toBe("40.0000");
     expect(accepted.locationId).toBe(canteen);
-    expect(accepted.transferCounterpartLocationId).toBe(store);
+    expect(accepted.transferCounterpartLocationId).toBe(restaurant);
     expect(accepted.correctsMovementId).toBe(dispatch.id);
 
-    const fromBal = await getDerivedStockBalance({ productId, locationId: store });
+    const fromBal = await getDerivedStockBalance({ productId, locationId: restaurant });
     const toBal = await getDerivedStockBalance({ productId, locationId: canteen });
     expect(fromBal.quantity).toBe("60.0000");
     expect(toBal.quantity).toBe("40.0000");
   });
 
   it("accepting twice is a CONFLICT", async () => {
-    const { store, canteen } = ctx.locationIds;
-    const productId = await freshProductWithOpening("50", store);
+    const { restaurant, canteen } = ctx.locationIds;
+    const productId = await freshProductWithOpening("50", restaurant);
     const dispatch = await recordTransfer({
       productId,
-      fromLocationId: store,
+      fromLocationId: restaurant,
       toLocationId: canteen,
       quantity: "10",
       recordedById: ctx.recorderId,
@@ -113,11 +120,11 @@ describe("recordTransfer (2-phase)", () => {
   });
 
   it("flagging records a note on the pending row and releases no stock", async () => {
-    const { store, canteen } = ctx.locationIds;
-    const productId = await freshProductWithOpening("50", store);
+    const { restaurant, canteen } = ctx.locationIds;
+    const productId = await freshProductWithOpening("50", restaurant);
     const dispatch = await recordTransfer({
       productId,
-      fromLocationId: store,
+      fromLocationId: restaurant,
       toLocationId: canteen,
       quantity: "10",
       recordedById: ctx.recorderId,
@@ -135,12 +142,12 @@ describe("recordTransfer (2-phase)", () => {
   });
 
   it("accept with a lower receivedQuantity lands the +q at what arrived; neither balance is over/understated", async () => {
-    const { store, canteen } = ctx.locationIds;
-    const productId = await freshProductWithOpening("100", store);
+    const { restaurant, canteen } = ctx.locationIds;
+    const productId = await freshProductWithOpening("100", restaurant);
 
     const dispatch = await recordTransfer({
       productId,
-      fromLocationId: store,
+      fromLocationId: restaurant,
       toLocationId: canteen,
       quantity: "30",
       recordedById: ctx.recorderId,
@@ -170,12 +177,12 @@ describe("recordTransfer (2-phase)", () => {
     expect(varianceRows[0].locationId).toBe(canteen);
     // Traceable back to where it was sent from, without claiming the
     // `correctsMovementId` link that marks a dispatch accepted.
-    expect(varianceRows[0].transferCounterpartLocationId).toBe(store);
+    expect(varianceRows[0].transferCounterpartLocationId).toBe(restaurant);
     expect(varianceRows[0].correctsMovementId).toBeNull();
 
     // Source dropped by the full 30 that physically left; destination nets
     // the 28 that physically arrived (+30 receipt, −2 written off).
-    const fromBal = await getDerivedStockBalance({ productId, locationId: store });
+    const fromBal = await getDerivedStockBalance({ productId, locationId: restaurant });
     const toBal = await getDerivedStockBalance({ productId, locationId: canteen });
     expect(fromBal.quantity).toBe("70.0000"); // 100 − 30
     expect(toBal.quantity).toBe("28.0000"); // 0 + 30 − 2
@@ -191,16 +198,16 @@ describe("recordTransfer (2-phase)", () => {
     // fell 60 → 58 with the 2 missing units recorded only as free text on
     // the accept note. The Admin ledger's TOTAL closing dropped with no
     // column accounting for it. Now the drop is exactly the `variance` rows.
-    const { store, canteen } = ctx.locationIds;
-    const productId = await freshProductWithOpening("60", store);
+    const { restaurant, canteen } = ctx.locationIds;
+    const productId = await freshProductWithOpening("60", restaurant);
 
     const before =
-      Number((await getDerivedStockBalance({ productId, locationId: store })).quantity) +
+      Number((await getDerivedStockBalance({ productId, locationId: restaurant })).quantity) +
       Number((await getDerivedStockBalance({ productId, locationId: canteen })).quantity);
 
     const dispatch = await recordTransfer({
       productId,
-      fromLocationId: store,
+      fromLocationId: restaurant,
       toLocationId: canteen,
       quantity: "6",
       recordedById: ctx.recorderId,
@@ -212,7 +219,7 @@ describe("recordTransfer (2-phase)", () => {
     });
 
     const after =
-      Number((await getDerivedStockBalance({ productId, locationId: store })).quantity) +
+      Number((await getDerivedStockBalance({ productId, locationId: restaurant })).quantity) +
       Number((await getDerivedStockBalance({ productId, locationId: canteen })).quantity);
 
     // Stock really is 2 lower — that is the physical truth, not a bug.
@@ -229,12 +236,12 @@ describe("recordTransfer (2-phase)", () => {
   });
 
   it("plain accept (no receivedQuantity) is unchanged — +q equals the dispatched amount", async () => {
-    const { store, canteen } = ctx.locationIds;
-    const productId = await freshProductWithOpening("50", store);
+    const { restaurant, canteen } = ctx.locationIds;
+    const productId = await freshProductWithOpening("50", restaurant);
 
     const dispatch = await recordTransfer({
       productId,
-      fromLocationId: store,
+      fromLocationId: restaurant,
       toLocationId: canteen,
       quantity: "12",
       recordedById: ctx.recorderId,
@@ -252,13 +259,13 @@ describe("recordTransfer (2-phase)", () => {
   });
 
   it("rejects a transfer with the same from/to location", async () => {
-    const { store } = ctx.locationIds;
-    const productId = await freshProductWithOpening("10", store);
+    const { restaurant } = ctx.locationIds;
+    const productId = await freshProductWithOpening("10", restaurant);
     await expect(
       recordTransfer({
         productId,
-        fromLocationId: store,
-        toLocationId: store,
+        fromLocationId: restaurant,
+        toLocationId: restaurant,
         quantity: "1",
         recordedById: ctx.recorderId,
       }),
@@ -266,5 +273,128 @@ describe("recordTransfer (2-phase)", () => {
       constructor: DomainError,
       code: "VALIDATION_ERROR",
     });
+  });
+
+  // ── ADR-67: the location↔kind model, enforced ──────────────────────────
+
+  async function countRows(productId: string): Promise<number> {
+    return prisma.stockMovement.count({ where: { productId } });
+  }
+
+  it("R2 — a transfer FROM the Store is rejected, nothing written", async () => {
+    const { store, canteen } = ctx.locationIds;
+    // Stock the goods product at the Restaurant so only the from-location
+    // is the rule being tested.
+    const productId = await freshProductWithOpening("50", ctx.locationIds.restaurant);
+    const before = await countRows(productId);
+    await expect(
+      recordTransfer({
+        productId,
+        fromLocationId: store,
+        toLocationId: canteen,
+        quantity: "5",
+        recordedById: ctx.recorderId,
+      }),
+    ).rejects.toMatchObject({
+      constructor: DomainError,
+      code: "VALIDATION_ERROR",
+      field: "fromLocationId",
+    });
+    expect(await countRows(productId)).toBe(before);
+  });
+
+  it("R2 — a transfer TO the Store is rejected", async () => {
+    const { restaurant, store } = ctx.locationIds;
+    const productId = await freshProductWithOpening("50", restaurant);
+    await expect(
+      recordTransfer({
+        productId,
+        fromLocationId: restaurant,
+        toLocationId: store,
+        quantity: "5",
+        recordedById: ctx.recorderId,
+      }),
+    ).rejects.toMatchObject({
+      constructor: DomainError,
+      code: "VALIDATION_ERROR",
+      field: "toLocationId",
+    });
+  });
+
+  it("R3 — transferring an ingredient is rejected, nothing written", async () => {
+    const { restaurant, canteen } = ctx.locationIds;
+    // An ingredient can't legally have stock anywhere but the Store, so
+    // there's no opening to set — the guard fires on kind alone.
+    const ingredient = await prisma.product.create({
+      data: {
+        name: `${ctx.prefix} Flour-${Math.random().toString(36).slice(2)}`,
+        kind: "ingredient",
+        unitLabel: "kg",
+        buyingPrice: 100,
+      },
+    });
+    const before = await countRows(ingredient.id);
+    await expect(
+      recordTransfer({
+        productId: ingredient.id,
+        fromLocationId: restaurant,
+        toLocationId: canteen,
+        quantity: "1",
+        recordedById: ctx.recorderId,
+      }),
+    ).rejects.toMatchObject({
+      constructor: DomainError,
+      code: "VALIDATION_ERROR",
+      field: "productId",
+    });
+    expect(await countRows(ingredient.id)).toBe(before);
+  });
+
+  it("recordTransferBatch with one ingredient line rejects the whole batch, nothing written", async () => {
+    const { restaurant, canteen } = ctx.locationIds;
+    const ok = await freshProductWithOpening("100", restaurant);
+    const ingredient = await prisma.product.create({
+      data: {
+        name: `${ctx.prefix} Salt-${Math.random().toString(36).slice(2)}`,
+        kind: "ingredient",
+        unitLabel: "kg",
+        buyingPrice: 20,
+      },
+    });
+    const before = (await countRows(ok)) + (await countRows(ingredient.id));
+    await expect(
+      recordTransferBatch({
+        fromLocationId: restaurant,
+        toLocationId: canteen,
+        lines: [
+          { productId: ok, quantity: "5" },
+          { productId: ingredient.id, quantity: "1" },
+        ],
+        recordedById: ctx.recorderId,
+      }),
+    ).rejects.toMatchObject({
+      constructor: DomainError,
+      code: "VALIDATION_ERROR",
+    });
+    expect((await countRows(ok)) + (await countRows(ingredient.id))).toBe(before);
+  });
+
+  it("recordTransferBatch from the Store rejects the whole batch", async () => {
+    const { store, canteen, restaurant } = ctx.locationIds;
+    const p = await freshProductWithOpening("100", restaurant);
+    const before = await countRows(p);
+    await expect(
+      recordTransferBatch({
+        fromLocationId: store,
+        toLocationId: canteen,
+        lines: [{ productId: p, quantity: "5" }],
+        recordedById: ctx.recorderId,
+      }),
+    ).rejects.toMatchObject({
+      constructor: DomainError,
+      code: "VALIDATION_ERROR",
+      field: "fromLocationId",
+    });
+    expect(await countRows(p)).toBe(before);
   });
 });

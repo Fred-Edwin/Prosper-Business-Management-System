@@ -52,11 +52,14 @@ describe("GET /api/locations — role access (D1 regression)", () => {
     expect(status).toBe(200);
   });
 
-  it("cashier is still 403", async () => {
+  // Session 16 (ADR-68): the cashier reads locations too — the Restaurant
+  // non-sale flow resolves its own location from this list. Was 403 under
+  // the old "a cashier sells, they don't manage stock" rule.
+  it("cashier gets 200 (ADR-68 — Restaurant non-sale flow)", async () => {
     mockSession.current = sessionFor("cashier");
     const { status, body } = await getLocations();
-    expect(status).toBe(403);
-    expect(body.error.code).toBe("FORBIDDEN");
+    expect(status).toBe(200);
+    expect(Array.isArray(body.data)).toBe(true);
   });
 
   // Session 9C — the /admin/catalog Locations tab needs deactivated rows.

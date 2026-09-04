@@ -230,7 +230,7 @@ applies the sign.
 
 - `opening` — Admin. `{ movementType: "opening", productId, locationId, businessDate (YYYY-MM-DD), quantity }`. Writes an `opening` row at that business day's start. A second call for the same product/location/date is a **correction** of the first (ADR-15), not a duplicate.
 - `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`). `supplier` / `quantity` / `cost` / `paidFromAccount` are persisted to the real `purchaseSupplier` / `purchaseOrderedQty` / `purchaseTotalCost` / `purchasePaidFrom` columns (ADR-46 §3); a human `note` sentence is also composed for display. A paired **`−cost` `MoneyMovement`** is written (`sourceType = "purchase_payment"`, account = `paidFromAccount`) — resolved in M2 Session 4 (was the M1 `TODO(mock)`). The **payment-drawer product picker shows `ingredient` + `goods` only** (a `dish` is never purchased — ADR-33); the API does not reject a `dish` productId, the UI just never offers one.
-- `purchase_receipt` — Store Manager / Canteen Attendant. `{ movementType: "purchase_receipt", productId, locationId, quantity, purchasePaymentId? }`. `+quantity` at `locationId`. `purchasePaymentId`, if given, must reference a real `purchase_payment` row → `404` otherwise.
+- `purchase_receipt` — Store Manager (Store + Restaurant) / Canteen Attendant (Canteen) — scoped by **destination**, not by the caller's own location (ADR-69). `{ movementType: "purchase_receipt", productId, locationId, quantity, purchasePaymentId? }`. `+quantity` at `locationId`. `purchasePaymentId`, if given, must reference a real `purchase_payment` row → `404` otherwise.
 - `issue` — Store Manager. `{ movementType: "issue", productId, locationId, quantity }`. `−quantity` at the Store (Store → cooking; single row).
 - `production` — Store Manager. `{ movementType: "production", productId, locationId, quantity }`. `+quantity` at `locationId`, which **must be a `restaurant` location**; `productId` **must be `kind = "dish"`** → `400` otherwise.
 - `transfer` — Store Manager / Canteen Attendant. `{ movementType: "transfer", productId, fromLocationId, toLocationId, quantity }`. **Phase 1 of 2:** writes the `−quantity` dispatch row at `fromLocationId` only (stock leaves now; `toLocationId` in `transferCounterpartLocationId`). Same from/to → `400`. Completed by `POST .../:id/accept`.
@@ -275,7 +275,7 @@ validation + row-writing core (they cannot diverge).
 
 | Endpoint | Roles | Body | Notes |
 |---|---|---|---|
-| `POST /api/stock-movements/receipts/batch` | Store Manager / Canteen Attendant (own location) · Admin | `{ locationId, lines: [{ productId, quantity, purchasePaymentId? }] }` | Additive. `purchasePaymentId` per line, if given, must reference a real `purchase_payment` row → `404`. **No `MoneyMovement`** (a plain receipt never touches money — that stays on `purchase_payment`). |
+| `POST /api/stock-movements/receipts/batch` | Store Manager (Store + Restaurant) / Canteen Attendant (Canteen) · Admin — by **destination**, ADR-69 | `{ locationId, lines: [{ productId, quantity, purchasePaymentId? }] }` | Additive. `purchasePaymentId` per line, if given, must reference a real `purchase_payment` row → `404`. **No `MoneyMovement`** (a plain receipt never touches money — that stays on `purchase_payment`). |
 | `POST /api/stock-movements/issues/batch` | Store Manager (own location) · Admin | `{ locationId, lines: [{ productId, quantity }] }` | `−quantity` per line at the Store. §3.8 BLOCK applies. |
 | `POST /api/stock-movements/production/batch` | Store Manager · Admin | `{ locationId, lines: [{ productId, quantity }] }` | `+quantity` per line; `locationId` **must be a `restaurant`**; every line's `productId` **must be `kind = "dish"`** → `400`. Additive (no block). Inherently Store → Restaurant, so no own-location guard. |
 | `POST /api/stock-movements/transfers/batch` | Store Manager / Canteen Attendant (own `from` location) · Admin | `{ fromLocationId, toLocationId, lines: [{ productId, quantity }] }` | **Dispatch side only** — writes the N `−quantity` dispatch rows now (each with `transferCounterpartLocationId = toLocationId`). `acceptTransfer` / `flagTransfer` stay single-transfer. `from === to` → `400`. §3.8 BLOCK on the `from` balance. |
@@ -302,14 +302,27 @@ only** (`403` otherwise); if the day is still open → Admin **or the
 original recorder**. `delta = 0` → `400`.
 
 ### `GET /api/stock-movements/outstanding`
-Roles: **Admin or Store Manager** (`403` for every other role; a Store
-Manager with no assigned location → `403`).
+Roles: **Admin, Store Manager or Canteen Attendant** (`403` for every
+other role; a location-bound staff user with no assigned location →
+`403`).
 
-- **Admin** — every location (unchanged).
-- **Store Manager** — hard-scoped to their assigned location. Backs the
-  Receive flow's "match a delivery the Admin already paid for" picker
-  (M2 batch-movements §3.4). Widened M2 batch-movements (2026-08-31); it
-  was Admin-only through M1.
+Scoped by **destination**, not by the caller's own location (ADR-69) —
+a delivery is received where the goods land:
+
+- **Admin** — every location (unchanged, unfiltered).
+- **Store Manager** — the **Store *and* the Restaurant**. ADR-67 lands
+  ingredient deliveries at the Store and goods deliveries at the
+  Restaurant, and both are the SM's responsibility. Backs the Receive
+  flow's "match a delivery the Admin already paid for" picker (M2
+  batch-movements §3.4).
+- **Canteen Attendant** — the **Canteen**. Backs the Canteen Receive
+  Goods flow (`/canteen/flows/receive`).
+
+History: Admin-only through M1; widened to the Store Manager at its own
+location in M2 batch-movements (2026-08-31); re-scoped to destinations
+and opened to the Canteen Attendant in Session 16 (ADR-69, 2026-09-04) —
+before that, a Restaurant- or Canteen-destined purchase was invisible to
+every staff role and could never be received.
 
 Returns `{ awaitingReceipt: [...], unmatchedReceipts: [...] }` —
 `purchase_payment` rows no `purchase_receipt` links back to, and

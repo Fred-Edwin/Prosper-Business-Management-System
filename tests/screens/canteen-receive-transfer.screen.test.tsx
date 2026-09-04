@@ -25,6 +25,14 @@ const hook = vi.hoisted(() => ({
   refresh: vi.fn(),
 }));
 const acceptFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+// Session 16: the review shows the resulting Canteen balance per line, so
+// the screen now reads derived balances too.
+const levels = vi.hoisted(() => ({
+  rows: [] as Array<{ productId: string; quantity: string }>,
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+}));
 
 vi.mock("@/app/store-manager/use-staff-stock", async () => {
   const actual = await vi.importActual<
@@ -33,6 +41,7 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
   return {
     ...actual,
     useStaffStock: () => hook,
+    useStockLevels: () => levels,
     stockApi: {
       ...actual.stockApi,
       acceptTransfer: acceptFn,
@@ -98,6 +107,12 @@ beforeEach(() => {
     { id: "prod-chapati", name: "Chapati", unitLabel: "pcs" },
     { id: "prod-soda", name: "Soda 500ml", unitLabel: "btl" },
   ];
+  levels.rows = [
+    { productId: "prod-chapati", quantity: "60.0000" },
+    { productId: "prod-soda", quantity: "40.0000" },
+  ];
+  levels.loading = false;
+  levels.error = null;
 });
 
 describe("/canteen/transfer/receive — kit composition", () => {
@@ -169,5 +184,77 @@ describe("/canteen/transfer/receive — kit composition", () => {
     await user.tab();
 
     expect(screen.getByRole("button", { name: /^Receive/ })).toBeDisabled();
+  });
+  // ── Session 16 (owner): "during the review, show what's available and
+  //    what's being added". Each line carries the resulting Canteen
+  //    balance, live as the stepper moves.
+
+  it("each line shows the resulting Canteen balance (on-hand → after)", () => {
+    hook.data.movements = [
+      mv({}), // Chapati -30 dispatched; on hand 60 → 90
+      mv({ id: "disp-2", productId: "prod-soda", quantity: "-6.0000" }),
+    ];
+    renderScreen();
+    expect(
+      screen.getByLabelText("60 pcs on hand, 90 pcs after this"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("40 btl on hand, 46 btl after this"),
+    ).toBeInTheDocument();
+  });
+
+  it("the resulting balance follows the stepper", async () => {
+    hook.data.movements = [mv({})];
+    renderScreen();
+    const user = userEvent.setup();
+
+    const field = screen.getByRole("spinbutton", { name: /Chapati quantity/ });
+    await user.clear(field);
+    await user.type(field, "10");
+    await user.tab();
+
+    expect(
+      screen.getByLabelText("60 pcs on hand, 70 pcs after this"),
+    ).toBeInTheDocument();
+  });
+
+  // Non-fatal: the receive must still work if the balances read fails.
+  it("omits the resulting-balance line when balances are unavailable", () => {
+    levels.error = "boom";
+    levels.rows = [];
+    hook.data.movements = [mv({})];
+    renderScreen();
+    expect(
+      screen.queryByLabelText(/on hand, .* after this/),
+    ).not.toBeInTheDocument();
+    // The line itself still renders and is receivable.
+    expect(screen.getByText("Chapati")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Receive \(\+30 pcs\)/ }),
+    ).toBeEnabled();
+  });
+
+  // The attendant may receive MORE than was dispatched (the sender may
+  // have under-counted). That must not paint the kit's §9.8 over-stock
+  // block — which is why this screen owns its row.
+  it("receiving more than dispatched is not blocked", async () => {
+    hook.data.movements = [mv({})];
+    renderScreen();
+    const user = userEvent.setup();
+
+    const field = screen.getByRole("spinbutton", { name: /Chapati quantity/ });
+    await user.clear(field);
+    await user.type(field, "20");
+    await user.tab();
+
+    expect(
+      screen.queryByText(/reduce or remove this line/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Receive \(\+20 pcs\)/ }),
+    ).toBeEnabled();
+    expect(
+      screen.getByLabelText("60 pcs on hand, 80 pcs after this"),
+    ).toBeInTheDocument();
   });
 });

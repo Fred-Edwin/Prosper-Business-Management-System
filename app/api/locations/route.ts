@@ -11,10 +11,14 @@ import { DomainError, createLocation, listLocations } from "@/lib/domain/catalog
 // transfer destination picker and the location scope. The list is
 // non-sensitive (active locations, name only); reads are role-scoped to
 // these three roles, mutations (POST here, PATCH in `[id]`) are admin-only.
+// `cashier` added Session 16 (ADR-68) — the Restaurant non-sale flow's
+// picker resolves its own location from this list, like every other staff
+// flow. Still the non-sensitive active-only list; mutations stay admin-only.
 const LOCATION_READ_ROLES: readonly Role[] = [
   "admin",
   "store_manager",
   "canteen_attendant",
+  "cashier",
 ];
 
 export async function GET(req: NextRequest) {

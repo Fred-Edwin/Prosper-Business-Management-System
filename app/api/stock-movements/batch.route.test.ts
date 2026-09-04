@@ -29,10 +29,12 @@ let canteenId: string;
 let restaurantId: string;
 let smId: string; // store manager at storeId
 let attendantId: string; // canteen attendant at canteenId
+let cashierId: string; // cashier at restaurantId (Session 16 — non-sale flow)
 let adminId: string;
 let smNoLocId: string;
 let ingredientAtStore: string;
 let dishProduct: string;
+let goodsProduct: string;
 
 type BatchPath = "receipts" | "issues" | "production" | "transfers" | "non-sale";
 
@@ -123,6 +125,26 @@ beforeAll(async () => {
       },
     })
   ).id;
+  const cashierStaff = await prisma.staff.create({
+    data: {
+      name: `${PREFIX} Cashier`,
+      role: "cashier",
+      locationId: restaurantId,
+      dailyRate: new Prisma.Decimal("0"),
+      active: true,
+    },
+  });
+  cashierId = (
+    await prisma.user.create({
+      data: {
+        name: `${PREFIX} Cashier`,
+        pinHash: "x",
+        role: "cashier",
+        active: true,
+        staffId: cashierStaff.id,
+      },
+    })
+  ).id;
   smNoLocId = (
     await prisma.user.create({
       data: {
@@ -157,6 +179,15 @@ beforeAll(async () => {
     },
   });
   dishProduct = dish.id;
+  const goods = await prisma.product.create({
+    data: {
+      name: `${PREFIX} Soda`,
+      kind: "goods",
+      unitLabel: "pcs",
+      buyingPrice: new Prisma.Decimal("45"),
+    },
+  });
+  goodsProduct = goods.id;
 
   await prisma.stockMovement.create({
     data: {
@@ -183,7 +214,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const productIds = [ingredientAtStore, dishProduct];
+  const productIds = [ingredientAtStore, dishProduct, goodsProduct];
   await prisma.moneyMovement.deleteMany({
     where: { recordedBy: { name: { startsWith: PREFIX } } },
   });
@@ -290,9 +321,11 @@ describe("batch movement routes — auth + wiring", () => {
 
   it("receipt batch: canteen attendant at own location → 201 (additive, no money)", async () => {
     mockSession.current = sessionFor("canteen_attendant", attendantId);
+    // A goods delivery INTO the Canteen — legal under ADR-67 (an ingredient
+    // here would be rejected by R1).
     const res = await callBatch("receipts", {
       locationId: canteenId,
-      lines: [{ productId: ingredientAtStore, quantity: "20" }],
+      lines: [{ productId: goodsProduct, quantity: "20" }],
     });
     expect(res.status).toBe(201);
     const mm = await prisma.moneyMovement.findMany({
@@ -303,10 +336,12 @@ describe("batch movement routes — auth + wiring", () => {
 
   it("transfer batch: SM dispatching FROM a foreign location → 403", async () => {
     mockSession.current = sessionFor("store_manager", smId);
+    // The own-location guard rejects this before the domain sees it — a
+    // Canteen→Restaurant transfer the SM isn't scoped to.
     const res = await callBatch("transfers", {
       fromLocationId: canteenId,
-      toLocationId: storeId,
-      lines: [{ productId: ingredientAtStore, quantity: "1" }],
+      toLocationId: restaurantId,
+      lines: [{ productId: goodsProduct, quantity: "1" }],
     });
     expect(res.status).toBe(403);
   });
@@ -326,6 +361,66 @@ describe("batch movement routes — auth + wiring", () => {
     expect(res.body.data[0].movementType).toBe("transfer");
   });
 
+  // ADR-67 — goods deliveries land at the Restaurant, so the SM must be
+  // able to post a receipt batch there (the same carve-out production /
+  // transfer batches make).
+  it("receipt batch: SM receiving goods INTO the Restaurant → 201", async () => {
+    mockSession.current = sessionFor("store_manager", smId);
+    const res = await callBatch("receipts", {
+      locationId: restaurantId,
+      lines: [{ productId: goodsProduct, quantity: "12" }],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data[0].movementType).toBe("purchase_receipt");
+    expect(res.body.data[0].locationId).toBe(restaurantId);
+  });
+
+  // ADR-69 — the destination guard is a MAP, not a blanket widening: the
+  // SM's receiving scope is Store + Restaurant, and the Canteen is the
+  // attendant's. (Before ADR-69 this route special-cased "SM at a
+  // restaurant" inline; the shared map now also has to keep saying no.)
+  it("receipt batch: SM receiving INTO the Canteen → 403, nothing written", async () => {
+    mockSession.current = sessionFor("store_manager", smId);
+    const before = await prisma.stockMovement.count({
+      where: { productId: goodsProduct, locationId: canteenId },
+    });
+    const res = await callBatch("receipts", {
+      locationId: canteenId,
+      lines: [{ productId: goodsProduct, quantity: "3" }],
+    });
+    expect(res.status).toBe(403);
+    expect(
+      await prisma.stockMovement.count({
+        where: { productId: goodsProduct, locationId: canteenId },
+      }),
+    ).toBe(before);
+  });
+
+  it("receipt batch: canteen attendant receiving INTO the Store → 403", async () => {
+    mockSession.current = sessionFor("canteen_attendant", attendantId);
+    const res = await callBatch("receipts", {
+      locationId: storeId,
+      lines: [{ productId: ingredientAtStore, quantity: "3" }],
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("receipt batch: SM receiving a GOODS line INTO the Store → 400 (R1), nothing written", async () => {
+    mockSession.current = sessionFor("store_manager", smId);
+    const before = await prisma.stockMovement.count({
+      where: { productId: goodsProduct },
+    });
+    const res = await callBatch("receipts", {
+      locationId: storeId,
+      lines: [{ productId: goodsProduct, quantity: "5" }],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    expect(
+      await prisma.stockMovement.count({ where: { productId: goodsProduct } }),
+    ).toBe(before);
+  });
+
   it("non-sale batch: SM with no location link → 403", async () => {
     mockSession.current = sessionFor("store_manager", smNoLocId);
     const res = await callBatch("non-sale", {
@@ -335,10 +430,56 @@ describe("batch movement routes — auth + wiring", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  // Session 16 — the non-sale batch route is the one batch route widened
+  // to `cashier` (the Restaurant non-sale flow, /cashier/flows/non-sale).
+  it("non-sale batch: cashier at own location (Restaurant) → 201, dish written", async () => {
+    mockSession.current = sessionFor("cashier", cashierId);
+    const res = await callBatch("non-sale", {
+      locationId: restaurantId,
+      reason: "spoiled",
+      lines: [{ productId: dishProduct, quantity: "2" }],
+    });
+    expect(res.status).toBe(201);
+    expect(
+      await prisma.stockMovement.count({
+        where: {
+          productId: dishProduct,
+          locationId: restaurantId,
+          movementType: "non_sale_consumption",
+        },
+      }),
+    ).toBe(1);
+  });
+
+  it("non-sale batch: cashier aiming at a FOREIGN location (Store) → 403, nothing written", async () => {
+    mockSession.current = sessionFor("cashier", cashierId);
+    const before = await prisma.stockMovement.count({
+      where: { productId: ingredientAtStore },
+    });
+    const res = await callBatch("non-sale", {
+      locationId: storeId,
+      reason: "spoiled",
+      lines: [{ productId: ingredientAtStore, quantity: "1" }],
+    });
+    expect(res.status).toBe(403);
+    expect(
+      await prisma.stockMovement.count({ where: { productId: ingredientAtStore } }),
+    ).toBe(before);
+  });
 });
 
-describe("GET /api/stock-movements/outstanding — SM-scoped (§3.4)", () => {
+/**
+ * ADR-69 — `/outstanding` is scoped by DESTINATION, not by the caller's
+ * home location. The old rule ("hard-scoped to the SM's own location",
+ * 3-DOMAIN §3.4) made a Restaurant- or Canteen-destined purchase a dead
+ * end: ADR-67 lands goods at the Restaurant, the SM is assigned to the
+ * Store, so the SM could WRITE that receipt but never see one was
+ * pending; and the attendant was 403'd outright.
+ */
+describe("GET /api/stock-movements/outstanding — destination-scoped (ADR-69)", () => {
   let paymentAtStore: string;
+  let paymentAtRestaurant: string;
   let paymentAtCanteen: string;
 
   beforeAll(async () => {
@@ -359,10 +500,28 @@ describe("GET /api/stock-movements/outstanding — SM-scoped (§3.4)", () => {
         },
       })
     ).id;
+    // A goods delivery destined for the Restaurant (ADR-67) — the exact
+    // row the SM could not see before ADR-69.
+    paymentAtRestaurant = (
+      await prisma.stockMovement.create({
+        data: {
+          productId: goodsProduct,
+          locationId: restaurantId,
+          movementType: "purchase_payment",
+          quantity: new Prisma.Decimal("0"),
+          recordedById: adminId,
+          occurredAt: new Date("2026-08-05T06:30:00Z"),
+          purchaseSupplier: `${PREFIX} Coast Bottlers`,
+          purchaseOrderedQty: new Prisma.Decimal("12"),
+          purchaseTotalCost: new Prisma.Decimal("1200"),
+          purchasePaidFrom: "cash",
+        },
+      })
+    ).id;
     paymentAtCanteen = (
       await prisma.stockMovement.create({
         data: {
-          productId: ingredientAtStore,
+          productId: goodsProduct,
           locationId: canteenId,
           movementType: "purchase_payment",
           quantity: new Prisma.Decimal("0"),
@@ -377,20 +536,29 @@ describe("GET /api/stock-movements/outstanding — SM-scoped (§3.4)", () => {
     ).id;
   });
 
-  it("admin sees payments at every location", async () => {
-    mockSession.current = sessionFor("admin", adminId);
+  async function awaitingIds(): Promise<string[]> {
     const { status, body } = await getOutstanding();
     expect(status).toBe(200);
-    const ids = body.data.awaitingReceipt.map((r: { id: string }) => r.id);
+    return body.data.awaitingReceipt.map((r: { id: string }) => r.id);
+  }
+
+  it("admin sees payments at every location", async () => {
+    mockSession.current = sessionFor("admin", adminId);
+    const ids = await awaitingIds();
     expect(ids).toContain(paymentAtStore);
+    expect(ids).toContain(paymentAtRestaurant);
     expect(ids).toContain(paymentAtCanteen);
   });
 
-  it("store manager sees only their own location's payments", async () => {
+  it("store manager sees the RESTAURANT-destined delivery too (the bug)", async () => {
     mockSession.current = sessionFor("store_manager", smId);
-    const { status, body } = await getOutstanding();
-    expect(status).toBe(200);
-    const ids = body.data.awaitingReceipt.map((r: { id: string }) => r.id);
+    const ids = await awaitingIds();
+    expect(ids).toContain(paymentAtRestaurant);
+  });
+
+  it("store manager sees the Store's, but never the Canteen's", async () => {
+    mockSession.current = sessionFor("store_manager", smId);
+    const ids = await awaitingIds();
     expect(ids).toContain(paymentAtStore);
     expect(ids).not.toContain(paymentAtCanteen);
   });
@@ -400,8 +568,16 @@ describe("GET /api/stock-movements/outstanding — SM-scoped (§3.4)", () => {
     expect((await getOutstanding()).status).toBe(403);
   });
 
-  it("canteen attendant → 403 (route not widened to them)", async () => {
+  // INVERTED (ADR-69). The old case asserted `canteen attendant → 403
+  // (route not widened to them)` — that encoded the pre-ADR-69 rule, under
+  // which a Canteen-destined delivery could be paid for by the Admin and
+  // then received by nobody. Receiving is by destination now, and the
+  // Canteen is the attendant's.
+  it("canteen attendant sees the Canteen's payments, and only those", async () => {
     mockSession.current = sessionFor("canteen_attendant", attendantId);
-    expect((await getOutstanding()).status).toBe(403);
+    const ids = await awaitingIds();
+    expect(ids).toContain(paymentAtCanteen);
+    expect(ids).not.toContain(paymentAtStore);
+    expect(ids).not.toContain(paymentAtRestaurant);
   });
 });

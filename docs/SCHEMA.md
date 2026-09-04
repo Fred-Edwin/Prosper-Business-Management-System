@@ -161,6 +161,23 @@ read as the prior day's closing (sum of movements up to that day's close),
 with any Admin manual adjustment applied as an `opening`-type correction
 row.
 
+**`movement_type` + `product.kind` + `location.type` are constrained
+(ADR-67), in the domain layer — not as a DB constraint.** An `ingredient`
+movement may only target a `store`; a `dish`/`goods` movement may only
+target a `restaurant`/`canteen`. A `transfer` must run between a
+`restaurant` and a `canteen` (never the `store`, either endpoint) and may
+only carry a `dish`/`goods`. Enforced by `assertKindAllowedAtLocation` /
+`assertTransferLocations` / `assertTransferableKind` in
+`lib/domain/stock/guards.ts`, wired into every write path
+(`setOpeningStock`, `recordPurchaseReceipt` +batch, `recordKitchenIssue`
++batch, `recordNonSaleConsumption` +batch, `recordTransfer` +batch;
+`recordProduction` already satisfied it). It is **not** a Postgres CHECK:
+the rule spans three tables and a cross-table CHECK needs a trigger, and
+`ProductLocation` models "sold here", not "stocked here". `sale` /
+`stock_count` rows need no extra guard — they already require an active
+`ProductLocation` with a non-null `selling_price`, which an `ingredient`
+can never have.
+
 ---
 
 ## 4. Restaurant Sales

@@ -36,13 +36,15 @@ describe("batch movement endpoints", () => {
   });
 
   let seq = 0;
-  async function freshProduct(kind: "ingredient" | "dish" = "ingredient") {
+  async function freshProduct(
+    kind: "ingredient" | "dish" | "goods" = "ingredient",
+  ) {
     seq += 1;
     const p = await prisma.product.create({
       data: {
         name: `${ctx.prefix} P-${seq}-${Math.random().toString(36).slice(2)}`,
         kind,
-        unitLabel: kind === "dish" ? "plate" : "kg",
+        unitLabel: kind === "dish" ? "plate" : kind === "goods" ? "pcs" : "kg",
         buyingPrice: 100,
       },
     });
@@ -51,6 +53,20 @@ describe("batch movement endpoints", () => {
 
   async function withOpening(qty: string, locationId: string) {
     const id = await freshProduct();
+    await setOpeningStock({
+      productId: id,
+      locationId,
+      businessDate: "2026-08-01",
+      quantity: qty,
+      recordedById: ctx.recorderId,
+    });
+    return id;
+  }
+
+  // ADR-67: a transfer is Restaurant↔Canteen and moves dish/goods only, so
+  // the transfer-batch cases stock a `goods` product at the Restaurant.
+  async function goodsWithOpening(qty: string, locationId: string) {
+    const id = await freshProduct("goods");
     await setOpeningStock({
       productId: id,
       locationId,
@@ -282,11 +298,11 @@ describe("batch movement endpoints", () => {
   // ── transfer batch (dispatch side, block) ───────────────────────────
 
   it("transfer batch writes N -q dispatch rows at `from`; stock leaves `from`, not yet at `to`", async () => {
-    const { store, canteen } = ctx.locationIds;
-    const a = await withOpening("100", store);
-    const b = await withOpening("60", store);
+    const { restaurant, canteen } = ctx.locationIds;
+    const a = await goodsWithOpening("100", restaurant);
+    const b = await goodsWithOpening("60", restaurant);
     const rows = await recordTransferBatch({
-      fromLocationId: store,
+      fromLocationId: restaurant,
       toLocationId: canteen,
       lines: [
         { productId: a, quantity: "25" },
@@ -294,21 +310,21 @@ describe("batch movement endpoints", () => {
       ],
       recordedById: ctx.recorderId,
     });
-    expect(rows.every((r) => r.locationId === store)).toBe(true);
+    expect(rows.every((r) => r.locationId === restaurant)).toBe(true);
     expect(rows.every((r) => r.transferCounterpartLocationId === canteen)).toBe(true);
     expect(rows.every((r) => r.correctsMovementId === null)).toBe(true);
-    expect((await getDerivedStockBalance({ productId: a, locationId: store })).quantity).toBe("75.0000");
+    expect((await getDerivedStockBalance({ productId: a, locationId: restaurant })).quantity).toBe("75.0000");
     expect((await getDerivedStockBalance({ productId: a, locationId: canteen })).quantity).toBe("0.0000");
   });
 
   it("transfer batch blocks the whole batch if any line exceeds `from` balance", async () => {
-    const { store, canteen } = ctx.locationIds;
-    const a = await withOpening("100", store);
-    const short = await withOpening("5", store);
+    const { restaurant, canteen } = ctx.locationIds;
+    const a = await goodsWithOpening("100", restaurant);
+    const short = await goodsWithOpening("5", restaurant);
     const before = await counts([a, short]);
     await expect(
       recordTransferBatch({
-        fromLocationId: store,
+        fromLocationId: restaurant,
         toLocationId: canteen,
         lines: [
           { productId: a, quantity: "10" },
@@ -321,16 +337,31 @@ describe("batch movement endpoints", () => {
   });
 
   it("transfer batch rejects from === to", async () => {
-    const { store } = ctx.locationIds;
-    const a = await withOpening("100", store);
+    const { restaurant } = ctx.locationIds;
+    const a = await goodsWithOpening("100", restaurant);
     await expect(
       recordTransferBatch({
-        fromLocationId: store,
-        toLocationId: store,
+        fromLocationId: restaurant,
+        toLocationId: restaurant,
         lines: [{ productId: a, quantity: "1" }],
         recordedById: ctx.recorderId,
       }),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "toLocationId" });
+  });
+
+  it("transfer batch rejects a Store endpoint (ADR-67 R2)", async () => {
+    const { restaurant, store, canteen } = ctx.locationIds;
+    const a = await goodsWithOpening("100", restaurant);
+    const before = await counts([a]);
+    await expect(
+      recordTransferBatch({
+        fromLocationId: store,
+        toLocationId: canteen,
+        lines: [{ productId: a, quantity: "1" }],
+        recordedById: ctx.recorderId,
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "fromLocationId" });
+    expect(await counts([a])).toEqual(before);
   });
 
   // ── non-sale batch (shared reason, block) ───────────────────────────

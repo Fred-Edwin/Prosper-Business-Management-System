@@ -64,12 +64,43 @@ only.
 
 | ID | Screen | Role / shell | Direction badge |
 |---|---|---|---|
-| **Receive** | Receive Goods | SM, staff mobile shell, `FlowHeader` | Supplier → Store (`--color-success`) |
+| **Receive** | Receive Goods | SM, staff mobile shell, `FlowHeader` | Supplier → Store / Restaurant (`--color-success`) |
 | **Issue** | Issue Ingredients | SM | Store → Kitchen (`--color-danger`) |
 | **Production** | Record Batch Production | SM | Kitchen → Restaurant (`--color-success`) |
-| **Transfer** | Transfer Stock | SM | Store → {destination} (`--color-info`) |
+| **Transfer** | Transfer Stock | SM | Restaurant → Canteen (`--color-info`) |
 | **Non-sale** | Log Non-Sale | SM | Staff meals & spoilage (`--color-warning`) |
-| **Canteen Dispatch** | Transfer Stock | Canteen Attendant | Canteen → {destination} (`--color-info`) |
+| **Canteen Dispatch** | Transfer Stock | Canteen Attendant | Canteen → Restaurant (`--color-info`) |
+| **Canteen Receive** | Receive Goods | Canteen Attendant | Supplier → Canteen (`--color-success`) |
+
+> **ADR-67 (2026-09-04).** Ingredients live only at the Store; dishes and
+> goods live only at the Restaurant/Canteen. That changed three things in
+> these flows:
+> - **Transfer / Canteen Dispatch have no Destination picker.** A transfer
+>   runs Restaurant↔Canteen only, so the destination is whichever of the
+>   two the source isn't — auto-resolved, shown by the direction badge. The
+>   `<Select>` remains in the code only for a hypothetical 4th selling
+>   location.
+> - **The SM Transfer is single-source from the Restaurant.** It used to be
+>   multi-source (dishes from the Restaurant, goods from the Store); goods
+>   are received into the Restaurant now, so everything the SM transfers
+>   leaves the Restaurant in one batch.
+> - **Receive splits by kind.** One screen lists every delivered item; on
+>   submit, ingredient lines post as a receipt batch at the Store and goods
+>   lines as a receipt batch at the Restaurant.
+
+> **ADR-69 (2026-09-04).** Deliveries are received by **destination**, not
+> by the receiver's home location: the SM sees and receives everything
+> destined for the Store **or** the Restaurant, the Canteen Attendant
+> everything destined for the Canteen. That added the **Canteen Receive**
+> screen above — the same body as SM Receive (awaiting-deliveries
+> `<MatchCard>` list + additive picker) but posting **one** receipt batch
+> at the Canteen, with no kind split (the Canteen only holds dish/goods).
+> Its entry points on the Canteen hub mirror the SM hub's: a "Receive
+> Goods" tile with a pending count/badge, and a pinned
+> `<PurchaseDeliveryBanner>` whose "Review & receive" opens the flow (never
+> a one-tap receipt — a delivery can arrive short). Goods still also reach
+> the Canteen by transfer from the Restaurant; this is an addition to that
+> path, not a replacement.
 
 All six sit inside the **`FlowScaffold`** chrome: back-chevron
 `FlowHeader` (title + direction badge, 48px, `--border-subtle` bottom
@@ -143,8 +174,12 @@ Top to bottom, inside the scrolling body:
    alone).
 
 5. **Per-flow secondary fields**, below the list:
-   - **Transfer / Canteen Dispatch** — a **Destination `<Select>`**
-     ("Canteen" / "Store"). The `FlowHeader` direction badge tracks it.
+   - **Transfer / Canteen Dispatch** — **no Destination field** (ADR-67).
+     The destination auto-resolves (Restaurant→Canteen and vice versa) and
+     the `FlowHeader` direction badge shows it. An `EmptyState` appears
+     instead only if there is no valid destination (no Restaurant, or no
+     Canteen); the `<Select>` reappears only if a 4th selling location
+     ever exists.
    - **Non-sale** — a **Consumption reason `<Select>`** (`staff_meal ·
      complimentary · spoiled · damaged · other`) + a **Note
      `<Textarea>`**. The note label + validation swap to **"Note
@@ -155,10 +190,11 @@ Top to bottom, inside the scrolling body:
 
 6. **`CalculatedImpactBanner`** (warning-amber) — **sums the whole
    batch**: *"Removes 53.5 kg across 2 ingredients from Store stock now,
-   and adds it to Kitchen."* / *"Adds 90 kg across 2 products to Store
-   stock now."* / *"Removes 72 pcs from Store now; lands at Canteen once
-   they accept."* / *"Removes 5 units from Store as staff meals /
-   spoilage. This is not a sale."* Read-only; it is a preview, never
+   and adds it to Kitchen."* / *"Adds 90 kg across 2 products to stock now
+   — ingredients to the Store, goods to the Restaurant."* / *"Removes 72
+   pcs from Restaurant now; lands at Canteen once they accept."* /
+   *"Removes 5 units from Store as staff meals / spoilage. This is not a
+   sale."* Read-only; it is a preview, never
    editable. When a row is blocked the banner switches to a
    `--color-danger` tint and reads *"1 line is over available stock. Fix
    it to continue."*
@@ -210,8 +246,9 @@ Top to bottom, inside the scrolling body:
    pre-filled to what was dispatched and adjustable to what actually
    arrived — and one **Receive** submit; the flag-to-admin path is
    retired for the Canteen routine (a variance is just a note on the
-   `+q` row). The SM Transfer is multi-source: dishes dispatch from the
-   Restaurant, sodas / goods from the Store.
+   `+q` row). **The SM Transfer is single-source from the Restaurant**
+   (ADR-67) — dishes and goods both live there now — one dispatch batch
+   `{ fromLocationId: restaurant, toLocationId: canteen, lines }`.
 
 5. **Production increments Restaurant stock immediately.** A cooked batch
    is available to the Restaurant the moment it's logged — no accept
@@ -237,7 +274,7 @@ Top to bottom, inside the scrolling body:
 | **populated** | ≥ 1 row selected; impact banner sums the batch; submit enabled with the total. |
 | **empty** | The location has no products for this flow — `EmptyState` (icon + title + one-line guidance, e.g. *"No ingredients at Store"* / *"No dishes set up"* / *"Nothing to transfer"*). Search + list hidden; submit disabled, label without total. |
 | **loading** | §9.10 — search + section label render; the row list is **3 `.kit-skeleton` rows**; impact banner hidden; submit disabled. |
-| **error** | `ErrorState` (`--color-danger` icon + *"Couldn't load {Store/Canteen} stock"* / *"Couldn't load dishes"* + **Retry**). Body content + submit hidden. |
+| **error** | `ErrorState` (`--color-danger` icon + *"Couldn't load stock"* / *"Couldn't load Store stock"* / *"Couldn't load Canteen stock"* / *"Couldn't load dishes"* + **Retry**). Body content + submit hidden. |
 | **over-stock blocked** | One row in the §9.8 BLOCKED state; impact banner in its danger variant; sticky submit disabled. (Receive / Production: the blank-quantity variant.) |
 
 Artboard names: `SM Receive — populated / empty / loading / error /
@@ -269,16 +306,19 @@ blocked`; `SM Non-sale — … / over-stock blocked`; `Canteen Dispatch — …
 
 ### B — booking in a delivery the Admin already paid for (Receive)
 
-1. SM opens **Receive Goods** (green `Supplier → Store`). Above the
-   search: **Deliveries awaiting receipt** — a `MatchCard` for *Mwangi
-   Supplies · KES 18,400 · Beef Fillet 40 kg · paid by Admin · Fri 29
-   Aug*.
+1. SM opens **Receive Goods** (green `Supplier → Store / Restaurant`).
+   Above the search: **Deliveries awaiting receipt** — a `MatchCard` for
+   *Mwangi Supplies · KES 18,400 · Beef Fillet 40 kg · paid by Admin · Fri
+   29 Aug*.
 2. Taps **Match this delivery** → the manual form below is pre-filled
    with Beef Fillet at 40 kg (selected row). SM adds a second line
    (Rice Basmati 50 kg) that arrived on the same truck but wasn't on
    the paid purchase.
-3. Impact banner: *"Adds 90 kg across 2 products to Store stock now."*
-   Submit: **Confirm Receipt (+90 kg)**. On submit the matched line
+3. Impact banner: *"Adds 90 kg across 2 products to stock now —
+   ingredients to the Store, goods to the Restaurant."* Submit: **Confirm
+   Receipt (+90 kg)**. Both lines are ingredients here, so it posts one
+   receipt batch at the Store; a goods line would split into a second
+   batch at the Restaurant (ADR-67). On submit the matched line
    links to the purchase (`purchasePaymentId`); the unmatched line is a
    plain receipt. `Toast` *"Received · 2 products · +90 kg"*.
 

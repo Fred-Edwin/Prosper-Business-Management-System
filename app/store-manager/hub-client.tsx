@@ -8,10 +8,14 @@
 //   • pinned <TransferBanner> per incoming transfer (ADR-39) — Accept →
 //     POST …/accept, Flag → POST …/accept { flag, note }; a flagged one
 //     shows the muted "awaiting admin" line.
-//   • pinned <PurchaseDeliveryBanner> / <MatchCard> for an incoming
-//     delivery — TODO(mock): no staff-facing endpoint exists yet
-//     (GET …/outstanding is Admin-only), so this reads a fixture behind
-//     the real interface.
+//   • pinned <PurchaseDeliveryBanner> per incoming delivery — the real
+//     SM-scoped `GET /api/stock-movements/outstanding` read
+//     (`useOutstandingDeliveries`). Session 16: this replaced an empty
+//     fixture that predated the endpoint being widened to the SM, so the
+//     banner never rendered and an Admin purchase had no staff-facing
+//     "receive it" path at all. "Match & receive" routes to the Receive
+//     flow rather than one-tap writing a receipt — the flow is where the
+//     SM confirms what ACTUALLY arrived (a delivery can be short).
 //   • <ActionTileGrid> — Receive / Issue / Production / Transfer / Non-Sale.
 //   • <ActivityTimeline> — today's movement log, or its empty line.
 //   • <ErrorState> on a fetch failure (Retry → refresh).
@@ -25,23 +29,16 @@ import { TransferBanner, PurchaseDeliveryBanner } from "@/components/kit/banner"
 import { MatchCard } from "@/components/kit/match-card";
 import { ErrorState } from "@/components/kit/error-state";
 import { useToast } from "@/components/kit/toast";
-import { useStaffStock, stockApi, deriveIncomingTransfers } from "./use-staff-stock";
+import {
+  useStaffStock,
+  useOutstandingDeliveries,
+  stockApi,
+  deriveIncomingTransfers,
+} from "./use-staff-stock";
 import { movementsToTimeline, todaysMovements, trimQty } from "./staff-stock-format";
 
-// TODO(mock): the Store Manager has no endpoint for incoming purchase
-// deliveries — GET /api/stock-movements/outstanding is Admin-only
-// (docs/API.md). When a staff-scoped "deliveries awaiting receipt" read
-// lands, replace this fixture; the shape below is what <MatchCard> +
-// stockApi.recordPurchaseReceipt already consume.
-type PendingDelivery = {
-  purchasePaymentId: string;
-  productId: string;
-  locationId: string;
-  supplier: string;
-  quantity: string;
-  unitLabel: string;
-};
-const MOCK_PENDING_DELIVERIES: PendingDelivery[] = [];
+// (Session 16 — the `MOCK_PENDING_DELIVERIES` fixture that stood here is
+// gone; `useOutstandingDeliveries()` is the real read. See the header.)
 
 const TILE_ICON_PROPS = { width: 20, height: 20, strokeWidth: 1.5, "aria-hidden": true } as const;
 
@@ -49,6 +46,10 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
   const router = useRouter();
   const { toast } = useToast();
   const { data, loading, error, refresh } = useStaffStock();
+  // Deliveries the Admin has paid for and nobody has received yet
+  // (SM-scoped `GET …/outstanding`). Non-fatal on failure — the hub still
+  // renders without the banner, same as the Receive flow treats it.
+  const outstanding = useOutstandingDeliveries();
   const [busyId, setBusyId] = React.useState<string | null>(null);
 
   // The Store's own locationId — resolved from any movement row at this
@@ -101,36 +102,28 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
     }
   }
 
-  async function onReceiveDelivery(d: PendingDelivery) {
-    setBusyId(d.purchasePaymentId);
-    try {
-      await stockApi.recordPurchaseReceipt({
-        productId: d.productId,
-        locationId: d.locationId,
-        quantity: d.quantity,
-        purchasePaymentId: d.purchasePaymentId,
-      });
-      toast(`Received ${trimQty(d.quantity)} ${d.unitLabel} ${d.supplier}`, {
-        tone: "success",
-      });
-      await refresh();
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't receive the delivery.", {
-        tone: "danger",
-      });
-    } finally {
-      setBusyId(null);
-    }
+  // A delivery can arrive short, so the banner does NOT one-tap write a
+  // receipt for the ordered quantity — it routes to the Receive flow,
+  // where the SM confirms what actually turned up (the flow's
+  // "Deliveries awaiting receipt" <MatchCard> list pre-fills the line).
+  // Mirrors the Canteen's "Review & Receive" banner behaviour.
+  function onReceiveDelivery() {
+    router.push("/store-manager/flows/receive");
   }
+
+  // Deliveries awaiting receipt, once the read has settled cleanly.
+  const pendingDeliveries =
+    outstanding.loading || outstanding.error ? [] : outstanding.rows;
+  const pendingCount = pendingDeliveries.length;
 
   const tiles: ActionTile[] = [
     {
       icon: <PackagePlus {...TILE_ICON_PROPS} stroke="var(--color-accent)" />,
       label: "Receive Goods",
-      subLabel: MOCK_PENDING_DELIVERIES.length
-        ? `${MOCK_PENDING_DELIVERIES.length} delivery pending`
+      subLabel: pendingCount
+        ? `${pendingCount} ${pendingCount === 1 ? "delivery" : "deliveries"} pending`
         : "Log a supplier delivery",
-      badge: MOCK_PENDING_DELIVERIES.length > 0,
+      badge: pendingCount > 0,
       onClick: () => router.push("/store-manager/flows/receive"),
     },
     {
@@ -187,16 +180,27 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
         />
       ))}
 
-      {MOCK_PENDING_DELIVERIES.map((d) => (
-        <PurchaseDeliveryBanner
-          key={d.purchasePaymentId}
-          title={`Purchase delivery pending · ${productName(d.productId)}`}
-          detail={`${trimQty(d.quantity)} ${d.unitLabel} · ${d.supplier}`}
-          primaryLabel={`Match & receive (+${trimQty(d.quantity)} ${d.unitLabel})`}
-          onPrimary={() => onReceiveDelivery(d)}
-          onFlag={() => onFlag(d.purchasePaymentId)}
-        />
-      ))}
+      {pendingDeliveries.map((d) => {
+          const qty = d.purchaseOrderedQty
+            ? trimQty(d.purchaseOrderedQty)
+            : "?";
+          const unit = productUnit(d.productId);
+          return (
+            <PurchaseDeliveryBanner
+              key={d.id}
+              title={`Purchase delivery pending · ${productName(d.productId)}`}
+              detail={`${qty} ${unit} · ${d.purchaseSupplier ?? "Supplier"}`}
+              primaryLabel="Review & receive"
+              onPrimary={onReceiveDelivery}
+              // No Flag action: `onFlag` is the two-phase TRANSFER variance
+              // path (`flagTransfer`, ADR-39) and would reject a
+              // `purchase_payment` row. A short delivery is reported by
+              // receiving the actual quantity in the Receive flow, which is
+              // the designed path — the receipt-vs-payment mismatch is what
+              // the Admin's reconciliation reads.
+            />
+          );
+        })}
 
       {/* Quick operations */}
       <div className="flex flex-col gap-(--sp-4)">

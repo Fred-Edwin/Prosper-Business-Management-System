@@ -4,7 +4,11 @@ import { prisma } from "@/lib/db";
 import type { RecordNonSaleConsumptionInput, StockMovementView } from "./types";
 import { toMagnitude, toMovementView } from "./internal";
 import { DomainError } from "./errors";
-import { assertLocationExists, assertProductExists } from "./guards";
+import {
+  assertKindAllowedAtLocation,
+  assertLocationExists,
+  assertProductExists,
+} from "./guards";
 import {
   assertRemovalWouldNotGoNegative,
   newCorrelationId,
@@ -54,6 +58,9 @@ async function nonSaleLineCore(
 ) {
   await assertProductExists(tx, line.productId);
   await assertLocationExists(tx, line.locationId);
+  // R1 (ADR-67): a write-off can only remove what is legally stocked
+  // there — ingredient ⇒ Store, dish/goods ⇒ Restaurant/Canteen.
+  await assertKindAllowedAtLocation(tx, line.productId, line.locationId);
   return writeMovementLine(
     tx,
     {

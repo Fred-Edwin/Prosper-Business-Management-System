@@ -34,8 +34,13 @@ const CANTEEN_PRODUCTS = [
   { id: "p-water", name: "Mineral Water 500ml", unitLabel: "pcs", category: "Beverages & Soda", kind: "dish", sellingPrice: "50.00" },
   { id: "p-bread", name: "Bread 400g", unitLabel: "pcs", category: "Shop Goods", kind: "goods", sellingPrice: "40.00" },
 ];
+// ADR-67: a transfer is Restaurant↔Canteen only; the Store is never a
+// transfer endpoint. The Canteen dispatch's destination auto-resolves to
+// the Restaurant (the only non-store, non-self location), so there is no
+// Destination <Select> — the direction badge shows where it's going.
 const LOCATIONS = [
   { id: "loc-canteen", name: "Canteen", type: "canteen" },
+  { id: "loc-restaurant", name: "Restaurant", type: "restaurant" },
   { id: "loc-store", name: "Store", type: "store" },
 ];
 // Derived balances AT THE CANTEEN that the rows read for `available`.
@@ -162,9 +167,15 @@ describe("Canteen — Transfer Dispatch flow (Option-A picker)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("populated: 2 rows → impact banner sums → ONE transferBatch POST { fromLocationId: canteen, toLocationId: store }", async () => {
+  it("populated: 2 rows → impact banner sums → ONE transferBatch POST { fromLocationId: canteen, toLocationId: restaurant } (auto-destination, ADR-67)", async () => {
     renderScreen();
     const user = userEvent.setup();
+
+    // Destination auto-resolves to the Restaurant — no <Select>.
+    expect(
+      screen.queryByRole("combobox", { name: /Destination/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Canteen → Restaurant/)).toBeInTheDocument();
 
     // category tab narrows to the two beverages
     await user.click(screen.getByRole("tab", { name: "Beverages & Soda" }));
@@ -174,24 +185,22 @@ describe("Canteen — Transfer Dispatch flow (Option-A picker)", () => {
 
     await pickRow(user, "Mineral Water 500ml", "24");
     await pickRow(user, "Soda 300ml", "12");
-    await user.click(screen.getByRole("combobox", { name: /Destination/ }));
-    await user.click(await screen.findByRole("option", { name: "Store" }));
 
     expect(
       screen.getByText(
-        /Removes 36 pcs from Canteen now; lands at Store once they accept\./,
+        /Removes 36 pcs from Canteen now; lands at Restaurant once they accept\./,
       ),
     ).toBeInTheDocument();
 
     await user.click(
       screen.getByRole("button", {
-        name: /Dispatch Transfer to Store \(−36 pcs\)/,
+        name: /Dispatch Transfer to Restaurant \(−36 pcs\)/,
       }),
     );
     await waitFor(() =>
       expect(transferBatch).toHaveBeenCalledWith({
         fromLocationId: "loc-canteen",
-        toLocationId: "loc-store",
+        toLocationId: "loc-restaurant",
         lines: [
           { productId: "p-water", quantity: "24" },
           { productId: "p-soda", quantity: "12" },
@@ -200,7 +209,9 @@ describe("Canteen — Transfer Dispatch flow (Option-A picker)", () => {
     );
     // two-phase toast + return to the Canteen hub
     expect(
-      await screen.findByText(/Dispatched · 2 products · awaiting Store accept/),
+      await screen.findByText(
+        /Dispatched · 2 products · awaiting Restaurant accept/,
+      ),
     ).toBeInTheDocument();
     await waitFor(() => expect(push).toHaveBeenCalledWith("/canteen"));
   });
@@ -209,8 +220,6 @@ describe("Canteen — Transfer Dispatch flow (Option-A picker)", () => {
     renderScreen();
     const user = userEvent.setup();
     await pickRow(user, "Bread 400g", "9999"); // only 8 on hand
-    await user.click(screen.getByRole("combobox", { name: /Destination/ }));
-    await user.click(await screen.findByRole("option", { name: "Store" }));
 
     expect(
       screen.getByText(/1 line is over available stock\. Fix it to continue\./),
@@ -222,15 +231,6 @@ describe("Canteen — Transfer Dispatch flow (Option-A picker)", () => {
       screen.getByRole("button", { name: /^Dispatch Transfer/ }),
     ).toBeDisabled();
     expect(transferBatch).not.toHaveBeenCalled();
-  });
-
-  it("submit stays disabled until a destination is chosen", async () => {
-    renderScreen();
-    const user = userEvent.setup();
-    await pickRow(user, "Soda 300ml", "10");
-    expect(
-      screen.getByRole("button", { name: /^Dispatch Transfer/ }),
-    ).toBeDisabled();
   });
 
   it("empty: the Canteen has no sellable products → EmptyState, submit disabled", async () => {
@@ -264,8 +264,9 @@ describe("Canteen — Transfer Dispatch flow (Option-A picker)", () => {
       within(alert).getByText("Couldn't load Canteen stock"),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    // body hidden — no product rows
     expect(
-      screen.queryByRole("combobox", { name: /Destination/ }),
+      screen.queryByRole("group", { name: /^Soda 300ml,/ }),
     ).not.toBeInTheDocument();
   });
 });

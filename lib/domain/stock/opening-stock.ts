@@ -3,7 +3,11 @@ import { businessDateStartUtc } from "@/lib/time";
 import { assertDayOpen } from "@/lib/domain/audit";
 import type { SetOpeningStockInput, StockMovementView } from "./types";
 import { toMagnitude, toMovementView } from "./internal";
-import { assertLocationExists, assertProductExists } from "./guards";
+import {
+  assertKindAllowedAtLocation,
+  assertLocationExists,
+  assertProductExists,
+} from "./guards";
 
 /**
  * Record the opening on-hand quantity for a product/location on a business
@@ -36,6 +40,8 @@ export async function setOpeningStock(
     await assertDayOpen(input.businessDate, tx);
     await assertProductExists(tx, input.productId);
     await assertLocationExists(tx, input.locationId);
+    // R1 (ADR-67): ingredient ⇒ Store; dish/goods ⇒ Restaurant/Canteen.
+    await assertKindAllowedAtLocation(tx, input.productId, input.locationId);
 
     const priorOpenings = await tx.stockMovement.findMany({
       where: {
