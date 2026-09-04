@@ -128,6 +128,91 @@ describe("customers domain", () => {
     it("returns [] when nothing matches", async () => {
       expect(await listCustomers({ search: `${P}nonesuch-xyz` })).toEqual([]);
     });
+
+    // ── Dashboard v2 / Financials v2, §1c — Debts card ──────────────────
+
+    it("oldestDebtAt is the earliest Debt.occurredAt for that customer, or null with no debts", async () => {
+      const c = await createCustomer(
+        { name: `${P}Oldest`, phone: "0700000010" },
+        { actorId: ctx.adminId },
+      );
+      await makeDebt(ctx, c.id, "300.00", new Date("2026-08-05T09:00:00Z"));
+      await makeDebt(ctx, c.id, "150.00", new Date("2026-08-02T09:00:00Z")); // earlier
+      await makeDebt(ctx, c.id, "400.00", new Date("2026-08-09T09:00:00Z"));
+
+      const rows = await listCustomers({ search: `${P}Oldest` });
+      expect(rows[0].oldestDebtAt).toBe(
+        new Date("2026-08-02T09:00:00Z").toISOString(),
+      );
+
+      const noDebt = await createCustomer(
+        { name: `${P}NoDebt`, phone: "0700000011" },
+        { actorId: ctx.adminId },
+      );
+      const noDebtRows = await listCustomers({ search: `${P}NoDebt` });
+      expect(noDebtRows[0].oldestDebtAt).toBeNull();
+    });
+
+    it("owingOnly keeps only customers with a strictly positive balance, sorted oldest-unpaid first", async () => {
+      const owes = await createCustomer(
+        { name: `${P}Owes`, phone: "0700000020" },
+        { actorId: ctx.adminId },
+      );
+      await makeDebt(ctx, owes.id, "1000.00", new Date("2026-08-06T09:00:00Z"));
+
+      const settled = await createCustomer(
+        { name: `${P}Settled`, phone: "0700000021" },
+        { actorId: ctx.adminId },
+      );
+      await makeDebt(ctx, settled.id, "500.00", new Date("2026-08-01T09:00:00Z"));
+      await recordRepayment(
+        {
+          customerId: settled.id,
+          amount: "500.00",
+          account: "cash",
+          occurredAt: new Date("2026-08-02T09:00:00Z"),
+        },
+        { actorId: ctx.adminId },
+      );
+
+      const overpaid = await createCustomer(
+        { name: `${P}Overpaid`, phone: "0700000022" },
+        { actorId: ctx.adminId },
+      );
+      await makeDebt(ctx, overpaid.id, "100.00", new Date("2026-08-01T09:00:00Z"));
+      await recordRepayment(
+        {
+          customerId: overpaid.id,
+          amount: "300.00", // overpayment → negative balance, still excluded
+          account: "cash",
+          occurredAt: new Date("2026-08-02T09:00:00Z"),
+        },
+        { actorId: ctx.adminId },
+      );
+
+      const olderOwes = await createCustomer(
+        { name: `${P}OlderOwes`, phone: "0700000023" },
+        { actorId: ctx.adminId },
+      );
+      await makeDebt(
+        ctx,
+        olderOwes.id,
+        "200.00",
+        new Date("2026-07-20T09:00:00Z"), // older debt than `owes` above
+      );
+
+      const rows = await listCustomers({ search: `${P}`, owingOnly: true });
+      const names = rows.map((r) => r.name);
+      expect(names).toContain(`${P}Owes`);
+      expect(names).toContain(`${P}OlderOwes`);
+      expect(names).not.toContain(`${P}Settled`);
+      expect(names).not.toContain(`${P}Overpaid`);
+
+      // Oldest-unpaid first: OlderOwes' debt (07-20) predates Owes' (08-06).
+      const olderIdx = names.indexOf(`${P}OlderOwes`);
+      const owesIdx = names.indexOf(`${P}Owes`);
+      expect(olderIdx).toBeLessThan(owesIdx);
+    });
   });
 
   describe("getCustomerLedger", () => {

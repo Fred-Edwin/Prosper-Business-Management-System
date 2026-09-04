@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { businessDateOnly } from "@/lib/time";
 import {
+  getOwnerDrawsForPeriod,
   getOwnerOwedToBusiness,
   listOwnerTransactions,
   recordOwnerTransaction,
@@ -119,5 +120,45 @@ describe("recordOwnerTransaction", () => {
         { actorId: ctx.actorId, role: "admin" },
       ),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  // ── getOwnerDrawsForPeriod (Dashboard v2, §1a) ────────────────────────
+
+  it("getOwnerDrawsForPeriod sums draws only (not netted against returns) over [from, to]", async () => {
+    const before = await getOwnerDrawsForPeriod("2026-08-20", "2026-08-22");
+    expect(before.toFixed(2)).toBe("0.00"); // fresh range, this suite's note
+
+    await recordOwnerTransaction(
+      { type: "draw", amount: "3000.00", date: "2026-08-20", note },
+      { actorId: ctx.actorId, role: "admin" },
+    );
+    await recordOwnerTransaction(
+      { type: "return", amount: "500.00", date: "2026-08-21", note },
+      { actorId: ctx.actorId, role: "admin" },
+    );
+    await recordOwnerTransaction(
+      { type: "draw", amount: "1200.00", date: "2026-08-22", note },
+      { actorId: ctx.actorId, role: "admin" },
+    );
+    // Outside the range — must not be included.
+    await recordOwnerTransaction(
+      { type: "draw", amount: "9999.00", date: "2026-08-23", note },
+      { actorId: ctx.actorId, role: "admin" },
+    );
+
+    const sum = await getOwnerDrawsForPeriod("2026-08-20", "2026-08-22");
+    // Only the two draws in range: 3000 + 1200 = 4200. The return is
+    // excluded entirely (not subtracted) — this is a FLOW of draws, not
+    // the draws-minus-returns balance `getOwnerOwedToBusiness` computes.
+    expect(sum.sub(before).toFixed(2)).toBe("4200.00");
+  });
+
+  it("getOwnerDrawsForPeriod rejects a malformed date", async () => {
+    await expect(
+      getOwnerDrawsForPeriod("2026-8-20", "2026-08-22"),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "from" });
+    await expect(
+      getOwnerDrawsForPeriod("2026-08-20", "not-a-date"),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "to" });
   });
 });

@@ -24,6 +24,7 @@ export {
   recordOwnerTransaction,
   listOwnerTransactions,
   getOwnerOwedToBusiness,
+  getOwnerDrawsForPeriod,
 } from "./owner-transactions";
 export { getFinancialSummary } from "./get-financial-summary";
 export {

@@ -25,8 +25,15 @@ export type Customer = {
 export type ListCustomersFilter = {
   /** Case-insensitive contains, matched against name OR phone. */
   search?: string;
-  /** When true, only customers whose derived balance ≠ 0. */
+  /** When true, only customers whose derived balance ≠ 0 (either sign). */
   hasBalance?: boolean;
+  /**
+   * When true, only customers whose derived balance is **strictly
+   * positive** — the customer owes the business (Financials v2 "Debts
+   * owed to the business" card). Takes precedence over `hasBalance` if
+   * both are set.
+   */
+  owingOnly?: boolean;
 };
 
 export type CustomerListRow = {
@@ -37,6 +44,14 @@ export type CustomerListRow = {
   balance: string;
   /** Max of the customer's debt/repayment `occurredAt` (ISO), or null. */
   lastActivityAt: string | null;
+  /**
+   * Earliest `Debt.occurredAt` for this customer (ISO), or `null` if the
+   * customer has never had a debt. Labelled "oldest unpaid" on the
+   * Financials v2 Debts card — see `list-customers.ts`'s doc comment for
+   * why this is a simplification (no FIFO linkage between `Debt` and
+   * `Repayment` exists in the schema).
+   */
+  oldestDebtAt: string | null;
 };
 
 export type CustomerLedgerEntry = {

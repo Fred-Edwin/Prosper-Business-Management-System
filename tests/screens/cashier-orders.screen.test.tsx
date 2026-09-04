@@ -74,7 +74,7 @@ const PRODUCTS: RestaurantProduct[] = [
 ];
 
 const CUSTOMERS: CustomerListRow[] = [
-  { id: "cust-1", name: "Grace Wanjiru", phone: "0722000111", balance: "1200.00", lastActivityAt: NOW_ISO },
+  { id: "cust-1", name: "Grace Wanjiru", phone: "0722000111", balance: "1200.00", lastActivityAt: NOW_ISO, oldestDebtAt: NOW_ISO },
 ];
 
 // ---- hook mocks --------------------------------------------------------

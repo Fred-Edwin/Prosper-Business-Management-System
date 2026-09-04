@@ -76,4 +76,12 @@ describe("/api/financials/summary role gate", () => {
     expect(res.body.data).toHaveProperty("nonSaleConsumption");
     expect(res.body.data).toHaveProperty("perLocation");
   });
+
+  it("consolidated carries ownerDrawsForPeriod (v2, §1a) as a decimal string", async () => {
+    mockSession.current = sessionFor("admin", adminId);
+    const res = await get("?from=2026-05-01&to=2026-05-07");
+    expect(res.body.data.consolidated.ownerDrawsForPeriod).toMatch(
+      /^-?\d+\.\d{2}$/,
+    );
+  });
 });

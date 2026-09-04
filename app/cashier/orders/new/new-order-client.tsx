@@ -699,13 +699,14 @@ function CustomerAttachSheet({
         name: name.trim(),
         phone: phone.trim(),
       });
-      // A brand-new customer has a zero derived balance.
+      // A brand-new customer has a zero derived balance and no debts yet.
       onAttach({
         id: created.id,
         name: created.name,
         phone: created.phone,
         balance: "0.00",
         lastActivityAt: null,
+        oldestDebtAt: null,
       });
     } catch (e) {
       setCreateError(

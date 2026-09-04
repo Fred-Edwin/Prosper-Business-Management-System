@@ -132,6 +132,13 @@ function view(over: Partial<DashboardView> = {}): DashboardView {
       })),
       net30Total: "41200.00",
     },
+    // v2 — "Stock & activity by location" (backend shipped Session A; the
+    // screen composition using this field is Session B's).
+    stockActivity: [
+      { locationId: "loc-store", locationName: "Store", movementCount: 6, lowStockCount: 1, handoverStatus: null },
+      { locationId: "loc-restaurant", locationName: "Restaurant", movementCount: 14, lowStockCount: 2, handoverStatus: "awaiting" },
+      { locationId: "loc-canteen", locationName: "Canteen", movementCount: 9, lowStockCount: 0, handoverStatus: "received" },
+    ],
     ...over,
   };
 }

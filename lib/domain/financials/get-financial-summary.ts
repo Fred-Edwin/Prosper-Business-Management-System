@@ -6,7 +6,7 @@ import {
   businessDateStartUtc,
 } from "@/lib/time";
 import { getAccountBalances } from "./get-account-balances";
-import { getOwnerOwedToBusiness } from "./owner-transactions";
+import { getOwnerOwedToBusiness, getOwnerDrawsForPeriod } from "./owner-transactions";
 import { getDishWasteCostPercent } from "./config";
 import { DomainError } from "./errors";
 import { moneyString } from "./internal";
@@ -101,6 +101,7 @@ export async function getFinancialSummary(
     repaymentSum,
     balances,
     ownerOwed,
+    ownerDrawsForPeriod,
     nonSaleConsumption,
   ] = await Promise.all([
     prisma.location.findMany({ select: { id: true, name: true } }),
@@ -121,6 +122,7 @@ export async function getFinancialSummary(
     }),
     getAccountBalances({ asOf }),
     getOwnerOwedToBusiness(asOf),
+    getOwnerDrawsForPeriod(from, to),
     computeNonSaleCost(start, end),
   ]);
 
@@ -173,6 +175,7 @@ export async function getFinancialSummary(
       netProfit: moneyString(netProfit),
       debtsOwedToBusiness: moneyString(debtsOwed),
       ownerOwedToBusiness: moneyString(ownerOwed),
+      ownerDrawsForPeriod: moneyString(ownerDrawsForPeriod),
       cashBalance: moneyString(balances.cash),
       mpesaBankBalance: moneyString(balances.mpesaBank),
     },

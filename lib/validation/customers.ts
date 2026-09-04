@@ -29,6 +29,12 @@ export const listCustomersQuerySchema = z.object({
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
+  // Financials v2 Debts card: only customers who owe the business
+  // (derived balance strictly positive) — see `list-customers.ts`.
+  owingOnly: z
+    .union([z.literal("true"), z.literal("false")])
+    .optional()
+    .transform((v) => v === "true"),
 });
 
 export const recordRepaymentSchema = z.object({

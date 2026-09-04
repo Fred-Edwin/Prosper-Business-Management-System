@@ -66,7 +66,7 @@ describe("/api/admin/dashboard — admin only", () => {
     expect(body.error.code).toBe("FORBIDDEN");
   });
 
-  it("200 for an admin — all five bands present", async () => {
+  it("200 for an admin — all bands present, including v2's stockActivity", async () => {
     mockSession.current = sessionFor("admin", adminId);
     const { status, body } = await call("date=2025-03-05");
     expect(status).toBe(200);
@@ -77,11 +77,23 @@ describe("/api/admin/dashboard — admin only", () => {
       "needsAttention",
       "today",
       "trend",
+      "stockActivity",
     ]) {
       expect(body.data, band).toHaveProperty(band);
     }
     expect(body.data.week.dailyNet).toHaveLength(7);
     expect(body.data.trend.dailyNet).toHaveLength(30);
+
+    expect(Array.isArray(body.data.stockActivity)).toBe(true);
+    for (const row of body.data.stockActivity) {
+      expect(row).toMatchObject({
+        locationId: expect.any(String),
+        locationName: expect.any(String),
+        movementCount: expect.any(Number),
+        lowStockCount: expect.any(Number),
+      });
+      expect(["awaiting", "received", null]).toContain(row.handoverStatus);
+    }
   });
 
   it("defaults date to today when omitted", async () => {

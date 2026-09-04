@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
   const parsed = listCustomersQuerySchema.safeParse({
     search: sp.get("search") ?? undefined,
     hasBalance: sp.get("hasBalance") ?? undefined,
+    owingOnly: sp.get("owingOnly") ?? undefined,
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
