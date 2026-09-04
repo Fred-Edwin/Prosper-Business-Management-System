@@ -70,11 +70,6 @@ function money(dec: string): string {
       })
     : dec;
 }
-/** `KES 1,234.00`, negative → `− KES 1,234.00`. */
-function kes(dec: string): string {
-  const n = Number(dec);
-  return `${n < 0 ? "− " : ""}KES ${money(Math.abs(Number(n)).toFixed(2))}`;
-}
 /** "2026-09-03" → "Wed, 3 Sep 2026". */
 function longDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -230,7 +225,7 @@ function NetProfitCol({
     delta = (
       <span className="font-ui [color:var(--text-tertiary)] text-caption/caption">
         {up ? "▲" : "▼"} was {p < 0 ? "− " : "+ "}
-        KES {money(Math.abs(p).toFixed(2))} by this point {periodLabel}
+        {money(Math.abs(p).toFixed(2))} by this point {periodLabel}
       </span>
     );
   }
@@ -244,11 +239,12 @@ function NetProfitCol({
         Net profit
       </span>
       <span
-        className={`font-mono font-(--weight-semibold) text-display/display ${
+        className={`font-mono font-(--weight-semibold) text-h1/h1 ${
           negative ? "text-danger" : "text-success"
         }`}
       >
-        {kes(dec)}
+        {negative ? "− " : ""}
+        {money(Math.abs(n).toFixed(2))}
       </span>
       {delta}
     </div>
@@ -341,7 +337,8 @@ function ProfitStackZone({
                   Number(c.netProfit) < 0 ? "text-danger" : "text-success"
                 }`}
               >
-                {kes(c.netProfit)}
+                {Number(c.netProfit) < 0 ? "− " : ""}
+                {money(Math.abs(Number(c.netProfit)).toFixed(2))}
               </span>
             </div>
           </div>
@@ -553,23 +550,43 @@ function PeriodTrendCard({
           ? "THIS MONTH"
           : "THIS PERIOD";
   return (
-    <div className="grow basis-0 md:min-w-[300px] flex flex-col gap-(--sp-4) rounded-md [background-color:var(--surface-page)] border border-solid [border-color:var(--border-subtle)] py-(--sp-6) px-(--sp-7)">
-      <Caption>Net profit per day — {titleNoun}</Caption>
+    <div className="grow basis-0 md:min-w-[300px] flex flex-col gap-(--sp-5) rounded-md [background-color:var(--surface-page)] border border-solid [border-color:var(--border-subtle)] py-(--sp-6) px-(--sp-7)">
+      {/* h-[32px] matches ThirtyDayTrendCard's caption+total row height, so
+          the bar area below starts at the same Y in both cards even though
+          this card's caption has no inline figure next to it. */}
+      <div className="flex items-center h-[32px]">
+        <Caption>Net profit per day — {titleNoun}</Caption>
+      </div>
       {error ? (
         <ErrorState title="Couldn't load the trend" description={error} onRetry={onRetry} />
       ) : loading && bars.length === 0 ? (
         <div className="kit-skeleton h-[100px] w-full rounded-md" />
       ) : (
-        <div className="flex items-end gap-(--sp-4)">
-          {bars.map((b, i) => (
-            <div key={`${b.label}-${i}`} className="flex-1 flex flex-col items-center gap-(--sp-3)">
-              <Bar net={b.net} maxAbs={maxAbs} width="w-[26px]" />
-              <span className="font-ui text-[10px]/[12px] [color:var(--text-tertiary)] whitespace-nowrap">
+        <>
+          {/* Bars container is its own fixed-height box with the baseline
+              border directly on it — same shape as ThirtyDayTrendCard's bar
+              area (h-[120px] + border-b there) — so both cards' baselines
+              land on the same row regardless of card height. The label row
+              is a separate sibling below, not sharing this box, matching
+              how the 30-day card keeps its date labels outside the bars. */}
+          <div className="h-[120px] flex items-end gap-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-strong)]">
+            {bars.map((b, i) => (
+              <div key={`${b.label}-${i}`} className="flex-1 flex justify-center">
+                <Bar net={b.net} maxAbs={maxAbs} width="w-[26px]" />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-(--sp-4)">
+            {bars.map((b, i) => (
+              <span
+                key={`${b.label}-${i}`}
+                className="flex-1 text-center font-ui text-[10px]/[12px] [color:var(--text-tertiary)] whitespace-nowrap"
+              >
                 {b.label}
               </span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -633,11 +650,11 @@ function TrendRow({
   trend: DashboardView["trend"];
 }) {
   return (
-    <section className="flex flex-wrap items-start gap-(--sp-6)">
+    <section className="flex flex-wrap items-stretch gap-(--sp-7)">
       {/* Period trend — desktop only (owner-approved cut, dashboard-screen.md
           "Mobile" note under Trend charts: the profit-stack numbers already
           answer "how did we do" without a second chart on a long mobile page). */}
-      <div className="hidden md:block md:flex-1">
+      <div className="hidden md:flex md:flex-1">
         <PeriodTrendCard
           range={range}
           bars={bars}
@@ -771,6 +788,13 @@ function HandoverPip({ status }: { status: StockActivityByLocation["handoverStat
 }
 
 function StockActivityTable({ rows }: { rows: StockActivityByLocation[] }) {
+  const total = rows.reduce(
+    (acc, l) => ({
+      movementCount: acc.movementCount + l.movementCount,
+      lowStockCount: acc.lowStockCount + l.lowStockCount,
+    }),
+    { movementCount: 0, lowStockCount: 0 },
+  );
   return (
     <div className="flex flex-col rounded-md overflow-clip bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]">
       <div className="hidden md:flex items-center py-(--sp-3) px-(--sp-5) [background-color:var(--surface-subtle)] border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
@@ -787,14 +811,10 @@ function StockActivityTable({ rows }: { rows: StockActivityByLocation[] }) {
           Handover
         </div>
       </div>
-      {rows.map((l, i) => (
+      {rows.map((l) => (
         <div key={l.locationId}>
           {/* Desktop row */}
-          <div
-            className={`hidden md:flex items-center py-(--sp-4) px-(--sp-5) ${
-              i < rows.length - 1 ? "border-b border-b-solid [border-bottom-color:var(--border-subtle)]" : ""
-            }`}
-          >
+          <div className="hidden md:flex items-center py-(--sp-4) px-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
             <div className="grow font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
               {l.locationName}
             </div>
@@ -813,11 +833,7 @@ function StockActivityTable({ rows }: { rows: StockActivityByLocation[] }) {
             </div>
           </div>
           {/* Mobile row */}
-          <div
-            className={`md:hidden flex items-center justify-between py-(--sp-4) px-(--sp-5) ${
-              i < rows.length - 1 ? "border-b border-b-solid [border-bottom-color:var(--border-subtle)]" : ""
-            }`}
-          >
+          <div className="md:hidden flex items-center justify-between py-(--sp-4) px-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
             <div className="flex flex-col gap-[2px]">
               <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
                 {l.locationName}
@@ -833,6 +849,29 @@ function StockActivityTable({ rows }: { rows: StockActivityByLocation[] }) {
           </div>
         </div>
       ))}
+      {rows.length > 0 && (
+        <div className="flex items-center justify-between py-(--sp-4) px-(--sp-5) [background-color:var(--surface-subtle)]">
+          <span className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-sm/sm">
+            Total
+          </span>
+          <div className="hidden md:flex">
+            <span className="w-[110px] shrink-0 text-right font-mono font-(--weight-semibold) [color:var(--text-primary)] text-sm/sm">
+              {total.movementCount}
+            </span>
+            <span
+              className={`w-[110px] shrink-0 text-right font-mono font-(--weight-semibold) text-sm/sm ${
+                total.lowStockCount > 0 ? "text-danger" : "[color:var(--text-primary)]"
+              }`}
+            >
+              {total.lowStockCount}
+            </span>
+            <span className="w-[110px] shrink-0" />
+          </div>
+          <span className="md:hidden font-mono font-(--weight-semibold) [color:var(--text-primary)] text-sm/sm">
+            {total.movementCount} movements
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1135,12 +1174,20 @@ export function DashboardClient() {
   const prior = React.useMemo(() => priorPeriodRange(range), [range]);
   const { summary: priorSummary } = useFinancialSummary(prior.from, prior.to);
 
+  // Today / This week both render the same full 7-bar week strip (spec:
+  // "unchanged M5 week-strip look, just re-titled") — Today's own {from, to}
+  // is a single day, which would otherwise fetch (and bucket to) just one
+  // bar instead of the current business week.
+  const trendRange =
+    range.preset === "today" || range.preset === "week"
+      ? businessWeekRange(today)
+      : range;
   const {
     data: trendData,
     loading: trendLoading,
     error: trendError,
     refresh: refreshTrend,
-  } = useDashboardTrend(range.from, range.to);
+  } = useDashboardTrend(trendRange.from, trendRange.to);
 
   const bars = React.useMemo(
     () => (trendData ? bucketTrendByPeriod(range, trendData.dailyNet) : []),
@@ -1197,7 +1244,7 @@ export function DashboardClient() {
           ))}
         </div>
       ) : data ? (
-        <div className="flex flex-col gap-(--sp-8) md:gap-(--sp-9) pt-(--sp-2) pb-(--sp-10)">
+        <div className="flex flex-col gap-(--sp-8) pt-(--sp-2) pb-(--sp-10)">
           <ProfitStackZone
             range={range}
             summary={summary}

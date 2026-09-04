@@ -247,13 +247,16 @@ beforeEach(() => {
 // ── Period control — drives the period-scoped reads ──────────────────
 
 describe("/admin dashboard — period control", () => {
-  it("defaults to Today and requests that range from useFinancialSummary / useDashboardTrend", async () => {
+  it("defaults to Today and requests that range from useFinancialSummary", async () => {
     renderScreen();
     await screen.findAllByText(/right now/i);
-    // Today's preset resolves from === to.
+    // Today's preset resolves from === to for the profit-stack summary.
     expect(summaryCalls.length).toBeGreaterThan(0);
     expect(summaryCalls[0].from).toBe(summaryCalls[0].to);
-    expect(trendCalls[0].from).toBe(trendCalls[0].to);
+    // The trend strip always shows the full current week on Today (spec:
+    // "unchanged M5 week-strip look"), so its own fetch spans the week —
+    // not just today — even though the profit stack above is single-day.
+    expect(trendCalls[0].from).not.toBe(trendCalls[0].to);
   });
 
   it("switching to This week re-requests a Monday–Sunday range", async () => {
@@ -285,7 +288,7 @@ describe("/admin dashboard — profit stack", () => {
   it("Net Profit renders in the danger-toned figure when negative", async () => {
     summaryByRange = () => summary({ netProfit: "-27300.00" });
     renderScreen();
-    const figures = await screen.findAllByText("− KES 27,300.00");
+    const figures = await screen.findAllByText("− 27,300.00");
     expect(figures.length).toBeGreaterThan(0);
     expect(figures[0].className).toContain("text-danger");
   });
@@ -293,7 +296,7 @@ describe("/admin dashboard — profit stack", () => {
   it("Net Profit renders in the success-toned figure when non-negative", async () => {
     summaryByRange = () => summary({ netProfit: "33400.00" });
     renderScreen();
-    const figures = await screen.findAllByText("KES 33,400.00");
+    const figures = await screen.findAllByText("33,400.00");
     expect(figures.length).toBeGreaterThan(0);
     expect(figures[0].className).toContain("text-success");
   });
