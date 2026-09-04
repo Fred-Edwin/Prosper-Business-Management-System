@@ -1,58 +1,136 @@
 # `/admin/financials` — Financials & Expenses screen
 
-**Status:** Approved M3 S5, built M3 S7 — **RESTRUCTURED in M5 Session 12**
-(Design Sprint). The M5 restructure is the current design: Paper "Prosper
-Hotel" · page "M5 — Dashboard & Audit", `Financials — desktop,
-restructured [M5]` + `Financials — mobile, restructured [M5]`. The
-original M3 S5 artboards (page "M3 S5 — Financials redesign") are
-superseded but kept for history. This doc's "Structure" section below is
-updated to the M5 shape; the flows-vs-balances rule and the
-date-range/handover notes are unchanged.
+**Status:** M3/M5 versions below are SUPERSEDED. Current approved design
+is **v2** (Paper "Prosper Hotel" · page "M5 — Dashboard & Audit",
+`Financials — desktop [v2]` + `Financials — mobile [v2]`), approved in
+the same Design Sprint as Dashboard v2 (2026-09-04, following the M5
+close-out QA walkthrough) — **build against v2's "Structure" section
+below.** The M3 S5/M5 S12 sections further down are kept for history
+(the flows-vs-balances rule, date-range control, and Handovers table
+sections they contain are still current and unchanged by v2).
 
-Related: ADR-55 (COGS model), ADR-56 (single admin header row),
-**ADR-57 (flow-vs-balance date semantics)**.
+Related: ADR-55 (COGS model, non-sale consumption), ADR-56 (single admin
+header row), **ADR-57 (flow-vs-balance date semantics)**.
 
 ---
 
-## M5 RESTRUCTURE — why and what changed
+## v2 RESTRUCTURE — why and what changed
 
-M5 review found the screen was doing three jobs at once (position
-snapshot + period analysis + ledger browsing) and felt overcrowded,
-while the new `/admin` dashboard felt thin. The fix:
+The M5 restructure (below) had already pulled the Position/balances strip
+off this screen onto the Dashboard, leaving Financials as "one period
+toggle drives a report you read top to bottom" plus five transaction
+tabs. The v2 pass goes one step further, following the owner's direction
+to make the Dashboard the home for the full profit narrative:
 
-- **The "Position & balances" KPI strip is REMOVED from this screen** and
-  now lives on the dashboard (`docs/design/flows/dashboard-screen.md`
-  Band 1). Financials is now **analysis only** — one period toggle drives
-  a report you read top to bottom. There is no balances strip here any
-  more; a balance figure the owner wants "as of now" is on the
-  dashboard, "as of period-end" context stays in the report captions.
-- **The screen is now two visually separated zones:**
-  1. **Report zone** — the profit statement (hero), per-location table,
-     "Debts owed to the business" line, and "Where unsold stock went".
-     On desktop these are a **two-column layout**: profit statement left
-     (~520px), the per-location table + debts + where-stock-went stacked
-     in a right column.
-  2. **Transactions zone** — below a 2px `--border-strong` divider and a
-     **"Transactions"** heading + one-line explainer ("Every recorded
-     money and stock movement for <period>. The figures above are
-     derived from these rows."), the five transaction tabs.
-- **The five tabs stay on this screen** (owner decision — chose this over
-  a separate `/admin/transactions` screen). They are: Stock Purchases ·
-  Deliveries · Handovers · Expenses · Owner Draws.
-- **No chart was added.** A grouped bar chart / donut with an axis-flip
-  toggle was designed as an alternative and rejected — 3-colour marks
-  contradict `design-principles.md` §1/§3 and duplicated the
-  per-location table. The report zone stays kit-native.
+- **The entire profit statement leaves this screen** — Revenue / COGS /
+  Gross / Expenses / Net and the per-location Revenue/COGS/Gross table
+  both move to `/admin` (see `dashboard-screen.md`'s "For `<period>`"
+  and "Financial performance by location" zones). Financials no longer
+  shows a profit report at all.
+- **"Where unsold stock went" is also gone from this screen** — it was a
+  COGS sub-detail, and COGS itself no longer lives here. In its place,
+  the underlying data — non-sale consumption **rows** (product,
+  quantity, reason, who recorded it) — gets a proper home as a **6th
+  transaction tab** (see below), which is strictly more useful than the
+  old summed-by-reason panel: the owner can now see which product, which
+  day, whose write-off, not just a total.
+- **A KPI strip replaces the profit statement as the page's orienting
+  element.** Since this page is now transaction-first, the strip
+  previews the six tabs below it (count + amount per tab) rather than
+  restating Revenue/COGS/Net, which would just duplicate the Dashboard.
+  Clicking a tile jumps to that tab; the active tab's tile gets a
+  `--color-accent` left-rule + `--surface-subtle` tint so the strip
+  doubles as a tab indicator.
+- **"Debts owed to the business" is promoted from a single balance line
+  to a real, actionable table** — Customer / Amount owed / Oldest
+  unpaid, each row a clickable link into `/admin/customers/[id]`. Owner's
+  explicit ask: she needs to see *who* owes money and get to their
+  account, not just a total.
+- **Six transaction tabs, not five** — Stock Purchases · Deliveries ·
+  Handovers · Expenses · Owner Draws · **Non-Sale Consumption** (new).
 
 **Mobile:** status bar + hamburger header + the period `<SegmentedControl>`
-on its own row, then the Report zone stacked (compact profit statement →
-by-location one-line-per-location → debts line → where-stock-went panel),
+on its own row, then a **2×3 KPI grid** (not a horizontal strip — six
+tiles read better as a grid at 390px), the Debts card stacked below it,
 then the divider + "Transactions" heading + a horizontal-scroll tab chip
-strip + the active tab's list as stacked cards.
+strip (off-default/active tab sorted toward the visible front, per
+ADR-66's mobile-filter convention) + the active tab's list as stacked
+cards.
 
 ---
 
-## Structure (top → bottom) — M5 restructured shape
+## Structure (v2 — current)
+
+1. **Header row** (ADR-56) — title "Financials & Expenses" · the
+   date-range `<SegmentedControl>` (unchanged, see "Date-range control"
+   below) · tab-contextual primary action ("Record Expense" etc.) ·
+   account avatar.
+
+2. **KPI strip** — six hairline-split tiles, one per transaction tab, in
+   tab order: **Stock Purchases · Deliveries · Handovers · Expenses ·
+   Owner Draws · Non-Sale Consumption**. Each tile: uppercase
+   `--text-tertiary` label, a mono figure (count-led for Deliveries/
+   Handovers when there's an open item — e.g. "2 pending" / "1
+   shortfall" — with a small `--color-warning`/`--color-danger` status
+   dot; amount-led otherwise), and a `--text-disabled` caption ("6
+   payments", "28 expenses"). The tile matching the active tab gets a 2px
+   `--color-accent` left-rule and `--surface-subtle` background; its
+   label turns `--color-accent`. Caption above the strip: **"THIS
+   `<PERIOD>` AT A GLANCE"**.
+
+3. **Debts owed to the business** — a bordered card, header row (title +
+   sub-caption "Unpaid customer credit, as of today — click a customer
+   to see their account" + the total, mono, top-right), then a compact
+   table: **Customer · Amount owed · Oldest unpaid**, each customer name
+   `--color-accent` and the whole row a link to `/admin/customers/[id]`.
+   A trailing **"View all customer credit →"** row (on `--surface-subtle`)
+   links to `/admin/customers` for the full list — this card shows only
+   the open-debt customers, not a paginated table, so it never grows
+   unbounded on the Financials page itself.
+   - This is a **balance, as of now** (ADR-57) — not period-scoped, same
+     rule as the old single-line version. The "as of today" caption stays
+     mandatory per the flow-vs-balance rule below.
+   - **Mobile:** same content, stacked — customer name + "Since <date>"
+     caption on the left, amount right; "View all" row unchanged.
+
+4. **Transactions zone.** Unchanged shape from M5 (divider, heading,
+   per-tab toolbar, tables) — see the M5 section below for the full
+   detail on tab tables, empty-state handling, and the Handovers
+   reconciliation table. **The addition is a 6th tab:**
+
+   **Non-Sale Consumption tab.** Columns: **Date · Product · Location ·
+   Qty · Reason · Recorded by · Est. cost**. `Reason` renders as a small
+   coloured pill (reusing the semantic colour tokens, not new ones):
+   `Spoiled` → `--color-danger` / `--color-danger-bg`; `Complimentary` →
+   `--color-info` / `--color-info-bg`; `Staff meal` / `Damaged` / `Other`
+   → neutral `--text-secondary` / `--surface-subtle`. Toolbar count line:
+   "N write-offs this `<period>` · KES `<total>`"; primary action
+   **"Record Non-Sale Use"**.
+   - **No new domain or schema work** — this is a pure read-wiring job.
+     `listMovements({ movementType: "non_sale_consumption" })` already
+     returns every field the table needs (product, location, quantity,
+     `reason` is on the movement row, actor via `recordedById`); cost is
+     the same per-unit valuation `computeNonSaleCost` already uses
+     (`buyingPrice` for ingredient/goods, `dishWasteCostPercent ×
+     sellingPrice` for dish — ADR-55). The KPI tile's total is exactly
+     `nonSaleConsumption.total` from `getFinancialSummary`, already
+     computed server-side today.
+   - **Mobile:** stacked cards — product name + cost on line 1, the
+     reason pill + "`<location>` · `<qty>` units · `<recorded by>` ·
+     `<date>`" caption on line 2.
+
+---
+
+## Structure (M5, superseded — kept for history)
+
+The profit statement, per-location table, and "Where unsold stock went"
+panel this section describes are **gone from the current v2 design** —
+see "v2 RESTRUCTURE" above for where each moved. This section is kept
+because the **Handovers reconciliation table format**, **date-range
+control**, and **flows-vs-balances rule** sections further down are
+unchanged by v2 and still current — read past this section for those.
+
+### Structure (top → bottom) — M5 restructured shape
 
 1. **Header row** (ADR-56) — title "Financials & Expenses" · the
    date-range `<SegmentedControl>` (Today / This week / This month /
@@ -103,7 +181,10 @@ strip + the active tab's list as stacked cards.
      mono amount on the first line, "<note> · <account> · <date>"
      caption below).
 
-## Handovers reconciliation table (owner-approved v2 — Paper page "M3 S7 — Handovers table redesign")
+## Handovers reconciliation table (current — Paper page "M3 S7 — Handovers table redesign")
+
+Unchanged by the v2 restructure above — this table format still ships
+as-is inside the Transactions zone's Handovers tab.
 
 A bespoke grouped table — the kit `<SimpleTable>` has no grouped-header
 or footer support, so it is hand-built from token markup with full ARIA
@@ -155,12 +236,24 @@ picker was added to the kit.**
 
 ## The one rule the screen turns on — flows vs. balances (ADR-57)
 
-One control drives every figure, two ways:
+**This rule now governs both `/admin/financials` and `/admin`** (v2 put a
+period control on the Dashboard too — see `dashboard-screen.md`'s "The
+now/period split"), not just this screen. One control drives every
+figure, two ways:
 
-| Kind | Figures | Responds to the range by… |
-|---|---|---|
-| **Flow** | revenue, COGS, gross/net profit, total expenses, non-sale consumption, every transaction table | accumulating over the **whole `from..to`** |
-| **Balance** | cash at hand, M-Pesa/bank, debts owed to the business, owed back by the owner | a level **as of the end of `to`** |
+| Kind | Figures | Screen | Responds to the range by… |
+|---|---|---|---|
+| **Flow** | revenue, COGS, gross/net profit, total expenses, owner draws (period) | Dashboard | accumulating over the **whole `from..to`** |
+| **Flow** | every transaction table, non-sale consumption | Financials | accumulating over the **whole `from..to`** |
+| **Balance** | cash at hand, M-Pesa/bank, total liquidity, owed back by the owner | Dashboard ("Right now" — always as of NOW, not period-scoped at all) | a level **as of now** |
+| **Balance** | debts owed to the business | Financials (Debts card) | a level **as of now** |
+
+The Dashboard's balance figures are a stricter case than the original
+ADR-57 "as of range end" rule — v2's "Right now" zone is **always now**,
+regardless of the period control, not "as of the end of the selected
+range". Financials' Debts card follows the same always-now rule (it has
+no period control of its own to be "as of the end of" — it's a static
+balance card on a now-transaction-first page).
 
 So "This month" shows the month's revenue next to cash *as it stood on
 the last day of the month*. A balance tile must always carry an "as of
