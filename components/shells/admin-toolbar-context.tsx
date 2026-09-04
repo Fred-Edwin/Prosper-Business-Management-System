@@ -29,6 +29,36 @@ const AdminToolbarContext = React.createContext<AdminToolbarContextValue | null>
   null,
 );
 
+// M2 S6b mounts `children` twice — once inside the desktop shell, once inside
+// the mobile shell (CSS `hidden md:block` / `md:hidden` picks which is seen).
+// Both copies of a screen register their header content into this ONE
+// provider, so without a guard the last one to call setContent wins the
+// header regardless of which shell is actually visible — the header can end
+// up bound to the hidden copy's state. AdminVisibleContext tells a screen's
+// <AdminPageHeader> whether ITS mount is the visible one; only the visible
+// mount's setContent calls are allowed through.
+const AdminVisibleContext = React.createContext(true);
+
+/** True inside the shell wrapper that's currently visible (media query, not CSS display). */
+export function useAdminShellVisible(): boolean {
+  return React.useContext(AdminVisibleContext);
+}
+
+/** Wraps one shell's `children` so its <AdminPageHeader> knows if it's the visible copy. */
+export function AdminShellVisibility({
+  visible,
+  children,
+}: {
+  visible: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <AdminVisibleContext.Provider value={visible}>
+      {children}
+    </AdminVisibleContext.Provider>
+  );
+}
+
 export function AdminToolbarProvider({ children }: { children: React.ReactNode }) {
   const [content, setContent] = React.useState<AdminToolbarContent>({});
   const value = React.useMemo(() => ({ content, setContent }), [content]);
@@ -56,13 +86,14 @@ export function useAdminToolbarValue(): AdminToolbarContent {
  */
 export function AdminPageHeader({ title, actions }: AdminToolbarContent) {
   const ctx = React.useContext(AdminToolbarContext);
+  const visible = React.useContext(AdminVisibleContext);
   const setContent = ctx?.setContent;
 
   React.useEffect(() => {
-    if (!setContent) return;
+    if (!setContent || !visible) return;
     setContent({ title, actions });
     return () => setContent({});
-  }, [setContent, title, actions]);
+  }, [setContent, visible, title, actions]);
 
   if (ctx) return null;
 

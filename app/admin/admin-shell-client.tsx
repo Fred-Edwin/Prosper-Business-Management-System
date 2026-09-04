@@ -5,7 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { AdminShell, ADMIN_NAV_ITEMS } from "@/components/shells/admin-shell";
 import { MobileShellAdmin } from "@/components/shells/mobile-shell-admin";
-import { AdminToolbarProvider } from "@/components/shells/admin-toolbar-context";
+import {
+  AdminToolbarProvider,
+  AdminShellVisibility,
+} from "@/components/shells/admin-toolbar-context";
 import { ToastProvider } from "@/components/kit/toast";
 
 // Resolve the active nav key by longest matching href prefix — items sit at
@@ -80,6 +83,22 @@ export function AdminShellClient({
     setCollapsed(readCollapsed());
   }, []);
 
+  // `children` mounts twice below (desktop shell + mobile shell, picked by
+  // `hidden md:*` CSS) but both share one AdminToolbarProvider. Track which
+  // one is actually visible via the same `md` breakpoint (768px) so each
+  // mount's <AdminPageHeader> (see admin-toolbar-context.tsx) knows whether
+  // it's allowed to publish its header content — otherwise the header can
+  // end up bound to the hidden mount's state. Defaults to desktop for
+  // SSR/first-paint parity with the `collapsed` state above.
+  const [isDesktop, setIsDesktop] = React.useState(true);
+  React.useEffect(() => {
+    const mql = window.matchMedia("(min-width: 768px)");
+    setIsDesktop(mql.matches);
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
   const toggleCollapsed = React.useCallback(() => {
     setCollapsed((c) => {
       const next = !c;
@@ -130,7 +149,9 @@ export function AdminShellClient({
             collapsed={collapsed}
             onToggleCollapsed={toggleCollapsed}
           >
-            {children}
+            <AdminShellVisibility visible={isDesktop}>
+              {children}
+            </AdminShellVisibility>
           </AdminShell>
         </div>
         <div className="md:hidden">
@@ -144,7 +165,9 @@ export function AdminShellClient({
             accountInitials={accountInitials}
             onAccountClick={handleAccountClick}
           >
-            {children}
+            <AdminShellVisibility visible={!isDesktop}>
+              {children}
+            </AdminShellVisibility>
           </MobileShellAdmin>
         </div>
       </AdminToolbarProvider>
