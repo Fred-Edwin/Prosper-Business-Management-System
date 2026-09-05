@@ -19,3 +19,13 @@ Thumbs.db
 *.tsbuildinfo
 next-env.d.ts
 .playwright-mcp/
+.env*
+# ...but these two are committed ON PURPOSE (local connection strings only,
+# no secrets) and a fresh clone needs them to run the suites:
+#   .env.test — the test-suite database (docs/TESTING.md)
+#   .env.sim  — the simulation database (docs/SIMULATION_TESTING.md)
+# They are already tracked, so the rule above does not affect them today;
+# these negations keep that true if they are ever removed and re-added.
+!.env.example
+!.env.test
+!.env.sim

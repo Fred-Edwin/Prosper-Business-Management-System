@@ -26,7 +26,11 @@ export default defineConfig({
   test: {
     environment: "node",
     setupFiles: ["./vitest.setup.ts"],
-    include: ["tests/simulation/**/*.sim.test.ts"],
+    include: ["tests/simulation/**/*.sim.test.ts", "tests/simulation/**/*.sim.test.tsx"],
+    // load-demo is the owner's walkthrough loader, not a check: it is run
+    // on its own by `pnpm demo:load` against the DEV database. Excluding it
+    // here means a normal `pnpm test:sim` can never touch dev data.
+    exclude: ["tests/simulation/load-demo.sim.test.ts"],
     // A 60-day run makes thousands of API calls; the invariant battery
     // then re-reads every horizon. Generous, and measured per-suite.
     testTimeout: 900_000,

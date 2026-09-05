@@ -353,10 +353,14 @@ genuinely enforced by the system, not just by the screens. Good.
 
 I would rather be straight with you about the limits than oversell this.
 
-- **The screens are not tested here.** This tests the engine underneath —
-  the calculations and rules. Whether a figure is displayed in the right box
-  on the right screen is covered by the separate screen tests and by your
-  own walkthrough.
+- **Screen coverage is now partial, not absent.** The Financials and
+  Dashboard screens ARE checked end-to-end — real database, real API, real
+  hooks, real components, asserting the text actually rendered
+  (`screens-financials.sim.test.tsx`, `screens-dashboard.sim.test.tsx`, and
+  `docs/UI_WALKTHROUGH.md` for checking it yourself in a browser). Other
+  screens — Stock, Sales, Customers, Staff, Audit — are still covered only
+  by mocked-hook specs, which prove they render what they are handed, not
+  that what they are handed is correct.
 
 - **Handovers are only lightly covered.** The simulation runs the day
   through to the handover step but does not yet exercise declaring and
