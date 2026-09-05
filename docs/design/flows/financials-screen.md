@@ -121,6 +121,86 @@ cards.
 
 ---
 
+## v2 build notes (M5 Session C — decisions made while building)
+
+Recorded per the handoff's instruction to write down anything that
+needed a real decision beyond what the spec above states.
+
+### KPI strip — where the six tiles' figures come from
+
+The spec said "compute tile figures from whatever each tab already
+fetches rather than a seventh new read". That is not achievable as
+written: the strip shows all six tabs' figures **at once**, but only the
+active tab is mounted, so an inactive tab has fetched nothing to compute
+from.
+
+Resolved as: **three tiles need no read at all** — Expenses, Owner Draws
+and Non-Sale totals come off `getFinancialSummary`, which the shell
+already fetches (`consolidated.totalExpenses`,
+`consolidated.ownerDrawsForPeriod`, `nonSaleConsumption.total`). The
+remaining figures (purchase total, delivery pending/received, handover
+declared/shortfall counts, and the per-tab row counts) come from
+`useFinancialsKpis`, which calls **exactly the same endpoints the tabs
+themselves call** — no new endpoint, no backend change.
+
+One scoping subtlety: `stockApi.outstanding()` is an all-time read with
+no range filter, so the Deliveries tile filters it to the selected range
+client-side; otherwise the tile would disagree with its own tab.
+
+### Non-Sale tab — per-row Est. cost
+
+`computeNonSaleCost` is a private, server-only function
+(`Prisma.Decimal` + `process.env`) returning a **by-reason aggregate** —
+there is no exported per-row valuation to reuse. So the per-row figure
+applies the same ADR-55 rule client-side, with the percentage taken **off
+the wire** (`nonSaleConsumption.dishWasteCostPercent`) rather than
+re-declared in the screen:
+
+- ingredient / goods → `buyingPrice`
+- dish → `dishWasteCostPercent × sellingPrice` (first priced location,
+  matching `computeNonSaleCost`'s own `.find(p => p != null)`)
+
+The tab's **total is never summed from the rows** — it is the
+server-computed `nonSaleConsumption.total`, so the toolbar figure stays
+authoritative even where a row's price lookup is incomplete. A row whose
+price can't be resolved shows `—`, never a confident `0.00`.
+
+### "Recorded by" — resolution, and its one gap
+
+`StockMovement.recordedById` is a **`User`** id and carries no resolved
+name on the wire. `StaffView.userId` is the link back, so the tab joins
+`GET /api/staff` (Admin-only, and this is an Admin screen) client-side.
+
+**Gap, accepted:** `listStaff` returns `Staff` rows, so a `User` with no
+`Staff` row — the Admin's own login, for instance — does not resolve and
+renders `—`. Never guessed. (`app/admin/stock/correction-drawer.tsx`
+flagged this same missing join in Session 7; this is the first screen to
+wire it.)
+
+### Mobile tab row — scrolled, not re-ordered
+
+The mobile artboard (`PN6-0`) sorts the active chip toward the visible
+front, per ADR-66's mobile-filter convention. Implemented instead as a
+single `<Tabs>` in DOM order inside a horizontal scroller, with the
+active tab scrolled into view.
+
+Reason: rendering a second, re-ordered `<Tabs>` for mobile puts a
+**duplicate tablist — duplicate tab ids and all — into the accessibility
+tree at every viewport** (jsdom and screen readers see both; only CSS
+hides one). The ADR's intent, "never leave the active control
+off-screen", is honoured by scrolling. Flagged for the owner rather than
+silently diverging.
+
+### The Store / `perLocation` question does not arise here
+
+Checked explicitly: there are **zero** `perLocation` references anywhere
+in `app/admin/financials/`. The v2 screen has no per-location table (it
+moved to the Dashboard), and no KPI tile, Debts row or Non-Sale figure
+touches that array. The question stays open and untouched — see the
+Session B entry in `docs/PROGRESS.md`.
+
+---
+
 ## Structure (M5, superseded — kept for history)
 
 The profit statement, per-location table, and "Where unsold stock went"

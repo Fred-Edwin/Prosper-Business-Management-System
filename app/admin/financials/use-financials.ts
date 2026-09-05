@@ -8,6 +8,11 @@ import type {
   RecordExpenseInput,
   RecordOwnerTransactionInput,
 } from "@/lib/domain/financials";
+import type { CustomerListRow } from "@/lib/domain/customers";
+import type { Location, ProductWithLocations } from "@/lib/domain/catalog";
+import type { StaffView } from "@/lib/domain/staff";
+import type { StockMovementView } from "@/lib/domain/stock";
+import { stockApi } from "../stock/use-stock";
 
 /**
  * All Financials (expenses / owner transactions / profit summary) data
@@ -200,4 +205,102 @@ export function useFinancialSummary(from: string, to: string) {
   }, [refresh]);
 
   return { summary, loading, error, refresh };
+}
+
+// ── Debts card — customers who currently owe (v2) ──────────────────────
+
+/**
+ * The open-debt customers for the v2 Debts card — `GET
+ * /api/customers?owingOnly=true` (Session A). A **BALANCE, as of now**
+ * (ADR-57): deliberately NOT period-scoped, so this hook takes no range.
+ * The server pre-sorts by `oldestDebtAt` ascending under `owingOnly`, so
+ * the screen never re-sorts.
+ *
+ * The card's *total* does not come from here — it is
+ * `consolidated.debtsOwedToBusiness` off the shared summary, which is
+ * already the authoritative figure. These rows only answer "who".
+ */
+export function useOwingCustomers() {
+  const [customers, setCustomers] = React.useState<CustomerListRow[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const refresh = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setCustomers(
+        await request<CustomerListRow[]>(`/api/customers?owingOnly=true`),
+      );
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Failed to load customer debts.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { customers, loading, error, refresh };
+}
+
+// ── Non-Sale Consumption tab (v2, 6th tab) ────────────────────────────
+
+/**
+ * Non-sale consumption rows for a business-date RANGE — a FLOW (ADR-57),
+ * accumulating over the whole `from`..`to`. Pure read-wiring over the
+ * already-shipped `GET /api/stock-movements?movementType=
+ * non_sale_consumption&from=&to=` (no new backend — v2 spec).
+ *
+ * The raw movement rows carry `productId` / `locationId` / `recordedById`
+ * but no resolved names, so the tab also pulls the product + location
+ * lookups (the same `stockApi` reads every other transaction tab already
+ * makes) and the staff roster, and joins client-side.
+ */
+export function useNonSaleConsumption(from: string, to: string) {
+  const [movements, setMovements] = React.useState<StockMovementView[]>([]);
+  const [products, setProducts] = React.useState<ProductWithLocations[]>([]);
+  const [locations, setLocations] = React.useState<Location[]>([]);
+  const [staff, setStaff] = React.useState<StaffView[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const refresh = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [rows, prods, locs, people] = await Promise.all([
+        stockApi.listMovements({
+          movementType: "non_sale_consumption",
+          from,
+          to,
+        }),
+        stockApi.listProducts(),
+        stockApi.listLocations(),
+        request<StaffView[]>(`/api/staff`),
+      ]);
+      setMovements(rows);
+      setProducts(prods);
+      setLocations(locs);
+      setStaff(people);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Failed to load non-sale consumption.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to]);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { movements, products, locations, staff, loading, error, refresh };
 }

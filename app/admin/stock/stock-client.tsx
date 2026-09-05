@@ -95,7 +95,7 @@ function unitOf(productLabel: string): string {
   return m ? m[1] : "units";
 }
 
-/** `KES 1,234` — matches profit-panel.tsx / the Financials KPI convention. */
+/** `KES 1,234` — matches the Financials KPI-tile figure convention. */
 function money(dec: string | undefined): string {
   const n = Number(dec ?? "0");
   if (!Number.isFinite(n)) return "KES 0";

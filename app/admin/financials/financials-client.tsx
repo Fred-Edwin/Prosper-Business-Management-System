@@ -1,34 +1,37 @@
 "use client";
 
-// M3 S7 — /admin/financials, rebuilt to the approved redesign (Paper
-// "Prosper Hotel" · page "M3 S5 — Financials redesign") + the S7
-// date-range control.
+// /admin/financials — v2 (M5 "Dashboard & Financials v2" Session C).
+// Approved design: Paper "Prosper Hotel" · page "M5 — Dashboard & Audit",
+// `Financials — desktop [v2]` + `Financials — mobile [v2]`. Spec:
+// docs/design/flows/financials-screen.md "Structure (v2 — current)" —
+// build against that, NOT the superseded M5 section further down.
 //
-// LAYOUT (approved):
-//   • ONE header row (ADR-56): title · range control · Record Payment ·
-//     avatar. On mobile the range control drops to its own "Date Row"
-//     below the header so the ~390px header never crowds.
-//   • The Profit panel is PROMOTED OUT of the tab row — it is a summary,
-//     not a transaction log — into an always-on block above the tabs
-//     (<ProfitPanelDesktop> / <ProfitPanelMobile>).
-//   • FIVE tabs below: Stock Purchases · Deliveries · Handovers ·
-//     Expenses · Owner Draws. (Profit is no longer a tab.)
+// v2 makes this screen TRANSACTION-FIRST. The entire profit statement —
+// Revenue / COGS / Gross / Expenses / Net, plus the per-location table —
+// LEFT this screen for /admin (Dashboard v2's "For <period>" zone), and
+// so did "Where unsold stock went". Do not rebuild any of it here "for
+// convenience": the split is the whole point of v2.
 //
-// M5 S14: the "Position & balances" KPI strip was REMOVED from this
-// screen — it now lives ONLY on the `/admin` dashboard (Band 1). This
-// screen is analysis-only: the range control, the profit report, the
-// five transaction tabs.
+// Structure, top to bottom:
+//   1. ONE header row (ADR-56): title · range control · tab-contextual
+//      primary action · avatar. Mobile drops the range control to its own
+//      row so the ~390px header never crowds.
+//   2. KPI strip — six tiles, ONE PER TAB, in tab order. Not an
+//      independent summary: the active tab's tile is highlighted and
+//      clicking a tile switches tabs, so the strip doubles as a tab
+//      indicator (<KpiStrip>).
+//   3. Debts owed to the business — a real table of WHO owes, each row
+//      linking to /admin/customers/[id] (<DebtsCard>).
+//   4. Transactions zone — the M5 shape (2px divider, heading + explainer,
+//      per-tab toolbar, tables) with a SIXTH tab: Non-Sale Consumption.
 //
 // DATE SEMANTICS (ADR-57). One control, presets Today / This week / This
 // month / Custom, resolving to an inclusive Africa/Nairobi business-date
 // range `{ from, to }` (weeks are Monday–Sunday). That pair drives every
-// figure:
-//   • FLOWS (revenue, COGS, profit, expenses, non-sale, the transaction
-//     tables) take the WHOLE range.
-//   • BALANCES (cash, M-Pesa/bank, debts owed, owed by owner) are read
-//     "as of the end of `to`" — the domain does this split itself.
-// The KPI caption and the balance sub-labels say "as of <date>" so a
-// point-in-time figure is never misread as a range total.
+// FLOW on the page — the KPI strip and every transaction table. The Debts
+// card is the one BALANCE here and is deliberately NOT period-scoped: it
+// is "as of today", always, and carries that label (v2's stricter reading
+// of ADR-57, matching the Dashboard's "Right now" zone).
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
@@ -38,17 +41,27 @@ import { Button } from "@/components/kit/button";
 import { TransactionsTab, type TxTabKey } from "./transactions-tab";
 import { ExpensesView } from "./expenses-tab";
 import { OwnerDrawsView } from "./owner-draws-tab";
-import { ProfitPanelDesktop } from "./profit-panel";
-import { ProfitPanelMobile } from "./profit-panel-mobile";
+import { NonSaleView } from "./non-sale-tab";
+import { KpiStrip, tileSpecs } from "./kpi-strip";
+import { DebtsCard } from "./debts-card";
 import { AdminDateRangeControl } from "../date-range-control";
 import {
   rangeLabel,
   shortBusinessDateWithYear,
   useAdminDateRange,
+  type AdminDateRange,
 } from "../use-date-range";
-import { useFinancialSummary } from "./use-financials";
+import {
+  useFinancialSummary,
+  useOwingCustomers,
+} from "./use-financials";
+import { useFinancialsKpis } from "./use-financials-kpis";
 
-export type FinancialsTabKey = TxTabKey | "expenses" | "owner-draws";
+export type FinancialsTabKey =
+  | TxTabKey
+  | "expenses"
+  | "owner-draws"
+  | "non-sale";
 
 const TABS = [
   { key: "purchases" as const, label: "Stock Purchases", panelId: "fin-panel-purchases" },
@@ -56,6 +69,7 @@ const TABS = [
   { key: "handovers" as const, label: "Handovers", panelId: "fin-panel-handovers" },
   { key: "expenses" as const, label: "Expenses", panelId: "fin-panel-expenses" },
   { key: "owner-draws" as const, label: "Owner Draws", panelId: "fin-panel-owner-draws" },
+  { key: "non-sale" as const, label: "Non-Sale Consumption", panelId: "fin-panel-non-sale" },
 ];
 
 const VALID: readonly FinancialsTabKey[] = [
@@ -64,7 +78,19 @@ const VALID: readonly FinancialsTabKey[] = [
   "handovers",
   "expenses",
   "owner-draws",
+  "non-sale",
 ];
+
+/** "this month" / "today" — the period noun the captions read with. */
+function periodNoun(range: AdminDateRange): string {
+  return range.preset === "today"
+    ? "today"
+    : range.preset === "week"
+      ? "this week"
+      : range.preset === "month"
+        ? "this month"
+        : "this period";
+}
 
 export function FinancialsClient({
   initialTab = "purchases",
@@ -86,15 +112,38 @@ export function FinancialsClient({
     refresh: refreshSummary,
   } = useFinancialSummary(from, to);
 
+  const {
+    kpis,
+    error: kpisError,
+    refresh: refreshKpis,
+  } = useFinancialsKpis(from, to);
+
+  const {
+    customers: owingCustomers,
+    loading: debtsLoading,
+    error: debtsError,
+    refresh: refreshDebts,
+  } = useOwingCustomers();
+
   const label = rangeLabel(range);
   const asOfLabel = shortBusinessDateWithYear(to);
+  const noun = periodNoun(range);
 
-  // The payment drawer's open state lives in <TransactionsTab>; it hands
-  // the shell a callback so the header "Record Payment" button (Purchases
-  // tab only) can trigger it.
+  /** A write anywhere on the page moves the strip's figures too. */
+  const refreshAll = React.useCallback(() => {
+    refreshSummary();
+    refreshKpis();
+  }, [refreshSummary, refreshKpis]);
+
+  // Each tab hands the shell a callback so the header's tab-contextual
+  // primary action can trigger the tab's own drawer.
   const recordPaymentRef = React.useRef<(() => void) | null>(null);
   const registerRecordPayment = React.useCallback((fn: () => void) => {
     recordPaymentRef.current = fn;
+  }, []);
+  const recordNonSaleRef = React.useRef<(() => void) | null>(null);
+  const registerRecordNonSale = React.useCallback((fn: () => void) => {
+    recordNonSaleRef.current = fn;
   }, []);
 
   const changeTab = React.useCallback((key: string) => {
@@ -108,6 +157,18 @@ export function FinancialsClient({
   const isTxTab =
     tab === "purchases" || tab === "deliveries" || tab === "handovers";
 
+  const specs = tileSpecs(
+    kpis,
+    summary
+      ? {
+          totalExpenses: summary.consolidated.totalExpenses,
+          ownerDrawsForPeriod: summary.consolidated.ownerDrawsForPeriod,
+          nonSaleTotal: summary.nonSaleConsumption.total,
+        }
+      : null,
+    noun,
+  );
+
   const rangeControl = (
     <AdminDateRangeControl
       range={range}
@@ -116,6 +177,20 @@ export function FinancialsClient({
       onCustomDay={setCustomDay}
     />
   );
+
+  /**
+   * Keep the active tab visible in the mobile scroller. Six tabs overflow
+   * a 390px row, and selecting one from the KPI strip can select a tab
+   * that is scrolled off — so bring it into view whenever it changes.
+   */
+  const tabScrollRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    const el = tabScrollRef.current?.querySelector<HTMLElement>(
+      `#fin-tabs-tab-${tab}`,
+    );
+    // jsdom has no layout and no scrollIntoView — guard both.
+    el?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [tab]);
 
   return (
     <PageShell>
@@ -133,6 +208,14 @@ export function FinancialsClient({
                 Record Payment
               </Button>
             )}
+            {tab === "non-sale" && (
+              <Button
+                variant="primary"
+                onClick={() => recordNonSaleRef.current?.()}
+              >
+                Record Non-Sale Use
+              </Button>
+            )}
           </>
         }
       />
@@ -145,27 +228,63 @@ export function FinancialsClient({
         {rangeControl}
       </div>
 
-      {/* Always-on Profit panel — promoted out of the tab row. The
-          position/balances KPI strip that used to sit above it moved to
-          the `/admin` dashboard (M5 S14). */}
-      <ProfitPanelDesktop
-        summary={summary}
-        loading={summaryLoading}
-        error={summaryError}
-        onRetry={refreshSummary}
-        rangeLabel={label}
-      />
-      <ProfitPanelMobile
-        summary={summary}
-        loading={summaryLoading}
-        error={summaryError}
-        onRetry={refreshSummary}
-        rangeLabel={label}
-        asOfLabel={asOfLabel}
-      />
+      {/* Zones 2 + 3 — the strip and the Debts card. 20px apart on
+          desktop / 16px on mobile, per the artboard's body gap. */}
+      <div className="flex flex-col gap-(--sp-6) md:gap-(--sp-7) px-(--sp-6) md:px-0 pt-(--sp-6) md:pt-(--sp-8)">
+        <KpiStrip
+          specs={specs}
+          activeTab={tab}
+          onSelect={changeTab}
+          caption={`${noun === "today" ? "Today" : noun.replace(/^this /, "This ")} at a glance`}
+          error={kpisError ?? (summary == null ? summaryError : null)}
+          onRetry={refreshAll}
+        />
 
-      <div className="px-(--sp-6) md:px-0 pt-(--sp-6)">
-        <Tabs tabs={TABS} activeKey={tab} onChange={changeTab} idBase="fin-tabs" />
+        <DebtsCard
+          customers={owingCustomers}
+          total={summary?.consolidated.debtsOwedToBusiness ?? null}
+          loading={debtsLoading || (summaryLoading && summary == null)}
+          error={debtsError ?? summaryError}
+          onRetry={() => {
+            refreshDebts();
+            refreshSummary();
+          }}
+        />
+      </div>
+
+      {/* Zone 4 — Transactions. 2px --border-strong divider + heading. */}
+      <div className="flex flex-col mt-(--sp-4) pt-(--sp-6) md:pt-(--sp-8) px-(--sp-6) md:px-0 border-t-2 border-t-solid [border-top-color:var(--border-strong)]">
+        <div className="flex flex-col gap-[2px]">
+          <h2 className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h2/h2">
+            Transactions
+          </h2>
+          <span className="font-ui [color:var(--text-tertiary)] text-caption/[16px]">
+            Every recorded money and stock movement for {noun}. The figures
+            above are derived from these rows.
+          </span>
+        </div>
+
+        {/* ONE tab row, at both viewports. Six tabs don't fit a 390px
+            row, so on mobile it becomes a horizontal scroller and the
+            active tab is scrolled into view (ADR-66's convention is
+            "never leave the active control off-screen"; it is honoured
+            here by scrolling rather than by re-ordering, because a second
+            re-ordered <Tabs> would put a duplicate tablist — duplicate
+            tab ids and all — in the accessibility tree at every
+            viewport). */}
+        <div
+          ref={tabScrollRef}
+          className="pt-(--sp-5) md:pt-(--sp-6) -mx-(--sp-6) px-(--sp-6) md:mx-0 md:px-0 overflow-x-auto md:overflow-visible"
+        >
+          <div className="w-max md:w-auto">
+            <Tabs
+              tabs={TABS}
+              activeKey={tab}
+              onChange={changeTab}
+              idBase="fin-tabs"
+            />
+          </div>
+        </div>
       </div>
 
       <div
@@ -187,16 +306,29 @@ export function FinancialsClient({
             key={`${from}:${to}`}
             from={from}
             to={to}
-            onMutated={refreshSummary}
+            onMutated={refreshAll}
           />
-        ) : (
+        ) : tab === "owner-draws" ? (
           <OwnerDrawsView
             key={`${from}:${to}`}
             from={from}
             to={to}
             owedToBusiness={summary?.consolidated.ownerOwedToBusiness ?? null}
             asOfLabel={asOfLabel}
-            onMutated={refreshSummary}
+            onMutated={refreshAll}
+          />
+        ) : (
+          <NonSaleView
+            key={`${from}:${to}`}
+            from={from}
+            to={to}
+            periodLabel={noun}
+            total={summary?.nonSaleConsumption.total ?? null}
+            dishWasteCostPercent={
+              summary?.nonSaleConsumption.dishWasteCostPercent ?? null
+            }
+            registerRecordNonSale={registerRecordNonSale}
+            onMutated={refreshAll}
           />
         )}
       </div>

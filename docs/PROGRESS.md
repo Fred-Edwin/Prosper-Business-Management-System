@@ -15,6 +15,93 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 5 "Dashboard & Financials v2" Session C — Financials frontend (Developer — 2026-09-05) — DONE
+
+Against `docs/sprints/m5-dashboard-financials-v2-session-C-financials-frontend-HANDOFF.md`.
+**This closes the three-session feature: A (backend) → B (Dashboard
+frontend) → C (this one). Nothing is outstanding; there was never a
+Session D — do not go looking for one.**
+
+**Shipped**
+
+- `app/admin/financials/financials-client.tsx` rebuilt to v2 per
+  `docs/design/flows/financials-screen.md` "Structure (v2 — current)":
+  header row → KPI strip → Debts card → Transactions zone. The profit
+  statement is **gone from this screen entirely** (it lives on `/admin`);
+  `profit-panel.tsx` + `profit-panel-mobile.tsx` deleted as dead code.
+- `kpi-strip.tsx` — six hairline-split tiles, one per tab, in tab order.
+  Doubles as a tab indicator: active tile gets the 2px `--color-accent`
+  left-rule + `--surface-subtle` tint, and every tile is a real button
+  that switches tabs. Desktop 6-across; mobile 2×3 grid.
+- `debts-card.tsx` — "Debts owed to the business" promoted from a single
+  balance line to a real table (Customer · Amount owed · Oldest unpaid),
+  each row linking to `/admin/customers/[id]`, plus a "View all customer
+  credit →" row. A BALANCE, as of now (ADR-57) — not period-scoped, with
+  the mandatory "as of today" caption.
+- `non-sale-tab.tsx` + `non-sale-drawer.tsx` — the 6th tab. Reason pills
+  on semantic tokens, client-side resolution of product / location /
+  recorded-by, per-row ADR-55 est. cost. Drawer wires the existing M1
+  `POST /api/stock-movements/non-sale/batch`.
+- Hooks: `useOwingCustomers`, `useNonSaleConsumption` (in
+  `use-financials.ts`), and `useFinancialsKpis` (new file).
+- `page.tsx` — deep-link tab list corrected: dropped the stale `"profit"`
+  (removed back in M5), added `"non-sale"`.
+
+**No backend work.** Every field already existed from Session A.
+
+**Decisions that went beyond the spec** — all recorded in
+`financials-screen.md`'s new "v2 build notes" section: where the six KPI
+figures actually come from (the spec's "compute from what each tab
+fetches" is impossible — inactive tabs are unmounted); per-row Est. cost
+(`computeNonSaleCost` is private + server-only, so the ADR-55 rule is
+applied client-side with the percentage taken off the wire); "Recorded
+by" resolution via `StaffView.userId` and its accepted gap (a User with
+no Staff row renders `—`, never guessed); and the mobile tab row being
+**scrolled rather than re-ordered** — a second re-ordered `<Tabs>` would
+put a duplicate tablist with duplicate ids into the a11y tree at every
+viewport, so ADR-66's intent is met by scrolling instead. That last one
+is a deliberate, flagged divergence from artboard `PN6-0`.
+
+**Store / `perLocation` (Session B's open question): did not arise.**
+Verified explicitly — zero `perLocation` references anywhere in
+`app/admin/financials/`. Left open and untouched, as instructed.
+
+**Manual walkthrough (§3).** Ran `pnpm dev` as Admin at 1440px. Signed
+in, loaded `/admin/financials`, confirmed the v2 structure renders
+against real seeded data. The owner then drove the screen themselves and
+signed it off ("everything checks out"). Per-step detail: the shared
+dual-shell period control (Session B's `e275cba` fix) works correctly on
+Financials — presets re-fetch and the visible figures change; the Debts
+card correctly does **not** move with the period; KPI tiles switch tabs;
+the Non-Sale tab renders seeded rows with correct pills and sane costs;
+Debts rows land on the right customer. **Not separately re-verified by
+me at <768px** — the owner's sign-off covered the screen as a whole; a
+dedicated mobile-parity pass is queued (see below).
+
+**Fixed during the session:** the KPI strip had no error state —
+`useFinancialsKpis` captured an error but the shell only destructured
+`{ kpis, refresh }`, so a failed read showed six "—" tiles with nothing
+to say anything was wrong. Now renders `<ErrorState>` with retry, and has
+a regression test.
+
+**Gates.** `pnpm vitest run tests/screens/financials.screen.test.tsx`
+27/27 (was 16 — extended with KPI-tile clicks, Debts links + the "as of
+today" caption, Non-Sale pills / recorded-by / ADR-55 costs, the drawer
+submit, and the KPI error state). `pnpm test:unit` 432/432.
+`pnpm typecheck` 0 errors. `rm -rf .next && pnpm build` clean.
+`grep -rn "TODO(mock)"` — nothing new.
+
+**Also this session:** drafted six per-screen mobile design-parity
+handoffs under `docs/sprints/mobile-parity/` (Dashboard, Stock/Ledger,
+Catalog, Assets, Audit trail, Financials-verify) plus `_METHOD.md`
+documenting the measured-diff method — `get_computed_styles` for every
+value, never eyeballing a screenshot, flex ratios pulled explicitly.
+Owner's direction: the admin desktop screens are in good shape but the
+mobile ones drifted from Paper; each will get its own session against a
+deep-linked, approved artboard.
+
+---
+
 ## Milestone 5 — COGS bug: "This week"/"This month" inflated Net Profit (Developer — 2026-09-05) — DONE
 
 Owner-reported: `/admin` and `/admin/financials` showed correct figures
