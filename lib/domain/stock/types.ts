@@ -127,9 +127,16 @@ export type GetDerivedBalanceInput = {
 export type SetOpeningStockInput = {
   productId: string;
   locationId: string;
-  /** `YYYY-MM-DD` business date; the row lands at `businessDateStartUtc(businessDate)`. */
-  businessDate: string;
-  /** Unsigned magnitude — the opening on-hand quantity for that day. */
+  /**
+   * **Ignored** (ADR-70). The opening row's business date is pinned
+   * server-side to the business's Day 1 (`resolveOpeningDay`) — there is
+   * one opening position per product/location, not one per day, and a
+   * caller-chosen date is what allowed a mid-history opening to be
+   * written. Still accepted so existing callers/tests type-check; the
+   * route no longer requires it.
+   */
+  businessDate?: string;
+  /** Unsigned magnitude — the opening on-hand quantity. */
   quantity: string;
   recordedById: string;
 };

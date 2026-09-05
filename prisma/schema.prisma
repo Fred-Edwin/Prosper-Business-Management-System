@@ -73,6 +73,12 @@ enum MoneyAccount {
 }
 
 enum MoneySourceType {
+  // The Admin's stated Day-1 cash / M-Pesa position (ADR-70). Money
+  // balances are derived (ADR-17), so a "starting balance" can only be a
+  // ledger row: `opening_balance` is the row that moves the derived
+  // balance TO the stated figure. Dated to the first instant of its
+  // business day, exactly as an `opening` StockMovement is (ADR-11).
+  opening_balance
   handover_receipt
   expense
   purchase_payment

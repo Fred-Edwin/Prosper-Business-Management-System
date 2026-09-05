@@ -116,12 +116,20 @@ describe("getDerivedStockBalance", () => {
       },
     });
 
-    await setOpeningStock({
-      productId: product.id,
-      locationId,
-      businessDate: "2026-08-01",
-      quantity: "10",
-      recordedById: recorderId,
+    // The opening row is written directly rather than via
+    // `setOpeningStock`: since ADR-70 the domain pins every opening to the
+    // business's Day 1, so it cannot be asked for a chosen historical
+    // date. This test needs an opening that sits *before* a fixed `asOf`,
+    // which is a fixture concern, not the write path under test here.
+    await prisma.stockMovement.create({
+      data: {
+        productId: product.id,
+        locationId,
+        movementType: "opening",
+        quantity: "10",
+        recordedById: recorderId,
+        occurredAt: new Date("2026-08-01T00:00:00+03:00"),
+      },
     });
     // A later receipt, well after the cutoff.
     await recordPurchaseReceipt({
@@ -253,12 +261,17 @@ describe("getDerivedStockBalance", () => {
         buyingPrice: 80,
       },
     });
-    await setOpeningStock({
-      productId: p.id,
-      locationId,
-      businessDate: "2026-08-01",
-      quantity: "10",
-      recordedById: recorderId,
+    // Written directly, not via `setOpeningStock` — see the note in
+    // "excludes rows after `asOf`" (ADR-70 pins the opening date).
+    await prisma.stockMovement.create({
+      data: {
+        productId: p.id,
+        locationId,
+        movementType: "opening",
+        quantity: "10",
+        recordedById: recorderId,
+        occurredAt: new Date("2026-08-01T00:00:00+03:00"),
+      },
     });
     await recordPurchaseReceipt({
       productId: p.id,

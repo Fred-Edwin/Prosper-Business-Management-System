@@ -23,7 +23,18 @@ value and computes the delta internally (ADR-15).
 
 ## Auth
 
-`/api/auth/*` — handled by Auth.js. Login, logout, session.
+`/api/auth/[...nextauth]` — handled by Auth.js. Login, logout, session.
+
+### `PATCH /api/auth/pin`
+Roles: any authenticated role. Self-service PIN change for the caller's
+own account — body `{ currentPin, newPin }`, both exactly 4 digits.
+`currentPin` must match; `newPin` must differ from `currentPin`. Returns
+`{ data: { success: true } }`.
+
+Distinct from `PATCH /api/staff/:id`'s `pin` field, which is the
+**Admin resetting a *staff* member's** PIN and requires no current PIN —
+that path doesn't cover the Admin's own account, since the Admin has no
+`Staff` row (`docs/DECISIONS.md` ADR-26).
 
 ---
 
@@ -228,7 +239,7 @@ location-bound roles may only write at their own location (except
 with the created row. Inputs take an **unsigned magnitude**; the domain
 applies the sign.
 
-- `opening` — Admin. `{ movementType: "opening", productId, locationId, businessDate (YYYY-MM-DD), quantity }`. Writes an `opening` row at that business day's start. A second call for the same product/location/date is a **correction** of the first (ADR-15), not a duplicate.
+- `opening` — Admin. `{ movementType: "opening", productId, locationId, quantity }`. Writes an `opening` row at the start of the business's **Day 1** — the date is **pinned server-side** (`resolveOpeningDay`, ADR-70) and is *not* chooseable. `businessDate` is still accepted for backwards compatibility but **ignored**. A second call for the same product/location is a **correction** of the first (ADR-15), not a duplicate — and lands on Day 1, never on the day it was submitted. (Before ADR-70 the caller supplied the date and the screen sent *today*, so a later entry wrote a second, mid-history opening: the correction lookup missed it and COGS was dragged negative.)
 - `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`). `supplier` / `quantity` / `cost` / `paidFromAccount` are persisted to the real `purchaseSupplier` / `purchaseOrderedQty` / `purchaseTotalCost` / `purchasePaidFrom` columns (ADR-46 §3); a human `note` sentence is also composed for display. A paired **`−cost` `MoneyMovement`** is written (`sourceType = "purchase_payment"`, account = `paidFromAccount`) — resolved in M2 Session 4 (was the M1 `TODO(mock)`). The **payment-drawer product picker shows `ingredient` + `goods` only** (a `dish` is never purchased — ADR-33); the API does not reject a `dish` productId, the UI just never offers one.
 - `purchase_receipt` — Store Manager (Store + Restaurant) / Canteen Attendant (Canteen) — scoped by **destination**, not by the caller's own location (ADR-69). `{ movementType: "purchase_receipt", productId, locationId, quantity, purchasePaymentId? }`. `+quantity` at `locationId`. `purchasePaymentId`, if given, must reference a real `purchase_payment` row → `404` otherwise.
 - `issue` — Store Manager. `{ movementType: "issue", productId, locationId, quantity }`. `−quantity` at the Store (Store → cooking; single row).
@@ -351,6 +362,20 @@ when the product has no rows. `lastMovementAt` (added M2 batch-movements,
 (`MAX(occurredAt)`) for that (product, location) at or before `asOf`, or
 `null` when the product has no rows — the `986-0` / `9GW-0` stock-levels
 screens render a "last movement Nh ago" meta line from it.
+
+### `GET /api/stock-movements/opening-day`
+**Added 2026-09-05, ADR-70.** The business date every opening row is
+pinned to, and whether anything has pinned it yet.
+
+Roles: **Admin only.** No parameters. Returns
+`{ data: { businessDate, pinned } }` — `pinned: false` means no opening
+row exists yet and `businessDate` is today, the date a first save would
+claim.
+
+`/admin/stock/opening` reads this so its heading names the real Day 1.
+Before ADR-70 it titled itself "Day 1 Opening Stock — {today}" on every
+visit, which is false on any day but the first and is what invited a
+mid-history restatement.
 
 ---
 
@@ -818,6 +843,45 @@ Day-close gated. `201` with the `OwnerTransactionView`
 ### `GET /api/owner-transactions`
 Roles: **Admin only.** Query: `?from=&to=` (optional inclusive
 `YYYY-MM-DD` range). Returns `OwnerTransactionView[]`, newest first.
+
+### `GET /api/financials/opening-balance`
+**Added 2026-09-05, ADR-70.** Roles: **Admin only.** No parameters.
+
+Returns `{ data: { businessDate, accounts: [{ account, businessDate,
+amount, set, corrected }] }}` — one entry per account (`cash`,
+`mpesa_bank`), always both. `amount` is the **stated** opening (original +
+every correction delta), a decimal string. `set: false` means no opening
+was ever recorded for that account — distinct from `"0.00"`, so the screen
+can show an empty field rather than a misleading zero. `businessDate` is
+the pinned Day 1, or today when nothing is recorded yet.
+
+This reads **only** `opening_balance` rows — it is *not* the account
+balance. Today's live balance is `GET /api/money/balances`.
+
+### `PUT /api/financials/opening-balance`
+**Added 2026-09-05, ADR-70.** Roles: **Admin only.** Body:
+`{ account: "cash" | "mpesa_bank", amount, note? }`.
+
+**There is no date field, deliberately** — the business date is pinned
+server-side to Day 1 (`resolveOpeningDay`). Accepting one would let a
+mid-history opening be written, inventing money the business never
+received.
+
+`amount` is a **signed** decimal string (up to 2dp), unlike every other
+money input: M-Pesa/Bank may legitimately open overdrawn, and zero is a
+meaningful opening.
+
+Writes an `opening_balance` `MoneyMovement` at Day 1's first instant
+carrying the delta needed to reach the stated figure. The first call for
+an account writes `amount = stated`; every later call is a **correction**
+(ADR-15) — a second row with `correctsMovementId` set and `amount = stated
+− Σ(prior rows)`. Re-sending the same figure appends a zero row, so a
+double-submit is a no-op. Day-close gated (ADR-52): once Day 1 is sealed,
+restating it needs the date reopened → `403`.
+
+`200` with `{ account, businessDate, amount, delta, corrected,
+occurredAt, id }` — `amount` is the stated position after the write,
+`delta` the row actually appended.
 
 ### `GET /api/financials/summary`
 Roles: **Admin only.** Query: `?from=YYYY-MM-DD&to=YYYY-MM-DD` (both

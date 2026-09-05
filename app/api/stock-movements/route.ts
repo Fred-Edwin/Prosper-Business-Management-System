@@ -140,10 +140,11 @@ export async function POST(req: NextRequest) {
   try {
     switch (input.movementType) {
       case "opening": {
+        // `input.businessDate` is deliberately not forwarded — the domain
+        // pins the opening row to the business's Day 1 (ADR-70).
         const r = await setOpeningStock({
           productId: input.productId,
           locationId: input.locationId,
-          businessDate: input.businessDate,
           quantity: input.quantity,
           recordedById: userId,
         });

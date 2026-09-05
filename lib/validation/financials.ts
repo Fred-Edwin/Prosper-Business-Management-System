@@ -67,6 +67,29 @@ export const listOwnerTransactionsQuerySchema = z.object({
   to: businessDate.optional(),
 });
 
+/**
+ * `PUT /api/admin/financials/opening-balance` — the Admin states the
+ * business's starting cash / M-Pesa position (ADR-70).
+ *
+ * **No date field, deliberately.** The business date is pinned server-side
+ * to Day 1; accepting one here would let a mid-history opening be written,
+ * which invents money the business never received.
+ *
+ * `amount` is SIGNED here, unlike every other money input: M-Pesa/Bank can
+ * legitimately open overdrawn, and zero is a meaningful opening.
+ */
+export const setOpeningBalanceSchema = z.object({
+  account: moneyAccount,
+  amount: z
+    .string()
+    .trim()
+    .regex(
+      /^-?\d+(\.\d{1,2})?$/,
+      "Must be a number with up to 2 decimal places",
+    ),
+  note: z.string().trim().max(500).optional(),
+});
+
 /** `GET /api/financials/summary?from=&to=` — the profit picture. */
 export const financialSummaryQuerySchema = z.object({
   from: businessDate,
@@ -75,6 +98,7 @@ export const financialSummaryQuerySchema = z.object({
 
 export type RecordExpenseBody = z.infer<typeof recordExpenseSchema>;
 export type CorrectExpenseBody = z.infer<typeof correctExpenseSchema>;
+export type SetOpeningBalanceBody = z.infer<typeof setOpeningBalanceSchema>;
 export type RecordOwnerTransactionBody = z.infer<
   typeof recordOwnerTransactionSchema
 >;

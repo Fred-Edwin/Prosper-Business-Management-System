@@ -12,6 +12,7 @@ export {
   assertStaffDateIsToday,
   type DateOrBusinessDate,
 } from "./day-close-guard";
+export { resolveOpeningDay, isOpeningDayPinned } from "./opening-day";
 export { closeDay, reopenDay } from "./close-day";
 export { listDayCloses, getDayStatus } from "./list-day-closes";
 export { listAuditLog, flattenAuditItems } from "./list-audit-log";

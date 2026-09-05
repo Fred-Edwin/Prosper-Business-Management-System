@@ -33,10 +33,21 @@ export type RecordMoneyMovementInput = {
   /** Signed: positive = money in, negative = money out. `Prisma.Decimal`. */
   amount: Prisma.Decimal;
   sourceType: MoneySourceType;
-  /** The Repayment / Order / StockCount id this movement stems from. */
-  sourceId: string;
+  /**
+   * The Repayment / Order / StockCount id this movement stems from.
+   * Optional: an `opening_balance` row (ADR-70) is the Admin's stated
+   * starting position and stems from no other entity, so it has none.
+   */
+  sourceId?: string;
   occurredAt: Date;
   note?: string;
+  /**
+   * Set when this row **corrects** an earlier one (ADR-15) — it carries
+   * the signed delta, and the original is left untouched. Used by
+   * `setOpeningBalance`; the correction path for other sources is not
+   * built.
+   */
+  correctsMovementId?: string;
 };
 
 /**
@@ -164,6 +175,60 @@ export type OwnerTransactionView = {
 export type ListOwnerTransactionsFilter = {
   from?: string;
   to?: string;
+};
+
+// ── Opening balances (ADR-70) ──────────────────────────────────────────
+
+/**
+ * Input to `setOpeningBalance` — the Admin's stated starting money
+ * position for ONE account.
+ *
+ * There is deliberately **no date field**. The business date is pinned
+ * server-side to the day tracking began (see `resolveOpeningDate`): a
+ * caller-chosen date would allow a second opening dated mid-history,
+ * injecting money that never entered the business. Every save after the
+ * first is a correction of that same Day 1 figure (ADR-15).
+ */
+export type SetOpeningBalanceInput = {
+  account: MoneyAccount;
+  /**
+   * The stated FINAL opening figure (a correction restates the position,
+   * never a delta — CONVENTIONS §4.2). Signed decimal string: M-Pesa/Bank
+   * may legitimately open negative, and zero is meaningful.
+   */
+  amount: string;
+  note?: string;
+};
+
+/** One account's opening position, as stated (wire shape). */
+export type OpeningBalanceView = {
+  /** Present on a write result; absent on a read. */
+  id?: string;
+  account: MoneyAccount;
+  /** The pinned Day-1 business date (`YYYY-MM-DD`). */
+  businessDate: string;
+  /** The stated opening figure: Σ of the original row + every correction. */
+  amount: string;
+  /** The signed delta this particular write appended (write result only). */
+  delta?: string;
+  /**
+   * Read: at least one correction row exists. Write: this write WAS a
+   * correction of an existing opening.
+   */
+  corrected: boolean;
+  /** False when no opening has ever been recorded for this account. */
+  set?: boolean;
+  occurredAt?: string;
+};
+
+/**
+ * What `GET /api/admin/financials/opening-balance` returns: the pinned
+ * Day-1 date plus both accounts' stated openings. `businessDate` is today
+ * when nothing has been recorded yet — the date a first save would claim.
+ */
+export type OpeningBalanceState = {
+  businessDate: string;
+  accounts: OpeningBalanceView[];
 };
 
 // ── Financial summary (PRD §4.7, SCHEMA §14, ADR-55) ───────────────────

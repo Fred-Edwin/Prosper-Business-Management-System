@@ -3605,3 +3605,166 @@ excluded `kind === "dish"` (ADR-46 §6).
   the SM's own-location case was **widened**, not reversed — it still
   asserts the Canteen is not in scope.
 - No schema change. No migration. No `TODO(mock)`.
+
+---
+
+## ADR-70: Opening positions are a Day-1 restatement, not a daily entry — the opening business date is PINNED server-side, and money gets an `opening_balance` ledger row of its own (Owner + Developer, 2026-09-05)
+
+**Context — the gap, and the bug hiding behind it.**
+
+The Admin could state the business's opening **stock** but had no way to
+state its opening **money**. Cash at hand and M-Pesa/Bank are derived —
+`SUM(MoneyMovement.amount)` grouped by account over every row (ADR-17) —
+so there is no stored balance column to set. A business starting with KES
+40,000 in the till had no way to tell the system so, and every liquidity
+figure on the Dashboard was wrong by that amount from day one.
+
+Designing the fix surfaced a **live defect in the stock side**.
+
+`setOpeningStock` took `businessDate` from its caller, and
+`/admin/stock/opening` passed `toBusinessDate(new Date())` — **today** —
+on every visit. The screen also titled itself "Day 1 Opening Stock —
+{today}" every time it was opened. So on day 20 the Admin could open what
+looked like a Day-1 setup screen, enter counts, and write a **second set
+of `opening` rows dated to day 20**.
+
+Two things then went wrong at once:
+
+1. **The correction lookup missed.** It filtered priors on `occurredAt`,
+   so a day-20 entry never found the Day-1 row. Instead of a correction it
+   wrote a *fresh* opening. Both rows counted.
+2. **COGS broke.** An `opening` row is treated as a position restatement
+   and feeds the opening term of every period that can see it (the long
+   note in `get-financial-summary.ts`). A mid-history opening therefore
+   makes stock appear from nowhere and drags COGS negative — the "pick
+   This week and Net Profit inflates by tens of thousands" failure, which
+   that same note documents as already-fixed for the *dating* of the row
+   but not for the *writing* of a second one.
+
+Day-close gating masked how often this could happen without preventing
+it: sealing Day 1 doesn't stop a day-20 opening, it *causes* one.
+
+The money equivalent would have been the same bug with a simpler blast
+radius — a second `opening_balance` row simply invents cash the business
+never received. Neither is detectable after the fact: the row looks
+exactly like a legitimate Day 1.
+
+**Decision.**
+
+### 1. There is exactly ONE opening position, and the system picks its date
+
+`resolveOpeningDay()` (`lib/domain/audit/opening-day.ts`) is the single
+source of the business's Day 1:
+
+- Any opening row exists (`opening` StockMovement **or** `opening_balance`
+  MoneyMovement) → the **earliest** one's business date.
+- Nothing recorded yet → today (Africa/Nairobi). The first save pins it.
+
+Both ledgers answer to the same helper, so stock and money can never drift
+onto different opening days. It takes an optional `tx` so the date is
+resolved inside the writing transaction — two concurrent first-saves
+cannot land on two different dates.
+
+`setOpeningStock` and `setOpeningBalance` both call it. **Neither accepts
+a caller-chosen date.** `SetOpeningStockInput.businessDate` and the
+route's `businessDate` field are now optional and **ignored** (kept so
+existing clients don't 400 on a field they still send); there is no date
+field on the money input at all. A mid-history opening is now unwritable
+rather than merely discouraged.
+
+### 2. Opening money is an `opening_balance` MoneyMovement
+
+New `MoneySourceType` value. The row is written at
+`businessDateStartUtc(<pinned day>)` with `amount` signed to move the
+derived balance **to** the stated figure:
+
+- No prior row for the account → `amount = stated`.
+- A prior row exists → a **correction** (ADR-15): a second row with
+  `correctsMovementId` set and `amount = stated − Σ(prior rows)`.
+
+The delta is computed against `original + Σ existing deltas`, so a
+double-submit appends a zero row rather than doubling the correction (the
+M1 F-1 property, CONVENTIONS §6). `recordMoneyMovement` gained a
+pass-through `correctsMovementId`, and `sourceId` became optional — an
+opening balance stems from no other entity.
+
+`amount` is **signed** here, unlike every other money input: M-Pesa/Bank
+may legitimately open overdrawn, and a zero opening is meaningful.
+`set: false` (never recorded) stays distinct from `"0.00"` on the read, so
+the screen shows an empty field rather than a misleading zero.
+
+`setOpeningStock`'s prior-opening lookup is likewise no longer scoped by
+date — with the day pinned, any existing opening for the pair **is** the
+one being corrected. That was defect (1) above.
+
+### 3. The UI carries what the backend cannot
+
+Pinning the date makes a mid-history opening impossible, but it cannot
+distinguish a legitimate correction ("Day 1 was wrong") from a
+misunderstanding ("I have 62,300 today, I'll type that here"). Both arrive
+as the same request. So the screens changed too:
+
+- **`/admin/financials/opening` has two states.** Unset → an entry form.
+  Set → a **locked receipt** showing the Day-1 figures **next to today's
+  live balance** (from `GET /api/money/balances`), with a quiet "Correct a
+  mistake" opening a **warning-first** drawer. The action is never called
+  "Edit". Seeing Day 1 and today as two different numbers side by side is
+  the main thing stopping the confusion.
+- **`/admin/stock/opening` stops claiming to be today.** It reads the
+  pinned day (`GET /api/stock-movements/opening-day`) and, once pinned,
+  retitles to "Opening stock — Day 1 was {date}" and says plainly that a
+  re-entry restates the past and changes every report since.
+
+**Rejected alternatives.**
+
+- *A stored opening-balance column.* Violates the ledger rule outright and
+  would need reconciling against the derived sum forever.
+- *Free date picker, day-close gating as the only guard.* This is what
+  stock did; it is the bug.
+- *Reject a second opening dated differently (`CONFLICT`).* Safer than a
+  free picker, but still lets the very first entry be mis-dated, and makes
+  the error message teach the concept. Deriving the date removes the class.
+- *Hide the screen once set.* Leaves a genuine typo unfixable except by
+  reopening Day 1, and a vanishing screen is its own confusion.
+- *Editable fields with a warning banner.* One mistyped save from a silent
+  restatement. Rejected by the owner in favour of the locked receipt.
+
+**Consequences.**
+
+- Correcting an opening remains fully supported and is **safe**: the
+  original row is never touched, the correction carries only the delta,
+  and every movement recorded since is untouched — they are independent
+  rows that were never derived from the opening. Arithmetically identical
+  to having typed the right figure on Day 1.
+- Once Day 1 is closed, restating it requires reopening that date
+  (ADR-52) — for both ledgers.
+- Migration: `20260905120000_add_opening_balance_money_source_type`
+  (additive enum value; no table change).
+- `docs/API.md` — `GET`/`PUT /api/financials/opening-balance`,
+  `GET /api/stock-movements/opening-day`, and the now-ignored
+  `businessDate` on the `opening` movement body.
+- Files: `lib/domain/audit/opening-day.ts` (new),
+  `lib/domain/financials/opening-balance.ts` (new),
+  `app/api/financials/opening-balance/route.ts` (new),
+  `app/api/stock-movements/opening-day/route.ts` (new),
+  `app/admin/financials/opening/*` (new),
+  `lib/domain/stock/opening-stock.ts`,
+  `lib/domain/financials/record-money-movement.ts`,
+  `lib/validation/financials.ts`, `lib/validation/stock.ts`,
+  `app/api/stock-movements/route.ts`,
+  `app/admin/stock/opening/opening-client.tsx`,
+  `app/admin/financials/financials-client.tsx`.
+- Tests: `lib/domain/financials/opening-balance.test.ts` (new, 16 —
+  including *"a later restatement corrects Day 1 rather than opening a
+  second day"* and *"does not disturb movements recorded since Day 1"*);
+  `app/api/financials/opening-balance/route.test.ts` (new, 7);
+  `tests/screens/opening-balance.screen.test.tsx` (new, 12); 3 pinned-day
+  cases in `tests/screens/opening.screen.test.tsx`.
+- **Tests updated, not inverted:** three stock suites passed an explicit
+  historical `businessDate` to `setOpeningStock` — the capability this ADR
+  removes. `derived-balance.test.ts` (×2) now writes its backdated opening
+  row directly (a fixture concern, not the write path under test), and
+  `movement-guards.test.ts`'s day-close case seals **today** — which is
+  the pinned day on a ledger with no openings — instead of an arbitrary
+  historical date. The rule each asserted is unchanged.
+- No `TODO(mock)`.

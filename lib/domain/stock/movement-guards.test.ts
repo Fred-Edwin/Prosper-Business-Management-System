@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { toBusinessDate, businessDateOnly } from "@/lib/time";
+import { resolveOpeningDay } from "@/lib/domain/audit";
 import { recordNonSaleConsumption } from "./consumption";
 import { recordKitchenIssue, recordProduction } from "./issue-production";
 import { recordPurchaseReceipt } from "./purchases";
@@ -152,33 +153,37 @@ describe("stock movement guards", () => {
   });
 
   it("day-close gate (ADR-52): a new movement on a sealed day → FORBIDDEN", async () => {
-    // setOpeningStock takes a business date, so a fixed historical one can
-    // be sealed without touching "today".
-    const businessDate = "2019-05-20";
+    // Since ADR-70 `setOpeningStock` pins its own business date, so sealing
+    // an arbitrary historical date no longer gates it. Seal the day it
+    // actually resolves to — `resolveOpeningDay()`, which is the seed's
+    // Day 1 on a seeded schema and today on a virgin one. Asking the
+    // domain rather than assuming keeps this true either way.
+    const openingDay = businessDateOnly(await resolveOpeningDay());
     await prisma.dayClose.create({
-      data: { date: new Date(`${businessDate}T00:00:00Z`), closedBy: ctx.adminId },
+      data: { date: openingDay, closedBy: ctx.adminId },
     });
     try {
       await expect(
         setOpeningStock({
           productId: ctx.productId,
           locationId: ctx.locationIds.store,
-          businessDate,
           quantity: "5",
           recordedById: ctx.recorderId,
         }),
       ).rejects.toMatchObject({ constructor: DomainError, code: "FORBIDDEN" });
     } finally {
-      await prisma.dayClose.deleteMany({
-        where: { date: new Date(`${businessDate}T00:00:00Z`) },
-      });
+      await prisma.dayClose.deleteMany({ where: { date: openingDay } });
     }
 
-    // And a "today" write via the shared `writeMovementLine` chokepoint:
-    // seal today (Africa/Nairobi), attempt a receipt, expect FORBIDDEN.
+    // And a write via the shared `writeMovementLine` chokepoint, which is
+    // dated to TODAY rather than to the opening day. (`create` would
+    // collide on the unique date when the two coincide — a virgin schema,
+    // where Day 1 IS today — so upsert.)
     const todayOnly = businessDateOnly(toBusinessDate(new Date()));
-    await prisma.dayClose.create({
-      data: { date: todayOnly, closedBy: ctx.adminId },
+    await prisma.dayClose.upsert({
+      where: { date: todayOnly },
+      create: { date: todayOnly, closedBy: ctx.adminId },
+      update: {},
     });
     try {
       await expect(

@@ -81,7 +81,18 @@ type OpeningCell = {
 export function OpeningClient() {
   const router = useRouter();
   const { toast } = useToast();
-  const businessDate = toBusinessDate(new Date());
+
+  // ADR-70: the opening day is PINNED server-side — the business's Day 1,
+  // not today. This screen used to label itself "Day 1 Opening Stock —
+  // <today>" on every visit, which is false on any day but the first and
+  // is exactly what invites a mid-history restatement. Until the fetch
+  // lands we fall back to today, which is what a virgin ledger resolves to
+  // anyway.
+  const [openingDay, setOpeningDay] = React.useState<{
+    businessDate: string;
+    pinned: boolean;
+  }>({ businessDate: toBusinessDate(new Date()), pinned: false });
+  const businessDate = openingDay.businessDate;
 
   const [products, setProducts] = React.useState<ProductWithLocations[]>([]);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -95,9 +106,13 @@ export function OpeningClient() {
     let cancelled = false;
     (async () => {
       try {
-        const prods = await stockApi.listProducts();
+        const [prods, day] = await Promise.all([
+          stockApi.listProducts(),
+          stockApi.openingDay(),
+        ]);
         if (cancelled) return;
         setProducts(prods.filter((p) => p.deletedAt == null));
+        setOpeningDay(day);
       } catch (e) {
         if (!cancelled) {
           setLoadError(
@@ -306,7 +321,11 @@ export function OpeningClient() {
           <Breadcrumb
             items={[
               { label: "Stock & Reconciliation", href: "/admin/stock" },
-              { label: `Day 1 Opening Stock — ${businessDate}` },
+              {
+                label: openingDay.pinned
+                  ? `Opening Stock — Day 1 (${businessDate})`
+                  : `Day 1 Opening Stock — ${businessDate}`,
+              },
             ]}
           />
         }
@@ -334,14 +353,31 @@ export function OpeningClient() {
       <div className="hidden md:flex flex-col grow gap-(--sp-8)">
         <InstructionalBanner
           step={1}
-          title="Day 1 Opening Stock Count"
+          title={
+            openingDay.pinned
+              ? `Opening stock — Day 1 was ${businessDate}`
+              : "Day 1 Opening Stock Count"
+          }
           body={
             <span className="flex items-center justify-between gap-(--sp-5)">
               <span>
-                Enter the physical count for each item at every location it is
-                stocked at. An item sold at two locations has a row per
-                location. A re-entered count is saved as a correction of the
-                first.
+                {openingDay.pinned ? (
+                  <>
+                    These are the counts the business{" "}
+                    <strong>started with on {businessDate}</strong> — not
+                    today&rsquo;s stock, which the system tracks for you.
+                    Re-entering a count corrects that Day 1 figure and changes
+                    every report since, so only do it if the original was
+                    wrong.
+                  </>
+                ) : (
+                  <>
+                    Enter the physical count for each item at every location it
+                    is stocked at. An item sold at two locations has a row per
+                    location. You only do this once — after this, stock updates
+                    itself.
+                  </>
+                )}
               </span>
               <span className="font-ui font-(--weight-medium) shrink-0 w-max [color:var(--text-secondary)] text-sm/sm">
                 {visibleCells.length} {visibleCells.length === 1 ? "Row" : "Rows"}
@@ -374,19 +410,35 @@ export function OpeningClient() {
             Stock &amp; Reconciliation
           </div>
           <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h2/h2">
-            Day 1 Opening Stock — {businessDate}
+            {openingDay.pinned
+              ? `Opening Stock — Day 1 (${businessDate})`
+              : `Day 1 Opening Stock — ${businessDate}`}
           </div>
         </div>
 
         <InstructionalBanner
           step={1}
-          title="Day 1 Opening Stock Count"
+          title={
+            openingDay.pinned
+              ? `Opening stock — Day 1 was ${businessDate}`
+              : "Day 1 Opening Stock Count"
+          }
           body={
             <span className="flex flex-col gap-(--sp-3)">
               <span className="font-ui [color:var(--text-secondary)] text-sm/sm">
-                Enter the physical count for each item at every location it is
-                stocked at. A re-entered count is saved as a correction of the
-                first.
+                {openingDay.pinned ? (
+                  <>
+                    These are the counts the business{" "}
+                    <strong>started with on {businessDate}</strong> — not
+                    today&rsquo;s stock. Re-entering one corrects that Day 1
+                    figure.
+                  </>
+                ) : (
+                  <>
+                    Enter the physical count for each item at every location it
+                    is stocked at. You only do this once.
+                  </>
+                )}
               </span>
               <span className="font-ui font-(--weight-medium) [color:var(--text-secondary)] text-caption/micro">
                 {visibleCells.length} rows

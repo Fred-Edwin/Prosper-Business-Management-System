@@ -114,6 +114,17 @@ export const stockApi = {
     );
   },
 
+  /**
+   * The business date every opening row is pinned to (ADR-70), and whether
+   * anything has pinned it yet. `pinned: false` ⇒ `businessDate` is today,
+   * the date a first save would claim.
+   */
+  openingDay(): Promise<{ businessDate: string; pinned: boolean }> {
+    return request<{ businessDate: string; pinned: boolean }>(
+      "/api/stock-movements/opening-day",
+    );
+  },
+
   /** Batched derived balances as of the end of `asOf` (YYYY-MM-DD), or now. */
   balances(
     productIds: string[],

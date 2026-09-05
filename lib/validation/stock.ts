@@ -66,7 +66,12 @@ export const setOpeningStockSchema = z.object({
   movementType: z.literal("opening"),
   productId: id,
   locationId: id,
-  businessDate,
+  /**
+   * Accepted but **ignored** (ADR-70): the domain pins every opening row
+   * to the business's Day 1. Kept optional rather than removed so existing
+   * clients don't 400 on a field they still send.
+   */
+  businessDate: businessDate.optional(),
   quantity: magnitudeString,
 });
 

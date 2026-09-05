@@ -15,6 +15,84 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Opening balances + Day-1 pinning (Developer — 2026-09-05) — DONE
+
+Owner request, ad hoc (not tied to a milestone plan): the Admin could
+state the business's opening **stock** but had no way to state its
+opening **money** — cash at hand and M-Pesa/bank. Balances are derived
+(ADR-17), so there was no column to set and every liquidity figure was
+wrong by the business's whole starting float.
+
+Designing the fix surfaced a **live defect on the stock side**, which the
+owner asked to fix in the same session. `setOpeningStock` took its
+business date from the caller and `/admin/stock/opening` sent **today**
+on every visit, titling itself "Day 1 Opening Stock — {today}" each time.
+So entering counts on a later day wrote a *second* set of `opening` rows
+dated to that day: the correction lookup (scoped by `occurredAt`) missed
+the real Day 1, and a mid-history `opening` row drags COGS negative — the
+phantom-profit failure `get-financial-summary.ts` documents. Day-close
+gating masked how often this could happen without preventing it.
+
+**What shipped:**
+- `lib/domain/audit/opening-day.ts` (new) — `resolveOpeningDay()`, the
+  single source of the business's Day 1, shared by **both** ledgers:
+  earliest existing opening row (`opening` StockMovement or
+  `opening_balance` MoneyMovement), else today. Takes an optional `tx`
+  so concurrent first-saves can't split the date.
+- `lib/domain/financials/opening-balance.ts` (new) —
+  `setOpeningBalance` / `getOpeningBalances`. Writes an
+  `opening_balance` `MoneyMovement` carrying the delta needed to reach
+  the stated figure; a restatement is a correction row (ADR-15) with
+  `correctsMovementId` set. Signed amounts (M-Pesa may open overdrawn),
+  zero allowed, `set: false` distinct from `"0.00"`.
+- `setOpeningStock` now pins its date and looks priors up **by pair, not
+  by date** — the two halves of the defect above.
+- Routes: `GET`/`PUT /api/financials/opening-balance`,
+  `GET /api/stock-movements/opening-day`. The `opening` movement body's
+  `businessDate` is now optional and ignored.
+- `recordMoneyMovement` gained pass-through `correctsMovementId`;
+  `sourceId` became optional.
+- **`/admin/financials/opening` (new)** — two states: an entry form while
+  unset; once set, a **locked receipt** showing Day-1 figures beside
+  today's live balance, with a quiet "Correct a mistake" behind a
+  warning-first drawer. Never called "Edit".
+- **`/admin/stock/opening`** stops claiming to be today — reads the
+  pinned day and, once pinned, says a re-entry restates Day 1 and
+  changes every report since.
+- Migration `20260905120000_add_opening_balance_money_source_type`
+  (additive enum value).
+
+**Why the UI carries so much of this:** pinning the date makes a
+mid-history opening *unwritable*, but the backend still cannot tell a
+legitimate correction ("Day 1 was wrong") from a misunderstanding ("I
+have 62,300 today"). Both arrive as the same request. Showing Day 1 and
+today's balance side by side is what separates them.
+
+**Gate:** `pnpm typecheck` clean. New tests — 16 domain
+(`opening-balance.test.ts`, incl. *"a later restatement corrects Day 1
+rather than opening a second day"* and *"does not disturb movements
+recorded since Day 1"*), 7 route, 12 screen
+(`opening-balance.screen.test.tsx`), 3 pinned-day cases added to
+`opening.screen.test.tsx`.
+
+**Tests updated, not inverted:** three stock suites passed an explicit
+historical `businessDate` to `setOpeningStock` — the capability ADR-70
+removes. Two `derived-balance` cases now write their backdated opening
+row directly (a fixture concern, not the write path under test); the
+`movement-guards` day-close case seals **today**, which *is* the pinned
+day on a ledger with no openings. Each still asserts the same rule.
+
+**Dev-DB note:** the dev database has no `_prisma_migrations` history
+(built with `db push`, ADR-61), so `prisma migrate dev` there offers a
+destructive reset. The enum value was applied to it as the same one-line
+`ALTER TYPE … ADD VALUE IF NOT EXISTS`; data intact. Its real Day 1
+resolves to **2026-06-01** from existing opening stock, so opening
+balances will correctly pin there rather than to today.
+
+**ADR:** ADR-70.
+
+---
+
 ## Admin nav — expandable sections (Developer — 2026-09-05) — DONE
 
 Owner request, ad hoc (not tied to a milestone plan): the Admin sidebar

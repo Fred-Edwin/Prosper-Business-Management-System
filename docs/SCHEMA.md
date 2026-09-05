@@ -287,8 +287,8 @@ M-Pesa/Bank. Current balance of either account = signed sum of its rows.
 |---|---|
 | account | enum: `cash`, `mpesa_bank` |
 | amount | signed NUMERIC |
-| source_type | enum: `handover_receipt`, `expense`, `purchase_payment`, `owner_draw`, `owner_return`, `account_transfer`, `order`, `repayment`, `canteen_sale` |
-| source_id | polymorphic FK → the originating record (ReceiptOfHandover, Expense, StockMovement[purchase_payment], OwnerTransaction, Order, Repayment, StockCount) |
+| source_type | enum: `opening_balance`, `handover_receipt`, `expense`, `purchase_payment`, `owner_draw`, `owner_return`, `account_transfer`, `order`, `repayment`, `canteen_sale` |
+| source_id | polymorphic FK → the originating record (ReceiptOfHandover, Expense, StockMovement[purchase_payment], OwnerTransaction, Order, Repayment, StockCount). **Nullable** — an `opening_balance` row stems from no other entity (ADR-70). |
 | recorded_by | FK → `User` |
 | occurred_at | |
 | corrects_movement_id | FK → `MoneyMovement`, nullable, self-referencing |
@@ -307,6 +307,24 @@ against `purchase_paid_from`, `source_id` = the `purchase_payment`
 `StockMovement` id, inside the same transaction)**.
 Migration: `20260829130000_add_m2_money_source_types` (`ALTER TYPE …
 ADD VALUE`, no table change; applied to the dev DB via `prisma db push`).
+
+**`opening_balance` (ADR-70, 2026-09-05)** — the Admin's stated Day-1 cash
+/ M-Pesa position. Money balances are derived (ADR-17), so a "starting
+balance" can only be a ledger row: this is the row that moves the derived
+balance **to** the stated figure. Written by
+`lib/domain/financials.setOpeningBalance` at
+`businessDateStartUtc(<pinned Day 1>)` — the date is resolved by
+`resolveOpeningDay()` and is **not** caller-chosen, because a second
+opening dated mid-history would invent money the business never received.
+`source_id` is `null`; a restatement is a correction row carrying the
+delta with `corrects_movement_id` set, never an overwrite. The stock twin
+is the `opening` `StockMovement`, pinned to the same day by the same
+helper. Migration:
+`20260905120000_add_opening_balance_money_source_type` (`ALTER TYPE …
+ADD VALUE IF NOT EXISTS`, no table change). The dev DB has no
+`_prisma_migrations` history (it was built with `db push` — see ADR-61),
+so this was applied there as the same one-line `ALTER TYPE`; running
+`prisma migrate dev` against it would offer a destructive reset.
 
 ---
 

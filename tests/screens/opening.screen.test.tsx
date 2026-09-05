@@ -11,6 +11,8 @@ const api = vi.hoisted(() => ({
   listProducts: vi.fn(),
   listLocations: vi.fn(),
   setOpeningStock: vi.fn().mockResolvedValue({}),
+  // ADR-70: the screen reads the pinned Day 1 rather than assuming today.
+  openingDay: vi.fn(),
 }));
 
 vi.mock("@/app/admin/stock/use-stock", async () => {
@@ -117,6 +119,13 @@ beforeEach(() => {
   api.listProducts.mockResolvedValue(PRODUCTS);
   api.listLocations.mockResolvedValue(LOCATIONS);
   api.setOpeningStock.mockResolvedValue({});
+  // Unpinned by default: a virgin ledger, so Day 1 is "today" and the
+  // screen keeps its first-time-setup copy. The pinned case has its own
+  // test below.
+  api.openingDay.mockResolvedValue({
+    businessDate: "2026-08-28",
+    pinned: false,
+  });
 });
 
 afterEach(() => {
@@ -340,5 +349,45 @@ describe("/admin/stock/opening — mobile stacked-card branch", () => {
     await within(mobile()).findByLabelText("Beef Fillet — Store");
     expect(within(mobile()).getByText("Dish")).toBeInTheDocument();
     expect(within(mobile()).getAllByText("—").length).toBeGreaterThan(0);
+  });
+});
+
+// ADR-70: once Day 1 is pinned, the screen must stop calling itself
+// "today" and say plainly that a re-entry restates the past. Labelling
+// every visit "Day 1 Opening Stock — <today>" is what invited a
+// mid-history restatement.
+describe("/admin/stock/opening — pinned Day 1 (ADR-70)", () => {
+  beforeEach(() => {
+    api.openingDay.mockResolvedValue({
+      businessDate: "2026-08-01",
+      pinned: true,
+    });
+  });
+
+  it("names the real Day 1, not today, once pinned", async () => {
+    renderScreen();
+    expect(
+      (await screen.findAllByText("Opening stock — Day 1 was 2026-08-01"))
+        .length,
+    ).toBeGreaterThan(0);
+    // The first-time-setup heading is gone.
+    expect(
+      screen.queryByText("Day 1 Opening Stock Count"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("warns that a re-entry corrects Day 1 rather than recording today", async () => {
+    renderScreen();
+    expect(
+      (await screen.findAllByText(/started with on 2026-08-01/)).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("puts the pinned date in the breadcrumb", async () => {
+    renderScreen();
+    const nav = await screen.findByRole("navigation", { name: "Breadcrumb" });
+    expect(
+      within(nav).getByText("Opening Stock — Day 1 (2026-08-01)"),
+    ).toBeInTheDocument();
   });
 });

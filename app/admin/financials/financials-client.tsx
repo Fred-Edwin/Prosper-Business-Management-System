@@ -250,6 +250,21 @@ export function FinancialsClient({
             refreshSummary();
           }}
         />
+
+        {/* Opening balances (ADR-70) — one-time Day-1 setup, so a quiet
+            link rather than a header action: it must be reachable, but it
+            is not a daily task and should never compete with one. */}
+        <a
+          href="/admin/financials/opening"
+          className="flex items-center gap-(--sp-3) w-max font-ui [color:var(--text-secondary)] text-caption/micro kit-interactive kit-focus-ring rounded-sm"
+        >
+          <span className="underline underline-offset-2">
+            Opening balances
+          </span>
+          <span className="[color:var(--text-tertiary)]">
+            — what the business started with on Day 1
+          </span>
+        </a>
       </div>
 
       {/* Zone 4 — Transactions. 2px --border-strong divider + heading. */}

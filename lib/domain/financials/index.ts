@@ -26,6 +26,10 @@ export {
   getOwnerOwedToBusiness,
   getOwnerDrawsForPeriod,
 } from "./owner-transactions";
+export {
+  setOpeningBalance,
+  getOpeningBalances,
+} from "./opening-balance";
 export { getFinancialSummary } from "./get-financial-summary";
 export {
   getDishWasteCostPercent,

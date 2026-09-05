@@ -25,9 +25,11 @@ import type { MoneyWriteContext, RecordMoneyMovementInput } from "./types";
  * Every write also inserts an `AuditLog` row (ADR-25): `entityType =
  * "money_movement"`, `action = "create"`, `userId = ctx.actorId`.
  *
- * NO CORRECTION PATH IN M2. When one is needed it is a *new* offsetting
- * row linked via `correctsMovementId` (ADR-15) — never an update to an
- * existing row. This module is shaped for that drop-in; it is not built.
+ * Corrections are *new* rows carrying the signed delta and linked via
+ * `correctsMovementId` (ADR-15) — never an update to an existing row. The
+ * caller computes the delta and passes `correctsMovementId`; this function
+ * only persists it. `setOpeningBalance` (ADR-70) is the first caller to
+ * use it. Correction paths for the other source types are still unbuilt.
  */
 export async function recordMoneyMovement(
   input: RecordMoneyMovementInput,
@@ -43,6 +45,7 @@ export async function recordMoneyMovement(
         recordedById: ctx.actorId,
         occurredAt: input.occurredAt,
         note: input.note ?? null,
+        correctsMovementId: input.correctsMovementId ?? null,
       },
     });
 
