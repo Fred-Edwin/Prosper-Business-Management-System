@@ -86,19 +86,31 @@ describe("recordPurchasePayment — real detail columns (ADR-46 §3)", () => {
     expect(audit).toHaveLength(1);
   });
 
-  it("rejects an empty supplier", async () => {
+  it("accepts a blank/omitted supplier, storing it as null", async () => {
     const { productId, locationIds, recorderId } = ctx;
-    await expect(
-      recordPurchasePayment({
-        productId,
-        locationId: locationIds.store,
-        supplier: "   ",
-        quantity: "5",
-        cost: "100",
-        paidFromAccount: "cash",
-        recordedById: recorderId,
-      }),
-    ).rejects.toThrow(/supplier is required/i);
+
+    const view = await recordPurchasePayment({
+      productId,
+      locationId: locationIds.store,
+      supplier: "   ",
+      quantity: "5",
+      cost: "100",
+      paidFromAccount: "cash",
+      recordedById: recorderId,
+    });
+
+    expect(view.purchaseSupplier).toBeNull();
+    expect(view.note).toBe("Ordered 5 kg; KES 100.00 from Cash");
+
+    const view2 = await recordPurchasePayment({
+      productId,
+      locationId: locationIds.store,
+      quantity: "5",
+      cost: "100",
+      paidFromAccount: "cash",
+      recordedById: recorderId,
+    });
+    expect(view2.purchaseSupplier).toBeNull();
   });
 });
 

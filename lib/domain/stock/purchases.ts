@@ -79,10 +79,8 @@ export async function recordPurchasePayment(
 ): Promise<StockMovementView> {
   const orderedQty = toMagnitude(input.quantity);
   const cost = toMoney(input.cost, "cost");
-  const supplier = input.supplier.trim();
-  if (supplier.length === 0) {
-    throw new DomainError("VALIDATION_ERROR", "Supplier is required.", "supplier");
-  }
+  const supplierTrimmed = input.supplier?.trim() ?? "";
+  const supplier = supplierTrimmed.length > 0 ? supplierTrimmed : null;
 
   const row = await prisma.$transaction(async (tx) => {
     // Day-close gate (ADR-52) — a purchase payment lands today; blocked
@@ -113,7 +111,9 @@ export async function recordPurchasePayment(
         purchaseTotalCost: cost,
         purchasePaidFrom: input.paidFromAccount,
         // Human sentence for display / audit — no longer the source of truth.
-        note: `Ordered ${trimQty(orderedQty)} ${unit} from ${supplier}; KES ${fmtMoney(cost)} from ${paidFromLabel}`,
+        note: supplier
+          ? `Ordered ${trimQty(orderedQty)} ${unit} from ${supplier}; KES ${fmtMoney(cost)} from ${paidFromLabel}`
+          : `Ordered ${trimQty(orderedQty)} ${unit}; KES ${fmtMoney(cost)} from ${paidFromLabel}`,
       },
     });
 

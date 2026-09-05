@@ -137,7 +137,8 @@ export type SetOpeningStockInput = {
 export type RecordPurchasePaymentInput = {
   productId: string;
   locationId: string;
-  supplier: string;
+  /** Optional — a delivery may be paid for without a named supplier. */
+  supplier?: string | null;
   /** Unsigned magnitude ordered/paid for. No stock effect (ADR-39). */
   quantity: string;
   /** Money — decimal string, `Decimal(12,2)`. */

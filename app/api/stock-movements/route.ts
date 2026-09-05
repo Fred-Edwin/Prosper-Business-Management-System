@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
         const r = await recordPurchasePayment({
           productId: input.productId,
           locationId: input.locationId,
-          supplier: input.supplier,
+          supplier: input.supplier ?? null,
           quantity: input.quantity,
           cost: input.cost,
           paidFromAccount: input.paidFromAccount,

@@ -59,7 +59,12 @@ export function PaymentDrawer({
   const [productId, setProductId] = React.useState(preselectedProductId ?? "");
   const [locationId, setLocationId] = React.useState("");
   const [quantity, setQuantity] = React.useState("");
+  const [unitCost, setUnitCost] = React.useState("");
   const [cost, setCost] = React.useState("");
+  // Total cost is normally derived (quantity × unit cost) — the Admin can
+  // still type into Total Cost directly, which stops the auto-fill until
+  // either Quantity or Unit Cost is edited again.
+  const [costManuallyEdited, setCostManuallyEdited] = React.useState(false);
   const [paidFrom, setPaidFrom] = React.useState<"cash" | "mpesa_bank">("cash");
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -92,15 +97,37 @@ export function PaymentDrawer({
     }
   }, [validDestinations, locationId]);
 
+  // Prefill Unit Cost from the product's current catalog buying price — a
+  // starting point the Admin can overwrite; it is never forced back.
+  React.useEffect(() => {
+    if (product?.buyingPrice) setUnitCost(product.buyingPrice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId]);
+
   const validQty = /^\d+(\.\d{1,4})?$/.test(quantity.trim());
+  const validUnitCost = /^\d+(\.\d{1,2})?$/.test(unitCost.trim());
   const validCost = /^\d+(\.\d{1,2})?$/.test(cost.trim());
   const canSubmit =
-    supplier.trim() !== "" &&
     productId !== "" &&
     locationId !== "" &&
     validQty &&
     validCost &&
     !submitting;
+
+  // Total Cost auto-fills from Quantity × Unit Cost. Once the Admin types
+  // into Total Cost directly, auto-fill stops until Quantity or Unit Cost
+  // changes again (editing either resumes deriving Total Cost).
+  React.useEffect(() => {
+    setCostManuallyEdited(false);
+  }, [quantity, unitCost]);
+
+  React.useEffect(() => {
+    if (costManuallyEdited) return;
+    if (!validQty || !validUnitCost) return;
+    const computed = Number(quantity.trim()) * Number(unitCost.trim());
+    setCost(computed.toFixed(2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quantity, unitCost, costManuallyEdited]);
 
   async function submit() {
     if (!canSubmit) return;
@@ -110,7 +137,7 @@ export function PaymentDrawer({
       await stockApi.recordPurchasePayment({
         productId,
         locationId,
-        supplier: supplier.trim(),
+        supplier: supplier.trim() || undefined,
         quantity: quantity.trim(),
         cost: cost.trim(),
         paidFromAccount: paidFrom,
@@ -162,7 +189,7 @@ export function PaymentDrawer({
         </div>
       )}
 
-      <FormField label="Supplier / Vendor" required className="w-full">
+      <FormField label="Supplier / Vendor" className="w-full">
         {({ id, "aria-describedby": describedBy }) => (
           <div className={fieldBox}>
             <input
@@ -181,6 +208,8 @@ export function PaymentDrawer({
         <Select
           label="Product"
           required
+          searchable
+          noMatchesLabel="No products match"
           className="w-full"
           placeholder="Select a product…"
           value={productId}
@@ -238,7 +267,40 @@ export function PaymentDrawer({
             </div>
           )}
         </FormField>
-        <FormField label="Total Cost" required className="grow">
+      </div>
+
+      <div className="flex gap-(--sp-4)">
+        <FormField label="Unit Cost" required className="grow">
+          {({ id, "aria-describedby": describedBy }) => (
+            <div className={fieldBox}>
+              <span className="font-ui shrink-0 inline-block w-max [color:var(--text-tertiary)] text-sm/micro">
+                KES
+              </span>
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                value={unitCost}
+                onChange={(e) => setUnitCost(e.target.value)}
+                inputMode="decimal"
+                placeholder="0.00"
+                className="font-mono [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none text-right placeholder:[color:var(--text-tertiary)]"
+              />
+              <span className="font-ui shrink-0 inline-block w-max [color:var(--text-tertiary)] text-sm/micro">
+                / {product?.unitLabel ?? "unit"}
+              </span>
+            </div>
+          )}
+        </FormField>
+        <FormField
+          label="Total Cost"
+          required
+          hint={
+            !costManuallyEdited && validQty && validUnitCost
+              ? "Auto-filled from quantity × unit cost"
+              : undefined
+          }
+          className="grow"
+        >
           {({ id, "aria-describedby": describedBy }) => (
             <div className={fieldBox}>
               <span className="font-ui shrink-0 inline-block w-max [color:var(--text-tertiary)] text-sm/micro">
@@ -248,7 +310,10 @@ export function PaymentDrawer({
                 id={id}
                 aria-describedby={describedBy}
                 value={cost}
-                onChange={(e) => setCost(e.target.value)}
+                onChange={(e) => {
+                  setCost(e.target.value);
+                  setCostManuallyEdited(true);
+                }}
                 inputMode="decimal"
                 placeholder="0.00"
                 className="font-mono [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none text-right placeholder:[color:var(--text-tertiary)]"
@@ -256,6 +321,10 @@ export function PaymentDrawer({
             </div>
           )}
         </FormField>
+      </div>
+
+      <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
+        Unit cost updates this product's catalog buying price.
       </div>
 
       <SegmentedControl

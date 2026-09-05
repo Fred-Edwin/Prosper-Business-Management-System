@@ -82,7 +82,8 @@ export type OpeningStockInput = {
 export type PurchasePaymentInput = {
   productId: string;
   locationId: string;
-  supplier: string;
+  /** Optional — a delivery may be paid for without a named supplier. */
+  supplier?: string;
   /** Unsigned magnitude, decimal string. */
   quantity: string;
   /** Money, decimal string. */

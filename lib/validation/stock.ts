@@ -74,7 +74,7 @@ export const recordPurchasePaymentSchema = z.object({
   movementType: z.literal("purchase_payment"),
   productId: id,
   locationId: id,
-  supplier: z.string().trim().min(1, "Supplier is required"),
+  supplier: z.string().trim().optional(),
   quantity: magnitudeString,
   cost: moneyString,
   paidFromAccount: z.enum(["cash", "mpesa_bank"]),
