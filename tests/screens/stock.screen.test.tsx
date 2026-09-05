@@ -304,7 +304,7 @@ describe("/admin/stock — mobile branch", () => {
     expect(within(mobile()).getByText("No movements this day")).toBeInTheDocument();
   });
 
-  it("renders a stacked row with short chip labels and an 'Adjust' button", () => {
+  it("renders the equation row (opening → movements → closing) and an 'Adjust' button", () => {
     render(
       <ToastProvider placement="top-right">
         <StockClient />
@@ -312,7 +312,15 @@ describe("/admin/stock — mobile branch", () => {
     );
     const m = within(mobile());
     expect(m.getByText("Beef Fillet (kg)")).toBeInTheDocument();
-    expect(m.getByText("+50.0 Purch")).toBeInTheDocument();
+    // The movement is a value stacked over its type (RM6-0 equation line),
+    // not one run-together string — and it stays a button, since tapping it
+    // is the mobile correction target.
+    // Value and label are separate stacked spans (RM6-0), so the button's
+    // accessible name concatenates them without a space.
+    expect(m.getByRole("button", { name: "+50.0Purch" })).toBeInTheDocument();
+    // Both ends of the equation are labelled and present.
+    expect(m.getAllByText("Opening").length).toBeGreaterThan(0);
+    expect(m.getAllByText("Closing").length).toBeGreaterThan(0);
     expect(m.getByRole("button", { name: "Adjust" })).toBeInTheDocument();
   });
 

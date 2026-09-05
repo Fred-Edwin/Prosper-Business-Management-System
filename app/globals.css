@@ -53,6 +53,11 @@
   --color-info-bg: var(--color-info-bg);
   --color-info-hover: var(--color-info-hover);
 
+  /* Lifted status colours for dark grounds — see tokens.css. */
+  --color-success-on-dark: var(--color-success-on-dark);
+  --color-warning-on-dark: var(--color-warning-on-dark);
+  --color-danger-on-dark: var(--color-danger-on-dark);
+
   --color-gold-brand: var(--color-gold-brand);
 
   --color-nav-bg: var(--nav-bg);

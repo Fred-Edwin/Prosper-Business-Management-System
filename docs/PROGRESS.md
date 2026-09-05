@@ -15,6 +15,85 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Mobile parity — Stock / Ledger (`/admin/stock`) (Developer — 2026-09-05) — DONE
+
+Against `docs/sprints/mobile-parity/stock-ledger-mobile-HANDOFF.md`. Goal:
+make `/admin/stock` at 390px match Paper `Admin Stock — Mobile` (`RM6-0`).
+Desktop signed off, untouched, not re-verified beyond `pnpm build`/gates
+below (no desktop branch was edited).
+
+**Method.** Every value measured with `get_computed_styles` on the
+artboard and `getComputedStyle` on the live DOM (never eyeballed,
+CONVENTIONS §6); `from → to` diff written before any code change. Tokens
+confirmed identical between Paper and `app/design-system/tokens.css`.
+
+**What changed.**
+1. **Mobile KPI band**: 1-row/2-cell (Gross Profit, Sales Revenue) →
+   2×2 grid of the same four money figures as desktop (Sales Revenue /
+   Cost of Goods Sold / Non-Sale Stock Value / Gross Profit), each cell
+   `flex-1 basis-0 min-w-0` so both columns stay equal-width regardless
+   of figure length. `--text-h1` → `--text-h2` (Geist Mono is wider than
+   Paper's JetBrains Mono; h1 collided at 390px).
+2. **Row redesign — "equation line"**: the old 3-line stacked row
+   scattered opening/movements/closing with no stated relationship
+   (closing top-right, opening buried as `"Open: 25.0"` on line 3,
+   movements as one run-together string). Rebuilt as a single row reading
+   **Opening → movements → Closing**, with the middle movements now a
+   value stacked over its type rather than one string, and the row's
+   action (`Adjust` / `View days →`) moved to the header line — same
+   total height, more legible. Applied identically across all three
+   mobile ledger views (single-day, period-summary, drill-in) via two new
+   shared sub-components, `MobileRowHeader` and `MobileEquationLine`.
+3. Per-movement tap targets (`onCellClick`, the correction entry point)
+   were kept even though the artboard doesn't draw them as buttons —
+   flagged and confirmed with the owner (§4 of the handoff): functionality
+   the artboard is silent about is not licence to drop it.
+
+**Bugs found and fixed during the `pnpm dev` walkthrough** (not visible
+on the artboard's 3-row sample data):
+- A long product name (`"Chicken Stew (plate)"`) pushed the row's
+  trailing button off the right edge by up to 22px, clipped rather than
+  scrolling (page must never scroll horizontally). Cause: the product
+  name was `shrink-0`, copying the artboard, which only ever drew short
+  names. Fixed — name is now the element that truncates (`min-w-0
+  truncate`), not the trailing button.
+- A negative Gross Profit (a real state once "This week" is selected)
+  rendered in the success-green KPI color, reading as good news. Fixed to
+  flip to danger red below zero, matching the existing convention on
+  `dashboard-client.tsx:779`.
+
+**Tokens.** Added `--color-success-on-dark`, `--color-warning-on-dark`,
+`--color-danger-on-dark` to `tokens.css` (+ Tailwind theme bridge in
+`globals.css`) — the base semantic tokens are tuned for white surfaces
+and read muddy on the purple `--nav-bg` band; these three exact values
+were used in the Paper redesign and are dark-surface-only (no existing
+token's value changed). Owner pre-authorized kit/token edits that match
+Paper, reported here per that instruction.
+
+**Walkthrough result, per view (390px, then sanity-checked 360px):**
+Today (single-day, both empty and populated via "This week"),
+period-summary (Week), drill-in (View days → per-day breakdown) — all
+render the equation line correctly, no page horizontal scroll, no
+clipped controls after the truncation fix. `<FilterToolbar>` mobile
+still one all-visible scroll row (ADR-66), unchanged by this session.
+
+**Gates:** `pnpm vitest run tests/screens/stock-ledger-v2.screen.test.tsx
+tests/screens/stock.screen.test.tsx tests/screens/stock-levels.screen.test.tsx`
+34/34 (one assertion in `stock.screen.test.tsx` updated — it asserted the
+old run-together chip string `"+50.0 Purch"`; now asserts the button by
+its new accessible name and checks the Opening/Closing labels are
+present). `pnpm typecheck` 0 errors. `pnpm build` clean. `grep -rn
+"TODO(mock)"` — no new hits (two hits in `stock-client.tsx` are comments
+explicitly disclaiming the marker; `purchases.test.ts:61` is the known
+pre-existing non-marker test description).
+
+**Not done / still open:** no flow doc added under `docs/design/flows/`
+— no new decision beyond what's recorded here and in the handoff's own
+Q&A. States not exercised live: empty-with-filter, error+retry (code
+paths unchanged from the prior session, not touched by this layout pass).
+
+---
+
 ## Mobile parity — Dashboard (`/admin`) (Developer — 2026-09-05) — DONE
 
 Against `docs/sprints/mobile-parity/dashboard-mobile-HANDOFF.md`. Goal:

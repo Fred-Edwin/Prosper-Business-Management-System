@@ -656,27 +656,40 @@ export function StockClient() {
           rougher than desktop, functionally correct: no per-cell
           correction target, a "View days" affordance instead). */}
       <div className="flex md:hidden flex-col grow min-h-0">
-        <div className="flex items-stretch [width:100%] shrink-0 py-(--sp-5) px-(--sp-6) mb-(--sp-5) [background-color:var(--nav-bg)]">
-          <div className="flex flex-col grow gap-[2px]">
-            <div className="font-ui uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-micro/micro">
-              Gross Profit
-            </div>
-            <div className="flex items-baseline gap-(--sp-3)">
-              <div className="font-mono font-(--weight-semibold) text-success text-h1/h2">
-                {money(summary?.consolidated.grossProfit)}
-              </div>
-            </div>
+        {/* KPI band — the same four money figures as desktop (RM6-0
+            "KPI Strip (2×2)"), laid out 2×2 rather than desktop's 4-across.
+            Measured from the artboard: band py 12 / px 16, row gap 12; each
+            cell flex-1 basis-0 min-w-0 so the two columns are equal (163px)
+            rather than content-sized; figures --text-h2 at lh 22 (NOT
+            desktop's h1 — Geist Mono is wider than Paper's JetBrains Mono
+            and h1 collides at 390px); labels --nav-text-label. Revenue and
+            COGS are white here; only Non-Sale and Gross Profit carry a
+            semantic colour, in the -on-dark variants. */}
+        <div className="flex flex-col [width:100%] shrink-0 py-(--sp-5) px-(--sp-6) gap-(--sp-5) mb-(--sp-5) [background-color:var(--nav-bg)]">
+          <div className="flex gap-(--sp-6)">
+            <MobileKpiCell label="Sales Revenue" value={money(summary?.consolidated.revenue)} />
+            <div className="w-px shrink-0 [background-color:var(--nav-border)]" />
+            <MobileKpiCell label="Cost of Goods Sold" value={money(summary?.consolidated.cogs)} />
           </div>
-          <div className="w-px self-stretch my-[2px] shrink-0 [background-color:var(--nav-border)]" />
-          <div className="flex flex-col grow pl-(--sp-6) gap-[2px]">
-            <div className="font-ui uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-micro/micro">
-              Sales Revenue
-            </div>
-            <div className="flex items-baseline gap-(--sp-3)">
-              <div className="font-mono font-(--weight-semibold) text-info text-h1/h2">
-                {money(summary?.consolidated.revenue)}
-              </div>
-            </div>
+          <div className="h-px [width:100%] shrink-0 [background-color:var(--nav-border)]" />
+          <div className="flex gap-(--sp-6)">
+            <MobileKpiCell
+              label="Non-Sale Stock Value"
+              value={money(summary?.nonSaleConsumption?.total)}
+              tone="[color:var(--color-warning-on-dark)]"
+            />
+            <div className="w-px shrink-0 [background-color:var(--nav-border)]" />
+            {/* A loss reads red, not green — same rule as the Dashboard's
+                per-location grossProfit cells (dashboard-client.tsx:779). */}
+            <MobileKpiCell
+              label="Gross Profit"
+              value={money(summary?.consolidated.grossProfit)}
+              tone={
+                Number(summary?.consolidated.grossProfit ?? "0") < 0
+                  ? "[color:var(--color-danger-on-dark)]"
+                  : "[color:var(--color-success-on-dark)]"
+              }
+            />
           </div>
         </div>
 
@@ -920,7 +933,7 @@ function MobileDrillIn({
 }) {
   return (
     <div className="flex flex-col [width:100%]">
-      <div className="flex flex-col gap-(--sp-2) py-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+      <div className="flex flex-col gap-(--sp-2) py-(--sp-5) px-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
         <button
           type="button"
           onClick={onBack}
@@ -965,46 +978,213 @@ function MobileDrillIn({
             .filter((k) => !row[k].dash)
             .map((k) => ({
               key: k,
-              text: `${row[k].value} ${MOBILE_CHIP_LABEL[k] ?? k}`,
-              tone: row[k].tone === "success" ? "success" : "danger",
+              // `dash` is filtered out above, so `value` is present; the
+              // ?? "" satisfies LedgerCell.value being optional.
+              value: row[k].value ?? "",
+              label: MOBILE_CHIP_LABEL[k] ?? k,
+              tone: (row[k].tone === "success" ? "success" : "danger") as
+                | "success"
+                | "danger",
             }));
           return (
             <div
               key={row.id}
-              className="flex flex-col [width:100%] py-(--sp-4) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
+              className="flex flex-col [width:100%] py-(--sp-5) px-(--sp-6) gap-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
             >
-              <div className="flex items-start justify-between [width:100%]">
+              {/* Same equation shape as the other two mobile views; the
+                  header's left slot is the day, and there's no per-row
+                  action (the product/location are already in the drill-in
+                  header above). */}
+              <div className="flex items-center [width:100%]">
                 <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h2/h2">
                   {shortDate(row.businessDate)}
                 </div>
-                <div className="flex flex-col items-end gap-[2px]">
-                  <div className="font-mono font-(--weight-semibold) [color:var(--text-primary)] text-h2/body">
-                    {row.closing.value}
-                  </div>
-                  <div className="font-mono [color:var(--text-tertiary)] text-caption/micro">
-                    {row.closingValue.dash ? "—" : row.closingValue.value}
-                  </div>
-                </div>
               </div>
-              <div className="flex items-center flex-wrap gap-(--sp-4)">
-                {chips.map((c) => (
-                  <span
-                    key={c.key}
-                    className={`font-mono text-sm/micro ${
-                      c.tone === "success" ? "text-success" : "text-danger"
-                    }`}
-                  >
-                    {c.text}
-                  </span>
+              <MobileEquationLine
+                opening={row.opening.value ?? "—"}
+                closing={row.closing.value ?? "—"}
+                closingValue={row.closingValue.dash ? "—" : (row.closingValue.value ?? "—")}
+                movements={chips.map((c) => (
+                  <MobileMovement key={c.key} value={c.value} label={c.label} tone={c.tone} />
                 ))}
-              </div>
-              <div className="font-ui [color:var(--text-tertiary)] text-caption/micro">
-                Open: {row.opening.value}
-              </div>
+              />
             </div>
           );
         })
       )}
+    </div>
+  );
+}
+
+// Mobile row header: product + location tag on the left, the row's one
+// action on the right. The action moved up here from its own third line
+// (RM6-0) — that's what lets the row show more in the same height.
+function MobileRowHeader({
+  product,
+  location,
+  flagged,
+  children,
+}: {
+  product: string;
+  /** Optional — the ledger only shows Location when `showLocation` is set. */
+  location?: string;
+  flagged?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center [width:100%] gap-(--sp-4)">
+      {flagged && (
+        <span aria-hidden className="shrink-0 text-warning text-h2/h2">
+          ⚠
+        </span>
+      )}
+      {/* The name is the only element allowed to give way: min-w-0 + truncate
+          (NOT shrink-0 — the artboard's three sample names are all short, but
+          real ones like "Chicken Stew (plate)" push the trailing action off
+          the row and clip it, since the page itself must not scroll). */}
+      <div className="font-ui font-(--weight-semibold) min-w-0 truncate [color:var(--text-primary)] text-h2/h2">
+        {product}
+      </div>
+      {location && (
+        <div className="flex items-center h-[18px] shrink-0 px-(--sp-3) rounded-sm [background-color:var(--surface-subtle)]">
+          <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-secondary)] text-micro/micro">
+            {location}
+          </span>
+        </div>
+      )}
+      <div className="grow" />
+      {children}
+    </div>
+  );
+}
+
+/*
+ * The mobile row's "equation line" (RM6-0 "Equation line").
+ *
+ * The approved design reads the row as the arithmetic it actually is —
+ * OPENING → the signed movements → CLOSING — instead of scattering the
+ * five numbers across three lines with no stated relationship. The two
+ * arrows are what make the relationship legible; they are decorative to
+ * assistive tech (the labels already say opening/closing), hence
+ * aria-hidden.
+ *
+ * Measured slot widths (58px / flex-1 / 116px) are load-bearing: they are
+ * what keep OPENING, the first movement, the trailing arrow and CLOSING on
+ * four consistent vertical lanes when rows have different movement counts
+ * (2 vs 3). Content-sizing any of them breaks the column scan.
+ */
+function MobileEquationLine({
+  opening,
+  closing,
+  closingValue,
+  movements,
+}: {
+  opening: string;
+  closing: string;
+  closingValue: string;
+  movements: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center [width:100%] gap-(--sp-4)">
+      <div className="flex flex-col items-start shrink-0 w-[58px] gap-[2px]">
+        <div className="font-ui uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-micro/micro">
+          Opening
+        </div>
+        <div className="font-mono font-(--weight-medium) [color:var(--text-secondary)] text-body/body">
+          {opening}
+        </div>
+      </div>
+      <span
+        aria-hidden
+        className="font-ui shrink-0 [color:var(--text-disabled)] text-sm/sm"
+      >
+        →
+      </span>
+      <div className="flex items-center justify-start grow min-w-0 gap-(--sp-5)">
+        {movements}
+        <span
+          aria-hidden
+          className="font-ui shrink-0 ml-auto [color:var(--text-disabled)] text-sm/sm"
+        >
+          →
+        </span>
+      </div>
+      <div className="flex flex-col items-end shrink-0 w-[116px] gap-[2px]">
+        <div className="font-ui uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-micro/micro">
+          Closing
+        </div>
+        <div className="font-mono font-(--weight-semibold) [color:var(--text-primary)] text-h2/[20px]">
+          {closing}
+        </div>
+        <div className="font-mono [color:var(--text-tertiary)] text-caption/caption">
+          {closingValue}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// One movement in the equation line: the signed value over its type.
+// `as` lets the single-day row render it as a <button> (the correction
+// target — functionality the artboard doesn't draw but the code needs)
+// while the period row renders the identical shape as static text.
+function MobileMovement({
+  value,
+  label,
+  tone,
+  corrected,
+  onClick,
+}: {
+  value: string;
+  label: string;
+  tone: "success" | "danger";
+  corrected?: boolean;
+  onClick?: () => void;
+}) {
+  const inner = (
+    <>
+      <span
+        className={`font-mono font-(--weight-medium) text-sm/sm ${
+          tone === "success" ? "text-success" : "text-danger"
+        } ${corrected ? "underline [text-decoration-thickness:1px] underline-offset-2" : ""}`}
+      >
+        {value}
+      </span>
+      <span className="font-ui [color:var(--text-tertiary)] text-micro/micro">
+        {label}
+      </span>
+    </>
+  );
+  const cls = "flex flex-col items-center shrink-0";
+  return onClick ? (
+    <button type="button" onClick={onClick} className={`${cls} rounded-sm kit-focus-ring`}>
+      {inner}
+    </button>
+  ) : (
+    <div className={cls}>{inner}</div>
+  );
+}
+
+// One cell of the mobile KPI band (RM6-0). flex-1 + basis-0 + min-w-0 is
+// the measured behaviour — without basis-0 the cells size to their content
+// and the two columns stop aligning between rows.
+function MobileKpiCell({
+  label,
+  value,
+  tone = "[color:var(--nav-text-active)]",
+}: {
+  label: string;
+  value: string;
+  tone?: string;
+}) {
+  return (
+    <div className="flex flex-col grow basis-0 min-w-0 gap-[2px]">
+      <div className="font-ui uppercase [letter-spacing:var(--tracking-caps)] [color:var(--nav-text-label)] text-micro/micro">
+        {label}
+      </div>
+      <div className={`font-mono font-(--weight-semibold) truncate ${tone} text-h2/[22px]`}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -1015,7 +1195,7 @@ function MobileSkeleton() {
       {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="flex flex-col [width:100%] py-(--sp-4) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
+          className="flex flex-col [width:100%] py-(--sp-5) px-(--sp-6) gap-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
         >
           <div className="kit-skeleton h-[16px] w-1/2 rounded-sm" />
           <div className="kit-skeleton h-[12px] w-3/4 rounded-sm" />
@@ -1049,65 +1229,42 @@ function MobileSingleDayRow({
     .filter((k) => !row[k].dash)
     .map((k) => ({
       key: k,
-      text: `${row[k].value} ${MOBILE_CHIP_LABEL[k] ?? k}`,
-      tone: row[k].tone === "success" ? "success" : "danger",
+      // Split value from label — the equation line stacks them (value over
+      // type) rather than running them together as one string.
+      value: row[k].value ?? "",
+      label: MOBILE_CHIP_LABEL[k] ?? k,
+      tone: (row[k].tone === "success" ? "success" : "danger") as "success" | "danger",
       corrected: !!row[k].corrected,
       columnKey: k as string,
     }));
   return (
-    <div className="flex flex-col [width:100%] py-(--sp-4) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-      <div className="flex items-start justify-between [width:100%]">
-        <div className="flex items-center gap-(--sp-3)">
-          <div className="font-ui font-(--weight-semibold) w-max shrink-0 [color:var(--text-primary)] text-h2/h2">
-            {row.product}
-          </div>
-          <div className="font-ui inline-block px-(--sp-3) rounded-sm [background-color:var(--surface-subtle)]">
-            <div className="font-ui w-max [color:var(--text-secondary)] text-caption/micro">
-              {row.location}
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col items-end gap-[2px]">
-          <div className="font-mono font-(--weight-semibold) w-max [color:var(--text-primary)] text-h2/body">
-            {row.closing.value}
-          </div>
-          <div className="font-mono w-max [color:var(--text-tertiary)] text-caption/micro">
-            {row.closingValue.dash ? "KES —" : row.closingValue.value}
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center flex-wrap gap-(--sp-4)">
-        {movementChips.map((m) => (
-          <button
-            key={m.key}
-            type="button"
-            onClick={() => onCellClick(row.id, m.columnKey)}
-            className={`font-mono w-max shrink-0 text-sm/micro kit-focus-ring rounded-sm ${
-              m.tone === "success" ? "text-success" : "text-danger"
-            } ${
-              m.corrected
-                ? "underline [text-decoration-thickness:1px] underline-offset-2"
-                : ""
-            }`}
-          >
-            {m.text}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center justify-between [width:100%]">
-        <div className="font-ui w-max shrink-0 [color:var(--text-tertiary)] text-caption/micro">
-          Open: {row.opening.value}
-        </div>
+    <div className="flex flex-col [width:100%] py-(--sp-5) px-(--sp-6) gap-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+      <MobileRowHeader product={row.product} location={row.location}>
         <button
           type="button"
           onClick={() => onAdjustRow(row.id)}
-          className="flex items-center justify-center h-[32px] px-(--sp-5) rounded-sm [background-color:var(--surface-subtle)] kit-focus-ring"
+          className="flex items-center justify-center h-[28px] shrink-0 px-(--sp-5) rounded-sm [background-color:var(--surface-subtle)] kit-focus-ring"
         >
-          <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-primary)] text-sm/micro">
+          <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-secondary)] text-sm/[16px]">
             Adjust
           </span>
         </button>
-      </div>
+      </MobileRowHeader>
+      <MobileEquationLine
+        opening={row.opening.value ?? "—"}
+        closing={row.closing.value ?? "—"}
+        closingValue={row.closingValue.dash ? "KES —" : (row.closingValue.value ?? "KES —")}
+        movements={movementChips.map((m) => (
+          <MobileMovement
+            key={m.key}
+            value={m.value}
+            label={m.label}
+            tone={m.tone}
+            corrected={m.corrected}
+            onClick={() => onCellClick(row.id, m.columnKey)}
+          />
+        ))}
+      />
     </div>
   );
 }
@@ -1142,66 +1299,35 @@ function MobilePeriodRow({
     .filter((k) => !row[k].dash)
     .map((k) => ({
       key: k,
-      text: `${row[k].value} ${MOBILE_CHIP_LABEL[k] ?? k}`,
-      tone: row[k].tone === "success" ? "success" : "danger",
+      value: row[k].value ?? "",
+      label: MOBILE_CHIP_LABEL[k] ?? k,
+      tone: (row[k].tone === "success" ? "success" : "danger") as "success" | "danger",
     }));
   return (
     <div
-      className={`flex flex-col [width:100%] py-(--sp-4) gap-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)] ${
+      className={`flex flex-col [width:100%] py-(--sp-5) px-(--sp-6) gap-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)] ${
         row.flagged ? "[background-color:var(--color-warning-bg)]" : ""
       }`}
     >
-      <div className="flex items-start justify-between [width:100%]">
-        <div className="flex items-center gap-(--sp-3)">
-          {row.flagged && (
-            <span aria-hidden className="text-warning text-h2/h2">
-              ⚠
-            </span>
-          )}
-          <div className="font-ui font-(--weight-semibold) w-max shrink-0 [color:var(--text-primary)] text-h2/h2">
-            {row.product}
-          </div>
-          <div className="font-ui inline-block px-(--sp-3) rounded-sm [background-color:var(--surface-subtle)]">
-            <div className="font-ui w-max [color:var(--text-secondary)] text-caption/micro">
-              {row.location}
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col items-end gap-[2px]">
-          <div className="font-mono font-(--weight-semibold) w-max [color:var(--text-primary)] text-h2/body">
-            {row.closing.value}
-          </div>
-          <div className="font-mono w-max [color:var(--text-tertiary)] text-caption/micro">
-            {row.closingValue.dash ? "KES —" : row.closingValue.value}
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center flex-wrap gap-(--sp-4)">
-        {movementChips.map((m) => (
-          <span
-            key={m.key}
-            className={`font-mono w-max shrink-0 text-sm/micro ${
-              m.tone === "success" ? "text-success" : "text-danger"
-            }`}
-          >
-            {m.text}
-          </span>
-        ))}
-      </div>
-      <div className="flex items-center justify-between [width:100%]">
-        <div className="font-ui w-max shrink-0 [color:var(--text-tertiary)] text-caption/micro">
-          Open: {row.opening.value}
-        </div>
+      <MobileRowHeader product={row.product} location={row.location} flagged={row.flagged}>
         <button
           type="button"
           onClick={onOpen}
-          className="flex items-center justify-center h-[32px] px-(--sp-5) rounded-sm [background-color:var(--surface-subtle)] kit-focus-ring"
+          className="flex items-center justify-center h-[28px] shrink-0 px-(--sp-5) rounded-sm [background-color:var(--surface-subtle)] kit-focus-ring"
         >
-          <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-primary)] text-sm/micro">
+          <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-secondary)] text-sm/[16px]">
             View days →
           </span>
         </button>
-      </div>
+      </MobileRowHeader>
+      <MobileEquationLine
+        opening={row.opening.value ?? "—"}
+        closing={row.closing.value ?? "—"}
+        closingValue={row.closingValue.dash ? "KES —" : (row.closingValue.value ?? "KES —")}
+        movements={movementChips.map((m) => (
+          <MobileMovement key={m.key} value={m.value} label={m.label} tone={m.tone} />
+        ))}
+      />
     </div>
   );
 }

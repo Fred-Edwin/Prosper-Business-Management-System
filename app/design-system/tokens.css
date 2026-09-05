@@ -56,6 +56,17 @@
   --color-danger-bg: oklch(53.8% 0.190 21.2 / 10%);
   --color-info: oklch(53.7% 0.146 252.3);
   --color-info-bg: oklch(53.7% 0.146 252.3 / 10%);
+
+  /*
+   * Status colours lifted for dark grounds (--nav-bg). The light-mode
+   * --color-success / --color-warning above are tuned against white and
+   * go muddy on the purple nav ground, so the approved mobile Stock KPI
+   * band (Paper RM6-0) uses these instead. Dark surfaces only — on a
+   * light surface the base tokens stay correct.
+   */
+  --color-success-on-dark: #43c07a;
+  --color-warning-on-dark: #e5ac4c;
+  --color-danger-on-dark: #f0736a;
   /* GAP → codified Session 10 (owner sign-off, kit-audit §1 decision). §9.5 hover
    * for the two filled-color action buttons that are neither accent nor danger:
    * Banner "Accept" (bg-success) and PurchaseDeliveryBanner "Match" (bg-info).
