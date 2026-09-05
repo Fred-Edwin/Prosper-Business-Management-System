@@ -15,6 +15,90 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Mobile parity — Dashboard (`/admin`) (Developer — 2026-09-05) — DONE
+
+Against `docs/sprints/mobile-parity/dashboard-mobile-HANDOFF.md`. Goal:
+make `/admin` at 390px match Paper `Dashboard — mobile [v2]` (`PQR-0`).
+Desktop signed off and verified unregressed.
+
+**Method.** Every value measured with `get_computed_styles` (never
+eyeballed, CONVENTIONS §6); full `from → to` diff written and shown to
+the owner before any code change. Paper tokens confirmed identical to
+`app/design-system/tokens.css` (contentHash `710ac1c5`) — the only
+deltas are the two documented ones (Paper still shows Inter vs shipped
+Geist; retired `--surface-panel-tint`), neither affecting metrics.
+
+**Shipped**
+
+- **Zone order swapped on mobile** — the position card now leads, then
+  the period control, then the profit stack, per the artboard. Done with
+  CSS `order` (`order-N md:order-none`) so desktop renders in its
+  signed-off order from the same markup. *This contradicted the flow
+  doc's "v2 does not reorder zones between viewports"; owner ruled the
+  artboard wins.*
+- **Body rhythm**: mobile inline padding 24px→16px (358px content), zone
+  gap 24px→16px, tail padding 40px→32px. Desktop keeps 24px/24px/40px.
+- **Profit stack**: 8px radius, 12/16px rows, 15px/18px mono figures,
+  Revenue sub-caption restored, Net row flat `--surface-subtle` (was a
+  success/danger tint) with an 18px/22px figure.
+- **Right now**: padding moved from the card onto each block so the
+  hairlines run edge-to-edge; 10px/12px tile labels, 22px liquidity /
+  16px sub-figures.
+- **30-day trend card**: dropped the 24px "KES …" anchor figure on
+  mobile (the artboard has none, and it overlapped the caption at 390px
+  — Geist Mono is much wider than Paper's JetBrains Mono at equal px);
+  70px bar box via a `--bar-scale` var that leaves desktop's 84px scale
+  byte-identical.
+- **Location tables**: titles pulled inside each card, 8px radius,
+  measured row/total padding and type; stock rows put their meta on one
+  line right.
+- **Today's activity**: kept (owner call — the artboard was stale) and
+  restyled to the neighbouring card language; "Sales so far" restored as
+  an emphasised lead row (it is the day's headline figure and appears
+  nowhere else on mobile). **Added to the Paper artboard** so design and
+  code agree again.
+
+**Kit changes (owner-approved).** `<PageShell>` and `<SegmentedControl>`
+are shared kit; both were made responsive rather than forked:
+- `page-shell.tsx` — body/toolbar inline padding `px-(--sp-6)
+  md:px-(--sp-8)` (16px mobile, 24px desktop). Benefits every mobile screen.
+- `segmented-control.tsx` — full-width with evenly-sharing segments and
+  11px labels below `md`; at 390px the old fixed-width segments pushed
+  "This month" onto a second line.
+- `date-range-control.tsx` — `w-full md:w-auto` so the control can fill
+  the mobile row.
+
+**Corrected mid-session.** The mobile period-trend strip was reported in
+the first diff as wrongly rendering; it was already correctly gated
+`hidden md:flex`. Two measurement traps caused it and are worth knowing:
+the admin shell mounts `children` twice (M2 S6b), so an unscoped query
+reads the *invisible desktop mount* and returns zeroes; and `textContent`
+of a `hidden` element still matches text probes. Every measurement must
+be scoped to the visible mount.
+
+**Gates** — all green. `pnpm vitest run
+tests/screens/admin-dashboard.screen.test.tsx` 19/19 · `pnpm typecheck`
+0 errors · `rm -rf .next && pnpm build` clean · no new `TODO(mock)`.
+No new tests: layout/spacing only, no interactive behaviour changed.
+
+**Walkthrough.** Driven as Admin at 390px and 360px — no horizontal page
+scroll at either. Desktop re-checked at 1440px: original zone order,
+5-column stack, 4-column position, both trend cards, table headers all
+intact.
+
+**Open / flagged**
+
+- `/admin/financials` at 390px inherits the 16px padding correctly, but
+  its range control keeps a "SHOWING" label that squeezes the segments so
+  "This month" wraps. Cosmetic, out of scope for this screen — belongs to
+  the Financials mobile-parity session.
+- The 30-day strip renders near-flat against the current seed (one large
+  outlier dwarfs ~29 near-zero days). Data shape, not layout.
+- `perLocation`/Store remains open and deliberately unresolved (Store row
+  with `revenue: 0`); untouched, never filtered client-side.
+
+---
+
 ## Milestone 5 "Dashboard & Financials v2" Session C — Financials frontend (Developer — 2026-09-05) — DONE
 
 Against `docs/sprints/m5-dashboard-financials-v2-session-C-financials-frontend-HANDOFF.md`.

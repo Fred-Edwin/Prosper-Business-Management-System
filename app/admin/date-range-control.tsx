@@ -78,7 +78,7 @@ export function AdminDateRangeControl({
   );
 
   return (
-    <div className={`flex items-center gap-(--sp-4) ${className ?? ""}`}>
+    <div className={`flex items-center gap-(--sp-4) w-full md:w-auto ${className ?? ""}`}>
       <SegmentedControl
         aria-label="Date range"
         options={OPTIONS}

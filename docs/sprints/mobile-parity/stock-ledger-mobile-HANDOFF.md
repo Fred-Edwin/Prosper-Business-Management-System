@@ -31,11 +31,42 @@ to work from it.
 
 ---
 
+## Speed — read this first
+
+This method is front-loaded on purpose: you measure before you write
+code. That part is what makes the result match — **do not skip it.**
+Everything else has been stripped so you can move fast.
+
+**Pre-authorised — just do these, don't ask:**
+- Making a **shared kit component responsive** with `md:` variants when
+  the mobile need is real (`<PageShell>` and `<SegmentedControl>` were
+  already done this way). Changing a *desktop* value is not authorised.
+- Reordering zones on mobile to match the artboard when the artboard and
+  a flow doc disagree about order — **the artboard wins.** Use
+  `order-N md:order-none`, never a second copy of the markup.
+- Dropping an element on mobile that the artboard doesn't draw **when it
+  is presentational** (an anchor figure, a column header, a caption).
+  Deleting *functionality* still needs the owner — see §4.
+- Keeping an element the artboard omits when the code clearly needs it;
+  say so in your PROGRESS entry and add it to the artboard in Paper.
+
+**Don't:**
+- Post or maintain a progress checklist. **This deliberately overrides
+  CLAUDE.md's "Visible progress during a session" rule for this session
+  only** (owner's call: these are short, single-screen layout passes and
+  the checklist costs more than it tells them). Report at the end instead.
+- Re-verify after every small edit. Batch the edits, then check once.
+- Re-derive the environment or the measurement traps — `_METHOD.md` has
+  both; read it once, at the start.
+
+**Do keep:** the batched measurement, the written `from → to` diff, and
+the four gates at the end.
+
+---
+
 ## 0. Rules (binding)
 
 - CLAUDE.md applies. **pnpm only.**
-- Post a visible-progress checklist (TodoWrite if available) and update it
-  as you go.
 - **Do not commit** unless the owner asks.
 - Do not touch `components/shells/*` or the desktop branches of
   `stock-client.tsx`.
@@ -50,8 +81,10 @@ to work from it.
 - `docs/DECISIONS.md` → **ADR-66** (mobile filter row = one all-visible
   horizontal-scroll row of real controls; the "3 chips + More →
   BottomSheet" overflow was removed).
-- `app/admin/financials/kpi-strip.tsx` — the one mobile component built
-  by the measured method. Copy its approach.
+- `app/admin/financials/kpi-strip.tsx` and `app/admin/dashboard-client.tsx`
+  — the two screens built by this method. `dashboard-client.tsx` is the
+  closest worked example: `md:` scoping, `order-N md:order-none`, and
+  measured values recorded in comments beside the code they explain.
 
 ## 2. The method — this is the session
 
@@ -67,10 +100,15 @@ to work from it.
    **`flexGrow` / flex ratios explicitly** — on a dense ledger, column
    alignment is the whole game, and ratios are invisible in a screenshot.
    This is the step that separates pixel-perfect from "close but off".
-4. `pnpm dev`, sign in as **Admin / PIN 1234**, viewport **390px**,
-   screenshot the real screen.
+4. Get the `from` half from the **live DOM, not a screenshot**: `pnpm
+   dev`, sign in as **Admin / PIN 1234**, resize to **390px**, then one
+   batched `browser_evaluate` returning `getComputedStyle` for every
+   element you care about. **Read `_METHOD.md` "Three traps" first** —
+   the shell double-mounts, so an unscoped query silently measures the
+   hidden desktop copy and returns zeroes.
 5. Write the diff as an explicit list — each item with its exact
-   `from → to` value — **before changing any code**. Show the owner.
+   `from → to` value — **before changing any code**. Post it, then keep
+   going; it's a record, not a gate to wait behind.
 
 Then rebuild to match. Compose from `components/kit/*`; where a prop
 shape doesn't fit, thin mapper **in the screen file** — never fork the

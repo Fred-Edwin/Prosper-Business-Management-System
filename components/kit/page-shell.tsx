@@ -42,7 +42,7 @@ export function PageShell({
           className={cn(
             "sticky top-0 flex items-center gap-(--sp-4) shrink-0 min-h-(--control-lg) py-(--sp-4) bg-(--surface-page) border-b border-b-solid [border-bottom-color:var(--border-subtle)]",
             "[z-index:var(--z-sticky)]",
-            flush ? "px-(--sp-6)" : "px-(--sp-8)",
+            flush ? "px-(--sp-6)" : "px-(--sp-6) md:px-(--sp-8)",
           )}
         >
           <div
@@ -58,7 +58,9 @@ export function PageShell({
       <div
         className={cn(
           "flex flex-col grow min-h-0 w-full",
-          !flush && "py-(--sp-7) px-(--sp-8)",
+          // Mobile bodies sit 16px from the edge (Paper `Dashboard — mobile
+          // [v2]`, body paddingInline 16px); desktop keeps the signed-off 24px.
+          !flush && "py-(--sp-7) px-(--sp-6) md:px-(--sp-8)",
         )}
       >
         <div

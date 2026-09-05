@@ -61,7 +61,7 @@ export function SegmentedControl({
   });
 
   return (
-    <div className={cn("flex flex-col gap-[6px]", className)}>
+    <div className={cn("flex flex-col gap-[6px] w-full md:w-auto", className)}>
       {label && (
         <div
           id={labelId}
@@ -76,7 +76,10 @@ export function SegmentedControl({
         aria-labelledby={label ? labelId : undefined}
         onKeyDown={onKeyDown}
         className={cn(
-          "flex items-center h-(--control-md) p-[2px] rounded-sm gap-[2px] shrink-0 [background-color:var(--surface-subtle)]",
+          // Below md the control spans its container and the segments share
+          // the width evenly — at 390px fixed-width segments push labels like
+          // "This month" onto a second line. Desktop keeps shrink-to-fit.
+          "flex items-center h-(--control-md) p-[2px] rounded-sm gap-[2px] w-full md:w-auto md:shrink-0 [background-color:var(--surface-subtle)]",
           disabled && "opacity-[0.5]",
         )}
       >
@@ -93,7 +96,7 @@ export function SegmentedControl({
               disabled={disabled}
               onClick={() => pick(opt)}
               className={cn(
-                "flex items-center justify-center h-(--control-sm) px-(--sp-5) rounded-[2px] kit-interactive kit-focus-ring",
+                "flex items-center justify-center h-(--control-sm) grow basis-0 min-w-0 md:grow-0 md:basis-auto px-(--sp-3) md:px-(--sp-5) rounded-[2px] kit-interactive kit-focus-ring",
                 // §9.4: the active segment's raised --surface-page fill must
                 // survive hover (else .kit-interactive:hover repaints it grey).
                 isActive &&
@@ -102,7 +105,7 @@ export function SegmentedControl({
             >
               <span
                 className={cn(
-                  "font-ui text-sm/sm",
+                  "font-ui text-center [font-size:11px] [line-height:14px] md:text-sm/sm",
                   disabled
                     ? cn(
                         isActive

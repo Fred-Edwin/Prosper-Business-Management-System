@@ -109,8 +109,10 @@ function Caption({
   accent?: boolean;
 }) {
   return (
+    // Mobile runs one step smaller and tighter-tracked than desktop
+    // (Paper mobile: 11px/14px 600 0.06em; desktop: 12px/16px 500 0.04em).
     <span
-      className={`font-ui font-(--weight-medium) uppercase [letter-spacing:0.04em] text-caption/caption ${
+      className={`font-ui font-(--weight-semibold) md:font-(--weight-medium) uppercase [letter-spacing:0.06em] md:[letter-spacing:0.04em] [font-size:11px] [line-height:14px] md:text-caption/caption ${
         accent ? "[color:var(--color-accent)]" : "[color:var(--text-tertiary)]"
       }`}
     >
@@ -252,19 +254,46 @@ function NetProfitCol({
 }
 
 /** Mobile: label-left / value-right stacked rows, Net profit emphasised. */
-function MStackRow({ label, dec, op }: { label: string; dec: string; op?: string }) {
+/**
+ * One row of the mobile profit stack. Values measured from Paper
+ * `Dashboard — mobile [v2]` (rows Revenue/COGS/Gross/Expenses): 12px/16px
+ * padding, label 13px/16px 400 --text-secondary, figure mono 15px/18px 600
+ * --text-primary. Only Revenue carries `sub` (10px/12px --text-disabled,
+ * 1px below the label) — the artboard leaves the other rows caption-less.
+ */
+function MStackRow({
+  label,
+  dec,
+  op,
+  sub,
+}: {
+  label: string;
+  dec: string;
+  op?: string;
+  sub?: string;
+}) {
   return (
-    <div className="flex items-baseline justify-between py-(--sp-4) px-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-      <span className="font-ui [color:var(--text-secondary)] text-sm/sm">
-        {op ? `${op} ` : ""}
-        {label}
+    <div className="flex items-center justify-between gap-(--sp-5) py-(--sp-5) px-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+      <span className="flex flex-col gap-px min-w-0">
+        <span className="font-ui [color:var(--text-secondary)] text-sm/[16px]">
+          {op ? `${op} ` : ""}
+          {label}
+        </span>
+        {sub && (
+          <span className="font-ui [font-size:10px] [line-height:12px] [color:var(--text-disabled)]">
+            {sub}
+          </span>
+        )}
       </span>
-      <span className="font-mono [color:var(--text-primary)] text-sm/sm">{money(dec)}</span>
+      <span className="shrink-0 font-mono font-(--weight-semibold) [font-size:15px] [line-height:18px] [color:var(--text-primary)]">
+        {money(dec)}
+      </span>
     </div>
   );
 }
 
 function ProfitStackZone({
+  className,
   range,
   summary,
   loading,
@@ -273,6 +302,7 @@ function ProfitStackZone({
   priorNetProfit,
   priorPeriodLabel,
 }: {
+  className?: string;
   range: AdminDateRange;
   summary: FinancialSummary | null;
   loading: boolean;
@@ -285,14 +315,14 @@ function ProfitStackZone({
   const c = summary?.consolidated;
 
   return (
-    <section className="flex flex-col shrink-0 gap-(--sp-5)">
+    <section className={`flex flex-col shrink-0 gap-(--sp-5) ${className ?? ""}`}>
       <div className="flex items-baseline gap-(--sp-4)">
         <span className="grow">
           <Caption>{caption}</Caption>
         </span>
         <Link
           href="/admin/financials"
-          className="shrink-0 font-ui font-(--weight-medium) [color:var(--color-accent)] text-caption/caption no-underline hover:underline"
+          className="shrink-0 font-ui font-(--weight-regular) md:font-(--weight-medium) [color:var(--color-accent)] [font-size:11px] [line-height:14px] md:text-caption/caption no-underline hover:underline"
         >
           <span className="hidden md:inline">Full transactions in Financials →</span>
           <span className="md:hidden">Financials →</span>
@@ -319,25 +349,26 @@ function ProfitStackZone({
           </div>
 
           {/* Mobile: stacked rows, Net profit the emphasised bottom row. */}
-          <div className="md:hidden flex flex-col rounded-md border border-solid [border-color:var(--border-subtle)]">
-            <MStackRow label="Revenue" dec={c.revenue} />
+          <div className="md:hidden flex flex-col overflow-clip rounded-lg [background-color:var(--surface-page)] border border-solid [border-color:var(--border-subtle)]">
+            <MStackRow label="Revenue" dec={c.revenue} sub="Orders + canteen sales" />
             <MStackRow label="Cost of goods sold" dec={c.cogs} op="−" />
             <MStackRow label="Gross profit" dec={c.grossProfit} />
             <MStackRow label="Expenses" dec={c.totalExpenses} op="−" />
-            <div
-              className={`flex items-baseline justify-between py-(--sp-4) px-(--sp-5) ${
-                Number(c.netProfit) < 0 ? "[background-color:var(--color-danger-bg)]" : "[background-color:var(--color-success-bg)]"
-              }`}
-            >
-              <span className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-sm/sm">
+            {/* Net row — the emphasised bottom row. The artboard fills it with
+                a flat --surface-subtle (not a success/danger tint); the sign
+                lives in the figure's colour alone. */}
+            <div className="flex items-center justify-between gap-(--sp-5) [padding-block:14px] px-(--sp-6) [background-color:var(--surface-subtle)]">
+              <span className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-sm/[16px]">
                 Net profit
               </span>
               <span
-                className={`font-mono font-(--weight-semibold) text-h2/[20px] ${
-                  Number(c.netProfit) < 0 ? "text-danger" : "text-success"
+                className={`shrink-0 font-mono font-(--weight-semibold) [font-size:18px] [line-height:22px] ${
+                  Number(c.netProfit) < 0
+                    ? "[color:var(--color-danger)]"
+                    : "[color:var(--color-success)]"
                 }`}
               >
-                {Number(c.netProfit) < 0 ? "− " : ""}
+                {Number(c.netProfit) < 0 ? "− " : "+ "}
                 {money(Math.abs(Number(c.netProfit)).toFixed(2))}
               </span>
             </div>
@@ -368,7 +399,19 @@ function ProfitStackZone({
 
 // ── Zone — Right now (position) ─────────────────────────────────────────
 
-function RightNowZone({ position }: { position: DashboardView["position"] }) {
+/** Mobile position-tile label. 10px/12px 600 0.03em uppercase (Paper
+ *  `Position Card` — one step below the kit's 11px micro, which is why it's
+ *  an arbitrary value rather than `text-micro`). */
+const MTILE_LABEL =
+  "font-ui font-(--weight-semibold) uppercase [letter-spacing:0.03em] [font-size:10px] [line-height:12px] [color:var(--text-tertiary)]";
+
+function RightNowZone({
+  className,
+  position,
+}: {
+  className?: string;
+  position: DashboardView["position"];
+}) {
   const cols: { label: string; dec: string; tone: string }[] = [
     { label: "Total business liquidity", dec: position.liquidity, tone: "[color:var(--text-primary)]" },
     { label: "Cash at hand", dec: position.cash, tone: "[color:var(--color-success)]" },
@@ -376,9 +419,12 @@ function RightNowZone({ position }: { position: DashboardView["position"] }) {
     { label: "Owed back by the owner", dec: position.ownerOwedToBusiness, tone: "[color:var(--color-danger)]" },
   ];
   return (
-    <section className="flex flex-col shrink-0 gap-(--sp-4)">
+    <section className={`flex flex-col shrink-0 gap-(--sp-4) ${className ?? ""}`}>
       <Caption accent>Right now · not affected by the date range above</Caption>
-      <div className="flex flex-col shrink-0 gap-(--sp-4) rounded-md [background-color:var(--surface-subtle)] border border-solid [border-color:var(--border-subtle)] border-t-2 [border-top-color:var(--color-accent)] py-(--sp-6) px-(--sp-7)">
+      {/* Mobile drops the card's own padding — the artboard pads each block
+          instead and splits them with hairlines, so the rules run edge to
+          edge. Desktop keeps its signed-off inset. */}
+      <div className="flex flex-col shrink-0 overflow-clip md:gap-(--sp-4) rounded-lg md:rounded-md [background-color:var(--surface-subtle)] border border-solid [border-color:var(--border-subtle)] border-t-2 [border-top-color:var(--color-accent)] md:py-(--sp-6) md:px-(--sp-7)">
         {/* Desktop: 4 columns, hairline vertical rules. */}
         <div className="hidden md:flex">
           {cols.map((c, i) => (
@@ -401,32 +447,40 @@ function RightNowZone({ position }: { position: DashboardView["position"] }) {
         </div>
 
         {/* Mobile: liquidity full-width, then Cash + M-Pesa 2-up, then Owed. */}
+        {/* Mobile: liquidity full-width, then Cash + M-Pesa 2-up, then Owed.
+            Tile label 10px/12px 600 0.03em uppercase; liquidity figure
+            22px/28px, the three below it 16px/20px (Paper `Position Card`). */}
         <div className="md:hidden flex flex-col">
-          <div className="flex flex-col gap-(--sp-1) py-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-            <span className="font-ui font-(--weight-medium) uppercase [letter-spacing:0.04em] [color:var(--text-tertiary)] text-micro/micro">
-              {cols[0].label}
-            </span>
-            <span className="font-mono font-(--weight-semibold) text-h1/h1 [color:var(--text-primary)]">
+          <div className="flex flex-col gap-(--sp-2) [padding-block:14px] px-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+            <span className={MTILE_LABEL}>{cols[0].label}</span>
+            <span className="font-mono font-(--weight-semibold) [font-size:22px] [line-height:28px] [color:var(--text-primary)]">
               KES {money(cols[0].dec)}
             </span>
           </div>
-          <div className="flex gap-(--sp-5) py-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-            {cols.slice(1, 3).map((c) => (
-              <div key={c.label} className="grow basis-0 flex flex-col gap-(--sp-1)">
-                <span className="font-ui font-(--weight-medium) uppercase [letter-spacing:0.04em] [color:var(--text-tertiary)] text-micro/micro">
+          <div className="flex border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+            {cols.slice(1, 3).map((c, i) => (
+              <div
+                key={c.label}
+                className={`grow basis-0 min-w-0 flex flex-col gap-(--sp-2) py-(--sp-5) px-(--sp-6) ${
+                  i === 0
+                    ? "border-r border-r-solid [border-right-color:var(--border-subtle)]"
+                    : ""
+                }`}
+              >
+                <span className={MTILE_LABEL}>
                   {c.label === "M-Pesa / Bank till" ? "M-Pesa / Bank" : c.label}
                 </span>
-                <span className={`font-mono font-(--weight-semibold) text-body/body ${c.tone}`}>
+                <span
+                  className={`font-mono font-(--weight-semibold) [font-size:16px] [line-height:20px] ${c.tone}`}
+                >
                   {money(c.dec)}
                 </span>
               </div>
             ))}
           </div>
-          <div className="flex flex-col gap-(--sp-1) pt-(--sp-4)">
-            <span className="font-ui font-(--weight-medium) uppercase [letter-spacing:0.04em] [color:var(--text-tertiary)] text-micro/micro">
-              {cols[3].label}
-            </span>
-            <span className="font-mono font-(--weight-semibold) text-body/body [color:var(--color-danger)]">
+          <div className="flex flex-col gap-(--sp-2) py-(--sp-5) px-(--sp-6)">
+            <span className={MTILE_LABEL}>{cols[3].label}</span>
+            <span className="font-mono font-(--weight-semibold) [font-size:16px] [line-height:20px] [color:var(--color-danger)]">
               {money(cols[3].dec)}
             </span>
           </div>
@@ -598,35 +652,41 @@ function ThirtyDayTrendCard({ trend }: { trend: DashboardView["trend"] }) {
   const first = trend.dailyNet[0]?.date;
   const last = trend.dailyNet.at(-1)?.date;
   return (
-    <div className="grow basis-0 md:min-w-[420px] flex flex-col gap-(--sp-5) rounded-md [background-color:var(--surface-page)] border border-solid [border-color:var(--border-subtle)] py-(--sp-6) px-(--sp-7)">
+    <div className="grow basis-0 md:min-w-[420px] flex flex-col gap-(--sp-5) rounded-lg md:rounded-md [background-color:var(--surface-page)] border border-solid [border-color:var(--border-subtle)] p-(--sp-6) md:py-(--sp-6) md:px-(--sp-7)">
       <div className="flex items-baseline justify-between gap-(--sp-4)">
         <Caption>Net profit — last 30 days</Caption>
+        {/* The 30-day total is a desktop-only anchor — the mobile artboard's
+            card is caption + strip + date row only, and at 390px the figure
+            crowds the caption off its line. */}
         <span
-          className={`font-mono font-(--weight-semibold) text-display/display ${
+          className={`hidden md:inline font-mono font-(--weight-semibold) text-display/display ${
             total < 0 ? "text-danger" : "text-success"
           }`}
         >
           {total < 0 ? "− " : "+ "}KES {money(Math.abs(total).toFixed(2))}
         </span>
       </div>
-      <div className="flex items-end gap-[3px] h-[120px] pt-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-strong)]">
+      <div className="flex items-end gap-[3px] h-[70px] md:h-[120px] shrink-0 [--bar-scale:62px] md:[--bar-scale:84px] md:pt-(--sp-4) md:border-b md:border-b-solid md:[border-bottom-color:var(--border-strong)]">
         {trend.dailyNet.map((d) => (
           <div
             key={d.date}
             className={`grow basis-0 rounded-[1px] ${
               Number(d.net) < 0 ? "[background-color:var(--color-danger)]" : "[background-color:var(--color-success)]"
             }`}
+            // Desktop keeps its signed-off 84px scale; mobile's box is 70px
+            // (Paper), so the bar scale drops with it via a CSS var swapped
+            // at the md breakpoint rather than a second element.
             style={{
-              height: Math.max(4, Math.round((Math.abs(Number(d.net)) / maxAbs) * 84)),
+              height: `max(4px, calc(${(Math.abs(Number(d.net)) / maxAbs).toFixed(4)} * var(--bar-scale)))`,
             }}
           />
         ))}
       </div>
-      <div className="flex items-baseline justify-between">
-        <span className="font-ui [color:var(--text-tertiary)] text-caption/caption">
+      <div className="flex items-baseline justify-between [margin-top:2px] md:mt-0">
+        <span className="font-ui [color:var(--text-disabled)] md:[color:var(--text-tertiary)] [font-size:11px] [line-height:14px] md:text-caption/caption">
           {first ? dayMon(first) : ""}
         </span>
-        <span className="font-ui [color:var(--text-tertiary)] text-caption/caption">
+        <span className="font-ui [color:var(--text-disabled)] md:[color:var(--text-tertiary)] [font-size:11px] [line-height:14px] md:text-caption/caption">
           {last ? dayMon(last) : ""}
         </span>
       </div>
@@ -635,6 +695,7 @@ function ThirtyDayTrendCard({ trend }: { trend: DashboardView["trend"] }) {
 }
 
 function TrendRow({
+  className,
   range,
   bars,
   trendLoading,
@@ -648,9 +709,10 @@ function TrendRow({
   trendError: string | null;
   onRetryTrend: () => void;
   trend: DashboardView["trend"];
+  className?: string;
 }) {
   return (
-    <section className="flex flex-wrap items-stretch gap-(--sp-7)">
+    <section className={`flex flex-wrap items-stretch gap-(--sp-7) ${className ?? ""}`}>
       {/* Period trend — desktop only (owner-approved cut, dashboard-screen.md
           "Mobile" note under Trend charts: the profit-stack numbers already
           answer "how did we do" without a second chart on a long mobile page). */}
@@ -680,7 +742,7 @@ function FinancialLocationTable({ rows }: { rows: LocationFinancials[] }) {
     { revenue: 0, cogs: 0, grossProfit: 0 },
   );
   return (
-    <div className="flex flex-col rounded-md overflow-clip bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]">
+    <div className="flex flex-col rounded-b-lg md:rounded-md overflow-clip bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]">
       <div className="hidden md:flex items-center py-(--sp-3) px-(--sp-5) [background-color:var(--surface-subtle)] border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
         <div className="grow font-ui font-(--weight-semibold) uppercase [letter-spacing:var(--tracking-caps)] text-info text-micro/micro">
           Location
@@ -721,17 +783,17 @@ function FinancialLocationTable({ rows }: { rows: LocationFinancials[] }) {
               </div>
             </div>
             {/* Mobile row */}
-            <div className="md:hidden flex items-baseline justify-between py-(--sp-4) px-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-              <div className="flex flex-col gap-[2px]">
-                <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
+            <div className="md:hidden flex items-center justify-between gap-(--sp-5) py-(--sp-5) px-(--sp-6) border-t border-t-solid [border-top-color:var(--border-subtle)]">
+              <div className="flex flex-col gap-px min-w-0">
+                <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/[16px]">
                   {l.locationName}
                 </span>
-                <span className="font-ui [color:var(--text-tertiary)] text-caption/micro">
+                <span className="font-ui [color:var(--text-tertiary)] [font-size:11px] [line-height:14px]">
                   Rev {money(l.revenue)} · COGS {money(l.cogs)}
                 </span>
               </div>
               <span
-                className={`font-mono font-(--weight-semibold) text-sm/sm ${
+                className={`shrink-0 font-mono font-(--weight-semibold) [font-size:14px] [line-height:18px] ${
                   Number(l.grossProfit) < 0 ? "text-danger" : "[color:var(--text-primary)]"
                 }`}
               >
@@ -742,9 +804,10 @@ function FinancialLocationTable({ rows }: { rows: LocationFinancials[] }) {
         ))
       )}
       {rows.length > 0 && (
-        <div className="flex items-center justify-between py-(--sp-4) px-(--sp-5) [background-color:var(--surface-subtle)]">
-          <span className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-sm/sm">
-            Total
+        <div className="flex items-center justify-between gap-(--sp-5) py-(--sp-5) px-(--sp-6) md:py-(--sp-4) md:px-(--sp-5) border-t border-t-solid [border-top-color:var(--border-subtle)] md:border-t-0 [background-color:var(--surface-subtle)]">
+          <span className="font-ui font-(--weight-semibold) [color:var(--text-secondary)] md:[color:var(--text-primary)] text-caption/caption md:text-sm/sm">
+            <span className="md:hidden">Total gross profit</span>
+            <span className="hidden md:inline">Total</span>
           </span>
           <div className="hidden md:flex">
             <span className="w-[110px] shrink-0 text-right font-mono font-(--weight-semibold) [color:var(--text-primary)] text-sm/sm">
@@ -757,7 +820,7 @@ function FinancialLocationTable({ rows }: { rows: LocationFinancials[] }) {
               {money(total.grossProfit.toFixed(2))}
             </span>
           </div>
-          <span className="md:hidden font-mono font-(--weight-semibold) [color:var(--text-primary)] text-sm/sm">
+          <span className="md:hidden shrink-0 font-mono font-(--weight-semibold) [color:var(--text-secondary)] [font-size:14px] [line-height:18px]">
             {money(total.grossProfit.toFixed(2))}
           </span>
         </div>
@@ -796,7 +859,7 @@ function StockActivityTable({ rows }: { rows: StockActivityByLocation[] }) {
     { movementCount: 0, lowStockCount: 0 },
   );
   return (
-    <div className="flex flex-col rounded-md overflow-clip bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]">
+    <div className="flex flex-col rounded-b-lg md:rounded-md overflow-clip bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]">
       <div className="hidden md:flex items-center py-(--sp-3) px-(--sp-5) [background-color:var(--surface-subtle)] border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
         <div className="grow font-ui font-(--weight-semibold) uppercase [letter-spacing:var(--tracking-caps)] text-info text-micro/micro">
           Location
@@ -833,25 +896,32 @@ function StockActivityTable({ rows }: { rows: StockActivityByLocation[] }) {
             </div>
           </div>
           {/* Mobile row */}
-          <div className="md:hidden flex items-center justify-between py-(--sp-4) px-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-            <div className="flex flex-col gap-[2px]">
-              <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
-                {l.locationName}
+          {/* Mobile row — name left, meta on ONE line right (Paper `Row
+              Store`/`Row Restaurant`: 11px/16px padding, 10px meta gap). */}
+          <div className="md:hidden flex items-center justify-between gap-(--sp-5) [padding-block:11px] px-(--sp-6) border-t border-t-solid [border-top-color:var(--border-subtle)]">
+            <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/[16px] min-w-0 truncate">
+              {l.locationName}
+            </span>
+            <div className="flex items-center shrink-0 [gap:10px]">
+              <span className="font-ui [color:var(--text-tertiary)] [font-size:11px] [line-height:14px]">
+                {l.movementCount} movements
+                {l.lowStockCount > 0 && (
+                  <>
+                    {" · "}
+                    <span className="font-(--weight-semibold) text-danger">
+                      {l.lowStockCount} low
+                    </span>
+                  </>
+                )}
               </span>
-              <span className="font-ui [color:var(--text-tertiary)] text-caption/micro">
-                {l.movementCount} movements ·{" "}
-                <span className={l.lowStockCount > 0 ? "text-danger" : undefined}>
-                  {l.lowStockCount} low
-                </span>
-              </span>
+              <HandoverPip status={l.handoverStatus} />
             </div>
-            <HandoverPip status={l.handoverStatus} />
           </div>
         </div>
       ))}
       {rows.length > 0 && (
-        <div className="flex items-center justify-between py-(--sp-4) px-(--sp-5) [background-color:var(--surface-subtle)]">
-          <span className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-sm/sm">
+        <div className="flex items-center justify-between gap-(--sp-5) py-(--sp-5) px-(--sp-6) md:py-(--sp-4) md:px-(--sp-5) border-t border-t-solid [border-top-color:var(--border-subtle)] md:border-t-0 [background-color:var(--surface-subtle)]">
+          <span className="font-ui font-(--weight-semibold) [color:var(--text-secondary)] md:[color:var(--text-primary)] text-caption/caption md:text-sm/sm">
             Total
           </span>
           <div className="hidden md:flex">
@@ -867,7 +937,7 @@ function StockActivityTable({ rows }: { rows: StockActivityByLocation[] }) {
             </span>
             <span className="w-[110px] shrink-0" />
           </div>
-          <span className="md:hidden font-mono font-(--weight-semibold) [color:var(--text-primary)] text-sm/sm">
+          <span className="md:hidden shrink-0 font-mono font-(--weight-semibold) [color:var(--text-secondary)] [font-size:14px] [line-height:18px]">
             {total.movementCount} movements
           </span>
         </div>
@@ -876,11 +946,33 @@ function StockActivityTable({ rows }: { rows: StockActivityByLocation[] }) {
   );
 }
 
+/**
+ * A per-location table's title block. On mobile it reads as the card's own
+ * header — card fill, side + top borders, bottom-radius removed so it fuses
+ * with the table below (Paper: 14px top / 10px bottom / 16px inline, title
+ * 13px/16px 600, sub 10px/12px --text-disabled). On desktop it floats above
+ * the card as before, with the zone's 8px gap.
+ */
+function TableTitle({ title, sub }: { title: string; sub: string }) {
+  return (
+    <div className="flex flex-col gap-[2px] [padding-top:14px] [padding-bottom:10px] px-(--sp-6) rounded-t-lg bg-(--surface-page) border border-b-0 border-solid [border-color:var(--border-subtle)] md:p-0 md:rounded-none md:bg-transparent md:border-0">
+      <span className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-sm/[16px] md:text-body/body">
+        {title}
+      </span>
+      <span className="font-ui [color:var(--text-disabled)] [font-size:10px] [line-height:12px] md:text-caption/micro">
+        {sub}
+      </span>
+    </div>
+  );
+}
+
 function LocationTablesZone({
+  className,
   range,
   perLocation,
   stockActivity,
 }: {
+  className?: string;
   range: AdminDateRange;
   perLocation: LocationFinancials[];
   stockActivity: StockActivityByLocation[];
@@ -894,27 +986,24 @@ function LocationTablesZone({
           ? "This month so far"
           : "This period";
   return (
-    <section className="flex flex-col md:flex-row items-start gap-(--sp-7)">
-      <div className="flex-1 min-w-0 flex flex-col gap-(--sp-4)">
-        <div className="flex flex-col gap-[2px]">
-          <span className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-body/body">
-            Financial performance by location
-          </span>
-          <span className="font-ui [color:var(--text-disabled)] text-caption/micro">
-            {periodNoun} · Store excluded, it doesn&apos;t sell
-          </span>
-        </div>
+    // Mobile pulls each table's title inside its card (Paper: the title block
+    // is the card's first child, hairline-split from the rows) — hence the
+    // zero gap and the card-coloured, bordered title wrapper below md.
+    <section
+      className={`flex flex-col md:flex-row items-start gap-(--sp-6) md:gap-(--sp-7) ${className ?? ""}`}
+    >
+      <div className="flex-1 min-w-0 w-full flex flex-col md:gap-(--sp-4)">
+        <TableTitle
+          title="Financial performance by location"
+          sub={`${periodNoun} · Store excluded, it doesn't sell`}
+        />
         <FinancialLocationTable rows={perLocation} />
       </div>
-      <div className="flex-1 min-w-0 flex flex-col gap-(--sp-4)">
-        <div className="flex flex-col gap-[2px]">
-          <span className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-body/body">
-            Stock &amp; activity by location
-          </span>
-          <span className="font-ui [color:var(--text-disabled)] text-caption/micro">
-            Today · always current, not the date range above
-          </span>
-        </div>
+      <div className="flex-1 min-w-0 w-full flex flex-col md:gap-(--sp-4)">
+        <TableTitle
+          title="Stock & activity by location"
+          sub="Today · always current, not the date range above"
+        />
         <StockActivityTable rows={stockActivity} />
       </div>
     </section>
@@ -1008,9 +1097,11 @@ function buildAttnRows(
 }
 
 function NeedsAttentionZone({
+  className,
   na,
   onReviewDay,
 }: {
+  className?: string;
   na: DashboardNeedsAttention;
   onReviewDay: (date: string) => void;
 }) {
@@ -1018,7 +1109,9 @@ function NeedsAttentionZone({
   const open = rows.length;
 
   return (
-    <section className="flex flex-col shrink-0 gap-(--sp-4) md:gap-(--sp-5)">
+    <section
+      className={`flex flex-col shrink-0 gap-(--sp-4) md:gap-(--sp-5) ${className ?? ""}`}
+    >
       <div className="flex items-baseline gap-(--sp-4)">
         <span className="grow">
           <Caption>Needs attention</Caption>
@@ -1049,7 +1142,7 @@ function NeedsAttentionZone({
               }`}
             >
               <div
-                className={`w-[6px] h-[6px] shrink-0 rounded-full mt-[6px] md:mt-0 ${
+                className={`w-[6px] h-[6px] shrink-0 rounded-full mt-[5px] md:mt-0 ${
                   r.danger ? "[background-color:var(--color-danger)]" : "[background-color:var(--color-warning)]"
                 }`}
               />
@@ -1103,7 +1196,13 @@ function NeedsAttentionZone({
 
 // ── Zone — Today's activity ────────────────────────────────────────────────
 
-function TodayZone({ today }: { today: DashboardView["today"] }) {
+function TodayZone({
+  className,
+  today,
+}: {
+  className?: string;
+  today: DashboardView["today"];
+}) {
   const cells: {
     key: string;
     value: string;
@@ -1137,7 +1236,9 @@ function TodayZone({ today }: { today: DashboardView["today"] }) {
   ];
 
   return (
-    <section className="flex flex-col shrink-0 gap-(--sp-4) md:gap-(--sp-5)">
+    <section
+      className={`flex flex-col shrink-0 gap-(--sp-4) md:gap-(--sp-5) ${className ?? ""}`}
+    >
       <Caption>Today&apos;s activity · {shortDow(today.date)}</Caption>
 
       <div className="hidden md:flex rounded-md border border-solid [border-color:var(--border-subtle)]">
@@ -1163,25 +1264,43 @@ function TodayZone({ today }: { today: DashboardView["today"] }) {
         ))}
       </div>
 
-      <div className="md:hidden flex flex-col rounded-md border border-solid [border-color:var(--border-subtle)]">
+      {/* Mobile: "Sales so far" leads as an emphasised row (it's the day's
+          headline figure and appears nowhere else on the page), then the
+          four count rows. Card language matches the location tables — 8px
+          radius, 11px/16px rows, count in a fixed 32px lane so the labels
+          form one vertical edge. */}
+      <div className="md:hidden flex flex-col overflow-clip rounded-lg [background-color:var(--surface-page)] border border-solid [border-color:var(--border-subtle)]">
+        <Link
+          href="/admin/sales"
+          className="flex items-center justify-between gap-(--sp-5) [padding-block:14px] px-(--sp-6) [background-color:var(--surface-subtle)] border-b border-b-solid [border-bottom-color:var(--border-subtle)] no-underline"
+        >
+          <span className="font-ui font-(--weight-medium) [color:var(--color-accent)] text-sm/[16px]">
+            Sales so far →
+          </span>
+          <span className="shrink-0 font-mono font-(--weight-semibold) [font-size:16px] [line-height:20px] [color:var(--text-primary)]">
+            {money(today.salesSoFar)}
+          </span>
+        </Link>
         {cells
           .filter((c) => c.key !== "sales")
           .map((c, i, arr) => (
             <div
               key={c.key}
-              className={`flex items-center gap-(--sp-4) py-(--sp-5) px-(--sp-6) ${
+              className={`flex items-center gap-(--sp-5) [padding-block:11px] px-(--sp-6) ${
                 i < arr.length - 1 ? "border-b border-b-solid [border-bottom-color:var(--border-subtle)]" : ""
               }`}
             >
-              <span className="w-[32px] shrink-0 font-mono font-(--weight-semibold) [color:var(--text-primary)] text-h2/[20px]">
+              <span className="w-[32px] shrink-0 font-mono font-(--weight-semibold) [color:var(--text-primary)] [font-size:14px] [line-height:18px]">
                 {c.mValue ?? c.value}
               </span>
               {c.mLabel ? (
-                <span className="grow font-ui [color:var(--text-secondary)] text-sm/sm">{c.mLabel}</span>
+                <span className="grow min-w-0 font-ui [color:var(--text-secondary)] text-sm/[16px]">
+                  {c.mLabel}
+                </span>
               ) : (
                 <Link
                   href={c.href ?? "#"}
-                  className="grow font-ui font-(--weight-medium) [color:var(--color-accent)] text-sm/sm no-underline hover:underline"
+                  className="grow min-w-0 font-ui font-(--weight-medium) [color:var(--color-accent)] text-sm/[16px] no-underline hover:underline"
                 >
                   {c.label}
                 </Link>
@@ -1273,14 +1392,6 @@ export function DashboardClient() {
         }
       />
 
-      {/* Mobile: range control gets its own row so the header stays uncrowded. */}
-      <div className="md:hidden flex items-center justify-between gap-(--sp-4) py-(--sp-4) px-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-        <span className="font-ui font-(--weight-medium) uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-caption/micro">
-          Showing
-        </span>
-        {rangeControl}
-      </div>
-
       {error ? (
         <div className="pt-(--sp-6)">
           <ErrorState title="Couldn't load the dashboard" description={error} onRetry={refresh} />
@@ -1292,8 +1403,22 @@ export function DashboardClient() {
           ))}
         </div>
       ) : data ? (
-        <div className="flex flex-col gap-(--sp-8) pt-(--sp-2) pb-(--sp-10)">
+        // Zone rhythm is viewport-specific: the mobile artboard's body runs a
+        // 16px gap with 32px of tail padding; desktop keeps Session B's
+        // signed-off 24px / 40px.
+        <div className="flex flex-col gap-(--sp-6) md:gap-(--sp-8) pt-(--sp-2) pb-(--sp-9) md:pb-(--sp-10)">
+          {/* Mobile leads with the position card (Paper `Dashboard — mobile
+              [v2]`: the Position Card sits above the period control and the
+              profit stack). Desktop keeps the signed-off order — profit stack
+              first — so the swap is CSS `order`, not a re-render. */}
+          {/* Mobile: the range control sits between the position card and the
+              profit stack (Paper), full-width with no "Showing" label — that
+              width is what lets the four presets each hold one line at 390px. */}
+          <div className="md:hidden flex flex-col order-2">
+            {rangeControl}
+          </div>
           <ProfitStackZone
+            className="order-3 md:order-none"
             range={range}
             summary={summary}
             loading={summaryLoading}
@@ -1302,8 +1427,9 @@ export function DashboardClient() {
             priorNetProfit={priorSummary?.consolidated.netProfit ?? null}
             priorPeriodLabel={priorPeriodLabel}
           />
-          <RightNowZone position={data.position} />
+          <RightNowZone className="order-1 md:order-none" position={data.position} />
           <TrendRow
+            className="order-4 md:order-none"
             range={range}
             bars={bars}
             trendLoading={trendLoading}
@@ -1312,13 +1438,15 @@ export function DashboardClient() {
             trend={data.trend}
           />
           <LocationTablesZone
+            className="order-5 md:order-none"
             range={range}
             perLocation={summary?.perLocation ?? []}
             stockActivity={data.stockActivity}
           />
-          <NeedsAttentionZone na={data.needsAttention} onReviewDay={onReviewDay} />
-          <TodayZone today={data.today} />
+          <NeedsAttentionZone className="order-6 md:order-none" na={data.needsAttention} onReviewDay={onReviewDay} />
+          <TodayZone className="order-7 md:order-none" today={data.today} />
           <DayCloseRow
+            className="order-8 md:order-none"
             openPriorDates={data.needsAttention.openPriorDates}
             highlightDate={reviewDay?.date}
             openHistorySignal={reviewDay?.nonce}
