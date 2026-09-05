@@ -212,3 +212,11 @@ to a real regression that cost a session.
   a correction of a correction is rejected — compute the delta against
   `original + Σ existing deltas` so a double-submit is a no-op (M1
   finding F-1).
+- **Use the narrowest test lane while iterating; run the full suite once.**
+  `pnpm test:unit` (DB-free, seconds) for screen/pure-logic work,
+  `pnpm test:db` (domain/API/integration, ~1–2 min) for anything touching
+  Postgres, or a single file/pattern (`vitest run <path>`) when iterating
+  on one test. Don't re-run the full `pnpm test` (all 1,000+ tests, single
+  process, several minutes) as an inner loop — run it once, as the final
+  gate before calling a session's work done, and again only if that run
+  surfaces something you then fix.

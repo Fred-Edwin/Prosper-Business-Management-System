@@ -25,11 +25,63 @@ financial-summary suites assert.
 - **`.env.test`** (committed) holds the test `DATABASE_URL`.
   `vitest.shared.ts` loads it with `override: true` so it wins over any
   `DATABASE_URL` already in your shell or `.env`.
-- **`scripts/setup-test-db.mjs`** is idempotent and does three things:
+- **`scripts/setup-test-db.mjs`** is idempotent and does four things:
   1. Creates `prosper_hotel_tests` if it does not exist.
-  2. `prisma migrate deploy` — the test DB has real `_prisma_migrations`
-     history (unlike the dev DB, which was built with `db push`).
-  3. Seeds it (`prisma/seed.ts` is WIPE + REBUILD, so re-runs are clean).
+  2. Creates a **fixed pool of 8 Postgres schemas** inside it
+     (`test_worker_1` .. `test_worker_8`) — see "Per-worker schema
+     isolation" below.
+  3. `prisma migrate deploy` against each schema — the test DB has real
+     `_prisma_migrations` history per schema (unlike the dev DB, which
+     was built with `db push`).
+  4. Seeds each schema (`prisma/seed.ts` is WIPE + REBUILD per schema,
+     so re-runs are clean).
+
+## Per-worker schema isolation
+
+`pnpm test:db` runs 8 vitest worker forks against the SAME Postgres
+database. Early on, all 8 shared one schema (`public`) — each suite
+wrote with its own unique id prefixes, but many reads were unscoped
+(an aggregate/count/findFirst/groupBy with no prefix filter), so a
+worker running suite A could see rows suite B had just written on
+another worker. That's a genuine race, not a bug in any one test:
+looping the same code at high parallelism produced different failure
+counts and different failing test names on different runs.
+
+The fix is **schema-per-worker**, not just lower parallelism:
+`lib/db/index.ts` reads `VITEST_POOL_ID` (vitest's stable, dense,
+1-based per-fork-process id — confirmed empirically for vitest 4's
+default `pool: "forks"`; unset outside a vitest fork, so `pnpm dev`
+and prod are unaffected) and routes the Prisma client to
+`test_worker_<id>` instead of `public`. Two workers can now write
+whatever they want, however unscoped their reads are — they are in
+different schemas, not just different rows of the same one.
+
+**The non-obvious part**: a Postgres connection string's `?schema=`
+query param does **nothing** at runtime through `@prisma/adapter-pg` —
+`pg` (the driver underneath) has no such connection option and doesn't
+set `search_path` from it either, so a client connected that way
+silently reads/writes `public` regardless of the param. The only thing
+that actually routes the adapter's generated queries to another schema
+is `PrismaPg`'s own second constructor argument, `{ schema }`. That's
+what `lib/db/index.ts` and `prisma/seed.ts` use. `prisma migrate
+deploy` is the one exception — its own engine (unrelated to
+`@prisma/adapter-pg`) really does read `?schema=` off the URL, which is
+why `scripts/setup-test-db.mjs` uses the URL param for migration and
+the `TEST_WORKER_SCHEMA` env var (which `prisma/seed.ts` turns into the
+adapter's `{ schema }` option) for seeding.
+
+Migration across the 8 schemas runs **sequentially** — `prisma migrate
+deploy`'s advisory lock (`pg_advisory_lock`) is scoped to the whole
+database, not the schema, so parallel migrate runs just contend on the
+same lock and start timing out (confirmed empirically). Seeding has no
+such lock and runs in parallel across all 8 schemas.
+
+`SCHEMA_POOL_SIZE` in `scripts/setup-test-db.mjs` (currently 8) must
+stay `>=` the largest `maxWorkers` of any DB-touching vitest config. If
+`maxWorkers` is ever raised past 8, raise the pool size too — a worker
+whose `VITEST_POOL_ID` exceeds the pool hits a schema that was never
+migrated/seeded and fails loudly, rather than quietly falling back to
+`public` and reintroducing the race.
 
 ### Fresh clone / from scratch
 
@@ -74,8 +126,13 @@ test-breaking change — update the flow helpers in the same commit.
 
 ## Lanes and the worker cap
 
-See the comments in `vitest.shared.ts`. Short version: `test` / `test:db`
-are capped at 2 workers because each vitest worker fork opens its own
-Prisma pool (~17 connections) and 8 forks would overrun Postgres'
-100-connection ceiling. `test:unit` touches no DB and runs at full
-parallelism.
+See the comments in `vitest.shared.ts`. Short version: `.env.test`'s
+`DATABASE_URL` pins each worker's Prisma pool to `connection_limit=5`
+(Prisma's default without it is `num_cpus * 2 + 1`, ~17 per fork, which
+would overrun Postgres' 100-connection ceiling well before 8 forks).
+`test:db` runs at `maxWorkers: 8`; `test` (the full, single-invocation
+lane CI/pre-push use) stays at `maxWorkers: 2`. Both are safe from the
+cross-worker read race described above regardless of worker count, since
+each worker gets its own schema — the worker cap here is purely about
+Postgres connection budget, not correctness. `test:unit` touches no DB
+and runs at full parallelism.

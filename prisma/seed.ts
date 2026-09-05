@@ -3,7 +3,17 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+// TEST_WORKER_SCHEMA is set only by scripts/setup-test-db.mjs, once per
+// pool schema it seeds — see lib/db/index.ts for why a connection
+// string's `?schema=` param can't carry this instead (it's inert against
+// `@prisma/adapter-pg`; the adapter's second constructor arg is the only
+// thing that actually routes generated queries to a non-public schema).
+// Unset (dev seed, `pnpm prisma:seed`) behaves exactly as before.
+const testWorkerSchema = process.env.TEST_WORKER_SCHEMA;
+const adapter = new PrismaPg(
+  { connectionString: process.env.DATABASE_URL },
+  testWorkerSchema ? { schema: testWorkerSchema } : undefined,
+);
 const prisma = new PrismaClient({ adapter });
 
 // ═══════════════════════════════════════════════════════════════════════
