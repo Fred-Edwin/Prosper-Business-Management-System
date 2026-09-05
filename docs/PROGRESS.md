@@ -15,6 +15,102 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 5 — COGS bug: "This week"/"This month" inflated Net Profit (Developer — 2026-09-05) — DONE
+
+Owner-reported: `/admin` and `/admin/financials` showed correct figures
+for "Today", but picking "This week" or "This month" reported a **positive
+~27,000 net profit for a period the business actually lost money in**.
+Hand-calculation against the raw ledger put the true figure at −5,760.
+
+Against `docs/sprints/cogs-pre-ledger-period-bug-HANDOFF.md` (a prior
+session's handoff, now deleted per this log's policy).
+
+### Root cause — a modelling error, not a boundary bug
+
+`cogsByLocationSweep` computes `Opening + Purchases − Closing`, which
+assumes **every non-purchase movement is consumption**. An `opening` row
+violates that: it is not goods entering the business, it is a
+*restatement of a position* ("we had N on hand"). `setOpeningStock`
+(ADR-11) stamps it at `businessDateStartUtc(businessDate)`.
+
+Dated like an ordinary movement, that row falls **inside** any period
+starting earlier than the day tracking began. The closing term (`< end`)
+counted it; the opening term, which only looked at `start`, could not —
+so the entire opening-stock valuation looked like stock materialising
+from nowhere, dragging COGS negative and inflating profit by the same
+amount. With the dev ledger's 32,700 baseline that is the reported swing.
+
+Crucially this is **not reachable by any boundary operator**: for a
+week-long range the row sits *days* inside the period, nowhere near
+`start`. `lt`, `lte`, and clamping `start` forward all fail.
+
+### The fix — one `where` clause, no new queries
+
+The opening term now separates `opening` rows by **type**, not timestamp:
+
+```
+Σ (non-opening movements  occurredAt <  start)     ordinary history
+Σ (opening    rows        occurredAt <  end)       position restatements
+```
+
+An `opening` row inside the period lands in **both** the opening and the
+closing term, so it nets to zero across the subtraction — correct, since
+restating a position consumes nothing. A pair whose tracking starts
+mid-period is then charged only what it actually bought and used. A
+period entirely before any history has the rows on neither side, so it
+stays 0.
+
+Kept the original 3-query design — no per-pair clamp, no extra round
+trips.
+
+### Correcting the handoff's record
+
+The handoff's §4 account of "Attempt 2" (that `lte` fixed week/month, and
+fabricated a −32,700 loss on a prior-month range) was **reproduced and
+found false on both counts**: `lte` leaves week/month at −25,600, and the
+prior-month range returns 0.00. Attempts 3 and 4 (a global first-movement
+clamp, then a per-(product, location) clamp) were therefore built against
+a phantom, which is why they kept trading one regression for another. No
+clamp is needed.
+
+### Verified
+
+- 7 ranges hand-checked against the dev DB — the 4 from the handoff's
+  ground-truth table plus an all-time range and an empty far-future range
+  (the two that previously caught nothing). All match, net −5,760.
+- **Range-additivity restored**: the per-day `dailyNetSeries` now sums to
+  the range summary (−5,760 = −5,760). Pre-fix the week summary said
+  +26,940 while its own days summed to −5,760 — the ADR-64 telescoping
+  identity held per-day but the range summary disagreed with itself.
+- `lib/domain/dashboard/trend-series.ts` needed no code change: its
+  same-day exclusion of `opening` rows already agrees, because
+  `setOpeningStock` is the only writer of `opening` rows and always
+  stamps the day-start instant (corrections included — they reuse the
+  original date). Its doc comment said an "`opening` correction dated
+  mid-day is ordinary flow", describing a row the system cannot produce;
+  comment corrected to state the type-based rule the two paths now share.
+- `cogs-pre-ledger-period.test.ts` kept and rewritten: its prose
+  described the abandoned clamp, and one assertion claimed a pre-fix
+  `+6,000` that never occurred. Added a third case — a pair whose
+  tracking **begins mid-period** while it trades — which is the shape no
+  boundary fix reaches. Both regression tests were confirmed to fail
+  against the pre-fix code (−6,000 and −3,500) and pass after.
+
+### Gates
+
+`pnpm test` **1026/1026 across 127 files**, `pnpm typecheck` clean,
+`pnpm build` clean.
+
+### Not done / open
+
+- The working tree also carries unrelated uncommitted test-infra changes
+  (`.env.test` pinning `connection_limit=5`, `vitest.db.config.ts` raising
+  `maxWorkers` 2 → 8). Not part of this fix; left for the owner to judge
+  separately.
+- Nothing committed — no commit was requested.
+
+---
+
 ## Milestone 5 "Dashboard & Financials v2" Session B — Dashboard frontend (Developer — 2026-09-04/05) — DONE
 
 Against `docs/sprints/m5-dashboard-financials-v2-session-B-dashboard-frontend-HANDOFF.md`

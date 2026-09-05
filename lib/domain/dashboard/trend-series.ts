@@ -42,15 +42,24 @@ import {
  * The telescoping identity assumes a STRICT `< dayStart` opening term.
  * `setOpeningStock` stamps `opening` rows at exactly
  * `businessDateStartUtc(date)` = that day's `dayStart`, and
- * `getFinancialSummary` carves those rows INTO its opening term (they are
+ * `getFinancialSummary` puts those rows in its opening term (they are
  * carried-in balance, not that day's flow). To keep this series in
  * lock-step with it, an `opening` row dated exactly at its business-day
  * start is EXCLUDED from `movementValue` here — it never was same-day
  * activity. Without this, day 1's `movementValue` would swallow the whole
  * opening-stock valuation and `cogsDay = 0 − openingValue` would fake a
  * large negative COGS (hence a large positive net) on the first day
- * opening stock is entered. (An `opening` correction dated mid-day is
- * ordinary flow and still counts.)
+ * opening stock is entered.
+ *
+ * `setOpeningStock` (ADR-11) is the only writer of `opening` rows and
+ * always stamps `businessDateStartUtc(businessDate)` — corrections
+ * included, since they reuse the original date — so in practice EVERY
+ * `opening` row is caught by this rule. That matches
+ * `getFinancialSummary`, which excludes `opening` rows from the
+ * consumption flow by TYPE rather than by timestamp: an opening row is a
+ * restatement of a position, never goods moving. The two stay in
+ * agreement day-by-day and, because of that, the daily series sums to the
+ * range summary over any span.
  *
  * Revenue and expenses are already per-day-additive in
  * `getFinancialSummary`, so they are computed here with the SAME rules:

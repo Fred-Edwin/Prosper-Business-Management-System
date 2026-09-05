@@ -258,10 +258,11 @@ const COST_VALUE_ZERO_KINDS = new Set(["dish"]);
  * COGS per location: `opening value + purchase-receipt value − closing
  * value`, over every product at that location.
  *
- *   opening value  = Σ over products of (Σ quantity where occurredAt <
- *                    period start, PLUS any `opening`-type row dated
- *                    exactly at period start) × costValue(product)
- *   closing value  = same, occurredAt < period end
+ *   opening value  = Σ over products of (Σ quantity of every movement
+ *                    that had already happened when the period began)
+ *                    × costValue(product)
+ *   closing value  = Σ over products of (Σ quantity where occurredAt <
+ *                    period end) × costValue(product)
  *   purchases      = Σ over products of (Σ `purchase_receipt` quantity in
  *                    the period) × costValue(product)
  *
@@ -272,16 +273,43 @@ const COST_VALUE_ZERO_KINDS = new Set(["dish"]);
  * are never in the purchases term, so an internal Store→Canteen move
  * nets to zero across the opening/closing deltas and doesn't touch COGS.
  *
- * **The opening-boundary carve-out.** `setOpeningStock` stamps every
- * `opening` row at `businessDateStartUtc(businessDate)` — the exact
- * instant this sweep uses as `start`. A strict `occurredAt < start` would
- * drop that row from the opening term while the closing term (`< end`)
- * still counts it, so on the first day opening stock is entered COGS is
- * dragged negative by the entire opening-stock valuation. An `opening`
- * row dated at `start` IS the period's starting position, so it belongs
- * in the opening term. It cannot leak into the purchases term (that is
- * `purchase_receipt` only), and nothing but `setOpeningStock` ever writes
- * at exactly `start`, so this does not double-count anything.
+ * **Why `opening` rows are not dated like other movements.** The formula
+ * assumes every non-purchase change in the ledger is *consumption* —
+ * that is what makes `Opening + Purchases − Closing` equal "what we used
+ * up". An `opening` row breaks that assumption: it is not goods entering
+ * the business, it is a **restatement of a position** ("we had N on
+ * hand"). `setOpeningStock` (ADR-11) stamps it at
+ * `businessDateStartUtc(businessDate)` — the first instant of the day
+ * that pair's tracking began.
+ *
+ * Date it like an ordinary movement and it lands *inside* any period that
+ * starts earlier than that day. The closing term (`< end`) then counts
+ * it, while the opening term — looking only at `start` — cannot, because
+ * the row genuinely isn't at or before `start`. Stock appears to
+ * materialise from nowhere and COGS is dragged negative by the whole
+ * opening valuation. That is the "pick This week and Net Profit inflates
+ * by tens of thousands" bug: no boundary operator (`lt`, `lte`) can fix
+ * it, because the row is not near the boundary at all.
+ *
+ * The fix is to date each `opening` row to what it actually asserts: the
+ * position *as it stood before that pair had any history*. So the opening
+ * term is
+ *
+ *     Σ (ordinary movements strictly before `start`)
+ *   + Σ (`opening` rows for this pair dated before `end`, whenever the
+ *        pair's own tracking began)
+ *
+ * An `opening` row inside the period contributes equally to BOTH the
+ * opening and the closing term, so it nets to zero across the
+ * subtraction — which is right: restating a position never consumed
+ * anything. A pair whose tracking begins mid-period then shows COGS
+ * driven purely by what it actually bought and used, not by the arrival
+ * of its own baseline. And a period entirely before any history has
+ * nothing on either side, so it stays 0.
+ *
+ * This needs no per-pair clamp and no extra queries: `opening` rows are
+ * separated by TYPE, which the ledger already records, rather than by
+ * reasoning about each pair's first-movement timestamp.
  */
 async function cogsByLocationSweep(
   start: Date,
@@ -303,11 +331,15 @@ async function cogsByLocationSweep(
       _sum: { quantity: true },
       where: {
         OR: [
-          { occurredAt: { lt: start } },
-          // The opening-boundary carve-out (see the doc comment above): an
-          // `opening` row dated exactly at `start` is the period's starting
-          // position and belongs in the opening term.
-          { occurredAt: start, movementType: "opening" },
+          // Ordinary movements that had already happened when the period
+          // began. Strict `lt`: `start` is the period's first instant, so
+          // a movement AT `start` happens inside the period, not before it.
+          { occurredAt: { lt: start }, movementType: { not: "opening" } },
+          // Position restatements (see the doc comment above): an
+          // `opening` row states what was on hand before this pair had any
+          // history, whenever it was recorded, so it belongs in the
+          // opening position for any period that can see it at all.
+          { occurredAt: { lt: end }, movementType: "opening" },
         ],
       },
     }),
