@@ -163,9 +163,14 @@ export function ProductsTab({
     ? products.filter((p) => p.deletedAt != null)
     : products;
 
+  // Kept as just the number (not "N products") — the header badge sits
+  // right next to the "Product Catalog" title in a single-row mobile
+  // header (ADR-56); a two-word badge wrapped onto its own line and
+  // pushed the title to wrap too. "archived" stays since it's a
+  // meaningfully different count, not a unit repeating the title.
   const count = tab.archived
     ? `${visibleProducts.length} archived`
-    : `${visibleProducts.length} product${visibleProducts.length === 1 ? "" : "s"}`;
+    : `${visibleProducts.length}`;
   const filtered = search.trim() !== "" || locationId !== ALL_LOCATIONS;
 
   // Publish count + create trigger up to the shared header.
@@ -273,30 +278,36 @@ export function ProductsTab({
 
   return (
     <div className="flex flex-col grow gap-(--sp-8)">
-      {/* Tabs + filters */}
-      <div className="flex items-center justify-between gap-(--sp-4) flex-wrap">
-        <Tabs
-          tabs={TABS.map((t) => ({ key: t.key, label: t.label }))}
-          activeKey={activeTabKey}
-          onChange={setActiveTabKey}
+      {/* Category tabs — their own row so a narrow viewport never has to
+          share width with the search/filter controls below. */}
+      <Tabs
+        tabs={TABS.map((t) => ({ key: t.key, label: t.label }))}
+        activeKey={activeTabKey}
+        onChange={setActiveTabKey}
+      />
+
+      {/* Search + location filter, own row: search leftmost, filter
+          rightmost. Both keep their natural width — the row scrolls
+          horizontally on a narrow viewport instead of squeezing either
+          control (or, per the earlier bug, the whole page) sideways. */}
+      <div className="flex items-center gap-(--sp-4) overflow-x-auto">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search products…"
+          aria-label="Search products"
+          className="shrink-0 w-[240px] md:w-[280px]"
         />
-        <div className="flex items-center gap-(--sp-4)">
-          <Select
-            aria-label="Filter by location"
-            options={[
-              { value: ALL_LOCATIONS, label: "All locations" },
-              ...locations.map((l) => ({ value: l.id, label: l.name })),
-            ]}
-            value={locationId}
-            onChange={setLocationId}
-          />
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search products…"
-            aria-label="Search products"
-          />
-        </div>
+        <Select
+          aria-label="Filter by location"
+          options={[
+            { value: ALL_LOCATIONS, label: "All locations" },
+            ...locations.map((l) => ({ value: l.id, label: l.name })),
+          ]}
+          value={locationId}
+          onChange={setLocationId}
+          className="shrink-0"
+        />
       </div>
 
       {error && (

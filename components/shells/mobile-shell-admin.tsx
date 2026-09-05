@@ -68,11 +68,11 @@ export function MobileShellAdmin({
           {ICON_HAMBURGER}
         </button>
         {typeof title === "string" ? (
-          <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1 truncate">
+          <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1 truncate min-w-0">
             {title}
           </div>
         ) : (
-          title
+          <div className="flex items-center min-w-0 grow-0">{title}</div>
         )}
         <div className="grow" />
         {actions && (
@@ -90,8 +90,12 @@ export function MobileShellAdmin({
         </button>
       </div>
 
-      {/* Content — the only scroll region */}
-      <div className="flex flex-col grow min-h-0 overflow-y-auto">{children}</div>
+      {/* Content — the only scroll region. overflow-x-hidden so an
+          oversized descendant (a fixed-width control that doesn't fit a
+          narrow viewport) clips instead of scrolling the whole page
+          sideways — only a screen's own inner row should ever scroll
+          horizontally, opted in with overflow-x-auto on that row. */}
+      <div className="flex flex-col grow min-h-0 overflow-y-auto overflow-x-hidden">{children}</div>
 
       {/* Sidebar drawer — 1ZP-0 */}
       <MobileNavDrawer

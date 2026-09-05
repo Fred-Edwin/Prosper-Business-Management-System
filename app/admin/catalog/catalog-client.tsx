@@ -70,12 +70,12 @@ export function CatalogClient({
     <PageShell>
       <AdminPageHeader
         title={
-          <div className="flex items-center gap-(--sp-4)">
-            <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
+          <div className="flex items-center gap-(--sp-4) min-w-0">
+            <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1 truncate min-w-0">
               {TITLE[tab]}
             </div>
             {countLabel && (
-              <div className="flex items-center h-[22px] px-(--sp-4) rounded-lg [background-color:var(--surface-hover)]">
+              <div className="flex items-center h-[22px] px-(--sp-4) rounded-lg shrink-0 whitespace-nowrap [background-color:var(--surface-hover)]">
                 <div className="font-ui font-(--weight-medium) [color:var(--text-secondary)] text-caption/micro">
                   {countLabel}
                 </div>
