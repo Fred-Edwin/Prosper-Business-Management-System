@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { AdminShell, ADMIN_NAV_ITEMS } from "@/components/shells/admin-shell";
 import { MobileShellAdmin } from "@/components/shells/mobile-shell-admin";
@@ -64,18 +64,11 @@ export function AdminShellClient({
   const pathname = usePathname();
   const router = useRouter();
 
-  // M3 S3: Financials + Handovers are two nav rows on one route
-  // (/admin/financials, split by ?tab=). usePathname() drops the query and
-  // useSearchParams() would force a Suspense boundary on the whole admin
-  // tree — so read the tab from the URL client-side instead.
-  const [tabParam, setTabParam] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    const read = () =>
-      setTabParam(new URLSearchParams(window.location.search).get("tab"));
-    read();
-    window.addEventListener("popstate", read);
-    return () => window.removeEventListener("popstate", read);
-  }, [pathname]);
+  // M6: several sections are one route with an inner tab row, and the sidebar
+  // accordion lights the active sub-item from the `?tab=` value. The layout
+  // wraps this client in <Suspense> so useSearchParams() is allowed here.
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
 
   // Start expanded for SSR/first paint parity, then hydrate from storage.
   const [collapsed, setCollapsed] = React.useState(false);
@@ -107,10 +100,7 @@ export function AdminShellClient({
     });
   }, []);
 
-  let activeNavKey = activeNavKeyFromPathname(pathname);
-  if (activeNavKey === "financials" && tabParam === "handovers") {
-    activeNavKey = "handovers";
-  }
+  const activeNavKey = activeNavKeyFromPathname(pathname);
   const navigate = React.useCallback(
     (href: string) => router.push(href),
     [router],
@@ -141,6 +131,7 @@ export function AdminShellClient({
         <div className="hidden md:block">
           <AdminShell
             activeNavKey={activeNavKey}
+            activeTabParam={tabParam}
             onNavigate={navigate}
             accountName="Admin"
             accountRole="Admin"
@@ -157,6 +148,7 @@ export function AdminShellClient({
         <div className="md:hidden">
           <MobileShellAdmin
             activeNavKey={activeNavKey}
+            activeTabParam={tabParam}
             onNavigate={navigate}
             brandLabel="Prosper"
             brandSubLabel="Admin"

@@ -28,6 +28,7 @@ const ICON_HAMBURGER = (
 export interface MobileShellAdminProps {
   accountInitials: string;
   activeNavKey: string;
+  activeTabParam?: string | null;
   onNavigate: (href: string) => void;
   brandLabel: string;
   brandSubLabel: string;
@@ -40,6 +41,7 @@ export interface MobileShellAdminProps {
 export function MobileShellAdmin({
   accountInitials,
   activeNavKey,
+  activeTabParam = null,
   onNavigate,
   brandLabel,
   brandSubLabel,
@@ -102,6 +104,7 @@ export function MobileShellAdmin({
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         activeNavKey={activeNavKey}
+        activeTabParam={activeTabParam}
         onNavigate={(href) => {
           setDrawerOpen(false);
           onNavigate(href);

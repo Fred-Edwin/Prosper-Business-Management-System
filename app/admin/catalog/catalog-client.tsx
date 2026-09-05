@@ -21,7 +21,7 @@ import { Button } from "@/components/kit/button";
 import { ProductsTab, type ProductsTabState } from "./products-tab";
 import { LocationsTab, type LocationsTabState } from "./locations-tab";
 
-type CatalogTabKey = "products" | "locations";
+export type CatalogTabKey = "products" | "locations";
 
 const TABS = [
   { key: "products" as const, label: "Products", panelId: "catalog-panel-products" },

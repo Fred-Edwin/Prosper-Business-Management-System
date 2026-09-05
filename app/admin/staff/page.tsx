@@ -22,5 +22,6 @@ export default async function AdminStaffPage({
   const initialTab: StaffTabKey = (TABS as readonly string[]).includes(tab ?? "")
     ? (tab as StaffTabKey)
     : "roster";
-  return <StaffClient initialTab={initialTab} />;
+  // `key` remounts the client when the sidebar deep-links a different tab.
+  return <StaffClient key={initialTab} initialTab={initialTab} />;
 }

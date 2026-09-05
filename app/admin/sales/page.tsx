@@ -17,5 +17,6 @@ export default async function AdminSalesPage({
 }) {
   const { tab } = await searchParams;
   const initialTab: SalesTabKey = tab === "derived" ? "derived" : "orders";
-  return <SalesClient initialTab={initialTab} />;
+  // `key` remounts the client when the sidebar deep-links a different tab.
+  return <SalesClient key={initialTab} initialTab={initialTab} />;
 }

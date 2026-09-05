@@ -7,14 +7,18 @@
 //
 // Panel structure from the artboard:
 //   Brand header (1ZR-0): h-[72px], logo + name/subtitle stack + close (×)
-//   Nav body    (202-0): grouped 11-item nav, h-[38px] rows, px-[12px],
-//                        gap-[10px], active row = --nav-bg-active + a 3px
-//                        left marker
+//   Nav body    (202-0): grouped nav, h-[38px] rows, px-[12px], gap-[10px],
+//                        active row = --nav-bg-active + a 3px left marker
 //   Footer      (229-0): avatar + name/role + Sign out chip
 //
-// The 11-item nav list + its grouping is transcribed exactly as 1ZP-0 emits it
-// (note: the artboard places "Customers" just above the "People & Money" group
-// header — kept verbatim). §9 interaction states come from globals.css.
+// §9 interaction states come from globals.css.
+//
+// M6 (owner request, Approach A — see admin-shell.tsx): the destinations +
+// grouping come from ./admin-nav-model.ts (shared with the desktop shell).
+// Tabbed sections (Financials, Sales, Staff, Catalog, Assets) render a
+// disclosure chevron + an inline indented sub-list; the label navigates, the
+// chevron toggles, one section open at a time. Handovers + Reports are gone as
+// top-level links.
 "use client";
 
 import * as React from "react";
@@ -28,18 +32,12 @@ import {
   useOverlayTransition,
   useScrollLock,
 } from "@/components/kit/internal/overlay";
-
-interface DrawerNavItemDef {
-  key: string;
-  label: string;
-  href: string;
-  icon: React.ReactNode;
-}
-
-interface DrawerNavGroupDef {
-  label?: string;
-  items: DrawerNavItemDef[];
-}
+import {
+  ADMIN_NAV_GROUPS,
+  ADMIN_NAV_ITEMS_FLAT,
+  activeChildKey,
+  type AdminNavItemDef,
+} from "./admin-nav-model";
 
 const SW = { fill: "none", stroke: "#FFFFFF", strokeWidth: 1.5, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
 
@@ -80,14 +78,6 @@ const ICON_SALES = (
     <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" {...SW} />
   </Svg>
 );
-const ICON_HANDOVERS = (
-  <Svg>
-    <polyline points="17 1 21 5 17 9" {...SW} />
-    <path d="M3 11V9a4 4 0 0 1 4-4h14" {...SW} />
-    <polyline points="7 23 3 19 7 15" {...SW} />
-    <path d="M21 13v2a4 4 0 0 1-4 4H3" {...SW} />
-  </Svg>
-);
 const ICON_CUSTOMERS = (
   <Svg>
     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" {...SW} />
@@ -115,11 +105,6 @@ const ICON_ASSETS = (
     <path d="M9 21V9" {...SW} />
   </Svg>
 );
-const ICON_REPORTS = (
-  <Svg>
-    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" {...SW} />
-  </Svg>
-);
 const ICON_AUDIT = (
   <Svg>
     <circle cx="12" cy="12" r="10" {...SW} />
@@ -127,43 +112,27 @@ const ICON_AUDIT = (
   </Svg>
 );
 
-// Group layout transcribed verbatim from 1ZP-0 (Customers sits in the same
-// block as the Team/People headers exactly as the artboard draws it).
-const NAV_GROUPS: DrawerNavGroupDef[] = [
-  { items: [{ key: "dashboard", label: "Dashboard", href: "/admin", icon: ICON_DASHBOARD }] },
-  {
-    label: "Operations",
-    items: [
-      { key: "catalog", label: "Catalog", href: "/admin/catalog", icon: ICON_CATALOG },
-      { key: "stock", label: "Ledger", href: "/admin/stock", icon: ICON_STOCK },
-      // M2 3a: mirrors admin-shell.tsx — one merged "Sales" screen
-      // (/admin/sales) with Restaurant Orders + Canteen Derived tabs.
-      { key: "sales", label: "Sales", href: "/admin/sales", icon: ICON_SALES },
-      { key: "handovers", label: "Handovers", href: "/admin/handovers", icon: ICON_HANDOVERS },
-    ],
-  },
-  {
-    label: "People & Money",
-    items: [
-      { key: "customers", label: "Customers", href: "/admin/customers", icon: ICON_CUSTOMERS },
-      { key: "financials", label: "Financials", href: "/admin/financials", icon: ICON_FINANCIALS },
-    ],
-  },
-  {
-    label: "Team",
-    items: [
-      { key: "staff", label: "Staff", href: "/admin/staff", icon: ICON_STAFF },
-      { key: "assets", label: "Assets", href: "/admin/assets", icon: ICON_ASSETS },
-    ],
-  },
-  {
-    label: "Reporting",
-    items: [
-      { key: "reports", label: "Reports", href: "/admin/reports", icon: ICON_REPORTS },
-      { key: "audit-trail", label: "Audit trail", href: "/admin/audit-trail", icon: ICON_AUDIT },
-    ],
-  },
-];
+// key → icon. Keys and grouping come from admin-nav-model.ts (shared with the
+// desktop shell); this drawer keeps its own SVG set at drawer sizes.
+const NAV_ICONS: Record<string, React.ReactNode> = {
+  dashboard: ICON_DASHBOARD,
+  catalog: ICON_CATALOG,
+  stock: ICON_STOCK,
+  sales: ICON_SALES,
+  customers: ICON_CUSTOMERS,
+  financials: ICON_FINANCIALS,
+  staff: ICON_STAFF,
+  assets: ICON_ASSETS,
+  "audit-trail": ICON_AUDIT,
+};
+
+const ICON_CHEVRON = (
+  <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <polyline points="9 18 15 12 9 6" fill="none" stroke="var(--nav-text-label)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const NAV_GROUPS = ADMIN_NAV_GROUPS;
 
 const ICON_CLOSE = (
   <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
@@ -176,6 +145,8 @@ export interface MobileNavDrawerProps {
   open: boolean;
   onClose: () => void;
   activeNavKey: string;
+  /** Current `?tab=` value, used to light the right sub-item. */
+  activeTabParam?: string | null;
   onNavigate: (href: string) => void;
   brandLabel: string;
   brandSubLabel: string;
@@ -185,10 +156,128 @@ export interface MobileNavDrawerProps {
   onAccountClick: () => void;
 }
 
+/**
+ * One drawer row. Plain link, or — when `item.children` is present — a label
+ * button + disclosure chevron with an inline indented sub-list. The label
+ * navigates; the chevron only toggles.
+ */
+function DrawerNavRow({
+  item,
+  active,
+  activeChild,
+  expanded,
+  onToggle,
+  onNavigate,
+}: {
+  item: AdminNavItemDef;
+  active: boolean;
+  activeChild: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+  onNavigate: (href: string) => void;
+}) {
+  const icon = NAV_ICONS[item.key] ?? null;
+  const labelCls = cn(
+    "font-ui inline-block text-body/sm",
+    active ? "font-(--weight-medium) text-(--nav-text-active)" : "text-(--nav-text)",
+  );
+
+  if (!item.children) {
+    return (
+      <button
+        type="button"
+        aria-current={active ? "page" : undefined}
+        onClick={() => onNavigate(item.href)}
+        className={cn(
+          "flex items-center h-[38px] px-[12px] rounded-(--nav-item-radius) gap-[10px] relative shrink-0 kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]",
+          active && "bg-(--nav-bg-active)",
+        )}
+      >
+        {icon}
+        <span className={labelCls}>{item.label}</span>
+        {active && (
+          <span className="absolute left-[0px] top-[6px] bottom-[6px] w-[3px] rounded-tr-[2px] rounded-br-[2px] bg-(--nav-text-active)" />
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col shrink-0">
+      <div
+        className={cn(
+          "flex items-center h-[38px] rounded-(--nav-item-radius) kit-interactive [--kit-hover-bg:var(--nav-bg-hover)]",
+          active && "bg-(--nav-bg-active)",
+        )}
+      >
+        <button
+          type="button"
+          aria-current={active ? "page" : undefined}
+          onClick={() => onNavigate(item.href)}
+          className="flex items-center grow h-full pl-[12px] gap-[10px] rounded-l-(--nav-item-radius) kit-focus-ring kit-focus-on-dark"
+        >
+          {icon}
+          <span className={labelCls}>{item.label}</span>
+        </button>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-label={expanded ? `Collapse ${item.label}` : `Expand ${item.label}`}
+          onClick={onToggle}
+          className="flex items-center justify-center w-[40px] h-full shrink-0 rounded-r-(--nav-item-radius) kit-focus-ring kit-focus-on-dark"
+        >
+          <span
+            className="flex transition-transform duration-150"
+            style={{ transform: expanded ? "rotate(90deg)" : "none" }}
+          >
+            {ICON_CHEVRON}
+          </span>
+        </button>
+      </div>
+      {expanded && (
+        <div className="flex pt-[2px] pb-[6px]">
+          <div className="w-[30px] shrink-0 flex justify-center">
+            <span className="w-px bg-(--nav-border)" />
+          </div>
+          <div className="flex flex-col grow gap-[1px] pr-[8px]">
+            {item.children.map((child) => {
+              const childActive = child.key === activeChild;
+              return (
+                <button
+                  key={child.key}
+                  type="button"
+                  aria-current={childActive ? "page" : undefined}
+                  onClick={() => onNavigate(child.href)}
+                  className={cn(
+                    "flex items-center h-[34px] px-[12px] rounded-sm shrink-0 kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]",
+                    childActive && "bg-(--nav-bg-active)",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "font-ui inline-block text-sm/micro",
+                      childActive
+                        ? "font-(--weight-medium) text-(--nav-text-active)"
+                        : "text-(--nav-text)",
+                    )}
+                  >
+                    {child.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MobileNavDrawer({
   open,
   onClose,
   activeNavKey,
+  activeTabParam = null,
   onNavigate,
   brandLabel,
   brandSubLabel,
@@ -200,6 +289,17 @@ export function MobileNavDrawer({
   const rootRef = React.useRef<HTMLDivElement>(null);
   const panelRef = React.useRef<HTMLDivElement>(null);
   const brandId = React.useId();
+
+  const activeChild = activeChildKey(activeNavKey, activeTabParam);
+  const [expandedKey, setExpandedKey] = React.useState<string | null>(activeNavKey);
+  React.useEffect(() => {
+    const parent = ADMIN_NAV_ITEMS_FLAT.find((i) => i.key === activeNavKey);
+    if (parent?.children) setExpandedKey(activeNavKey);
+  }, [activeNavKey]);
+  const toggleExpanded = React.useCallback(
+    (key: string) => setExpandedKey((cur) => (cur === key ? null : key)),
+    [],
+  );
 
   const { mounted, phase, endExit } = useOverlayTransition(open);
   const active = mounted && phase !== "closing";
@@ -281,34 +381,17 @@ export function MobileNavDrawer({
                   </div>
                 </div>
               )}
-              {group.items.map((item) => {
-                const active = item.key === activeNavKey;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    aria-current={active ? "page" : undefined}
-                    onClick={() => onNavigate(item.href)}
-                    className={cn(
-                      "flex items-center h-[38px] px-[12px] rounded-(--nav-item-radius) gap-[10px] relative shrink-0 kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]",
-                      active && "bg-(--nav-bg-active)",
-                    )}
-                  >
-                    {item.icon}
-                    <span
-                      className={cn(
-                        "font-ui inline-block text-body/sm",
-                        active ? "font-(--weight-medium) text-(--nav-text-active)" : "text-(--nav-text)",
-                      )}
-                    >
-                      {item.label}
-                    </span>
-                    {active && (
-                      <span className="absolute left-[0px] top-[6px] bottom-[6px] w-[3px] rounded-tr-[2px] rounded-br-[2px] bg-(--nav-text-active)" />
-                    )}
-                  </button>
-                );
-              })}
+              {group.items.map((item) => (
+                <DrawerNavRow
+                  key={item.key}
+                  item={item}
+                  active={item.key === activeNavKey}
+                  activeChild={activeChild}
+                  expanded={expandedKey === item.key}
+                  onToggle={() => toggleExpanded(item.key)}
+                  onNavigate={onNavigate}
+                />
+              ))}
             </div>
           ))}
         </nav>

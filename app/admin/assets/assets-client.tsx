@@ -81,13 +81,22 @@ const ASSET_TABS = [
   { key: "archived", label: "Archived", archived: true },
 ];
 
+export type AssetsTabKey = "active" | "archived";
+
 const ALL = "__all__";
 
-export function AssetsClient() {
+export function AssetsClient({
+  initialTab = "active",
+}: {
+  // M6: `?tab=archived` deep-links the Archived tab from the sidebar.
+  initialTab?: AssetsTabKey;
+} = {}) {
   const [search, setSearch] = React.useState("");
   const [conditionKey, setConditionKey] = React.useState("all");
   const [locationId, setLocationId] = React.useState<string>(ALL);
-  const [tabKey, setTabKey] = React.useState("active");
+  const [tabKey, setTabKey] = React.useState<string>(
+    initialTab === "archived" ? "archived" : "active",
+  );
 
   const activeTab = ASSET_TABS.find((t) => t.key === tabKey) ?? ASSET_TABS[0];
   const activeConditionFilter =

@@ -15,6 +15,114 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Admin nav — expandable sections (Developer — 2026-09-05) — DONE
+
+Owner request, ad hoc (not tied to a milestone plan): the Admin sidebar
+listed every top-level section but gave no hint of the screens inside
+each one, and two links were dead weight — **Handovers** (already a tab
+of Financials since M3 S3) and **Reports** (a `/admin/reports` route
+that was never built). Owner approved "Approach A — inline accordion"
+from a Paper comparison (`M6 — Expandable navigation` page).
+
+**What shipped:**
+- `components/shells/admin-nav-model.ts` — new single source of truth
+  for the sidebar's destinations, shared by the desktop shell, the
+  mobile drawer and the shell client. Sections that are one route with
+  an inner tab row (Financials, Sales, Staff, Catalog, Assets) declare
+  their tabs as `children`; each child's `href` deep-links its tab via
+  `?tab=`. `activeChildKey(navKey, tabParam)` resolves the lit sub-item.
+  Icon-free — each shell keeps its own SVG set and maps by `key`.
+- **Handovers** and **Reports** removed as top-level links from both
+  `admin-shell.tsx` and `mobile-nav-drawer.tsx`. The old
+  `financials + ?tab=handovers → "handovers"` nav-key special-case in
+  `admin-shell-client.tsx` is gone.
+- Both shells render an accordion: expandable rows get a disclosure
+  chevron (label click navigates to the section default; chevron click
+  toggles), an indented sub-list with a hairline connector, and
+  one-section-open-at-a-time state that auto-opens the section owning
+  the active route. Icon rail (collapsed desktop) is unchanged — icons
+  only, no children.
+- `admin-shell-client.tsx` now reads `?tab=` via `useSearchParams()`
+  (layout wraps it in `<Suspense>`) and passes `activeTabParam` to both
+  shells so the lit sub-item tracks the URL.
+- Catalog + Assets `page.tsx` gained `searchParams → initialTab`
+  (`?tab=products|locations`, `?tab=active|archived`); `AssetsClient`
+  gained an `initialTab` prop, `CatalogTabKey` / `AssetsTabKey` are now
+  exported. All five tabbed screens' `page.tsx` pass `key={initialTab}`
+  so a sidebar deep-link to a different tab remounts the client with the
+  fresh tab (the `useState(initialTab)` initializer alone wouldn't pick
+  up a query-only change).
+
+**Gate:** `pnpm test:unit` 448/448, `pnpm build` clean, new
+`tests/screens/admin-nav-accordion.screen.test.tsx` (16 cases) covers
+the model + both shells' expand/collapse/deep-link/active-highlight.
+Driven in `pnpm dev` as Admin, desktop + 390px, across Financials /
+Staff sub-links. `pnpm typecheck` reports pre-existing errors only in
+`lib/domain/financials/opening-balance.ts` (a concurrent agent's
+untracked WIP, not touched here).
+
+**Not done / deferred:** in-page tab switches still don't rewrite the
+URL (matches pre-existing Financials/Sales/Staff behaviour) — the
+accordion highlight follows the URL, so it updates on navigation, not
+on an in-page tab click. Collapsed icon-rail has no sub-nav affordance
+(a flyout was sketched as "Approach B" but not chosen).
+
+## Self-service PIN change (Developer — 2026-09-05) — DONE
+
+Owner request, ad hoc (not tied to a milestone plan): before handing the
+app to the client, close two gaps flagged during a handover-readiness
+discussion — no production admin bootstrap (being handled by a separate
+agent) and no way for the Admin to change their own login PIN.
+
+**The gap.** `PATCH /api/staff/:id` lets the Admin reset a *staff*
+member's PIN, but the Admin has no `Staff` row (ADR-26 — admin is
+explicitly excluded from the staff pipeline via `assertStaffRole`), so
+that path never covers the Admin's own account. There was no
+self-service PIN-change endpoint or UI for anyone.
+
+**What shipped:**
+- `lib/auth/change-own-pin.ts` — `changeOwnPin(userId, currentPin,
+  newPin)`, any role. Verifies the current PIN by bcrypt compare, rejects
+  a new PIN that isn't 4 digits or that matches the current PIN, re-hashes
+  at the same work factor as the login flow / staff PIN reset
+  (`PIN_BCRYPT_ROUNDS`, now re-exported from `lib/domain/staff`'s public
+  surface since it's shared across modules).
+- `PATCH /api/auth/pin` (`app/api/auth/pin/route.ts`) — thin route via
+  `requireApiRoleIn` over all four roles; documented in `docs/API.md`
+  alongside the existing `/api/staff/:id` PIN-reset path so the two don't
+  get confused.
+- Frontend: **explicitly not a new page.** The owner rejected both "a
+  separate My Account page" (too much for one field) and "add Admin as a
+  row in the Staff table" (the Staff table's fields — daily rate,
+  location, deactivate — don't apply to the Admin and the domain layer
+  already blocks Admin from that table by design). Landed as a "Your
+  account" row/card at the top of `/admin/staff`'s Roster tab, opening a
+  new `change-pin-drawer.tsx` styled like the existing staff drawer's PIN
+  field but requiring the current PIN and a confirm field.
+- `use-staff.ts` gained `useChangeOwnPin()`.
+- Tests: 3 new RTL cases in `tests/screens/admin-staff.screen.test.tsx`
+  (success, confirm-mismatch client validation, wrong-current-PIN server
+  error surfaced inline) + 5 new DB-backed cases in
+  `lib/auth/change-own-pin.test.ts` (success, wrong current PIN writes
+  nothing, invalid new PIN, new PIN same as current, unknown user id).
+
+**Known follow-up, not done this session:** the API allows any role to
+call `/api/auth/pin`, but there is no staff-side UI entry point yet —
+only the Admin's Roster-tab row was built. Flagged in a comment in
+`staff-drawer.tsx`. A forced first-login PIN change
+(`mustChangePin`-style flag) was also explicitly deferred, pending the
+separate agent's production-admin-bootstrap contract — building it now
+risked guessing a shape that wouldn't match.
+
+**Gate:** `pnpm typecheck` clean, `pnpm build` clean, no stray
+`TODO(mock)`. `pnpm test:db`'s parallel 8-worker seed setup hit a
+pre-existing, unrelated flake (`prisma/seed.ts`'s `wipe()` transaction
+timing out under contention — nothing this session touched); the two new
+test files were verified directly against Postgres instead and both
+passed (13/13 screen suite, 5/5 domain suite).
+
+---
+
 ## Long-horizon financial simulation — 7 / 31 / 60 days through the real API (QA — 2026-09-05) — DONE
 
 Owner request, ad hoc (not tied to a milestone plan): prove the money and

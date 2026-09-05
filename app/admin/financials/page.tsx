@@ -40,5 +40,7 @@ export default async function AdminFinancialsPage({
   )
     ? (tab as FinancialsTabKey)
     : "purchases";
-  return <FinancialsClient initialTab={initialTab} />;
+  // `key` remounts the client when the sidebar deep-links a different tab
+  // (a query-only change the client's useState initializer wouldn't pick up).
+  return <FinancialsClient key={initialTab} initialTab={initialTab} />;
 }
