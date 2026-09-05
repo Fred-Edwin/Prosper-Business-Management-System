@@ -15,6 +15,146 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Milestone 5 "Dashboard & Financials v2" Session B — Dashboard frontend (Developer — 2026-09-04/05) — DONE
+
+Against `docs/sprints/m5-dashboard-financials-v2-session-B-dashboard-frontend-HANDOFF.md`
+(+ a `-HANDOFF-2.md` addendum written mid-session recording the bug below).
+Three sessions total for this feature: **A (backend, DONE) → B (this one)
+→ C (Financials frontend, not started)**.
+
+**Shipped**
+
+- `app/admin/dashboard-client.tsx` rebuilt into the v2 zone order per
+  `docs/design/flows/dashboard-screen.md` "Structure (v2 — current)":
+  profit stack → Right now → trend row → Financial-performance +
+  Stock-activity-by-location tables → Needs attention → Today's activity
+  → Day Close.
+- New route `GET /api/admin/dashboard/trend?from=&to=`
+  (`app/api/admin/dashboard/trend/route.ts`) — a thin wrapper over the
+  already-exported `dailyNetSeries` (ADR-64). `GET /api/admin/dashboard`
+  itself stays `?date=`-only, per Session A's decision (not relitigated).
+- `bucketTrendByPeriod` (in `dashboard-client.tsx`): daily bars for
+  Today/This week, ISO-week (Monday-first) bars for This month, a
+  documented 14-day threshold for Custom (dormant today — Custom is
+  always single-day in this app; exists for if it grows a real range).
+- Promoted the Financials date-range hook/control to shared `app/admin`
+  level: `use-financials-range.ts` / `financials-range.tsx` →
+  `use-date-range.ts` / `date-range-control.tsx`
+  (`useFinancialsRange`→`useAdminDateRange`,
+  `FinancialsRangeControl`→`AdminDateRangeControl`), behaviour
+  byte-identical. Dashboard and Financials both import from here now.
+
+**Bug found and fixed — pre-existing, not scoped to Dashboard.** Manual
+`pnpm dev` walkthrough (required by CLAUDE.md's Check phase) found that
+clicking a period preset fetched correct data but the visible header/body
+sometimes didn't update. Root cause: `app/admin/admin-shell-client.tsx`
+mounts `children` twice (once per desktop/mobile shell, M2 S6b) under one
+shared `AdminToolbarProvider`. Any screen with a header-hosted period
+control has two independent copies of that control's state, both racing
+to publish into the one shared header slot — whichever mount's effect
+fires last "wins" the header regardless of which shell is actually
+visible, so the visible header could end up bound to the invisible
+mount's state. Reproduced identically on `/admin/financials` (untouched
+by this session beyond an import-path rename), confirming it predates
+Session B. Fixed in `components/shells/admin-toolbar-context.tsx` (new
+`AdminVisibleContext`/`useAdminShellVisible`/`<AdminShellVisibility>`) +
+`admin-shell-client.tsx` (tracks the real visible shell via
+`matchMedia('(min-width: 768px)')`, not just CSS) — only the visible
+mount now publishes toolbar content. Verified end-to-end on Dashboard and
+Financials, desktop and mobile, via a real browser walkthrough (commit
+`e275cba`).
+
+**Visual-parity fixes from an owner review against the Paper artboard**
+(`P5Y-0`/`PQR-0`, file "Prosper Hotel" · page "M5 — Dashboard & Audit"),
+commit `1b6db77`:
+- Zone spacing corrected to the artboard's 24px (was 32px on desktop);
+  trend-row gap corrected to 20px (was 16px).
+- "Net profit per day" now renders the full 7-day week strip on the
+  Today preset too, not just This week, matching the spec's "unchanged
+  M5 week-strip look, just re-titled" intent — the trend fetch requests
+  the current business week whenever the preset is Today or This week,
+  not just the single selected day.
+- The two trend cards (period + 30-day) now stretch to equal height
+  (`items-start` → `items-stretch`) with their bar-baseline borders
+  landing on the same row — both cards' caption rows and bar-chart boxes
+  now share fixed heights instead of sizing to their own content.
+- Added a Total row to "Stock & activity by location" so its row count
+  matches "Financial performance by location" (owner's fix for the two
+  tables' differing row counts — sidesteps the separate, still-open
+  Store/`perLocation` question below rather than resolving it).
+- The Net Profit tile (desktop + mobile) dropped its "KES " prefix and
+  moved to the same type size as its sibling columns, matching the
+  artboard and fixing the value wrapping to a second line for larger
+  negative figures. Removed the now-unused `kes()` formatter.
+
+**Also merged this session: Ledger v2** (`ledger-v2-kpi-and-range`
+branch, built in a separate worktree by another agent session, reviewed
+and verified there before merge) — KPI band, period-summary/drill-in
+views for `/admin/stock`, reusing the same shared `AdminDateRangeControl`
+/ `useAdminDateRange` this session promoted. Rebased onto this session's
+`main` (commit `02b7b28`); the rebase's own conflict-resolution commit
+missed one file's remaining old-name references
+(`app/admin/stock/stock-client.tsx`, left uncommitted in the source
+worktree) — caught by re-running `pnpm typecheck` on `main` immediately
+after merging, fixed in a same-session follow-up (commit `82b2e18`).
+Lesson: **always re-run gates on `main` itself right after a merge**,
+not just on the source branch before merging — a worktree's uncommitted
+state can pass gates there while the actual merged commit does not.
+
+**Not resolved — flagged, needs the owner's decision:** `perLocation`
+(hence "Financial performance by location") includes a **Store** row
+with `revenue: 0` and a negative `grossProfit` whenever Store has
+purchase/COGS activity with no matching sale, even though the table's
+own caption says "Store excluded, it doesn't sell." Pre-existing
+(confirmed identical on `/admin/financials`), not a Session B
+regression, not fixed this session. Options: (a) accept Store can
+legitimately show a row and fix the caption/doc claim, or (b) exclude
+Store from `perLocation` server-side (`getFinancialSummary` change
+affecting both Dashboard and Financials). The Total-row fix above
+resolves the *visual* row-count symptom the owner raised without
+resolving this underlying data question.
+
+**Gates:** `pnpm test` 1004/1004 → 1023/1023 after the Ledger v2 merge
+(two intermittent cross-file DB-race failures during the session,
+`lib/domain/sales/qa-m2-session-7.test.ts` and
+`lib/domain/sales/list-orders.test.ts`, both confirmed pre-existing/non-
+code by rerunning each in isolation — 1004/1004 and 1023/1023 clean).
+`pnpm typecheck` 0 errors (after the follow-up fix above).
+`pnpm build` clean. `grep -rn "TODO(mock)"` — only the one pre-existing
+non-marker hit in `lib/domain/stock/purchases.test.ts:61`.
+
+**Changed from plan:** none for the Dashboard scope itself; the
+shell-visibility bugfix and the Ledger v2 merge were both opportunistic
+(discovered/requested mid-session) rather than planned Session B work,
+but both are now on `main`.
+
+**Not done this session (still open):**
+- Visual/spacing diff of the *rest* of the screen (only the trend-charts
+  row and location tables were checked precisely against the artboard;
+  other bands were eyeballed, not measured with `get_computed_styles`).
+- Full `pnpm dev` walkthrough of This month / Custom on both viewports.
+- `origin/ledger-v2-kpi-and-range` (remote branch) and
+  `origin/session-10b-kit-proof-harness` — local branches/worktree for
+  the former were cleaned up after merging; the remote branches
+  themselves were left for the owner to delete (destructive/shared
+  action, not taken without explicit confirmation).
+
+**For Session C (Financials frontend):**
+- `use-date-range.ts` / `date-range-control.tsx` (formerly
+  `use-financials-range.ts` / `financials-range.tsx`) are now the shared
+  `app/admin`-level location — import from there, not the old
+  `app/admin/financials/*` path.
+- The dual-shell header-publishing bug (above) is fixed in shared infra
+  — Financials' own period control should now work correctly without
+  any change on Session C's part, but re-verify it manually rather than
+  assuming, since Financials was the screen this bug was originally
+  reproduced on.
+- The Store/`perLocation` caption question (above) affects Financials
+  too — worth resolving before/during Session C rather than carrying it
+  forward again.
+
+---
+
 ## Milestone 5 "Dashboard & Financials v2" Session A — backend (Developer — 2026-09-04) — DONE (backend only)
 
 Backend-only session against the (unwritten-as-a-plan-doc) handoff
