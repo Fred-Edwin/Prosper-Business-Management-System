@@ -49,7 +49,7 @@ import { AdminDateRangeControl } from "./date-range-control";
 import { useAdminDateRange, type AdminDateRange } from "./use-date-range";
 import { useFinancialSummary } from "./financials/use-financials";
 import { addBusinessDays, businessWeekRange } from "@/lib/time";
-import { DayCloseCard } from "./day-close/day-close-client";
+import { DayCloseRow } from "./day-close/day-close-client";
 import { useDashboard } from "./use-dashboard";
 import { useDashboardTrend } from "./use-dashboard-trend";
 
@@ -930,9 +930,17 @@ type AttnRow = {
   detail: string;
   linkLabel: string;
   href: string;
+  /** When set, the row's action opens the Day Close history drawer
+   *  (scrolled/highlighted to this date) instead of navigating — there is
+   *  no dedicated "review a day" route, and Day Close (bottom of this
+   *  same page) is where an open prior date is actually closed. */
+  onAction?: () => void;
 };
 
-function buildAttnRows(na: DashboardNeedsAttention): AttnRow[] {
+function buildAttnRows(
+  na: DashboardNeedsAttention,
+  onReviewDay: (date: string) => void,
+): AttnRow[] {
   const rows: AttnRow[] = [];
 
   if (na.openPriorDates.length > 0) {
@@ -946,7 +954,8 @@ function buildAttnRows(na: DashboardNeedsAttention): AttnRow[] {
           ? `${midDate(first)} — close it or amend it as a correction`
           : `earliest ${midDate(first)} — close each or amend as a correction`,
       linkLabel: "Review day →",
-      href: "/admin",
+      href: "#day-close",
+      onAction: () => onReviewDay(first),
     });
   }
 
@@ -998,8 +1007,14 @@ function buildAttnRows(na: DashboardNeedsAttention): AttnRow[] {
   return rows;
 }
 
-function NeedsAttentionZone({ na }: { na: DashboardNeedsAttention }) {
-  const rows = buildAttnRows(na);
+function NeedsAttentionZone({
+  na,
+  onReviewDay,
+}: {
+  na: DashboardNeedsAttention;
+  onReviewDay: (date: string) => void;
+}) {
+  const rows = buildAttnRows(na, onReviewDay);
   const open = rows.length;
 
   return (
@@ -1046,17 +1061,37 @@ function NeedsAttentionZone({ na }: { na: DashboardNeedsAttention }) {
                   <span className="hidden md:inline">{r.detail}</span>
                   <span className="md:hidden">
                     {r.detail} —{" "}
-                    <Link
-                      href={r.href}
-                      className="font-(--weight-medium) [color:var(--color-accent)] no-underline hover:underline"
-                    >
-                      {r.linkLabel}
-                    </Link>
+                    {r.onAction ? (
+                      <button
+                        type="button"
+                        onClick={r.onAction}
+                        className="font-(--weight-medium) [color:var(--color-accent)] no-underline hover:underline"
+                      >
+                        {r.linkLabel}
+                      </button>
+                    ) : (
+                      <Link
+                        href={r.href}
+                        className="font-(--weight-medium) [color:var(--color-accent)] no-underline hover:underline"
+                      >
+                        {r.linkLabel}
+                      </Link>
+                    )}
                   </span>
                 </span>
               </div>
               <span className="hidden md:block">
-                <ActionLink href={r.href}>{r.linkLabel}</ActionLink>
+                {r.onAction ? (
+                  <button
+                    type="button"
+                    onClick={r.onAction}
+                    className="shrink-0 font-ui font-(--weight-medium) [color:var(--color-accent)] text-sm/sm no-underline hover:underline"
+                  >
+                    {r.linkLabel}
+                  </button>
+                ) : (
+                  <ActionLink href={r.href}>{r.linkLabel}</ActionLink>
+                )}
               </span>
             </div>
           ))
@@ -1205,6 +1240,19 @@ export function DashboardClient() {
 
   const dateLabel = data ? longDate(data.date) : "";
 
+  // "Review day →" (Needs attention) opens Day Close's history drawer,
+  // scrolled/highlighted to the specific open date — there is no
+  // dedicated "review a day" route, and Day Close is where an open prior
+  // date is actually closed. A bump counter (not just the date) forces
+  // DayCloseRow to reopen the drawer even if the same date is clicked
+  // twice in a row.
+  const [reviewDay, setReviewDay] = React.useState<{ date: string; nonce: number } | null>(
+    null,
+  );
+  const onReviewDay = React.useCallback((date: string) => {
+    setReviewDay((prev) => ({ date, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
+
   const rangeControl = (
     <AdminDateRangeControl range={range} today={today} onPreset={setPreset} onCustomDay={setCustomDay} />
   );
@@ -1268,12 +1316,13 @@ export function DashboardClient() {
             perLocation={summary?.perLocation ?? []}
             stockActivity={data.stockActivity}
           />
-          <NeedsAttentionZone na={data.needsAttention} />
+          <NeedsAttentionZone na={data.needsAttention} onReviewDay={onReviewDay} />
           <TodayZone today={data.today} />
-          <section className="flex flex-col shrink-0 gap-(--sp-4) md:gap-(--sp-5)">
-            <Caption>Day Close</Caption>
-            <DayCloseCard className="w-full md:max-w-[560px]" />
-          </section>
+          <DayCloseRow
+            openPriorDates={data.needsAttention.openPriorDates}
+            highlightDate={reviewDay?.date}
+            openHistorySignal={reviewDay?.nonce}
+          />
         </div>
       ) : null}
     </PageShell>

@@ -346,7 +346,10 @@ describe("/admin dashboard — Needs attention", () => {
     const hrefFor = (name: RegExp) =>
       screen.getAllByRole("link", { name }).map((a) => a.getAttribute("href"));
 
-    expect(hrefFor(/Review day/)).toContain("/admin");
+    // "Review day →" opens the Day Close history drawer in-page (there is
+    // no dedicated "review a day" route) — a <button>, not a <Link>; see
+    // the dedicated Day Close describe block for its behaviour.
+    expect(screen.getAllByRole("button", { name: /Review day/ }).length).toBeGreaterThan(0);
     expect(hrefFor(/Record receipt/)).toContain("/admin/financials?tab=handovers");
     expect(hrefFor(/Open handovers/)).toContain("/admin/financials?tab=handovers");
     expect(hrefFor(/Open stock/)).toContain("/admin/stock");
@@ -384,7 +387,7 @@ describe("/admin dashboard — Needs attention", () => {
   });
 });
 
-// ── Day Close card — still interactive from its new position ─────────
+// ── Day Close row — v2: a slim toggle row, history behind a drawer ────
 
 describe("/admin dashboard — Day Close", () => {
   it("toggling today's switch calls close(date) and toasts", async () => {
@@ -398,7 +401,7 @@ describe("/admin dashboard — Day Close", () => {
     expect(await screen.findByText(/Sep 3, 2026 closed/)).toBeInTheDocument();
   });
 
-  it("a recently-closed row's Reopen button calls reopen(date)", async () => {
+  it("a recently-closed row's Reopen button (behind History →) calls reopen(date)", async () => {
     dayCloseState = {
       today: {
         date: "2026-09-03",
@@ -415,10 +418,45 @@ describe("/admin dashboard — Day Close", () => {
     const user = userEvent.setup();
     renderScreen();
 
+    const historyLinks = await screen.findAllByRole("button", { name: /History →/i });
+    await user.click(historyLinks[0]);
+
     const reopenBtns = await screen.findAllByRole("button", { name: "Reopen" });
     await user.click(reopenBtns[0]);
 
     await waitFor(() => expect(reopenDay).toHaveBeenCalledWith("2026-09-01"));
+  });
+
+  it("an open-prior-date row's Close button (behind History →) calls close(date)", async () => {
+    // dashState's fixture (`view()`) already carries
+    // needsAttention.openPriorDates: ["2026-09-02"].
+    const user = userEvent.setup();
+    renderScreen();
+
+    const historyLinks = await screen.findAllByRole("button", { name: /History →/i });
+    await user.click(historyLinks[0]);
+
+    // Matched by its own aria-label, not the bare "Close" text — the
+    // Drawer's own dismiss button is ALSO named "Close".
+    const closeBtns = await screen.findAllByRole("button", { name: /Close Sep 2, 2026/ });
+    await user.click(closeBtns[0]);
+
+    await waitFor(() => expect(closeDay).toHaveBeenCalledWith("2026-09-02"));
+  });
+
+  it("Needs-attention's 'Review day →' opens the Day Close history drawer", async () => {
+    const user = userEvent.setup();
+    renderScreen();
+
+    const reviewLinks = await screen.findAllByRole("button", { name: /Review day →/i });
+    await user.click(reviewLinks[0]);
+
+    // The drawer is now open — its "Open before today" heading is visible
+    // (as an <h3>; the Needs-attention row's own copy also contains this
+    // phrase, so match on the heading specifically).
+    expect(
+      await screen.findByRole("heading", { name: /Open before today/i }),
+    ).toBeInTheDocument();
   });
 });
 
