@@ -11,31 +11,35 @@
 // island capped at max-w-[560/680px] while every other Dashboard zone
 // spans the full grid — it visibly misaligned the desktop layout, and
 // the owner asked for it to "just be a toggle" instead. `<DayCloseRow>`
-// is now a single full-width status+toggle row with no card chrome; the
-// "Recently closed" table AND the open-prior-dates list (previously only
-// surfaced one at a time via the Needs-attention "Review day →" link,
-// which had nowhere real to go) both moved into `<DayCloseHistoryDrawer>`,
-// opened via a "History →" link next to the toggle. The toggle itself
-// stays today-only and stateless about which date is "selected" — every
-// other date (open or closed) is closed/reopened from its own row inside
-// the drawer, never by retargeting the toggle.
+// is now a single full-width status+toggle row with no card chrome.
+//
+// v2.1 (owner follow-up, same session): the History drawer's first cut
+// split "open" and "closed" dates into two visually different lists (a
+// row-per-date with a Close button, vs. a SimpleTable with Reopen) for
+// what's conceptually one action on one thing — a business date's status.
+// Replaced with a single unified table, one row per day of the CURRENT
+// business week (Mon–Sun, `businessWeekRange`) — "Business date" /
+// "Status", the status cell itself a <ToggleSwitch> (checked = closed),
+// so closing and reopening are the same gesture regardless of which
+// direction a given day currently is. A day after today is shown but its
+// toggle is disabled (nothing to close yet). `openPriorDates` /
+// `highlightDate` still exist for days OLDER than the current week (the
+// Needs-attention "Review day →" case) — those render as extra rows
+// above the week table, not folded into it, since they're a different
+// week entirely and the table's week-scoping would otherwise hide them.
 "use client";
 
 import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
 import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
-import {
-  SimpleTable,
-  type SimpleTableColumn,
-} from "@/components/kit/simple-table";
 import { ToggleSwitch } from "@/components/kit/toggle-switch";
-import { Button } from "@/components/kit/button";
 import { Drawer } from "@/components/kit/drawer";
 import { ErrorState } from "@/components/kit/error-state";
 import { Spinner } from "@/components/kit/spinner";
 import { StatusChip } from "@/components/kit/status-chip";
 import { useToast } from "@/components/kit/toast";
 import type { DayCloseView } from "@/lib/domain/audit";
+import { addBusinessDays, businessWeekRange } from "@/lib/time";
 import { useDayClose } from "./use-day-close";
 
 const MONTHS = [
@@ -170,139 +174,184 @@ export function DayCloseRow({
       <DayCloseHistoryDrawer
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
+        today={today}
         openPriorDates={openPriorDates}
         recent={recent}
         highlightDate={highlightDate}
         busy={busy}
-        onCloseDate={(date) =>
-          void run(() => close(date), `${displayDate(date)} closed`)
-        }
-        onReopenDate={(date) =>
-          void run(() => reopen(date), `${displayDate(date)} reopened`)
+        onToggleDate={(date, next) =>
+          void run(
+            () => (next ? close(date) : reopen(date)),
+            `${displayDate(date)} ${next ? "closed" : "reopened"}`,
+          )
         }
       />
     </div>
   );
 }
 
+type DayRowStatus = {
+  date: string;
+  closed: boolean;
+  closedAt: string | null;
+  /** Disable the toggle for a date that hasn't happened yet. */
+  future: boolean;
+};
+
 /**
- * The full Day Close history — every open date before today (each with
- * its own Close button) + the recently-closed table (each with Reopen).
- * `highlightDate` (from "Review day →") gets a subtle accent ring so the
- * admin can find the row they clicked through for.
+ * The full Day Close history: one row per day of the CURRENT business
+ * week (Mon–Sun) — "Business date" / a status toggle — plus, above it,
+ * any OLDER open dates the Needs-attention zone flagged (a different week
+ * entirely, so not folded into the week table's own rows).
+ * `highlightDate` (from "Review day →") gets a subtle accent left-border
+ * so the admin can find the row they clicked through for.
  */
 function DayCloseHistoryDrawer({
   open,
   onClose,
+  today,
   openPriorDates,
   recent,
   highlightDate,
   busy,
-  onCloseDate,
-  onReopenDate,
+  onToggleDate,
 }: {
   open: boolean;
   onClose: () => void;
+  today: { date: string; closed: boolean; closedAt: string | null } | null;
   openPriorDates: string[];
   recent: DayCloseView[];
   highlightDate?: string | null;
   busy: boolean;
-  onCloseDate: (date: string) => void;
-  onReopenDate: (date: string) => void;
+  onToggleDate: (date: string, next: boolean) => void;
 }) {
-  const recentColumns: SimpleTableColumn<DayCloseView>[] = [
-    {
-      key: "date",
-      header: "Business date",
-      width: "grow min-w-[140px]",
-      cell: "strong",
-      render: (r) => displayDate(r.date),
-    },
-    {
-      key: "closedAt",
-      header: "Closed",
-      width: "w-[180px]",
-      render: (r) => displayDateTime(r.closedAt),
-    },
-    {
-      key: "action",
-      header: "Action",
-      width: "w-[110px]",
-      align: "right",
-      render: (r) => (
-        <Button
-          variant="tertiary"
-          size="sm"
-          disabled={busy}
-          onClick={() => onReopenDate(r.date)}
-        >
-          Reopen
-        </Button>
-      ),
-    },
-  ];
+  const closedByDate = React.useMemo(
+    () => new Map(recent.map((r) => [r.date, r.closedAt])),
+    [recent],
+  );
+
+  const weekRows: DayRowStatus[] = React.useMemo(() => {
+    if (!today) return [];
+    const { from, to } = businessWeekRange(today.date);
+    const rows: DayRowStatus[] = [];
+    for (let d = from; d <= to; d = addBusinessDays(d, 1)) {
+      if (d === today.date) {
+        rows.push({ date: d, closed: today.closed, closedAt: today.closedAt, future: false });
+      } else {
+        const closedAt = closedByDate.get(d) ?? null;
+        rows.push({ date: d, closed: closedAt !== null, closedAt, future: d > today.date });
+      }
+    }
+    return rows;
+  }, [today, closedByDate]);
+
+  // Older open dates (outside this week) the Needs-attention zone flagged
+  // — the week table above is scoped to Mon–Sun, so a stray earlier week
+  // still needs its own affordance here.
+  const weekDates = new Set(weekRows.map((r) => r.date));
+  const olderOpenDates = openPriorDates.filter((d) => !weekDates.has(d));
 
   return (
     <Drawer open={open} onClose={onClose} title="Day Close history" variant="rail">
       <div className="flex flex-col gap-(--sp-7)">
+        {olderOpenDates.length > 0 && (
+          <div className="flex flex-col gap-(--sp-3)">
+            <h3 className="font-ui font-(--weight-semibold) text-[10px] [letter-spacing:var(--tracking-caps)] uppercase [color:var(--text-tertiary)]">
+              Open before this week
+            </h3>
+            <DayCloseTable
+              rows={olderOpenDates.map((date) => ({
+                date,
+                closed: false,
+                closedAt: null,
+                future: false,
+              }))}
+              highlightDate={highlightDate}
+              busy={busy}
+              onToggleDate={onToggleDate}
+            />
+          </div>
+        )}
+
         <div className="flex flex-col gap-(--sp-3)">
           <h3 className="font-ui font-(--weight-semibold) text-[10px] [letter-spacing:var(--tracking-caps)] uppercase [color:var(--text-tertiary)]">
-            Open before today
+            This week
           </h3>
-          {openPriorDates.length === 0 ? (
-            <p className="font-ui text-sm/sm [color:var(--text-secondary)]">
-              Nothing open before today — you&apos;re caught up.
-            </p>
-          ) : (
-            <div className="flex flex-col rounded-md overflow-clip border border-solid [border-color:var(--border-subtle)]">
-              {openPriorDates.map((date, i) => (
-                <div
-                  key={date}
-                  className={`flex items-center justify-between gap-(--sp-4) py-(--sp-4) px-(--sp-5) ${
-                    i < openPriorDates.length - 1
-                      ? "border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
-                      : ""
-                  } ${
-                    date === highlightDate
-                      ? "[background-color:var(--surface-subtle)] border-l-2 [border-left-color:var(--color-accent)]"
-                      : ""
-                  }`}
-                >
-                  <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
-                    {displayDate(date)}
-                  </span>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => onCloseDate(date)}
-                    aria-label={`Close ${displayDate(date)}`}
-                  >
-                    Close
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-(--sp-4)">
-          <h3 className="font-ui font-(--weight-semibold) text-[10px] [letter-spacing:var(--tracking-caps)] uppercase [color:var(--text-tertiary)]">
-            Recently closed
-          </h3>
-          <SimpleTable
-            columns={recentColumns}
-            rows={recent}
-            rowKey={(r) => r.date}
-            emptyState={{
-              title: "No dates closed yet",
-              description:
-                "Close today or a past date to start the reconciliation record.",
-            }}
+          <DayCloseTable
+            rows={weekRows}
+            highlightDate={highlightDate}
+            busy={busy}
+            onToggleDate={onToggleDate}
           />
         </div>
       </div>
     </Drawer>
+  );
+}
+
+/** One table, one row per business date — "Business date" / a status
+ *  toggle (checked = closed). Shared by the week table and the
+ *  older-open-dates section above it. */
+function DayCloseTable({
+  rows,
+  highlightDate,
+  busy,
+  onToggleDate,
+}: {
+  rows: DayRowStatus[];
+  highlightDate?: string | null;
+  busy: boolean;
+  onToggleDate: (date: string, next: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-col rounded-md overflow-clip border border-solid [border-color:var(--border-subtle)]">
+      <div className="flex items-center py-(--sp-3) px-(--sp-5) [background-color:var(--surface-subtle)] border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+        <div className="grow font-ui font-(--weight-semibold) uppercase [letter-spacing:var(--tracking-caps)] text-info text-micro/micro">
+          Business date
+        </div>
+        <div className="shrink-0 font-ui font-(--weight-semibold) uppercase [letter-spacing:var(--tracking-caps)] text-info text-micro/micro">
+          Status
+        </div>
+      </div>
+      {rows.map((r, i) => (
+        <div
+          key={r.date}
+          className={`flex items-center justify-between gap-(--sp-4) py-(--sp-4) px-(--sp-5) ${
+            i < rows.length - 1
+              ? "border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
+              : ""
+          } ${
+            r.date === highlightDate
+              ? "[background-color:var(--surface-subtle)] border-l-2 [border-left-color:var(--color-accent)]"
+              : ""
+          }`}
+        >
+          <div className="flex flex-col gap-[2px]">
+            <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
+              {displayDate(r.date)}
+            </span>
+            {r.closed && r.closedAt && (
+              <span className="font-ui text-caption/micro [color:var(--text-tertiary)]">
+                {displayDateTime(r.closedAt)}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-(--sp-4) shrink-0">
+            <StatusChip variant={r.future ? "neutral" : r.closed ? "neutral" : "success"}>
+              {r.future ? "Not yet" : r.closed ? "Closed" : "Open"}
+            </StatusChip>
+            <ToggleSwitch
+              checked={r.closed}
+              disabled={busy || r.future}
+              onChange={(next) => onToggleDate(r.date, next)}
+              aria-label={
+                r.closed ? `Reopen ${displayDate(r.date)}` : `Close ${displayDate(r.date)}`
+              }
+            />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

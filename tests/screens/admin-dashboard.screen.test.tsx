@@ -401,7 +401,10 @@ describe("/admin dashboard — Day Close", () => {
     expect(await screen.findByText(/Sep 3, 2026 closed/)).toBeInTheDocument();
   });
 
-  it("a recently-closed row's Reopen button (behind History →) calls reopen(date)", async () => {
+  it("a closed date's row (in the This week table) toggles off and calls reopen(date)", async () => {
+    // dashState's fixture date is 2026-09-03 (Thu) — its business week is
+    // Mon 2026-08-31..Sun 2026-09-06, so 2026-09-01 (Tue) falls INSIDE the
+    // week table, not the older "Open before this week" section.
     dayCloseState = {
       today: {
         date: "2026-09-03",
@@ -421,41 +424,76 @@ describe("/admin dashboard — Day Close", () => {
     const historyLinks = await screen.findAllByRole("button", { name: /History →/i });
     await user.click(historyLinks[0]);
 
-    const reopenBtns = await screen.findAllByRole("button", { name: "Reopen" });
-    await user.click(reopenBtns[0]);
+    const reopenToggle = await screen.findByRole("switch", { name: /reopen sep 1, 2026/i });
+    await user.click(reopenToggle);
 
     await waitFor(() => expect(reopenDay).toHaveBeenCalledWith("2026-09-01"));
   });
 
-  it("an open-prior-date row's Close button (behind History →) calls close(date)", async () => {
-    // dashState's fixture (`view()`) already carries
-    // needsAttention.openPriorDates: ["2026-09-02"].
+  it("an open date within the current week toggles on and calls close(date)", async () => {
+    // dashState's fixture date is 2026-09-03 (Thu); 2026-09-02 (Wed) is
+    // inside the same Mon–Sun week and has no `recent` entry, so its row
+    // renders "Open" with an unchecked toggle.
     const user = userEvent.setup();
     renderScreen();
 
     const historyLinks = await screen.findAllByRole("button", { name: /History →/i });
     await user.click(historyLinks[0]);
 
-    // Matched by its own aria-label, not the bare "Close" text — the
-    // Drawer's own dismiss button is ALSO named "Close".
-    const closeBtns = await screen.findAllByRole("button", { name: /Close Sep 2, 2026/ });
-    await user.click(closeBtns[0]);
+    const closeToggle = await screen.findByRole("switch", { name: /close sep 2, 2026/i });
+    await user.click(closeToggle);
 
     await waitFor(() => expect(closeDay).toHaveBeenCalledWith("2026-09-02"));
   });
 
+  it("an open date OLDER than the current week gets its own section + toggle", async () => {
+    dashState = {
+      data: view({
+        needsAttention: {
+          ...view().needsAttention,
+          openPriorDates: ["2026-08-20"],
+        },
+      }),
+      loading: false,
+      error: null,
+    };
+    const user = userEvent.setup();
+    renderScreen();
+
+    const historyLinks = await screen.findAllByRole("button", { name: /History →/i });
+    await user.click(historyLinks[0]);
+
+    expect(
+      await screen.findByRole("heading", { name: /Open before this week/i }),
+    ).toBeInTheDocument();
+    const closeToggle = await screen.findByRole("switch", { name: /close aug 20, 2026/i });
+    await user.click(closeToggle);
+
+    await waitFor(() => expect(closeDay).toHaveBeenCalledWith("2026-08-20"));
+  });
+
   it("Needs-attention's 'Review day →' opens the Day Close history drawer", async () => {
+    dashState = {
+      data: view({
+        needsAttention: {
+          ...view().needsAttention,
+          openPriorDates: ["2026-08-20"],
+        },
+      }),
+      loading: false,
+      error: null,
+    };
     const user = userEvent.setup();
     renderScreen();
 
     const reviewLinks = await screen.findAllByRole("button", { name: /Review day →/i });
     await user.click(reviewLinks[0]);
 
-    // The drawer is now open — its "Open before today" heading is visible
-    // (as an <h3>; the Needs-attention row's own copy also contains this
-    // phrase, so match on the heading specifically).
+    // The drawer is now open — its "This week" table heading is visible
+    // (as an <h3>; scoped to a heading role since other copy on the page
+    // may share words with it).
     expect(
-      await screen.findByRole("heading", { name: /Open before today/i }),
+      await screen.findByRole("heading", { name: /^This week$/i }),
     ).toBeInTheDocument();
   });
 });
