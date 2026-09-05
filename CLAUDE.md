@@ -41,6 +41,9 @@ silently reinvent a convention that already exists, or contradict one.
 | Why a decision was made | `docs/DECISIONS.md` (ADR-style) |
 | Naming, folder structure, error shape, correction pattern | `docs/CONVENTIONS.md` |
 | Testing strategy | `docs/TEST_PLAN.md` |
+| Long-horizon ledger proof (what `pnpm test:sim` proves) | `docs/SIMULATION_TESTING.md` |
+| Checking the numbers by hand in a browser | `docs/UI_WALKTHROUGH.md` |
+| **Reusable method** for testing any ledger system | `docs/playbooks/ledger-simulation-testing.md` |
 | Feature sequencing, milestones | `docs/ROADMAP.md` |
 | Current milestone plan + session sequence | `docs/sprints/milestone-XX-plan.md` (+ any `…-session-N-handoff.md`) |
 | Product-wide UI/UX rules | `docs/design/design-principles.md` (§9 is an ENFORCED contract) |
