@@ -542,10 +542,14 @@ describe("/admin/financials — payment drawer", () => {
     await user.click(within(dialog).getByRole("combobox", { name: /Destination/ }));
     await user.click(await screen.findByRole("option", { name: "Store" }));
     await user.type(within(dialog).getByLabelText(/Quantity/), "100");
-    await user.type(within(dialog).getByLabelText(/Total Cost/), "18000.00");
+    // Total Cost auto-fills from quantity × the product's prefilled unit
+    // cost (180.00) — no need to type it.
     await user.click(within(dialog).getByRole("button", { name: /Disburse/ }));
 
     expect(api.recordPurchasePayment).toHaveBeenCalledOnce();
+    expect(api.recordPurchasePayment).toHaveBeenCalledWith(
+      expect.objectContaining({ quantity: "100", cost: "18000.00" }),
+    );
     expect(await screen.findByText("Payment recorded")).toBeInTheDocument();
   });
 });

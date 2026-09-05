@@ -43,6 +43,9 @@ export const tokens = {
   "--color-info-bg": "oklch(53.7% 0.146 252.3 / 10%)",
   "--color-success-hover": "oklch(46% 0.121 155)",
   "--color-info-hover": "oklch(46.5% 0.146 252.3)",
+  "--color-success-on-dark": "#43c07a",
+  "--color-warning-on-dark": "#e5ac4c",
+  "--color-danger-on-dark": "#f0736a",
 
   // --- Color: brand -----------------------------------------------------
   "--color-gold-brand": "oklch(68% 0.110 84.2)",
