@@ -3,6 +3,7 @@ import type { Session } from "next-auth";
 import type { Role } from "@prisma/client";
 import { authOptions } from "@/lib/auth/config";
 import { fail } from "@/lib/api/response";
+import { effectiveRole } from "@/lib/auth/roles";
 import { NextResponse } from "next/server";
 
 /**
@@ -29,6 +30,32 @@ export async function requireApiRoleIn(
   }
 
   if (!roles.includes(session.user.role)) {
+    return fail("FORBIDDEN", "You do not have access to this resource.");
+  }
+
+  return session;
+}
+
+/**
+ * `effectiveRole`-aware sibling of `requireApiRoleIn`, for staff-prefix
+ * `/api` handlers that allow several staff roles (e.g. the stock
+ * endpoints). Compares the acting role, so an Admin who switched into one
+ * of `roles` is admitted.
+ *
+ * As with `requireActingRole`: **not for `/api/admin/*`** — it refuses
+ * `"admin"` in `roles` so admin-only routes can't accidentally opt into
+ * `effectiveRole` checking.
+ */
+export async function requireActingRoleIn(
+  roles: readonly Exclude<Role, "admin">[],
+): Promise<Session | NextResponse> {
+  const session = await getServerSession(authOptions);
+
+  if (!session || !session.user?.active) {
+    return fail("UNAUTHENTICATED", "Sign in to continue.");
+  }
+
+  if (!roles.includes(effectiveRole(session) as Exclude<Role, "admin">)) {
     return fail("FORBIDDEN", "You do not have access to this resource.");
   }
 

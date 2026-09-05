@@ -3,6 +3,7 @@ import type { Role } from "@prisma/client";
 import { requireApiRole } from "@/lib/api/require-role";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import {
   recordStockCountSchema,
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
     return fail("VALIDATION_ERROR", issue.message, issue.path.join("."));
   }
 
-  const locationId = await resolveActorLocationId(auth.user.id);
+  const locationId = await resolveActorLocationId(auth);
   if (!locationId) {
     return fail("FORBIDDEN", "Your account is not assigned to a canteen.");
   }
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
           ? new Date(parsed.data.occurredAt)
           : undefined,
       },
-      { userId: auth.user.id, role: auth.user.role, locationId },
+      { userId: auth.user.id, role: effectiveRole(auth), locationId },
     );
     return ok(result, { status: 201 });
   } catch (e) {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isRoleAllowed, roleHomePath, routePrefixForPath } from "./roles";
+import {
+  effectiveRole,
+  isRoleAllowed,
+  roleHomePath,
+  routePrefixForPath,
+} from "./roles";
 
 describe("roleHomePath", () => {
   it("maps each role to its own role-scoped route", () => {
@@ -54,5 +59,25 @@ describe("isRoleAllowed", () => {
   it("allows any authenticated role into paths with no role-scoped prefix", () => {
     expect(isRoleAllowed("cashier", "/login")).toBe(true);
     expect(isRoleAllowed("admin", "/")).toBe(true);
+  });
+});
+
+describe("effectiveRole (Admin role-switching)", () => {
+  it("returns the real role when actingAs is null", () => {
+    expect(
+      effectiveRole({ user: { role: "admin", actingAs: null } }),
+    ).toBe("admin");
+    expect(
+      effectiveRole({ user: { role: "cashier", actingAs: null } }),
+    ).toBe("cashier");
+  });
+
+  it("returns actingAs when it is set (Admin acting as a staff role)", () => {
+    expect(
+      effectiveRole({ user: { role: "admin", actingAs: "store_manager" } }),
+    ).toBe("store_manager");
+    expect(
+      effectiveRole({ user: { role: "admin", actingAs: "canteen_attendant" } }),
+    ).toBe("canteen_attendant");
   });
 });

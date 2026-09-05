@@ -15,6 +15,105 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Admin role-switching — Session 1 (backend) (Developer — 2026-09-05) — DONE
+
+Owner request, ad hoc (not tied to a milestone plan; sized like opening
+balances). The Admin wants to work under a staff role's
+screens/permissions — Store Manager, Cashier, or Canteen Attendant —
+**without logging out**. Explicitly **not impersonation**: every write
+stays attributed to her real Admin user id (`recordedById` / `userId` /
+`AuditLog.userId` unchanged); `AuditLog` shape untouched; no
+`impersonatedBy` column; no migration. The only thing that changes is
+which nav/screens/location-scoping she sees.
+
+Backend half of a 2-session build loop. Session 2 does frontend + check.
+
+**Mechanism:** two optional JWT/session fields —
+`session.user.actingAs: Role | null` and
+`session.user.actingLocationId: string | null` — set and cleared
+together. The real identity (`session.user.id` / `.role`) is never
+overwritten. `effectiveRole(session) = actingAs ?? role` is the **one**
+place "which role am I acting as?" is computed (`lib/auth/roles.ts`).
+
+**What shipped:**
+- `lib/auth/types.d.ts` — `actingAs` / `actingLocationId` on
+  `Session["user"]` and the `next-auth/jwt` `JWT` interface.
+- `lib/auth/roles.ts` — `effectiveRole(session)`. `ROLE_ROUTE_PREFIXES`,
+  `roleHomePath`, `routePrefixForPath`, `isRoleAllowed` unchanged.
+- `lib/auth/acting-as.ts` (new) — `resolveActingAs(realRole, role,
+  locationId)` (the authoritative validator: real-Admin-only, `null` /
+  `"admin"` clears, staff role needs a real **active** `Location` whose
+  `type` matches — `store_manager`→`store`, `cashier`→`restaurant`,
+  `canteen_attendant`→`canteen`) and `listActingAsLocations(role)` (the
+  candidate list for Session 2's picker — no single location is
+  hardcoded per role).
+- `lib/auth/config.ts` — `jwt` callback initialises both fields to `null`
+  on sign-in and, on `trigger === "update"` with an `actingAs` payload,
+  **re-runs `resolveActingAs`** before writing the token (client payload
+  is never trusted on its own); `session` callback copies both onto
+  `session.user`. Existing `active` re-check untouched.
+- `POST /api/auth/acting-as` (new) — guarded by `requireApiRole("admin")`
+  (the **real** role — an Admin already acting-as must still reach this
+  route to switch back). Validates via `resolveActingAs`; success
+  payload is `{ actingAs: null }` on clear, else `{ actingAs, locationId,
+  locationName, locations: [{id,name}] }`. Does **not** itself mutate the
+  cookie (next-auth v4 can't from a handler) — Session 2's client calls
+  `useSession().update({ actingAs, locationId })` after a 200.
+- `lib/api/require-role.ts` / `require-role-in.ts` — added
+  `requireActingRole(role)` / `requireActingRoleIn(roles)` that compare
+  `effectiveRole(session)`. They **refuse `"admin"`** as an argument, so
+  `/api/admin/*` handlers can't accidentally opt into effectiveRole
+  checking. `requireApiRole` / `requireApiRoleIn` unchanged — always the
+  real role.
+- `lib/auth/session.ts` — added `requireActingRole(role)` page guard
+  (same shape, effectiveRole-aware, refuses `"admin"`) for Session 2 to
+  wire into the staff layouts. `requireRole` unchanged.
+- `lib/api/actor-location.ts` — `resolveActorLocationId` now accepts a
+  `Session` (as well as the old `userId` string). Given a session, an
+  Admin whose `effectiveRole !== "admin"` resolves to
+  `session.user.actingLocationId` (she has no `Staff` row). String
+  callers keep the pre-role-switching behaviour.
+- Staff **create / edit-own** routes now build their domain `ctx.role`
+  from `effectiveRole(auth)` instead of `auth.user.role`
+  (`app/api/orders/route.ts` POST, `orders/[id]` PATCH,
+  `canteen/stock-counts` POST + `[id]` DELETE, `handovers` POST +
+  `[id]` PATCH, `customers/[id]/repayments` POST, `stock-movements`
+  POST per-type gate + GET). `recordedById` / `userId` stay the real
+  Admin id. Correction routes (`assertActorMayCorrectOnDate`) were
+  **deliberately left on `auth.user.role`** — authority to correct a
+  sealed day is a real-identity power (an Admin acting as Cashier is
+  still the Admin).
+
+**Deviations from the handoff (flagged for Session 2):**
+- Field name is **`actingLocationId`**, not `locationId`, on the
+  token/session (avoids colliding with the many domain `locationId`s).
+- Task 6/8 landed as **separate named functions** (`requireActingRole`
+  *) rather than a parameter on the existing guards — the handoff left
+  the shape to my judgement and asked for "impossible to get backwards";
+  refusing `"admin"` at the type + runtime level does that.
+- `assertStaffDateIsToday`'s dead `actorRole` branch in
+  `lib/domain/stock/movement-core.ts` is still dead (no caller passes
+  `actorRole`), so the stock route's `effectiveRole` change only affects
+  the per-type role gate today, not a today-only rail. Noted for
+  whoever wires `actorRole`.
+- GET list-scoping was only repointed in `stock-movements`; the other
+  staff GET handlers still pass `auth.user.id` — Session 2 should audit
+  those when wiring the switcher's list views.
+
+**Gate:** `pnpm typecheck` clean. `pnpm test` green. New tests — 2
+`effectiveRole` cases (`lib/auth/roles.test.ts`), 11
+`resolveActingAs` / `listActingAsLocations` (`lib/auth/acting-as.test.ts`,
+DB), 10 route (`app/api/auth/acting-as/route.test.ts`), 10 guard-subtlety
+(`lib/api/require-role.test.ts` — "admin acting as staff still passes
+`requireApiRole('admin')`; a real staff role never does"), 1
+day-close-guard case (`staff-today-guard.test.ts` — "an admin acting as a
+staff role is bound by that role's today-only rule"). No `TODO(mock)`
+introduced. No schema migration.
+
+**Handoff:** `docs/sprints/role-switching-session-2-handoff.md`.
+
+---
+
 ## Opening balances + Day-1 pinning (Developer — 2026-09-05) — DONE
 
 Owner request, ad hoc (not tied to a milestone plan): the Admin could

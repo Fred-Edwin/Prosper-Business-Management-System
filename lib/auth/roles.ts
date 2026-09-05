@@ -8,6 +8,25 @@ export const ROLE_ROUTE_PREFIXES: Record<string, Role> = {
   "/canteen": "canteen_attendant",
 };
 
+/**
+ * The **one** place "which role is this session acting as right now?" is
+ * computed (mirrors ADR-52's "one rule, one place" for day-close). For a
+ * real staff user this is just their role; for an Admin who has switched
+ * into a staff role's screens it is that staff role. The real identity
+ * (`session.user.role`) is never overwritten.
+ *
+ * Admin-only guards (`requireApiRole("admin")` and friends) must keep
+ * checking the *real* `session.user.role`, never this — otherwise an
+ * Admin acting as Store Manager would be locked out of the switcher
+ * itself. Only the four staff route-prefixes and role-scoped domain
+ * guards compare against `effectiveRole`.
+ */
+export function effectiveRole(session: {
+  user: { role: Role; actingAs: Role | null };
+}): Role {
+  return session.user.actingAs ?? session.user.role;
+}
+
 export function roleHomePath(role: Role): string {
   switch (role) {
     case "admin":

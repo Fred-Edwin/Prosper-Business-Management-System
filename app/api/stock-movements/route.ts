@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/config";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import {
   createStockMovementSchema,
@@ -54,12 +55,12 @@ export async function GET(req: NextRequest) {
     return fail("VALIDATION_ERROR", issue.message, issue.path.join("."));
   }
 
-  const locationId = await resolveActorLocationId(auth.user.id);
+  const locationId = await resolveActorLocationId(auth);
 
   try {
     const rows = await listMovements(parsed.data, {
       userId: auth.user.id,
-      role: auth.user.role,
+      role: effectiveRole(auth),
       locationId,
     });
     return ok(rows);
@@ -79,7 +80,11 @@ export async function POST(req: NextRequest) {
   if (!session || !session.user?.active) {
     return fail("UNAUTHENTICATED", "Sign in to continue.");
   }
-  const { id: userId, role } = session.user;
+  // `userId` is always the real Admin id — attribution never changes.
+  // `role` is the *effective* role so an Admin acting as a staff role is
+  // gated (per-type + location) exactly like that staff member.
+  const userId = session.user.id;
+  const role = effectiveRole(session);
 
   let body: unknown;
   try {
@@ -122,7 +127,7 @@ export async function POST(req: NextRequest) {
 
   // Location scoping: a location-bound role may only write to its own
   // location. `resolveActorLocationId` is null for admin.
-  const actorLocationId = await resolveActorLocationId(userId);
+  const actorLocationId = await resolveActorLocationId(session);
   const isLocationBound =
     role === "store_manager" ||
     role === "canteen_attendant" ||

@@ -44,4 +44,19 @@ describe("assertStaffDateIsToday (ADR-53)", () => {
       }),
     ).not.toThrow();
   });
+
+  // Admin role-switching (role-switching-session-1). The staff write
+  // routes pass `effectiveRole(session)` as `actor.role`, so an Admin
+  // acting as a staff role arrives here as that staff role and gets the
+  // staff "today only" rail — she is doing the staff member's job. A real
+  // Admin (not acting as anyone) still arrives as "admin" and is exempt.
+  it("an admin ACTING AS a staff role is bound by the today-only rule", () => {
+    // this is exactly what the route passes: effectiveRole === the acting role
+    expect(() =>
+      assertStaffDateIsToday(notToday, { role: "store_manager" }),
+    ).toThrow(DomainError);
+    expect(() =>
+      assertStaffDateIsToday(today, { role: "store_manager" }),
+    ).not.toThrow();
+  });
 });

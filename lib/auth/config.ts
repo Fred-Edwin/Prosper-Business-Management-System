@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import type { Role } from "@prisma/client";
+import { resolveActingAs } from "@/lib/auth/acting-as";
 
 // Lockout thresholds for the 4-digit PIN (small keyspace — brute-force
 // protection is non-negotiable here, see DECISIONS.md ADR-5 addendum).
@@ -77,7 +78,7 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         // `authorize()` above always returns `{ id, name, role }` for this
         // Credentials-only provider; `User`'s type just doesn't declare
@@ -85,7 +86,31 @@ export const authOptions: NextAuthOptions = {
         const authUser = user as typeof user & { role: Role };
         token.id = authUser.id;
         token.role = authUser.role;
+        token.actingAs = null;
+        token.actingLocationId = null;
       }
+
+      // Admin role-switching. The client calls `useSession().update({
+      // actingAs, locationId })` after `POST /api/auth/acting-as`
+      // succeeds; the request is re-validated here so the token is the
+      // authority, never the client payload. Only a *real* Admin
+      // (`token.role === "admin"`) can set a non-null `actingAs`.
+      if (trigger === "update" && session && "actingAs" in session) {
+        const req = session as { actingAs: Role | null; locationId?: string };
+        try {
+          const resolved = await resolveActingAs(
+            token.role,
+            req.actingAs,
+            req.locationId,
+          );
+          token.actingAs = resolved.actingAs;
+          token.actingLocationId = resolved.actingLocationId;
+        } catch {
+          // Invalid request — leave the token unchanged. The route
+          // already returned the real error to the caller.
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {
@@ -107,6 +132,9 @@ export const authOptions: NextAuthOptions = {
         session.user.name = dbUser?.name ?? (token.name as string);
         session.user.role = dbUser?.role ?? (token.role as Role);
         session.user.active = dbUser?.active ?? false;
+        // Display/scoping context only — never overrides who authenticated.
+        session.user.actingAs = token.actingAs ?? null;
+        session.user.actingLocationId = token.actingLocationId ?? null;
       }
       return session;
     },

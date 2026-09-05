@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireApiRole } from "@/lib/api/require-role";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import { DomainError, voidStockCount } from "@/lib/domain/sales";
 
@@ -19,7 +20,7 @@ export async function DELETE(_req: NextRequest, ctx: Ctx) {
   if (auth instanceof NextResponse) return auth;
   const { id } = await ctx.params;
 
-  const locationId = await resolveActorLocationId(auth.user.id);
+  const locationId = await resolveActorLocationId(auth);
   if (!locationId) {
     return fail("FORBIDDEN", "Your account is not assigned to a canteen.");
   }
@@ -27,7 +28,7 @@ export async function DELETE(_req: NextRequest, ctx: Ctx) {
   try {
     const result = await voidStockCount(id, {
       userId: auth.user.id,
-      role: auth.user.role,
+      role: effectiveRole(auth),
       locationId,
     });
     return ok(result);

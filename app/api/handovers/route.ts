@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import {
   declareHandoverSchema,
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
           ? new Date(parsed.data.occurredAt)
           : undefined,
       },
-      { userId: auth.user.id, role: auth.user.role },
+      { userId: auth.user.id, role: effectiveRole(auth) },
     );
     return ok(handover, { status: 201 });
   } catch (e) {

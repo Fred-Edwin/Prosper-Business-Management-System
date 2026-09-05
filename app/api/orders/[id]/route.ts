@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireApiRole } from "@/lib/api/require-role";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import { orderInputSchema } from "@/lib/validation/orders";
 import { DomainError, editOwnOrder } from "@/lib/domain/sales";
@@ -40,7 +41,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
           ? new Date(parsed.data.occurredAt)
           : undefined,
       },
-      { userId: auth.user.id, role: auth.user.role },
+      { userId: auth.user.id, role: effectiveRole(auth) },
     );
     return ok(order);
   } catch (e) {

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import { recordRepaymentSchema } from "@/lib/validation/customers";
 import { DomainError, recordRepayment } from "@/lib/domain/customers";
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           : undefined,
         note: parsed.data.note,
       },
-      { actorId: auth.user.id, role: auth.user.role },
+      { actorId: auth.user.id, role: effectiveRole(auth) },
     );
     return ok(repayment, { status: 201 });
   } catch (e) {
