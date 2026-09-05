@@ -19,7 +19,8 @@ import { ErrorState } from "@/components/kit/error-state";
 import type { StaffView } from "@/lib/domain/staff";
 import { ROLE_LABEL, money } from "./format";
 import { StaffDrawer } from "./staff-drawer";
-import { useLocations, useRoster } from "./use-staff";
+import { ChangePinDrawer } from "./change-pin-drawer";
+import { useChangeOwnPin, useLocations, useRoster } from "./use-staff";
 
 function locationFilterOptions(
   locations: { id: string; name: string }[],
@@ -65,10 +66,12 @@ export function RosterTab({
   const [locFilter, setLocFilter] = React.useState("all");
   const { staff, loading, error, refresh, create, update, deactivate } =
     useRoster(locFilter === "all" ? null : locFilter);
+  const { changePin } = useChangeOwnPin();
 
   const [drawer, setDrawer] = React.useState<
     { mode: "create" } | { mode: "edit"; target: StaffView } | null
   >(null);
+  const [pinDrawerOpen, setPinDrawerOpen] = React.useState(false);
 
   React.useEffect(() => {
     registerAddStaff(() => setDrawer({ mode: "create" }));
@@ -132,6 +135,28 @@ export function RosterTab({
 
   return (
     <div className="flex flex-col grow gap-(--sp-5) pt-(--sp-6)">
+      {/* Your account — self-service PIN change. Not a staff row: the
+          Admin has no Staff row (ADR-26), so this is a lookalike entry
+          point using the same drawer pattern, not a table row. */}
+      <div className="px-(--sp-6) md:px-0">
+        <button
+          type="button"
+          onClick={() => setPinDrawerOpen(true)}
+          aria-label="Change your PIN"
+          className="flex items-center justify-between w-full gap-(--sp-4) p-(--sp-5) rounded-sm bg-(--surface-raised) border border-solid [border-color:var(--border-subtle)] text-left kit-interactive"
+        >
+          <div className="flex flex-col gap-(--sp-1)">
+            <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
+              Your account
+            </span>
+            <span className="font-ui [color:var(--text-tertiary)] text-caption/micro">
+              Change your own login PIN
+            </span>
+          </div>
+          <span className="shrink-0">{CHEVRON}</span>
+        </button>
+      </div>
+
       {/* Sub-toolbar: count line + Location PillFilter */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-(--sp-4) px-(--sp-6) md:px-0">
         <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
@@ -223,6 +248,13 @@ export function RosterTab({
           onUpdate={update}
           onDeactivate={deactivate}
           onClose={() => setDrawer(null)}
+        />
+      )}
+
+      {pinDrawerOpen && (
+        <ChangePinDrawer
+          onChangePin={changePin}
+          onClose={() => setPinDrawerOpen(false)}
         />
       )}
     </div>

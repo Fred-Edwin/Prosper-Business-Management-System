@@ -4,6 +4,7 @@
 
 export { DomainError } from "./errors";
 export * from "./types";
+export { PIN_BCRYPT_ROUNDS } from "./internal";
 
 export { createStaff } from "./create-staff";
 export { updateStaff } from "./update-staff";

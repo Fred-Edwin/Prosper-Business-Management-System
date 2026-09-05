@@ -14,7 +14,11 @@
 //                   login). There is no reactivate path in S8A, so the
 //                   toggle is disabled once off (documented below).
 //
-// The Admin sets the PIN; there is NO self-service flow (API.md).
+// The Admin sets a STAFF member's PIN here (no current PIN required).
+// Self-service PIN change for the signed-in Admin's own account is a
+// separate flow — see ./change-pin-drawer.tsx + API.md. (The API also
+// allows staff to call it, but there is no staff-side UI entry point
+// yet — see the M4/M5 follow-up note in PROGRESS.md.)
 
 import * as React from "react";
 import { Button } from "@/components/kit/button";
@@ -246,8 +250,8 @@ export function StaffDrawer({
         required={!isEdit}
         hint={
           isEdit
-            ? "Leave blank to keep the current PIN. The Admin sets this — staff cannot change their own."
-            : "The Admin sets this. Staff cannot change their own PIN."
+            ? "Leave blank to keep the current PIN."
+            : "The Admin sets the initial PIN."
         }
         error={fieldErrors.pin}
       >

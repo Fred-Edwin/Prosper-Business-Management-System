@@ -289,6 +289,22 @@ export function usePayroll(month: string) {
   return { payroll, loading, error, refresh, recordAdjustment, payOne, payAll };
 }
 
+// ── Own account (self-service PIN change) ───────────────────────────
+
+export function useChangeOwnPin() {
+  const changePin = React.useCallback(
+    async (currentPin: string, newPin: string): Promise<void> => {
+      await request<{ success: true }>(`/api/auth/pin`, {
+        method: "PATCH",
+        body: JSON.stringify({ currentPin, newPin }),
+      });
+    },
+    [],
+  );
+
+  return { changePin };
+}
+
 // ── Handover shortfalls (READ-ONLY, never part of pay) ────────────────
 
 export function useMonthlyShortfalls(month: string) {

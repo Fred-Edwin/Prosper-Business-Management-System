@@ -25,6 +25,7 @@ const saveBulk = vi.fn();
 const payOne = vi.fn();
 const payAll = vi.fn();
 const recordAdjustment = vi.fn();
+const changePin = vi.fn();
 
 let rosterState: { staff: StaffView[]; loading: boolean; error: string | null };
 let attState: {
@@ -81,6 +82,7 @@ vi.mock("@/app/admin/staff/use-staff", async (importOriginal) => {
       error: null,
       refresh: vi.fn(),
     }),
+    useChangeOwnPin: () => ({ changePin }),
   };
 });
 
@@ -160,6 +162,7 @@ beforeEach(() => {
   payOne.mockResolvedValue(pay({ paid: true }));
   payAll.mockResolvedValue({ month: "2026-09", paid: [{}], skipped: [] });
   recordAdjustment.mockResolvedValue(undefined);
+  changePin.mockResolvedValue(undefined);
 });
 
 // ── Add-staff drawer + PIN entry ─────────────────────────────────────
@@ -241,6 +244,78 @@ describe("Roster — add staff drawer", () => {
     const pinInput = within(dialog).getByLabelText(/login PIN/i);
     await user.type(pinInput, "12ab34567");
     expect((pinInput as HTMLInputElement).value).toBe("1234");
+  });
+});
+
+// ── Your account — self-service PIN change ───────────────────────────
+
+describe("Roster — your account PIN change", () => {
+  function renderRoster() {
+    render(
+      <ToastProvider placement="top-right">
+        <RosterTab registerAddStaff={() => {}} />
+      </ToastProvider>,
+    );
+  }
+
+  it("changes the signed-in user's own PIN", async () => {
+    const user = userEvent.setup();
+    renderRoster();
+
+    await user.click(screen.getByRole("button", { name: "Change your PIN" }));
+    const dialog = await screen.findByRole("dialog");
+
+    await user.type(within(dialog).getByLabelText(/^Current PIN/), "1234");
+    await user.type(within(dialog).getByLabelText(/^New PIN/), "5678");
+    await user.type(within(dialog).getByLabelText(/^Confirm new PIN/), "5678");
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(changePin).toHaveBeenCalledOnce());
+    expect(changePin).toHaveBeenCalledWith("1234", "5678");
+    expect(await screen.findByText("PIN changed")).toBeInTheDocument();
+  });
+
+  it("blocks submit when the confirm PIN doesn't match", async () => {
+    const user = userEvent.setup();
+    renderRoster();
+
+    await user.click(screen.getByRole("button", { name: "Change your PIN" }));
+    const dialog = await screen.findByRole("dialog");
+
+    await user.type(within(dialog).getByLabelText(/^Current PIN/), "1234");
+    await user.type(within(dialog).getByLabelText(/^New PIN/), "5678");
+    await user.type(within(dialog).getByLabelText(/^Confirm new PIN/), "5679");
+
+    expect(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    ).toBeDisabled();
+    expect(await within(dialog).findByText("PINs don't match.")).toBeInTheDocument();
+    expect(changePin).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a wrong-current-PIN error inline on the current PIN field", async () => {
+    const user = userEvent.setup();
+    const { StaffRequestError } = await import("@/app/admin/staff/use-staff");
+    changePin.mockRejectedValueOnce(
+      new StaffRequestError(400, {
+        code: "VALIDATION_ERROR",
+        message: "Current PIN is incorrect.",
+        field: "currentPin",
+      }),
+    );
+    renderRoster();
+
+    await user.click(screen.getByRole("button", { name: "Change your PIN" }));
+    const dialog = await screen.findByRole("dialog");
+
+    await user.type(within(dialog).getByLabelText(/^Current PIN/), "0000");
+    await user.type(within(dialog).getByLabelText(/^New PIN/), "5678");
+    await user.type(within(dialog).getByLabelText(/^Confirm new PIN/), "5678");
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+
+    expect(
+      await within(dialog).findByText("Current PIN is incorrect."),
+    ).toBeInTheDocument();
   });
 });
 
