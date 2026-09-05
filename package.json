@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "pretest:e2e": "pnpm test:setup",
     "test:e2e": "vitest run tests/integration/m1-flows",
+    "test:sim": "vitest run --config vitest.sim.config.ts",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "prisma:seed": "tsx prisma/seed.ts"

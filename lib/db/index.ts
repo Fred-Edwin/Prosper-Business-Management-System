@@ -32,7 +32,18 @@ const globalForPrisma = globalThis as unknown as {
 // schemas named with this same `test_worker_<n>` pattern (see that file
 // for why a fixed pool beats lazy per-worker provisioning). Keep the two
 // naming schemes in sync if either changes.
+//
+// PRISMA_SCHEMA_OVERRIDE is the one escape hatch: the long-horizon
+// simulation lane (vitest.sim.config.ts) runs single-fork against its
+// OWN database (`prosper_hotel_sim`), which has no `test_worker_*`
+// schemas — only `public`. It still runs under vitest, so
+// VITEST_POOL_ID is set (to 1) and this function would otherwise route
+// it to a schema that does not exist there. Setting the override to
+// "public" opts that lane out explicitly, without weakening the
+// per-worker isolation every other DB-touching lane depends on.
 function testWorkerSchema(): string | undefined {
+  const override = process.env.PRISMA_SCHEMA_OVERRIDE;
+  if (override) return override;
   const poolId = process.env.VITEST_POOL_ID;
   return poolId ? `test_worker_${poolId}` : undefined;
 }

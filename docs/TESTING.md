@@ -9,7 +9,14 @@ the operational bit: how to get `pnpm test` green on your machine.
 pnpm test          # full suite — creates/migrates/seeds the test DB first
 pnpm test:unit     # DB-free lane (jsdom screen specs + pure logic) — fast inner loop
 pnpm test:db       # everything that talks to Postgres
+pnpm test:sim      # long-horizon simulation (60 days) — its OWN database
 ```
+
+`pnpm test:sim` is deliberately NOT part of `pnpm test`: it replays 7 / 31
+/ 60 simulated business days of real API calls on one continuous timeline
+and takes ~2.5 minutes. See `docs/SIMULATION_TESTING.md` for what it
+proves and how to read its results; the short version is below under
+"The simulation lane".
 
 `pnpm test` and `pnpm test:db` run `pnpm test:setup` first (a `pretest`
 script), so there are **no manual steps** — as long as a Postgres server
@@ -136,3 +143,41 @@ cross-worker read race described above regardless of worker count, since
 each worker gets its own schema — the worker cap here is purely about
 Postgres connection budget, not correctness. `test:unit` touches no DB
 and runs at full parallelism.
+
+## The simulation lane (`pnpm test:sim`)
+
+Strategy and results: `docs/SIMULATION_TESTING.md` (written for the owner,
+in plain language). The operational notes:
+
+- **Its own database**, `prosper_hotel_sim`, configured by `.env.sim`. Not
+  the dev DB and not the test pool — a 60-day accumulating timeline cannot
+  share a schema with suites that wipe and reseed it, or with parallel
+  workers writing into it mid-run.
+- **Single worker, sequential files** (`vitest.sim.config.ts`). Each suite
+  calls `resetLedger()` and then builds its own continuous history, so two
+  suites must never overlap in that one database.
+- **`PRISMA_SCHEMA_OVERRIDE=public`** — set by the sim config only. The sim
+  DB has no `test_worker_*` schemas, but the lane still runs under vitest,
+  so `VITEST_POOL_ID` is set and `lib/db/index.ts` would otherwise route it
+  to a schema that does not exist there. This is the documented escape
+  hatch; every other lane's per-worker isolation is unchanged.
+- **Fake timers move the business day.** Staff writes are pinned to "today"
+  by `assertStaffDateIsToday`, and stock movements are stamped `new Date()`
+  with no API date parameter. Moving vitest's clock is therefore the only
+  way to build a multi-day history *through the real API* without weakening
+  a guard — nothing in the simulation is disabled or bypassed.
+
+### Setting it up from scratch
+
+```bash
+docker exec <postgres-container> psql -U prosper -d postgres \
+  -c 'CREATE DATABASE prosper_hotel_sim;'
+DATABASE_URL="postgresql://prosper:prosper@localhost:5432/prosper_hotel_sim?schema=public" \
+  pnpm exec prisma migrate deploy
+DATABASE_URL="postgresql://prosper:prosper@localhost:5432/prosper_hotel_sim?schema=public" \
+  pnpm exec tsx prisma/seed.ts
+pnpm test:sim
+```
+
+The seed supplies the logins, locations and catalogue; every ledger row in
+the simulation is written by the suites themselves, through the API.

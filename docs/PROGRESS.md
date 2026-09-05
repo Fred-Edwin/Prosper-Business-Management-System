@@ -15,6 +15,84 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Long-horizon financial simulation — 7 / 31 / 60 days through the real API (QA — 2026-09-05) — DONE
+
+Owner request, ad hoc (not tied to a milestone plan): prove the money and
+stock figures stay correct not just for a day or two, but continuously
+over a week, a month and 60 days.
+
+**The gap this closes.** The suite was already strong on ledger math
+(1,077 tests green), but nearly every financial assertion ran against a
+hand-built fixture over a 2–3 day window — `get-financial-summary.test.ts`
+covers `2026-05-04 → 2026-05-06`. Nothing proved the invariants hold over
+accumulated, interleaved activity, which is exactly where slow drift, a
+double-count across a correction, or a month-boundary error would live.
+
+**Approach — two independent sets of books.** `tests/simulation/shadow.ts`
+is a second ledger that imports NOTHING from `lib/domain`: plain
+arithmetic on bigint minor units (cents / 1e4 quantity), so no JS float
+touches a figure and a domain bug cannot cancel itself out. The scenario
+drives the REAL route handlers (auth, Zod, day-close gates, role guards
+all live) and records what it intended in the shadow; the invariants
+compare the two.
+
+**Assertions are relationships, not hand-computed figures** — additivity
+(Σ daily == the period), telescoping COGS/revenue at every split point,
+the profit chain, per-day stock and money reconciliation, debts, and
+per-location sums. 37 checks across 4 suites, all passing:
+
+| Horizon | Days | Checks |
+|---|---|---|
+| Week | 7 | 10 |
+| Month | 31 | 10 |
+| 60 days (crosses Jul→Aug→Sep) | 60 | 10 |
+| Corrections / day-close / role scoping | 14 | 7 |
+
+The 60-day run puts 227 orders, 1,037 stock movements, 596 money
+movements, 180 canteen counts and 94 expenses through the API.
+
+**Two mechanical obstacles, both solved without weakening a guard:**
+
+1. *Dates.* Staff writes are pinned to "today" (`assertStaffDateIsToday`)
+   and stock movements carry no API date parameter. Rather than bypass
+   the API, the harness moves vitest's fake clock to each business day —
+   so every guard evaluates honestly and passes for real.
+2. *Schema routing.* `lib/db/index.ts` routes each vitest fork to
+   `test_worker_<VITEST_POOL_ID>`; the sim DB has only `public`. Added
+   `PRISMA_SCHEMA_OVERRIDE`, set by `vitest.sim.config.ts` alone — every
+   other lane's per-worker isolation is untouched.
+
+**Findings: no defect in the financial logic.** Every failure during
+development was a bug in the test scenario, and in each case the API was
+right to reject it (missing customer phone; Admin attempting a
+`purchase_receipt`, which is staff-only by separation of duties; a
+correction that would have oversold stock). Two observations logged for
+the owner, neither affecting a live figure:
+
+- `GET /api/money/balances` has no query schema, so an unknown param
+  (`?asOf=`) is silently ignored and "now" is returned. No caller does
+  this today; worth either supporting `asOf` or rejecting unknown params
+  before a screen relies on it.
+- Separation of duties (Admin pays, staff receive) is genuinely enforced
+  at the API, not just in the UI — confirmed, not a problem.
+
+**Not covered, in priority order** (stated plainly in the doc rather than
+implied): handover declare/receive with variances is only lightly
+exercised — the highest-value next addition; staff pay + attendance
+across a month boundary; concurrency; one business shape only.
+
+**Deliverables.** `pnpm test:sim` (own DB `prosper_hotel_sim`, `.env.sim`,
+`vitest.sim.config.ts`, deliberately outside `pnpm test` at ~2.5 min).
+`docs/SIMULATION_TESTING.md` is written for the OWNER in plain language —
+what was tested, how to re-run it, real figures reconciled by hand, and an
+explicit "what this does NOT prove" section. `docs/TESTING.md` gains the
+operational notes.
+
+Gate: `pnpm test:unit` 433 ✓ · `pnpm test:db` 644 ✓ · `pnpm test:sim` 37 ✓
+· typecheck ✓ · build ✓.
+
+---
+
 ## Catalog — row numbers, Stock column, Store-only ingredients, buying price follows last purchase (Developer — 2026-09-05) — DONE
 
 Owner request, ad hoc (not tied to a milestone plan). Four changes to
