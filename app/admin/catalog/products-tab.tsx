@@ -94,6 +94,14 @@ function Money({ value }: { value: string }) {
   );
 }
 
+/** "12.5000" -> "12.5"; trailing zeros trimmed, "—" when absent. */
+function fmtStockQty(value: string | undefined): string {
+  if (value == null) return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return n.toFixed(4).replace(/\.?0+$/, "") || "0";
+}
+
 export type ProductsTabState = {
   /** Text for the header count badge (e.g. "12 products" / "3 archived"). */
   countLabel: string;
@@ -183,11 +191,23 @@ export function ProductsTab({
     setLocationId(ALL_LOCATIONS);
   }
 
+  // Row position in the currently filtered/sorted list — "how many rows
+  // are there", not a stable id (re-numbers as filters change, matching
+  // what the user sees on screen).
+  const rowNumber = new Map(visibleProducts.map((p, i) => [p.id, i + 1]));
+
   const columns: SimpleTableColumn<ProductWithLocations>[] = [
+    {
+      key: "row",
+      header: "#",
+      width: "w-[24px]",
+      cell: "text",
+      render: (r) => rowNumber.get(r.id),
+    },
     {
       key: "name",
       header: "Name",
-      width: "grow min-w-[180px]",
+      width: "grow min-w-[120px]",
       cell: "strong",
       render: (r) => (
         <span className="flex items-center gap-(--sp-4)">
@@ -199,7 +219,7 @@ export function ProductsTab({
     {
       key: "category",
       header: "Category",
-      width: "w-[100px]",
+      width: "w-[76px]",
       render: (r) => (
         <span className={`font-ui font-(--weight-medium) ${CATEGORY_TONE[r.kind]}`}>
           {CATEGORY_LABEL[r.kind]}
@@ -209,14 +229,22 @@ export function ProductsTab({
     {
       key: "locations",
       header: "Locations",
-      width: "w-[220px]",
+      width: "w-[130px]",
       render: (r) => <LocationChips product={r} />,
     },
-    { key: "unit", header: "Unit", width: "w-[70px]", cell: "mono", render: (r) => r.unitLabel },
+    { key: "unit", header: "Unit", width: "w-[52px]", cell: "mono", render: (r) => r.unitLabel },
+    {
+      key: "stock",
+      header: "Stock",
+      width: "w-[60px]",
+      align: "right",
+      cell: "mono",
+      render: (r) => fmtStockQty(r.stockQty),
+    },
     {
       key: "buying",
-      header: "Buying Price",
-      width: "w-[120px]",
+      header: "Buying",
+      width: "w-[80px]",
       align: "right",
       cell: "mono",
       render: (r) => <Money value={fmt(r.buyingPrice)} />,
@@ -224,7 +252,7 @@ export function ProductsTab({
     {
       key: "restaurant",
       header: "Restaurant",
-      width: "w-[110px]",
+      width: "w-[76px]",
       align: "right",
       cell: "mono",
       render: (r) => <Money value={priceAt(r, "restaurant")} />,
@@ -232,7 +260,7 @@ export function ProductsTab({
     {
       key: "canteen",
       header: "Canteen",
-      width: "w-[110px]",
+      width: "w-[76px]",
       align: "right",
       cell: "mono",
       render: (r) => <Money value={priceAt(r, "canteen")} />,
@@ -240,7 +268,7 @@ export function ProductsTab({
     {
       key: "store",
       header: "Store",
-      width: "w-[110px]",
+      width: "w-[76px]",
       align: "right",
       cell: "mono",
       render: (r) => <Money value={priceAt(r, "store")} />,
@@ -248,7 +276,7 @@ export function ProductsTab({
     {
       key: "edit",
       header: tab.archived ? "Action" : "Edit",
-      width: "w-[110px]",
+      width: "w-[64px]",
       render: (r) =>
         tab.archived ? (
           <button
@@ -316,12 +344,15 @@ export function ProductsTab({
         </div>
       )}
 
-      {/* Desktop table */}
-      <div className="hidden md:block">
+      {/* Desktop table — scrolls horizontally instead of overflowing the
+          page if the content area is ever narrower than the column set
+          (a smaller laptop window, the sidebar expanded, etc). */}
+      <div className="hidden md:block overflow-x-auto">
         <SimpleTable
           columns={columns}
           rows={visibleProducts}
           rowKey={(r) => r.id}
+          className="min-w-[994px]"
           loading={loading && visibleProducts.length === 0}
           emptyState={{
             variant: filtered ? "filtered" : "default",
@@ -348,8 +379,9 @@ export function ProductsTab({
               : "No products yet."}
           </div>
         ) : (
-          products.map((card) => {
+          products.map((card, i) => {
             const prices: { label: string; value: string }[] = [
+              { label: "Stock", value: fmtStockQty(card.stockQty) },
               { label: "Buying", value: fmt(card.buyingPrice) },
               { label: "Restaurant", value: priceAt(card, "restaurant") },
               { label: "Canteen", value: priceAt(card, "canteen") },
@@ -362,22 +394,29 @@ export function ProductsTab({
               >
                 <div className="flex items-start justify-between [width:100%]">
                   <div className="flex flex-col gap-[2px]">
-                    <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h2/h2">
-                      {card.name}
+                    <div className="flex items-center gap-[6px]">
+                      <span className="font-ui [color:var(--text-tertiary)] text-sm/micro">
+                        {i + 1}.
+                      </span>
+                      <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h2/h2">
+                        {card.name}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-[4px]">
+                    <div className="flex flex-wrap items-center gap-[4px]">
                       <div className={`font-ui text-sm/micro ${CATEGORY_TONE[card.kind]}`}>
                         {CATEGORY_LABEL[card.kind]}
                       </div>
                       <div className="font-ui [color:var(--text-secondary)] text-sm/micro">
-                        · per {card.unitLabel}
+                        · per {card.unitLabel} ·
+                      </div>
+                      <div className="font-ui [color:var(--text-secondary)] text-sm/micro">
+                        {assignedLocationNames(card).length > 0
+                          ? assignedLocationNames(card).join(", ")
+                          : "No locations"}
                       </div>
                       {card.deletedAt && (
                         <StatusChip variant="neutral">Archived</StatusChip>
                       )}
-                    </div>
-                    <div className="mt-[4px]">
-                      <LocationChips product={card} />
                     </div>
                   </div>
                   <div className="flex items-center gap-(--sp-3)">
@@ -400,18 +439,22 @@ export function ProductsTab({
                     )}
                   </div>
                 </div>
-                <div className="flex items-center [width:100%] rounded-sm [background-color:var(--surface-subtle)]">
-                  {prices.map((price, i) => (
-                    <React.Fragment key={price.label}>
-                      {i > 0 && (
-                        <div className="w-px self-stretch shrink-0 [background-color:var(--border-subtle)]" />
-                      )}
-                      <div className="flex flex-col grow p-(--sp-4) gap-[2px]">
+                <div className="grid grid-cols-3 [width:100%] rounded-sm [background-color:var(--surface-subtle)]">
+                  {prices.map((price, i) => {
+                    const col = i % 3;
+                    const row = Math.floor(i / 3);
+                    return (
+                      <div
+                        key={price.label}
+                        className={`flex flex-col p-(--sp-4) gap-[2px] min-w-0 ${
+                          col !== 0 ? "border-l border-l-solid [border-left-color:var(--border-subtle)]" : ""
+                        } ${row !== 0 ? "border-t border-t-solid [border-top-color:var(--border-subtle)]" : ""}`}
+                      >
                         <div className="font-ui text-micro uppercase leading-[14px] [color:var(--text-tertiary)]">
                           {price.label}
                         </div>
                         <div
-                          className={`font-mono font-(--weight-medium) w-max text-sm/micro ${
+                          className={`font-mono font-(--weight-medium) truncate text-sm/micro ${
                             price.value === "—"
                               ? "[color:var(--text-tertiary)]"
                               : "[color:var(--text-primary)]"
@@ -420,8 +463,8 @@ export function ProductsTab({
                           {price.value}
                         </div>
                       </div>
-                    </React.Fragment>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );

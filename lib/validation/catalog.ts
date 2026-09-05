@@ -66,6 +66,12 @@ export const listProductsQuerySchema = z.object({
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
+  // Admin-only (checked at the route) — adds `stockQty` (total on-hand,
+  // summed across every location) to each row for the Catalog screen.
+  includeStock: z
+    .union([z.literal("true"), z.literal("false")])
+    .optional()
+    .transform((v) => v === "true"),
 });
 
 export type CreateProductBody = z.infer<typeof createProductSchema>;

@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
     category: sp.get("category") ?? undefined,
     locationId: sp.get("locationId") ?? undefined,
     includeArchived: sp.get("includeArchived") ?? undefined,
+    includeStock: sp.get("includeStock") ?? undefined,
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];

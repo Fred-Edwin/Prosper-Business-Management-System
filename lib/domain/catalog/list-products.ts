@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { getTotalStockByProduct } from "@/lib/domain/stock";
 import type {
   ActorContext,
   ListProductsFilter,
@@ -19,7 +20,7 @@ import { productInclude, toProductView } from "./internal";
  * - Deterministic order: kind, then name.
  */
 export async function listProducts(
-  filter: ListProductsFilter,
+  filter: ListProductsFilter & { includeStock?: boolean },
   actor: ActorContext,
 ): Promise<ProductWithLocations[]> {
   const where: Prisma.ProductWhereInput = {};
@@ -49,5 +50,16 @@ export async function listProducts(
   });
 
   const stripBuyingPrice = actor.role !== "admin";
-  return rows.map((row) => toProductView(row, { stripBuyingPrice }));
+  const views = rows.map((row) => toProductView(row, { stripBuyingPrice }));
+
+  // Admin-only (route already gates the query param to admin callers) —
+  // one grouped aggregate for the whole page, not N+1.
+  if (filter.includeStock && actor.role === "admin") {
+    const stockByProduct = await getTotalStockByProduct(views.map((v) => v.id));
+    for (const view of views) {
+      view.stockQty = stockByProduct[view.id];
+    }
+  }
+
+  return views;
 }

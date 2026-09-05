@@ -66,6 +66,13 @@ function trimQty(dec: Prisma.Decimal): string {
  * also writes its own `AuditLog` row). The money ledger seam did not exist
  * in M1 (`recordMoneyMovement` is M2 S3); the `paidFromAccount` was
  * already captured on the row for exactly this.
+ *
+ * CATALOG BUYING PRICE: `Product.buyingPrice` is a plain catalog field
+ * (not a ledger — CONVENTIONS.md §4 only requires append-only history for
+ * ledger tables), so it is a true edit: every purchase payment sets it to
+ * this payment's unit cost (`cost / orderedQty`), same transaction. The
+ * catalog always reflects the most recently paid price, matching how the
+ * Admin already sets it by hand today.
  */
 export async function recordPurchasePayment(
   input: RecordPurchasePaymentInput,
@@ -121,6 +128,13 @@ export async function recordPurchasePayment(
       },
       { actorId: input.recordedById, tx },
     );
+
+    // Catalog buying price follows the most recent purchase (see doc
+    // comment above) — unit cost = total cost / ordered quantity.
+    await tx.product.update({
+      where: { id: input.productId },
+      data: { buyingPrice: cost.div(orderedQty) },
+    });
 
     return movement;
   });

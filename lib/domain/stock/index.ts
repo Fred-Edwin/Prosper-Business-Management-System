@@ -8,6 +8,7 @@ export * from "./types";
 export {
   getDerivedStockBalance,
   getDerivedStockBalances,
+  getTotalStockByProduct,
 } from "./derived-balance";
 export { setOpeningStock } from "./opening-stock";
 export {

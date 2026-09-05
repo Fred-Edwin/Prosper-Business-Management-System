@@ -88,3 +88,39 @@ export async function getDerivedStockBalances(
     };
   });
 }
+
+/**
+ * Total on-hand quantity per product, summed across **every** location —
+ * the Catalog screen's "how much of this do we have in the business"
+ * figure (as opposed to `getDerivedStockBalances`, which is one location
+ * at a time). Same ledger-sum rule as `getDerivedStockBalance`; products
+ * with no rows come back as `"0.0000"`.
+ */
+export async function getTotalStockByProduct(
+  productIds: string[],
+  asOf?: Date,
+): Promise<Record<string, string>> {
+  if (productIds.length === 0) return {};
+  const at = asOf ?? new Date();
+
+  const grouped = await prisma.stockMovement.groupBy({
+    by: ["productId"],
+    _sum: { quantity: true },
+    where: {
+      productId: { in: productIds },
+      occurredAt: { lte: at },
+    },
+  });
+
+  const byProduct = new Map(
+    grouped.map((g) => [g.productId, g._sum.quantity ?? new Prisma.Decimal(0)]),
+  );
+
+  const result: Record<string, string> = {};
+  for (const productId of productIds) {
+    result[productId] = quantityString(
+      byProduct.get(productId) ?? new Prisma.Decimal(0),
+    );
+  }
+  return result;
+}

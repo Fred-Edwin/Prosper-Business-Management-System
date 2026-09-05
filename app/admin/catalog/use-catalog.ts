@@ -75,6 +75,9 @@ export function useCatalog(filter: CatalogListFilter) {
       if (includeArchived) params.set("includeArchived", "true");
       if (locationId && locationId.trim() !== "")
         params.set("locationId", locationId.trim());
+      // Powers the Catalog table's "Stock" column (admin-only; stripped
+      // server-side for any other caller of this same endpoint).
+      params.set("includeStock", "true");
 
       const [prods, locs] = await Promise.all([
         request<ProductWithLocations[]>(`/api/products?${params.toString()}`),

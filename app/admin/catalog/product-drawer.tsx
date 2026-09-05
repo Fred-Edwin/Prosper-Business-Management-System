@@ -115,7 +115,9 @@ export function ProductDrawer({
           return {
             locationId: loc.id,
             label: loc.name,
-            enabled: existing ? existing.active : false,
+            enabled: existing
+              ? existing.active
+              : product.kind === "ingredient" && loc.type === "store",
             price: existing?.sellingPrice ?? "",
           };
         }),
@@ -127,10 +129,12 @@ export function ProductDrawer({
       setCategory("");
       setBuyingPrice("0.00");
       setRows(
+        // New product defaults to Ingredient (ADR-67 R1) — the Store row
+        // starts enabled, matching "ingredients always go to the Store".
         locations.map((loc) => ({
           locationId: loc.id,
           label: loc.name,
-          enabled: false,
+          enabled: loc.type === "store",
           price: "",
         })),
       );
@@ -138,11 +142,37 @@ export function ProductDrawer({
   }, [open, product, locations]);
 
   const isDish = kind === "dish";
+  const isIngredient = kind === "ingredient";
+  // R1 (ADR-67): an ingredient is only ever legal at the Store — the
+  // location list for this form is Store-only when Ingredient is picked,
+  // and its row is force-enabled (no toggle, storage only, no price).
+  const visibleRows = isIngredient
+    ? rows.filter((r) => {
+        const loc = locations.find((l) => l.id === r.locationId);
+        return loc?.type === "store";
+      })
+    : rows.filter((r) => {
+        const loc = locations.find((l) => l.id === r.locationId);
+        return loc?.type !== "store";
+      });
 
   function pickKind(nextLabel: string) {
     const next = KIND_BY_LABEL[nextLabel];
     setKind(next);
     if (next === "dish") setBuyingPrice("0.00");
+    // Switching kind changes which locations are even legal (R1, ADR-67):
+    // reset every row rather than carry over a now-invalid selection.
+    setRows((prev) =>
+      prev.map((r) => {
+        const loc = locations.find((l) => l.id === r.locationId);
+        const isStore = loc?.type === "store";
+        return {
+          ...r,
+          enabled: next === "ingredient" ? isStore : false,
+          price: "",
+        };
+      }),
+    );
   }
 
   function setRowEnabled(locationId: string, enabled: boolean) {
@@ -167,11 +197,26 @@ export function ProductDrawer({
       unitLabel: unitLabel.trim(),
       category: category.trim() === "" ? null : category.trim(),
       buyingPrice: isDish ? "0" : buyingPrice.trim(),
-      locations: rows.map((r) => ({
-        locationId: r.locationId,
-        active: r.enabled,
-        sellingPrice: r.enabled && r.price.trim() !== "" ? r.price.trim() : null,
-      })),
+      // R1 (ADR-67): submit exactly the rows this kind is legal at —
+      // ingredient -> Store only (always active, storage only, no price);
+      // dish/goods -> non-Store rows as toggled.
+      locations: rows
+        .filter((r) => {
+          const loc = locations.find((l) => l.id === r.locationId);
+          const isStore = loc?.type === "store";
+          return isIngredient ? isStore : !isStore;
+        })
+        .map((r) => {
+          const active = isIngredient ? true : r.enabled;
+          return {
+            locationId: r.locationId,
+            active,
+            sellingPrice:
+              !isIngredient && active && r.price.trim() !== ""
+                ? r.price.trim()
+                : null,
+          };
+        }),
     };
 
     try {
@@ -386,14 +431,26 @@ export function ProductDrawer({
       {/* Location Availability & Selling Prices */}
       <div className="flex flex-col pt-(--sp-6) gap-(--sp-6) border-t border-t-solid [border-top-color:var(--border-subtle)]">
         <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:0.06em] [color:var(--text-tertiary)] text-caption/micro">
-          Location Availability &amp; Selling Prices
+          {isIngredient ? "Storage Location" : "Location Availability & Selling Prices"}
         </div>
         {fieldErrors.locations && (
           <div className="font-ui text-danger text-caption/micro">
             {fieldErrors.locations}
           </div>
         )}
-        {rows.map((row) => (
+        {isIngredient ? (
+          // R1 (ADR-67): an ingredient is only ever legal at the Store —
+          // no toggle, no selling price. Just the fact, stated once.
+          <div className="flex items-center p-(--sp-5) rounded-sm gap-(--sp-5) border border-solid [border-color:var(--border-subtle)]">
+            <div className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/micro">
+              Store
+            </div>
+            <div className="font-ui [color:var(--text-tertiary)] text-sm/micro">
+              Ingredients are always stocked at the Store — no selling price.
+            </div>
+          </div>
+        ) : (
+        visibleRows.map((row) => (
           <div
             key={row.locationId}
             className="flex items-center p-(--sp-5) rounded-sm gap-(--sp-5) border border-solid [border-color:var(--border-subtle)]"
@@ -435,7 +492,8 @@ export function ProductDrawer({
               </div>
             )}
           </div>
-        ))}
+        ))
+        )}
       </div>
       </fieldset>
 

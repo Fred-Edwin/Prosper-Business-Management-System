@@ -59,6 +59,13 @@ export type ProductWithLocations = {
   createdAt: string;
   updatedAt: string;
   locations: ProductLocationView[];
+  /**
+   * Total on-hand quantity, summed across every location — a decimal
+   * string, present only when the caller asked for `includeStock=true`
+   * (admin-only, `list-products.ts`). `undefined` otherwise so existing
+   * callers (Cashier grid, staff pickers) are unaffected.
+   */
+  stockQty?: string;
 };
 
 export type ListProductsFilter = {

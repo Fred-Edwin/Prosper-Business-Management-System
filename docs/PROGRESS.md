@@ -15,6 +15,75 @@ Running status log, updated at the end of every sprint session.
 
 ---
 
+## Catalog — row numbers, Stock column, Store-only ingredients, buying price follows last purchase (Developer — 2026-09-05) — DONE
+
+Owner request, ad hoc (not tied to a milestone plan). Four changes to
+`/admin/catalog`:
+
+1. **Row numbers.** `#` column (desktop table) / `N.` prefix on the name
+   (mobile card) — position in the current filtered list, not a stable id.
+2. **Stock column.** New `GET /api/products?includeStock=true` param
+   (admin-only, ignored server-side for any other role) adds `stockQty` to
+   each row: total on-hand summed **across every location** via a new
+   `getTotalStockByProduct` aggregate in `lib/domain/stock/derived-balance.ts`
+   (one grouped query, no N+1). Desktop table + mobile card tile both show
+   it. Every other `GET /api/products` caller (Cashier grid, staff
+   pickers) is unaffected — the field is `undefined` unless asked for.
+3. **Ingredients are Store-only in the drawer.** ADR-67 R1 already enforces
+   ingredient ⇒ Store / dish+goods ⇒ Restaurant+Canteen at the movement
+   layer, but `createProduct`/`updateProduct` never checked it — the old
+   drawer could save an ingredient "sellable" at the Restaurant, an
+   inconsistent state. Now: picking Ingredient collapses "Location
+   Availability" to a single stated fact ("Store — no selling price", no
+   toggle); picking Dish/Goods shows the Restaurant/Canteen toggle rows
+   only (Store no longer offered there either). Switching kind resets the
+   location rows. (Category field stays — removing it would have silently
+   orphaned the Cashier's New-Order category grouping for every future
+   product; flagged to the owner and kept per their answer.)
+4. **Buying price follows last purchase.** `recordPurchasePayment`
+   (`lib/domain/stock/purchases.ts`) now writes `Product.buyingPrice =
+   cost / orderedQty` in the same transaction as the payment movement +
+   `MoneyMovement`. A true edit (catalog field, not a ledger — no
+   correction-row machinery needed), so the catalog always shows the most
+   recently paid unit cost without the Admin re-entering it by hand.
+
+**Desktop table overflow, caught by the owner from a screenshot.** Adding
+`#` + `Stock` on top of the existing 9 columns pushed the row past the
+container at typical widths (`SimpleTable`'s header/row gap is a fixed
+`--sp-6` × N columns, no shrink) — Store/Edit were rendering past the
+visible area. Fixed by tightening every column's fixed width (e.g.
+Locations 220px → 130px, Restaurant/Canteen/Store 110px → 76px each) and
+wrapping the table in `overflow-x-auto` with `min-w-[994px]` as a safety
+net for any narrower content area, rather than touching the shared
+`SimpleTable` kit component itself (CONVENTIONS.md — compose, don't
+extend the kit). Verified at 1440px and 1280px via Playwright.
+
+**Mobile price tile, same round of feedback.** The card's price row grew
+from 4 to 5 labels (added Stock) inside a single `flex` row with no wrap —
+read as visually crowded/cramped on the left. Replaced with a `grid
+grid-cols-3` (3 over 2, border-drawn dividers instead of divider `<div>`
+siblings, which don't survive a grid track) — verified at 390px for both
+the 3-row (Store-only ingredient) and 5-row (multi-location goods) cases.
+
+**Mobile card, follow-up.** The location chips had their own line under
+the category/unit meta line, costing vertical space per card. Folded into
+the same line instead — `"Ingredient · per kg · Store"` /
+`"Goods · per pcs · Canteen, Restaurant"` — dropping the separate
+`<LocationChips>` row (that component stays for the desktop table's
+Locations column, unchanged there).
+
+Gates: `pnpm typecheck` clean; `pnpm vitest run tests/screens/catalog.screen.test.tsx`
+(12/12); `pnpm exec vitest run --config vitest.db.config.ts` on the
+touched catalog/stock/products-route files (56/56 + 9/9). Full
+`pnpm test:unit` run once as the final gate: 432/433 — the one failure
+(`app/design-system/tokens.test.ts`, missing `--color-*-on-dark` entries
+in `tokens.ts`) is **pre-existing**, from the already-committed
+`965792d` mobile-parity session, not touched by this session.
+`pnpm build` not run this session (`pnpm dev` + Playwright walkthrough
+used instead — see verification above).
+
+---
+
 ## Mobile parity — Stock / Ledger (`/admin/stock`) (Developer — 2026-09-05) — DONE
 
 Against `docs/sprints/mobile-parity/stock-ledger-mobile-HANDOFF.md`. Goal:
