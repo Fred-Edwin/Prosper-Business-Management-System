@@ -37,6 +37,8 @@ export interface MobileShellAdminProps {
   onAccountClick: () => void;
   /** When set, a "Switch workspace" row appears in the nav drawer (M7). */
   onSwitchWorkspace?: () => void;
+  /** Optional control shown in the header row, just before the account avatar (e.g. the "?" help button). */
+  headerAccessory?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -51,6 +53,7 @@ export function MobileShellAdmin({
   accountRole,
   onAccountClick,
   onSwitchWorkspace,
+  headerAccessory,
   children,
 }: MobileShellAdminProps) {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
@@ -83,6 +86,7 @@ export function MobileShellAdmin({
         {actions && (
           <div className="flex items-center shrink-0 gap-(--sp-3)">{actions}</div>
         )}
+        {headerAccessory}
         <button
           type="button"
           onClick={onAccountClick}

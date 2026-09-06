@@ -182,6 +182,8 @@ export interface AdminShellProps {
   switcherOpen?: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  /** Optional control shown in the content toolbar, just before the account avatar (e.g. the "?" help button). */
+  headerAccessory?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -324,6 +326,7 @@ export function AdminShell({
   switcherOpen = false,
   collapsed,
   onToggleCollapsed,
+  headerAccessory,
   children,
 }: AdminShellProps) {
   const switchTriggerRef = React.useRef<HTMLButtonElement>(null);
@@ -562,6 +565,7 @@ export function AdminShell({
               )}
               <div className="grow" />
               {actions}
+              {headerAccessory}
               <button
                 type="button"
                 onClick={onAccountClick}

@@ -13,6 +13,10 @@ import { ToastProvider } from "@/components/kit/toast";
 import { AppSessionProvider } from "@/components/layout/app-session-provider";
 import { ActingAsBanner } from "@/components/layout/acting-as-banner";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { HelpButton } from "@/components/kit/help-button";
+import { HelpProvider, useHelp } from "@/components/help/help-context";
+import { HelpPanel } from "@/components/help/help-panel";
+import { helpTopicForPath } from "@/lib/help";
 
 // Resolve the active nav key by longest matching href prefix — items sit at
 // /admin/<key> and a nested route still lights its top-level item, so a bare
@@ -55,6 +59,17 @@ function writeCollapsed(next: boolean): void {
   } catch {
     // no-op: storage unavailable (private window, blocked site data)
   }
+}
+
+/** The shell header's "?" button — reads help open-state from context. */
+function HelpHeaderButton() {
+  const help = useHelp();
+  return (
+    <HelpButton
+      active={help?.open}
+      onClick={() => (help?.open ? help.closeHelp() : help?.openHelp())}
+    />
+  );
 }
 
 export function AdminShellClient({
@@ -104,6 +119,7 @@ export function AdminShellClient({
   }, []);
 
   const activeNavKey = activeNavKeyFromPathname(pathname);
+  const hasHelp = !!helpTopicForPath(pathname);
   const navigate = React.useCallback(
     (href: string) => router.push(href),
     [router],
@@ -129,6 +145,8 @@ export function AdminShellClient({
   );
   const closeSwitcher = React.useCallback(() => setSwitcherOpen(false), []);
 
+  const helpButton = hasHelp ? <HelpHeaderButton /> : undefined;
+
   return (
     // <AppSessionProvider>: the admin tree's client session consumer — the
     // workspace switcher hook (useSession().update) and the acting-as banner.
@@ -141,6 +159,7 @@ export function AdminShellClient({
             title + actions through <AdminToolbarProvider>; each shell renders
             them in its single header row alongside the account avatar. */}
         <AdminToolbarProvider>
+        <HelpProvider>
           {/* M7: full-width "you're acting as X" strip above all chrome —
               only shown when the Admin has navigated back to /admin while
               still acting as a staff role (her effective-role home is a
@@ -165,6 +184,7 @@ export function AdminShellClient({
               switcherOpen={switcherOpen}
               collapsed={collapsed}
               onToggleCollapsed={toggleCollapsed}
+              headerAccessory={helpButton}
             >
               <AdminShellVisibility visible={isDesktop}>
                 {children}
@@ -183,6 +203,7 @@ export function AdminShellClient({
               accountInitials={accountInitials}
               onAccountClick={handleAccountClick}
               onSwitchWorkspace={openSwitcherMobile}
+              headerAccessory={helpButton}
             >
               <AdminShellVisibility visible={!isDesktop}>
                 {children}
@@ -195,6 +216,8 @@ export function AdminShellClient({
           onClose={closeSwitcher}
           anchorRect={anchorRect}
         />
+        <HelpPanel />
+        </HelpProvider>
         </AdminToolbarProvider>
       </ToastProvider>
     </AppSessionProvider>

@@ -3768,3 +3768,40 @@ as the same request. So the screens changed too:
   the pinned day on a ledger with no openings — instead of an arbitrary
   historical date. The rule each asserted is unchanged.
 - No `TODO(mock)`.
+
+---
+
+## ADR-71: In-app screen help is a per-route content model + a shell **?** button, not embedded page copy (Owner + Developer, 2026-09-06)
+
+**Context.** The app was handed to the client in maintenance mode. The
+manager needs to self-serve "what is this screen and how do I use it?"
+without a separate manual.
+
+**Decision.**
+
+- A **?** button (`components/kit/help-button.tsx` — a new kit component,
+  owner-approved) lives in every shell header row, in an optional
+  `headerAccessory` slot on `AdminShell` / `MobileShellAdmin`. It is
+  shown only when the current route has a help topic.
+- Help content is **data**, one `HelpTopic` per section in `lib/help/`,
+  with per-`?tab=` overrides for tabbed screens. Resolved by longest
+  route-prefix match (`helpTopicForPath`).
+- Content is authored from **reading the screens**, deliberately NOT from
+  `docs/design/flows/*` (those are agent-facing design intent, full of
+  ADR references). The flow docs remain the source of truth for
+  *mechanism*; `lib/help` is the plain-language projection for the owner.
+- The panel (`components/help/help-panel.tsx`) **composes the frozen kit**
+  — rail `Drawer` + `InstructionalBanner` per step — plus plain
+  text/list blocks in the screen file for running help prose (the kit has
+  no card for that). No kit fork beyond the one approved button.
+- `HelpProvider` / `useHelp()` decouples the shell button from the panel
+  (they sit in different parts of the tree; the panel mounts once and
+  serves both the desktop and mobile shell).
+
+**Scope now.** Admin screens only. Staff-role screens (cashier,
+store-manager, canteen) get the same button + panel in a later pass,
+reusing the content model unchanged.
+
+**Consequences.** Keeping a screen's help correct is now part of changing
+that screen — update its `lib/help` entry in the same change. A screen
+with no entry simply has no **?** button (graceful incremental rollout).
