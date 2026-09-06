@@ -1,80 +1,77 @@
 "use client";
 
-// Admin "Switch workspace" control — the frontend half of role-switching
-// (docs/sprints/role-switching-session-2-handoff.md). Composed from the
-// frozen kit: <Drawer variant="rail"> (sibling: app/admin/staff/
-// change-pin-drawer.tsx) + <Select> for the >1-location picker + <Button>.
+// Admin "Switch workspace" popover — the frontend half of role-switching
+// (docs/sprints/role-switching-session-2-handoff.md).
 //
-// Paper: file 01M0EZ7TAHZM26KBMWNYT0928X, page "M7 — Admin role switching",
-// artboard "1 — Workspace switcher (desktop)". The design drew the role list
-// as a popover above the sidebar footer; the kit has no popover primitive,
-// so this uses the sanctioned <Drawer> rail (same as change-pin-drawer) with
-// the artboard's row content — role name + "what you can do · location" hint,
-// a check on the current workspace, and the "Recorded as Admin" note.
+// Verbatim from Paper file 01M0EZ7TAHZM26KBMWNYT0928X, page "M7 — Admin role
+// switching", artboard "1 — Workspace switcher (desktop)", node "Workspace
+// popover" (TQF-0): a w-[240px] panel that grows UP out of the sidebar
+// footer account row — flush left, bg --nav-bg, border-t --nav-border,
+// box-shadow "#00000033 0 -8px 24px". Rows:
+//   - Admin (current): py-[10px] px-[14px] gap-[10px] bg --nav-bg-active,
+//     label text-body/600 --nav-text-active + "Full oversight · all
+//     locations" text-micro/14px --nav-text-subtle, trailing 15px check
+//     (path "M4 12.5L9.5 18L20 6", stroke --nav-text-active, sw 2)
+//   - divider: h-px mx-[14px] --nav-border
+//   - 3 staff rows: py-[8px] px-[14px], label text-body --nav-text +
+//     "<what> · <location>" text-micro/14px --nav-text-label
+//   - divider
+//   - note: pt-[9px] pb-[11px] px-[14px], text-micro/15px --nav-text-label,
+//     "Recorded as Admin, acting as the selected role."
 //
-// Only rendered for a REAL Admin (the shell gates on session.user.role), so
-// the "Admin (current)" row and the staff rows are always the full set.
+// NOT a kit component and NOT the kit <Drawer> — the kit has no popover, and
+// this is a sidebar-anchored one styled entirely in --nav-* tokens. It ships
+// its own scrim + Esc-to-close + focus move (small and local — the kit
+// overlay internals are Drawer/Dialog-shaped and don't fit an anchored
+// popover). Only rendered for a REAL Admin (the shell gates on
+// session.user.role).
+//
+// Location model: the owner confirmed one active location per staff role, so
+// there is no picker step — the hook resolves the role's single location.
 
 import * as React from "react";
-import { Button } from "@/components/kit/button";
-import { Drawer } from "@/components/kit/drawer";
-import { Select } from "@/components/kit/select";
+import { createPortal } from "react-dom";
 import { useActingAs, type StaffRole } from "./use-acting-as";
 
+type RoleRow = { role: StaffRole; label: string; hint: string };
+
+// Verbatim from the artboard's rows.
+const STAFF_ROWS: RoleRow[] = [
+  { role: "store_manager", label: "Store Manager", hint: "Receiving, issues, transfers · Store" },
+  { role: "cashier", label: "Cashier", hint: "Orders, handover · Restaurant" },
+  { role: "canteen_attendant", label: "Canteen Attendant", hint: "Stock, handover · Canteen" },
+];
+
 const CODE_MESSAGE: Record<string, string> = {
-  VALIDATION_ERROR: "That location isn't set up for this role yet.",
+  VALIDATION_ERROR: "That role has no active location set up yet.",
   FORBIDDEN: "Only an administrator can switch workspaces.",
   UNAUTHENTICATED: "Sign in to continue.",
   INTERNAL_ERROR: "Something went wrong. Try again.",
 };
 
-type RoleRow = {
-  role: StaffRole;
-  label: string;
-  hint: string;
-};
+const CheckIcon = (
+  <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
+    <path
+      d="M4 12.5L9.5 18L20 6"
+      fill="none"
+      stroke="var(--nav-text-active)"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
 
-// Verbatim from the artboard's popover rows.
-const STAFF_ROWS: RoleRow[] = [
-  {
-    role: "store_manager",
-    label: "Store Manager",
-    hint: "Receiving, issues, transfers · Store",
-  },
-  {
-    role: "cashier",
-    label: "Cashier",
-    hint: "Orders, handover · Restaurant",
-  },
-  {
-    role: "canteen_attendant",
-    label: "Canteen Attendant",
-    hint: "Stock, handover · Canteen",
-  },
-];
-
-function CheckIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      aria-hidden
-      style={{ flexShrink: 0 }}
-    >
-      <path
-        d="M4 12.5L9.5 18L20 6"
-        fill="none"
-        stroke="var(--color-accent)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+function Divider() {
+  return <div className="h-px mx-[14px] shrink-0 bg-(--nav-border)" />;
 }
 
-function WorkspaceRow({
+/**
+ * One row. The current workspace gets the `--nav-bg-active` highlight + a
+ * trailing check and is not itself a control (component-states.md — a
+ * "current" row is display).
+ */
+function Row({
   label,
   hint,
   current,
@@ -87,156 +84,171 @@ function WorkspaceRow({
   disabled: boolean;
   onSelect: () => void;
 }) {
-  return (
-    <button
-      type="button"
-      aria-current={current ? "true" : undefined}
-      disabled={disabled || current}
-      onClick={onSelect}
-      className="flex items-center w-full gap-(--sp-4) py-(--sp-4) px-(--sp-5) rounded-sm text-left kit-interactive kit-focus-ring [--kit-hover-bg:var(--surface-hover)] data-[current=true]:bg-(--surface-selected) disabled:opacity-100"
-      data-current={current ? "true" : undefined}
-    >
+  const body = (
+    <>
       <span className="flex flex-col grow gap-px">
-        <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/sm">
+        <span
+          className={
+            "font-ui text-body/sm " +
+            (current
+              ? "font-(--weight-semibold) text-(--nav-text-active)"
+              : "font-(--weight-regular) text-(--nav-text)")
+          }
+        >
           {label}
         </span>
-        <span className="font-ui [color:var(--text-tertiary)] text-micro/micro">
+        <span
+          className={
+            "font-ui text-micro leading-[14px] " +
+            (current ? "text-(--nav-text-subtle)" : "text-(--nav-text-label)")
+          }
+        >
           {hint}
         </span>
       </span>
-      {current && <CheckIcon />}
+      {current && CheckIcon}
+    </>
+  );
+
+  if (current) {
+    return (
+      <div
+        aria-current="true"
+        className="flex items-center py-[10px] px-[14px] gap-[10px] bg-(--nav-bg-active)"
+      >
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onSelect}
+      className="flex items-center w-full py-[8px] px-[14px] gap-[10px] text-left kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)] disabled:opacity-[0.55]"
+    >
+      {body}
     </button>
   );
+}
+
+export interface WorkspaceSwitcherProps {
+  open: boolean;
+  onClose: () => void;
+  /**
+   * DOMRect of the sidebar footer trigger. The popover anchors its BOTTOM
+   * edge to the trigger's TOP edge (grows upward, flush to the trigger's
+   * left) — matching artboard TQF-0. Ignored when `placement="inline"`.
+   */
+  anchorRect?: DOMRect | null;
+  /** `"anchored"` (default) portals + positions against `anchorRect`;
+   * `"inline"` returns the bare panel for a caller that places it (the
+   * mobile acting-as drawer). */
+  placement?: "anchored" | "inline";
 }
 
 export function WorkspaceSwitcher({
   open,
   onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
-  const { actingAs, pending, error, pendingLocations, cancelPending, switchTo, exit } =
-    useActingAs();
+  anchorRect,
+  placement = "anchored",
+}: WorkspaceSwitcherProps) {
+  const { actingAs, pending, error, switchTo, exit } = useActingAs();
+  const panelRef = React.useRef<HTMLDivElement>(null);
+  const [host, setHost] = React.useState<HTMLElement | null>(null);
 
-  const [pickedLocation, setPickedLocation] = React.useState<string>("");
+  React.useEffect(() => setHost(document.body), []);
 
-  // Reset the transient picker state whenever the drawer is (re)opened or the
-  // pending-locations prompt clears.
   React.useEffect(() => {
-    if (!open || !pendingLocations) setPickedLocation("");
-  }, [open, pendingLocations]);
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    panelRef.current?.focus();
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
-  async function choose(role: StaffRole) {
-    try {
-      await switchTo(role);
-      // On a single-location role the switch commits and navigates away; on a
-      // multi-location role `pendingLocations` is now set and the picker shows.
-    } catch {
-      /* error surfaced via `error` */
-    }
-  }
+  if (!open) return null;
 
-  async function confirmLocation() {
-    if (!pendingLocations || !pickedLocation) return;
-    try {
-      await switchTo(pendingLocations.role, pickedLocation);
-    } catch {
-      /* surfaced via `error` */
-    }
-  }
+  const errorText = error ? (CODE_MESSAGE[error.code] ?? error.message) : null;
 
-  async function handleExit() {
-    try {
-      await exit();
-    } catch {
-      /* surfaced via `error` */
-    }
-  }
-
-  const errorText = error ? CODE_MESSAGE[error.code] ?? error.message : null;
-
-  return (
-    <Drawer
-      open={open}
-      onClose={onClose}
-      title="Switch workspace"
-      subtitle="Work under a staff role without signing out"
-      variant="rail"
-      footer={
-        <Button variant="secondary" onClick={onClose} disabled={pending}>
-          Close
-        </Button>
-      }
+  const panel = (
+    <div
+      ref={panelRef}
+      role="menu"
+      aria-label="Switch workspace"
+      tabIndex={-1}
+      className="[font-synthesis:none] w-[240px] flex flex-col bg-(--nav-bg) border-t border-t-solid border-t-(--nav-border) [box-shadow:#00000033_0px_-8px_24px] outline-none antialiased"
     >
-      {errorText && (
-        <div role="alert" className="font-ui text-danger text-body/sm">
+      <Row
+        label="Admin"
+        hint="Full oversight · all locations"
+        current={actingAs === null}
+        disabled={pending}
+        onSelect={() => void exit().then(onClose).catch(() => {})}
+      />
+      <Divider />
+      {STAFF_ROWS.map((r) => (
+        <Row
+          key={r.role}
+          label={r.label}
+          hint={r.hint}
+          current={actingAs === r.role}
+          disabled={pending}
+          onSelect={() => void switchTo(r.role).then(onClose).catch(() => {})}
+        />
+      ))}
+      <Divider />
+      {errorText ? (
+        <div
+          role="alert"
+          className="pt-[9px] pb-[11px] px-[14px] font-ui text-micro leading-[15px] text-(--color-danger-on-dark)"
+        >
           {errorText}
         </div>
+      ) : (
+        <div className="pt-[9px] pb-[11px] px-[14px] font-ui text-micro leading-[15px] text-(--nav-text-label)">
+          Recorded as Admin, acting as the selected role.
+        </div>
       )}
+    </div>
+  );
 
-      {pendingLocations ? (
-        <div className="flex flex-col gap-(--sp-5)">
-          <p className="font-ui [color:var(--text-secondary)] text-caption/micro">
-            {STAFF_ROWS.find((r) => r.role === pendingLocations.role)?.label} has
-            more than one location. Choose which one to work at.
-          </p>
-          <Select
-            label="Location"
-            options={pendingLocations.locations.map((l) => ({
-              value: l.id,
-              label: l.name,
-            }))}
-            value={pickedLocation}
-            onChange={setPickedLocation}
-            placeholder="Select a location"
-          />
-          <div className="flex items-center gap-(--sp-4)">
-            <Button
-              variant="primary"
-              className="grow"
-              onClick={confirmLocation}
-              disabled={!pickedLocation}
-              loading={pending}
-            >
-              Enter workspace
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={cancelPending}
-              disabled={pending}
-            >
-              Back
-            </Button>
-          </div>
+  if (placement === "inline") return panel;
+  if (!host) return null;
+
+  // Anchored (desktop): transparent scrim catches outside clicks; the panel's
+  // BOTTOM edge sits on the trigger's TOP edge, flush to the trigger's left.
+  // With no anchorRect (mobile — opened from the nav drawer) it renders as a
+  // bottom sheet over a dimmed scrim instead.
+  return createPortal(
+    <div className="fixed inset-0 [z-index:60]">
+      <div
+        className={
+          "absolute inset-0 " + (anchorRect ? "" : "bg-black/40")
+        }
+        onClick={onClose}
+        aria-hidden
+      />
+      {anchorRect ? (
+        <div
+          className="absolute"
+          style={{
+            left: anchorRect.left,
+            bottom: window.innerHeight - anchorRect.top,
+          }}
+        >
+          {panel}
         </div>
       ) : (
-        <div className="flex flex-col gap-(--sp-2)">
-          <WorkspaceRow
-            label="Admin"
-            hint="Full oversight · all locations"
-            current={actingAs === null}
-            disabled={pending}
-            onSelect={handleExit}
-          />
-          <div className="h-px my-(--sp-2) bg-(--border-subtle)" />
-          {STAFF_ROWS.map((r) => (
-            <WorkspaceRow
-              key={r.role}
-              label={r.label}
-              hint={r.hint}
-              current={actingAs === r.role}
-              disabled={pending}
-              onSelect={() => choose(r.role)}
-            />
-          ))}
-          <div className="h-px my-(--sp-2) bg-(--border-subtle)" />
-          <p className="font-ui [color:var(--text-tertiary)] text-micro/micro px-(--sp-5)">
-            Everything you record stays attributed to Admin. Switching only
-            changes which screens and location you&rsquo;re working in.
-          </p>
+        <div className="absolute inset-x-0 bottom-0 flex justify-center pb-(--sp-6)">
+          {panel}
         </div>
       )}
-    </Drawer>
+    </div>,
+    host,
   );
 }

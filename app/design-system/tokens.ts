@@ -50,6 +50,11 @@ export const tokens = {
   // --- Color: brand -----------------------------------------------------
   "--color-gold-brand": "oklch(68% 0.110 84.2)",
 
+  // --- Color: Admin "acting as" (role-switching, M7) -------------------
+  "--color-acting-as": "#6d5005",
+  "--color-acting-as-bg": "rgb(184 146 64 / 14%)",
+  "--color-acting-as-border": "rgb(184 146 64 / 30%)",
+
   // --- Color: semantic surfaces ---------------------------------------
   "--surface-page": "oklch(100% 0 0)",
   "--surface-subtle": "var(--color-gray-50)",

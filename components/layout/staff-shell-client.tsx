@@ -9,6 +9,8 @@ import { ToastProvider } from "@/components/kit/toast";
 import type { BottomNavItem } from "@/components/kit/bottom-nav";
 import { AppSessionProvider } from "@/components/layout/app-session-provider";
 import { ActingAsBanner } from "@/components/layout/acting-as-banner";
+import { useActingAs } from "@/app/admin/use-acting-as";
+import { WorkspaceSwitcher } from "@/app/admin/workspace-switcher";
 
 // Per-role bottom nav item sets, keyed by the role's base route. The nav-item
 // definitions — including the icon JSX — live in this Client Component (not
@@ -115,20 +117,65 @@ export function StaffShellClient({
   actingLocationName?: string | null;
   children: React.ReactNode;
 }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const defs = NAV_DEFS_BY_BASE[basePath] ?? [];
-  const navItems = React.useMemo(() => toNavItems(defs), [defs]);
-
   return (
-    // <AppSessionProvider> is needed for the acting-as banner's useSession();
-    // it's the only client session consumer in the staff tree.
+    // <AppSessionProvider> is needed for the acting-as banner + switcher's
+    // useSession(); it's the only client session consumer in the staff tree.
     <AppSessionProvider>
       {/* Session 12 (ADR-43): the staff route tree gets bottom-center toasts —
           the mirror of the admin tree's top-right. Every staff issue /
           production / transfer / non-sale / receipt / accept success fires
           one via useToast(). */}
       <ToastProvider placement="bottom-center">
+        <StaffChrome
+          basePath={basePath}
+          roleLabel={roleLabel}
+          locationLabel={locationLabel}
+          accountInitials={accountInitials}
+          actingLocationName={actingLocationName}
+        >
+          {children}
+        </StaffChrome>
+      </ToastProvider>
+    </AppSessionProvider>
+  );
+}
+
+/**
+ * Inside <AppSessionProvider> so it can read `useActingAs()`. Lays the
+ * full-width acting-as banner above the shell (Paper M7 — the banner spans
+ * the whole viewport, above all chrome), and — while an Admin is acting as
+ * this role — wires the header hamburger to the workspace switcher.
+ */
+function StaffChrome({
+  basePath,
+  roleLabel,
+  locationLabel,
+  accountInitials,
+  actingLocationName,
+  children,
+}: {
+  basePath: string;
+  roleLabel: string;
+  locationLabel: string;
+  accountInitials: string;
+  actingLocationName?: string | null;
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const defs = NAV_DEFS_BY_BASE[basePath] ?? [];
+  const navItems = React.useMemo(() => toNavItems(defs), [defs]);
+
+  const { actingAs } = useActingAs();
+  const [menuOpen, setMenuOpen] = React.useState(false);
+
+  return (
+    <div className="flex flex-col h-screen w-full">
+      {/* density "mobile" — the staff tree is the mobile-first shell until the
+          desktop staff sidebar ships (role-switching Session 3). "Exit" fits
+          the 16px-padded strip at every width. */}
+      <ActingAsBanner locationName={actingLocationName} density="mobile" />
+      <div className="flex-1 min-h-0">
         <StaffShell
           roleLabel={roleLabel}
           locationLabel={locationLabel}
@@ -139,11 +186,12 @@ export function StaffShellClient({
             router.push(hrefForKey(basePath, defs, key))
           }
           onAccountClick={() => signOut({ callbackUrl: "/login" })}
-          topBanner={<ActingAsBanner locationName={actingLocationName} />}
+          onMenuClick={actingAs ? () => setMenuOpen(true) : undefined}
         >
           {children}
         </StaffShell>
-      </ToastProvider>
-    </AppSessionProvider>
+      </div>
+      <WorkspaceSwitcher open={menuOpen} onClose={() => setMenuOpen(false)} />
+    </div>
   );
 }

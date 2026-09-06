@@ -114,6 +114,142 @@ introduced. No schema migration.
 
 ---
 
+## Admin role-switching — Session 2 (frontend + check) (Developer — 2026-09-06) — DONE
+
+Frontend + check half of the build loop against Session 1's backend
+(commit `a6ee88c`). The Admin can now switch which staff role's
+screens/scoping she works under — Store Manager, Cashier, Canteen
+Attendant — without logging out, and switch back. Still **not
+impersonation**: verified against the live DB that an order placed while
+acting as Cashier has `cashierId`, its `AuditLog.userId`, and its `sale`
+`StockMovement.recordedBy` all set to the **real Admin id**.
+
+**What shipped (UI):**
+- `app/admin/use-acting-as.ts` — the per-feature hook.
+  `{ actingAs, locationName, pending, error, switchTo(role), exit() }`.
+  `switchTo` resolves the role's single active location itself
+  (`GET /api/locations`, filtered by the role's `LocationType`), POSTs
+  `/api/auth/acting-as`, then `useSession().update({ actingAs, locationId })`
+  and `router.push(roleHomePath(effectiveRole))` + `refresh()`. `exit()`
+  is the same flow with `role: null`.
+- `app/admin/workspace-switcher.tsx` — the switcher **popover**, a
+  verbatim build of Paper `01M0EZ7TAHZM26KBMWNYT0928X` page "M7", artboard
+  1, node "Workspace popover" (`TQF-0`): a `w-[240px]` panel in `--nav-*`
+  tokens that grows up out of the sidebar footer — Admin row + check,
+  divider, three staff rows with "<what> · <location>" hints, divider,
+  "Recorded as Admin, acting as the selected role." note. Ships its own
+  scrim + Esc-close + focus move (the kit has no popover; `<Drawer>` is
+  Dialog-shaped and doesn't fit an anchored one). `placement="anchored"`
+  positions against the trigger's `DOMRect`; with no rect (mobile) it
+  falls back to a bottom sheet.
+- `components/layout/acting-as-banner.tsx` — the persistent "Acting as
+  {Role} at {location} — recorded as Admin / Exit" strip (Paper `TL7-0`
+  desktop, `TE0-0` mobile). New `--color-acting-as` / `-bg` / `-border`
+  tokens (`tokens.css` + `tokens.ts` + `globals.css`) — a muted
+  authoritative gold at the artboard's values (`#6D5005` text, `#B89240`
+  ground/hairline at 14 % / 30 %). Deliberately its own role, **not**
+  `--color-warning` (this is "you're in someone else's seat", not a
+  warning).
+- `components/layout/app-session-provider.tsx` — `next-auth`
+  `<SessionProvider>`, mounted only in the `/admin` + three staff route
+  trees (the only client `useSession()` consumers; `signIn`/`signOut`
+  never needed it).
+- Shell wiring:
+  - `components/shells/admin-shell.tsx` — footer + icon-rail get a
+    chevron trigger (Paper `TQF-0`'s "Switch chevron", rotates when open),
+    reports its `DOMRect` via `onSwitchWorkspace(rect)`; `switcherOpen`
+    prop rotates it. Shell roots `h-screen` → `h-full` so the full-width
+    banner can sit above them.
+  - `components/shells/staff-shell.tsx` — optional leading `onMenuClick`
+    hamburger in the header (Paper `TCA-0`), shown **only while
+    acting-as** — a real staff user's header is unchanged (the dead
+    hamburger stayed removed).
+  - `components/shells/mobile-nav-drawer.tsx` / `mobile-shell-admin.tsx`
+    — a "Switch workspace" row above the drawer footer.
+  - `app/admin/admin-shell-client.tsx` / `components/layout/staff-shell-client.tsx`
+    — wrap each shell in `flex-col h-screen` with `<ActingAsBanner>` as a
+    full-width strip above it (Paper artboards 2–4: the banner spans the
+    whole viewport, above the sidebar). `StaffChrome` (new inner client,
+    inside `<AppSessionProvider>`) reads `useActingAs()` to decide the
+    hamburger and hosts the inline switcher.
+
+**What shipped (guards — Session 2's job):**
+- Staff **page layouts** (`app/store-manager|cashier|canteen/layout.tsx`)
+  → `requireActingRole(...)` (was `requireRole`). `app/admin/layout.tsx`
+  stays `requireRole("admin")`. Each staff layout also resolves the
+  acting location's name server-side (`lib/auth/acting-location-name.ts`)
+  for the banner's first paint.
+- Staff **write routes** → `requireActingRole` /
+  `requireActingRoleIn`: `orders` POST, `orders/[id]` PATCH,
+  `canteen/stock-counts` POST + `[id]` DELETE. Correction routes and
+  `/api/admin/*` left on the real role, as the handoff requires.
+- Staff **GET list-scoping** audited and repointed to `effectiveRole` +
+  the `Session`-form `resolveActorLocationId` so an acting-as Admin sees
+  the acting location's data, not "everywhere": `orders` GET,
+  `canteen/stock-counts` GET, `canteen/stock-counts/preview`,
+  `canteen/products` GET, `stock-movements/balances`,
+  `stock-movements/outstanding`, `stock-movements/[id]/accept`,
+  `products` GET (so buyingPrice is stripped on the staff-styled screen).
+  GET routes that also serve `/admin` keep `requireApiRoleIn` (it admits
+  the real Admin) and only change the *scoping* role.
+
+**Deviations from the Session 2 handoff — flagged:**
+- **Handovers left on the real-role guard.** The handoff listed
+  `handovers` POST + `[id]` PATCH among the guards to swap, but
+  `declareHandover` / `editOwnHandover` / `listHandovers` resolve the
+  actor via `resolveActingStaff(userId)` and `Handover.staffId` is a
+  **required FK** — an acting-as Admin has no `Staff` row, so a
+  declaration is not representable without a schema change. No Paper
+  artboard shows a Handover tab in the acting-as nav (it is Hub + Stock
+  only). Owner decision (2026-09-06): leave handovers on `requireApiRole*`
+  and note the gap. **Not done:** acting-as handover declaration — needs
+  a nullable `Handover.staffId` + `recordedById` migration and domain
+  rework; its own backend session.
+- **Desktop staff shell not built.** Paper artboards `TE6-0` / `TLE-0`
+  show the acting-as staff screens on desktop with a **dark sidebar**
+  (Hub/Stock nav + footer) — a desktop staff shell that does not exist
+  (staff screens are mobile-only today). Owner decision (2026-09-06):
+  acting-as on desktop uses the existing mobile-first staff shell + the
+  full-width banner for now; the desktop staff sidebar shell (acting-as
+  only, real staff unchanged) is **Session 3**, with its own handoff.
+- **Picker: no multi-location step.** The artboard subtitles assume one
+  location per role ("· Store", "· Restaurant", "· Canteen"). Owner
+  confirmed one active location per role — the hook auto-selects it and
+  there is no location-picker UI. `switchTo` takes the first name-sorted
+  match if a business ever runs more than one.
+- **`actingAsSchema.locationId` relaxed `.uuid()` → `.min(1)`**
+  (`lib/validation/auth.ts`). The seed (and any imported data) uses
+  readable ids like `seed-location-store`, which `.uuid()` 400'd on every
+  switch; `resolveActingAs` already validates the id resolves to a real
+  active `Location` of the right type, so the format regex added nothing.
+  This is a small change to Session 1's contract, flagged here.
+
+**Check (owner walkthrough, `pnpm dev`, Playwright):** signed in as Admin
+(desktop 1440 + mobile 390) — opened the switcher from the sidebar
+chevron / icon rail / mobile nav-drawer row; switched Admin → Store
+Manager → Cashier → Canteen Attendant (direct role-to-role, no exit
+needed); placed a Cashier order while acting-as (`201`, attribution
+verified to the Admin id in Postgres); used the header hamburger →
+switcher on mobile; exited via the banner. Signed in as the **real
+Cashier** — no banner, no hamburger, no switcher anywhere;
+`/store-manager` redirects to `/cashier`.
+
+**Gate:** `pnpm typecheck` clean; `pnpm build` clean (caught + fixed a
+client-bundle leak — `use-acting-as` had imported `lib/auth/acting-as.ts`
+which pulls in Prisma/`pg`; the role→`LocationType` map is now a
+client-safe local copy); `pnpm test:unit` 478/478; screen specs
+(`tests/screens/admin-workspace-switcher.screen.test.tsx`, new — switcher
+list/current-row/switch/exit/error, banner visibility + exit + density,
+shell triggers) + token-parity green. `pnpm test:db` 710/710 (one earlier
+run hit a Postgres transaction-timeout flake in seed setup under
+concurrent load; clean on retry). No `TODO(mock)` introduced. No schema
+migration.
+
+**Next:** `docs/sprints/role-switching-session-3-handoff.md` — the
+desktop staff sidebar shell (`TE6-0` / `TLE-0`), acting-as only.
+
+---
+
 ## Opening balances + Day-1 pinning (Developer — 2026-09-05) — DONE
 
 Owner request, ad hoc (not tied to a milestone plan): the Admin could

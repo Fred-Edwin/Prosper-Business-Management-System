@@ -172,23 +172,25 @@ export interface AdminShellProps {
   accountInitials: string;
   onAccountClick: () => void;
   /**
-   * When set, a "Switch workspace" control is shown in the sidebar footer
-   * (Admin role-switching — docs/sprints/role-switching-session-2-handoff.md).
+   * When set, a chevron trigger is shown in the sidebar footer account row
+   * that opens the workspace switcher popover (Admin role-switching, Paper
+   * M7 artboard 1 "Switch chevron"). Called with the trigger's DOMRect so
+   * the popover can anchor above it.
    */
-  onSwitchWorkspace?: () => void;
+  onSwitchWorkspace?: (anchorRect: DOMRect) => void;
+  /** True while the switcher popover is open — rotates the footer chevron. */
+  switcherOpen?: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   children: React.ReactNode;
 }
 
-// Two-arrows "switch" glyph for the workspace switcher trigger (Paper M7
-// artboard 1, "Switch chevron").
-const ICON_SWITCH = (
+// The footer chevron that opens the workspace switcher (Paper M7 TQF-0's
+// trigger: a 14px "6 9 12 15 18 9" chevron in a 26px --nav-bg-chip square,
+// stroke --nav-text-subtle). Points down when closed, up when open.
+const ICON_SWITCH_CHEVRON = (
   <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-    <polyline points="17 1 21 5 17 9" fill="none" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M3 11V9a4 4 0 0 1 4-4h14" fill="none" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    <polyline points="7 23 3 19 7 15" fill="none" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M21 13v2a4 4 0 0 1-4 4H3" fill="none" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <polyline points="6 9 12 15 18 9" fill="none" stroke="var(--nav-text-subtle)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
@@ -319,10 +321,13 @@ export function AdminShell({
   accountInitials,
   onAccountClick,
   onSwitchWorkspace,
+  switcherOpen = false,
   collapsed,
   onToggleCollapsed,
   children,
 }: AdminShellProps) {
+  const switchTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const railSwitchTriggerRef = React.useRef<HTMLButtonElement>(null);
   // ADR-56: the one header row. Title + actions are published by the page that
   // renders inside this shell (via <AdminPageHeader>) — not props.
   const { title, actions } = useAdminToolbarValue();
@@ -341,7 +346,7 @@ export function AdminShell({
     [],
   );
   return (
-    <div className="[font-synthesis:none] flex h-screen w-full antialiased text-caption/micro">
+    <div className="[font-synthesis:none] flex h-full w-full antialiased text-caption/micro">
       {collapsed ? (
         /* Icon Rail — 6GN-0 */
         <nav
@@ -378,12 +383,23 @@ export function AdminShell({
           <div className="flex flex-col items-center shrink-0 pt-[12px] pb-[16px] gap-[8px]">
             {onSwitchWorkspace && (
               <button
+                ref={railSwitchTriggerRef}
                 type="button"
-                onClick={onSwitchWorkspace}
+                aria-haspopup="menu"
+                aria-expanded={switcherOpen}
+                onClick={() => {
+                  const el = railSwitchTriggerRef.current;
+                  if (el) onSwitchWorkspace(el.getBoundingClientRect());
+                }}
                 aria-label="Switch workspace"
                 className="w-[30px] h-[30px] flex items-center justify-center rounded-sm shrink-0 bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
               >
-                {ICON_SWITCH}
+                <span
+                  className="flex transition-transform duration-150"
+                  style={{ transform: switcherOpen ? "rotate(180deg)" : "none" }}
+                >
+                  {ICON_SWITCH_CHEVRON}
+                </span>
               </button>
             )}
             <button
@@ -480,12 +496,23 @@ export function AdminShell({
             <div className="flex items-center gap-[6px]">
               {onSwitchWorkspace && (
                 <button
+                  ref={switchTriggerRef}
                   type="button"
-                  onClick={onSwitchWorkspace}
+                  aria-haspopup="menu"
+                  aria-expanded={switcherOpen}
+                  onClick={() => {
+                    const el = switchTriggerRef.current;
+                    if (el) onSwitchWorkspace(el.getBoundingClientRect());
+                  }}
                   aria-label="Switch workspace"
                   className="flex items-center justify-center w-[26px] h-[26px] shrink-0 rounded-sm bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
                 >
-                  {ICON_SWITCH}
+                  <span
+                    className="flex transition-transform duration-150"
+                    style={{ transform: switcherOpen ? "rotate(180deg)" : "none" }}
+                  >
+                    {ICON_SWITCH_CHEVRON}
+                  </span>
                 </button>
               )}
               <button
@@ -514,7 +541,7 @@ export function AdminShell({
             affected. `min-w-0` lets this shrink to its parent's clamped width,
             so only the table's internal scroll container ever needs to scroll. */}
         <div className="flex items-start flex-1 flex-col min-w-0">
-          <div className="flex flex-col grow min-w-0 self-stretch h-screen">
+          <div className="flex flex-col grow min-w-0 self-stretch h-full">
             <div className="flex items-center h-[44px] shrink-0 gap-(--sp-4) pr-[24px] pl-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
               {collapsed && (
                 <button

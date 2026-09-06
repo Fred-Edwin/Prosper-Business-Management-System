@@ -32,12 +32,23 @@ export interface StaffShellProps {
   onAccountClick: () => void;
   stickyActionBar?: React.ReactNode;
   /**
-   * Full-width strip rendered above the header — used for the Admin
-   * "acting as" banner (docs/sprints/role-switching-session-2-handoff.md).
+   * When set, a leading hamburger is shown in the header. Used only while an
+   * Admin is acting as this role — it opens the workspace switcher drawer
+   * (Paper M7 artboard "2 — Acting-as banner (mobile)", node TCA-0). A real
+   * staff user never gets this (there is nothing behind it for them — the
+   * dead hamburger was removed 2026-09-01).
    */
-  topBanner?: React.ReactNode;
+  onMenuClick?: () => void;
   children: React.ReactNode;
 }
+
+const ICON_HAMBURGER = (
+  <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <line x1="3" y1="12" x2="21" y2="12" stroke="var(--text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <line x1="3" y1="6" x2="21" y2="6" stroke="var(--text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <line x1="3" y1="18" x2="21" y2="18" stroke="var(--text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 export function StaffShell({
   roleLabel,
@@ -48,20 +59,31 @@ export function StaffShell({
   onNavigate,
   onAccountClick,
   stickyActionBar,
-  topBanner,
+  onMenuClick,
   children,
 }: StaffShellProps) {
   return (
-    <div className="[font-synthesis:none] flex flex-col h-screen w-full bg-(--surface-page) antialiased text-caption/micro">
-      {topBanner}
-      {/* Header — 25K-0 (no hamburger; bottom nav is the only staff nav) */}
+    <div className="[font-synthesis:none] flex flex-col h-full w-full bg-(--surface-page) antialiased text-caption/micro">
+      {/* Header — 25K-0 (hamburger only while acting-as, see onMenuClick) */}
       <div className="flex items-center justify-between h-[48px] shrink-0 px-[16px] bg-(--surface-page) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-        <div className="flex flex-col gap-px">
-          <div className="font-ui font-(--weight-semibold) inline-block [color:var(--text-primary)] text-body/sm">
-            {locationLabel}
-          </div>
-          <div className="font-ui text-micro inline-block leading-[14px] [color:var(--text-secondary)]">
-            {roleLabel}
+        <div className="flex items-center gap-[12px]">
+          {onMenuClick && (
+            <button
+              type="button"
+              onClick={onMenuClick}
+              aria-label="Open workspace menu"
+              className="flex items-center justify-center w-[32px] h-[32px] shrink-0 rounded-sm kit-interactive kit-focus-ring"
+            >
+              {ICON_HAMBURGER}
+            </button>
+          )}
+          <div className="flex flex-col gap-px">
+            <div className="font-ui font-(--weight-semibold) inline-block [color:var(--text-primary)] text-body/sm">
+              {locationLabel}
+            </div>
+            <div className="font-ui text-micro inline-block leading-[14px] [color:var(--text-secondary)]">
+              {roleLabel}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-[8px]">

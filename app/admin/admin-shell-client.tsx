@@ -113,9 +113,20 @@ export function AdminShellClient({
     [],
   );
 
-  // Admin role-switching (M7). The switcher drawer is shared by both shells.
+  // Admin role-switching (M7). The switcher popover anchors above whichever
+  // footer trigger was clicked (desktop sidebar or icon rail); on mobile it's
+  // opened from the nav drawer and rendered inline there, so `anchorRect`
+  // stays null and MobileShellAdmin owns that path.
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
-  const openSwitcher = React.useCallback(() => setSwitcherOpen(true), []);
+  const [anchorRect, setAnchorRect] = React.useState<DOMRect | null>(null);
+  const openSwitcher = React.useCallback((rect: DOMRect | null) => {
+    setAnchorRect(rect);
+    setSwitcherOpen(true);
+  }, []);
+  const openSwitcherMobile = React.useCallback(
+    () => openSwitcher(null),
+    [openSwitcher],
+  );
   const closeSwitcher = React.useCallback(() => setSwitcherOpen(false), []);
 
   return (
@@ -130,14 +141,18 @@ export function AdminShellClient({
             title + actions through <AdminToolbarProvider>; each shell renders
             them in its single header row alongside the account avatar. */}
         <AdminToolbarProvider>
-          {/* M7: the "you're acting as X" strip — only shown when the Admin
-              has navigated back to /admin while still acting as a staff role
-              (her effective-role home is a staff route, so this is the
-              recovery path, not the norm). */}
+          {/* M7: full-width "you're acting as X" strip above all chrome —
+              only shown when the Admin has navigated back to /admin while
+              still acting as a staff role (her effective-role home is a
+              staff route, so this is the recovery path, not the norm). The
+              `flex-col h-screen` wrapper lets the strip take its height and
+              the shell fill the rest (the shells are `h-full`, not
+              `h-screen`, so they don't overflow under it). */}
+        <div className="flex flex-col h-screen w-full">
           <ActingAsBanner />
           {/* M2 6b: two-shell responsive switch (Paper 649-0/67T-0 and
               6B1-0/1ZP-0). Each is rendered and toggled with `hidden md:*`. */}
-          <div className="hidden md:block">
+          <div className="hidden md:block flex-1 min-h-0">
             <AdminShell
               activeNavKey={activeNavKey}
               activeTabParam={tabParam}
@@ -147,6 +162,7 @@ export function AdminShellClient({
               accountInitials={accountInitials}
               onAccountClick={handleAccountClick}
               onSwitchWorkspace={openSwitcher}
+              switcherOpen={switcherOpen}
               collapsed={collapsed}
               onToggleCollapsed={toggleCollapsed}
             >
@@ -155,7 +171,7 @@ export function AdminShellClient({
               </AdminShellVisibility>
             </AdminShell>
           </div>
-          <div className="md:hidden">
+          <div className="md:hidden flex-1 min-h-0">
             <MobileShellAdmin
               activeNavKey={activeNavKey}
               activeTabParam={tabParam}
@@ -166,14 +182,19 @@ export function AdminShellClient({
               accountRole="Admin"
               accountInitials={accountInitials}
               onAccountClick={handleAccountClick}
-              onSwitchWorkspace={openSwitcher}
+              onSwitchWorkspace={openSwitcherMobile}
             >
               <AdminShellVisibility visible={!isDesktop}>
                 {children}
               </AdminShellVisibility>
             </MobileShellAdmin>
           </div>
-          <WorkspaceSwitcher open={switcherOpen} onClose={closeSwitcher} />
+        </div>
+        <WorkspaceSwitcher
+          open={switcherOpen}
+          onClose={closeSwitcher}
+          anchorRect={anchorRect}
+        />
         </AdminToolbarProvider>
       </ToastProvider>
     </AppSessionProvider>
