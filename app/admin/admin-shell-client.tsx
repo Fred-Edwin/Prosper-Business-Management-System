@@ -216,7 +216,7 @@ export function AdminShellClient({
           onClose={closeSwitcher}
           anchorRect={anchorRect}
         />
-        <HelpPanel />
+        <HelpPanel tab={tabParam} />
         </HelpProvider>
         </AdminToolbarProvider>
       </ToastProvider>

@@ -9,11 +9,21 @@
 "use client";
 
 import * as React from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Drawer } from "@/components/kit/drawer";
 import { InstructionalBanner } from "@/components/kit/instructional-banner";
 import { helpTopicForPath, resolveHelpSection } from "@/lib/help";
 import { useHelp } from "./help-context";
+
+export interface HelpPanelProps {
+  /**
+   * The active `?tab=` value, for screens whose help has per-tab sections
+   * (the Admin tabbed screens). The caller reads it — the Admin shell client
+   * is already inside a <Suspense> for useSearchParams(); the staff shells
+   * have no tabbed help and pass `null`.
+   */
+  tab?: string | null;
+}
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -23,12 +33,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function HelpPanel() {
+export function HelpPanel({ tab = null }: HelpPanelProps) {
   const help = useHelp();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const tab = searchParams.get("tab");
 
   const topic = helpTopicForPath(pathname);
   const open = !!help?.open && !!topic;

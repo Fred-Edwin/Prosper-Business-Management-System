@@ -39,6 +39,8 @@ export interface StaffShellProps {
    * dead hamburger was removed 2026-09-01).
    */
   onMenuClick?: () => void;
+  /** Optional control shown in the header, before the account avatar (e.g. the "?" help button). */
+  headerAccessory?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -60,6 +62,7 @@ export function StaffShell({
   onAccountClick,
   stickyActionBar,
   onMenuClick,
+  headerAccessory,
   children,
 }: StaffShellProps) {
   return (
@@ -87,6 +90,7 @@ export function StaffShell({
           </div>
         </div>
         <div className="flex items-center gap-[8px]">
+          {headerAccessory}
           <button
             type="button"
             onClick={onAccountClick}

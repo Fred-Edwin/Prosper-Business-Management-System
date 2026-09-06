@@ -16,6 +16,37 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## In-app screen help — Staff roles (Developer — 2026-09-06) — DONE
+
+Extends the Admin help panel (entry below) to the cashier, store-manager
+and canteen screens — same **?** button, same `Drawer` panel, same
+content model.
+
+- `lib/help/topics.ts` — added ~25 staff `HelpTopic` entries: cashier
+  (Today, New Order, Order detail, Customers, Handover, Log Non-Sale),
+  store-manager (Hub, Stock Levels, the 5 movement flows), canteen (Hub,
+  Stock Levels, Stock Count, Handover, Transfer Dispatch, Receive
+  Transfer, Receive Goods, Log Non-Sale). Written from reading each
+  screen + `FLOW_CONFIG`.
+- `helpTopicForPath()` reworked — `[seg]` in a topic route is now a
+  single-segment wildcard (`/cashier/orders/[id]`), an exact literal
+  match always beats a wildcard, and each role base (`/cashier`,
+  `/store-manager`, `/canteen`) matches only its home path.
+- `HelpPanel` takes a `tab` prop instead of calling `useSearchParams()`
+  itself — staff screens have no tabbed help and the staff layouts have
+  no `<Suspense>` boundary; the Admin shell (already inside one) passes
+  its `?tab=` value.
+- `StaffShell` / `StaffDesktopShell` gain the same optional
+  `headerAccessory` slot; `staff-shell-client.tsx` mounts the provider +
+  panel and shows the **?** only when the route has a topic (real staff
+  and acting-as Admin both get it).
+- Tests: `tests/screens/help-panel.screen.test.tsx` extended to 10
+  (staff base routes, wildcard `[id]`, flow-topic ranking).
+- Gates: `pnpm test` green · `typecheck` clean · `build` clean.
+- No `TODO(mock)`.
+
+---
+
 ## In-app screen help — Admin (Developer — 2026-09-06) — DONE
 
 Owner request: the manager should be able to tap a **?** in the header of
