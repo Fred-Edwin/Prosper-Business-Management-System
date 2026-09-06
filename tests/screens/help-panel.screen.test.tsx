@@ -18,31 +18,28 @@ import { HelpProvider, useHelp } from "@/components/help/help-context";
 import { HelpPanel } from "@/components/help/help-panel";
 
 let pathname = "/admin/financials";
-let search = new URLSearchParams();
 const push = vi.fn();
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathname,
-  useSearchParams: () => search,
   useRouter: () => ({ push, replace: vi.fn() }),
 }));
 
-function Harness() {
+function Harness({ tab }: { tab: string | null }) {
   const help = useHelp();
   return (
     <>
       <button onClick={() => help?.openHelp()}>open help</button>
-      <HelpPanel />
+      <HelpPanel tab={tab} />
     </>
   );
 }
 
-function renderAt(path: string, tab?: string) {
+function renderAt(path: string, tab: string | null = null) {
   pathname = path;
-  search = new URLSearchParams(tab ? { tab } : {});
   return render(
     <HelpProvider>
-      <Harness />
+      <Harness tab={tab} />
     </HelpProvider>,
   );
 }
@@ -67,6 +64,25 @@ describe("lib/help resolution", () => {
     const derived = resolveHelpSection(topic, "derived");
     expect(derived.title).toBe("Canteen Derived");
     expect(derived.whatItIs).toMatch(/not entered one by one/i);
+  });
+
+  it("matches each staff base route to its home topic", () => {
+    expect(helpTopicForPath("/cashier")?.title).toBe("Today");
+    expect(helpTopicForPath("/store-manager")?.title).toBe("Store Hub");
+    expect(helpTopicForPath("/canteen")?.title).toBe("Canteen Hub");
+  });
+
+  it("a staff base route does not out-rank a deeper flow topic", () => {
+    expect(helpTopicForPath("/store-manager/flows/issue")?.title).toBe(
+      "Issue Ingredients",
+    );
+    expect(helpTopicForPath("/canteen/stock-count")?.title).toBe("Stock Count");
+  });
+
+  it("resolves a dynamic [id] segment", () => {
+    expect(helpTopicForPath("/cashier/orders/9f3a2")?.title).toBe("Order");
+    // the plain /cashier/orders/new topic still wins its exact path
+    expect(helpTopicForPath("/cashier/orders/new")?.title).toBe("New Order");
   });
 });
 

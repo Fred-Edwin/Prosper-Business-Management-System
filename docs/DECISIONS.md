@@ -3798,9 +3798,13 @@ without a separate manual.
   (they sit in different parts of the tree; the panel mounts once and
   serves both the desktop and mobile shell).
 
-**Scope now.** Admin screens only. Staff-role screens (cashier,
-store-manager, canteen) get the same button + panel in a later pass,
-reusing the content model unchanged.
+**Scope.** Admin screens first; staff-role screens (cashier,
+store-manager, canteen) followed the same day, reusing the button, panel
+and content model unchanged. `HelpPanel` takes the active `?tab=` as a
+prop rather than reading `useSearchParams()` — the staff layouts have no
+`<Suspense>` boundary and no tabbed help; the Admin shell (inside one)
+passes it through. Topic routes support a `[seg]` single-segment
+wildcard, and an exact literal route always out-ranks a wildcard.
 
 **Consequences.** Keeping a screen's help correct is now part of changing
 that screen — update its `lib/help` entry in the same change. A screen

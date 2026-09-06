@@ -15,6 +15,10 @@ import { AppSessionProvider } from "@/components/layout/app-session-provider";
 import { ActingAsBanner } from "@/components/layout/acting-as-banner";
 import { useActingAs } from "@/app/admin/use-acting-as";
 import { WorkspaceSwitcher } from "@/app/admin/workspace-switcher";
+import { HelpButton } from "@/components/kit/help-button";
+import { HelpProvider, useHelp } from "@/components/help/help-context";
+import { HelpPanel } from "@/components/help/help-panel";
+import { helpTopicForPath } from "@/lib/help";
 
 // Per-role bottom nav item sets, keyed by the role's base route. The nav-item
 // definitions — including the icon JSX — live in this Client Component (not
@@ -119,6 +123,17 @@ export function hrefForKey(basePath: string, defs: StaffNavDef[], key: string): 
   return `${basePath}/${key}`;
 }
 
+/** The staff shell header's "?" button — reads help open-state from context. */
+function HelpHeaderButton() {
+  const help = useHelp();
+  return (
+    <HelpButton
+      active={help?.open}
+      onClick={() => (help?.open ? help.closeHelp() : help?.openHelp())}
+    />
+  );
+}
+
 export function StaffShellClient({
   basePath,
   roleLabel,
@@ -147,15 +162,18 @@ export function StaffShellClient({
           production / transfer / non-sale / receipt / accept success fires
           one via useToast(). */}
       <ToastProvider placement="bottom-center">
-        <StaffChrome
-          basePath={basePath}
-          roleLabel={roleLabel}
-          locationLabel={locationLabel}
-          accountInitials={accountInitials}
-          actingLocationName={actingLocationName}
-        >
-          {children}
-        </StaffChrome>
+        <HelpProvider>
+          <StaffChrome
+            basePath={basePath}
+            roleLabel={roleLabel}
+            locationLabel={locationLabel}
+            accountInitials={accountInitials}
+            actingLocationName={actingLocationName}
+          >
+            {children}
+          </StaffChrome>
+          <HelpPanel />
+        </HelpProvider>
       </ToastProvider>
     </AppSessionProvider>
   );
@@ -194,6 +212,8 @@ function StaffChrome({
   const { actingAs } = useActingAs();
   const [menuOpen, setMenuOpen] = React.useState(false);
 
+  const helpButton = helpTopicForPath(pathname) ? <HelpHeaderButton /> : undefined;
+
   const activeNavKey = activeNavKeyFromPathname(basePath, pathname, defs);
   const navigate = React.useCallback(
     (key: string) => router.push(hrefForKey(basePath, defs, key)),
@@ -216,6 +236,7 @@ function StaffChrome({
       onNavigate={navigate}
       onAccountClick={signOutFn}
       onMenuClick={actingAs ? () => setMenuOpen(true) : undefined}
+      headerAccessory={helpButton}
     >
       {children}
     </StaffShell>
@@ -257,6 +278,7 @@ function StaffChrome({
           activeNavKey={activeNavKey}
           onNavigate={navigate}
           onAccountClick={signOutFn}
+          headerAccessory={helpButton}
         >
           {children}
         </StaffDesktopShell>

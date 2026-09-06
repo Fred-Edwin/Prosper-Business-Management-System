@@ -51,6 +51,8 @@ export interface StaffDesktopShellProps {
   /** Called with the item key when a nav row is chosen. */
   onNavigate: (key: string) => void;
   onAccountClick: () => void;
+  /** Optional control shown in the content header, before the account avatar (e.g. the "?" help button). */
+  headerAccessory?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -69,6 +71,7 @@ export function StaffDesktopShell({
   activeNavKey,
   onNavigate,
   onAccountClick,
+  headerAccessory,
   children,
 }: StaffDesktopShellProps) {
   return (
@@ -160,6 +163,7 @@ export function StaffDesktopShell({
         <div className="flex flex-col grow min-w-0 self-stretch h-full">
           <div className="flex items-center h-[44px] shrink-0 gap-(--sp-4) pr-[24px] pl-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
             <div className="grow" />
+            {headerAccessory}
             <button
               type="button"
               onClick={onAccountClick}
