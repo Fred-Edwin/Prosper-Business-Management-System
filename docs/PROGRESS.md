@@ -16,6 +16,38 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## In-app screen help — Admin (Developer — 2026-09-06) — DONE
+
+Owner request: the manager should be able to tap a **?** in the header of
+any screen and get a plain-language explanation of what that screen is
+for and how to use it, so hand-over confusion is self-served.
+
+- **New kit component** `components/kit/help-button.tsx` (owner-approved) —
+  the header **?** affordance: 32×32 box, ships its own glyph + a fixed
+  `aria-label`, `active` prop for the open-state tint. Same §9
+  interaction states as `IconButton`.
+- **Content** in `lib/help/` — one `HelpTopic` per Admin section (with
+  per-`?tab=` overrides for the tabbed screens: Catalog, Sales,
+  Financials, Staff, Assets). Written from reading each screen, NOT from
+  the design/flow docs. `helpTopicForPath()` resolves by longest route
+  prefix so nested routes (`/admin/customers/[id]`) still match.
+- **Panel** `components/help/` — `HelpPanel` composes the frozen kit: rail
+  `Drawer` + one `InstructionalBanner` per step + plain text blocks for
+  "what it is" / "good to know" / related-screen links. `HelpProvider` +
+  `useHelp()` is the channel between the shell's button and the panel.
+- **Wiring** — `AdminShell` / `MobileShellAdmin` gain an optional
+  `headerAccessory` slot (before the avatar); `admin-shell-client.tsx`
+  mounts the provider + panel and passes the **?** button only when the
+  current route has a topic.
+- Staff-role screens (cashier / store-manager / canteen) are a later
+  pass — same panel, same content model.
+- Tests: `tests/screens/help-panel.screen.test.tsx` (new, 7 — route
+  resolution, per-tab sections, open/content/close, no-topic → nothing).
+- Gates: `pnpm test` 1200 pass · `typecheck` clean · `build` clean.
+- No `TODO(mock)`.
+
+---
+
 ## Admin role-switching — Session 1 (backend) (Developer — 2026-09-05) — DONE
 
 Owner request, ad hoc (not tied to a milestone plan; sized like opening
