@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import {
   DomainError,
@@ -36,14 +37,17 @@ export async function GET() {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    if (auth.user.role === "admin") {
+    // `effectiveRole` so an Admin acting as staff is scoped by that role's
+    // receiving destinations, not "every location".
+    const role = effectiveRole(auth);
+    if (role === "admin") {
       return ok(await listOutstandingPurchases());
     }
-    const locationId = await resolveActorLocationId(auth.user.id);
+    const locationId = await resolveActorLocationId(auth);
     if (!locationId) {
       return fail("FORBIDDEN", "Your account is not assigned to a location.");
     }
-    const destinationIds = await resolveReceivingDestinationIds(auth.user.role);
+    const destinationIds = await resolveReceivingDestinationIds(role);
     return ok(await listOutstandingPurchasesForLocation(destinationIds));
   } catch (e) {
     if (e instanceof DomainError) return fail(e.code, e.message, e.field);

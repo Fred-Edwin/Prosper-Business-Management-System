@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireApiRole } from "@/lib/api/require-role";
+import { requireActingRole } from "@/lib/api/require-role";
 import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import { orderInputSchema } from "@/lib/validation/orders";
@@ -15,7 +15,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * lines + movements in place.
  */
 export async function PATCH(req: NextRequest, ctx: Ctx) {
-  const auth = await requireApiRole("cashier");
+  const auth = await requireActingRole("cashier");
   if (auth instanceof NextResponse) return auth;
   const { id } = await ctx.params;
 

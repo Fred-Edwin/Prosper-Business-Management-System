@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import { businessDateEndUtc } from "@/lib/time";
 import { DomainError, getDerivedStockBalances } from "@/lib/domain/stock";
@@ -83,16 +84,18 @@ export async function GET(req: NextRequest) {
   // (sourced from the Restaurant). So the SM may also read any location
   // of type `restaurant`; every other foreign location still
   // short-circuits to []. The Canteen Attendant stays strictly bound.
-  const actorLocationId = await resolveActorLocationId(auth.user.id);
+  // Session-form + `effectiveRole` so an Admin acting as a location-bound
+  // staff role is scoped exactly as that role would be.
+  const role = effectiveRole(auth);
+  const actorLocationId = await resolveActorLocationId(auth);
   const isLocationBound =
-    auth.user.role === "store_manager" ||
-    auth.user.role === "canteen_attendant";
+    role === "store_manager" || role === "canteen_attendant";
   if (isLocationBound) {
     if (!actorLocationId) {
       return fail("FORBIDDEN", "Your account is not assigned to a location.");
     }
     let permitted = locationId === actorLocationId;
-    if (!permitted && auth.user.role === "store_manager") {
+    if (!permitted && role === "store_manager") {
       const target = await prisma.location.findUnique({
         where: { id: locationId },
         select: { type: true },

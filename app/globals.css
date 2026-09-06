@@ -60,6 +60,11 @@
 
   --color-gold-brand: var(--color-gold-brand);
 
+  /* Admin "acting as" banner (M7) — see tokens.css. */
+  --color-acting-as: var(--color-acting-as);
+  --color-acting-as-bg: var(--color-acting-as-bg);
+  --color-acting-as-border: var(--color-acting-as-border);
+
   --color-nav-bg: var(--nav-bg);
   --color-nav-bg-active: var(--nav-bg-active);
   --color-nav-bg-hover: var(--nav-bg-hover);

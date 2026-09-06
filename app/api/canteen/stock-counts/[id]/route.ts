@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireApiRole } from "@/lib/api/require-role";
+import { requireActingRole } from "@/lib/api/require-role";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
 import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
@@ -16,7 +16,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * only an Admin correction path (a later session) applies.
  */
 export async function DELETE(_req: NextRequest, ctx: Ctx) {
-  const auth = await requireApiRole("canteen_attendant");
+  const auth = await requireActingRole("canteen_attendant");
   if (auth instanceof NextResponse) return auth;
   const { id } = await ctx.params;
 

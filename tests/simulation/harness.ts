@@ -180,6 +180,12 @@ export const api = {
     run(import("@/app/api/admin/dashboard/route"), "GET", `/api/admin/dashboard${q}`),
   trend: (q = "") =>
     run(import("@/app/api/admin/dashboard/trend/route"), "GET", `/api/admin/dashboard/trend${q}`),
+
+  // opening balances (ADR-70)
+  getOpeningBalances: () =>
+    run(import("@/app/api/financials/opening-balance/route"), "GET", "/api/financials/opening-balance"),
+  setOpeningBalance: (b: unknown) =>
+    run(import("@/app/api/financials/opening-balance/route"), "PUT", "/api/financials/opening-balance", b),
 };
 
 // ── cast + fixtures ────────────────────────────────────────────────────

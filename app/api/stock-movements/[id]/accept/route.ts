@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/config";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import { acceptTransferSchema, flagTransferSchema } from "@/lib/validation/stock";
 import { DomainError, acceptTransfer, flagTransfer } from "@/lib/domain/stock";
@@ -50,9 +51,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     body !== null &&
     (body as Record<string, unknown>).flag === true;
 
-  // Destination-location scoping for the location-bound roles.
-  if (auth.user.role !== "admin") {
-    const actorLocationId = await resolveActorLocationId(auth.user.id);
+  // Destination-location scoping for the location-bound roles. `effectiveRole`
+  // so an Admin acting as the receiver is scoped to that location too.
+  if (effectiveRole(auth) !== "admin") {
+    const actorLocationId = await resolveActorLocationId(auth);
     if (!actorLocationId) {
       return fail("FORBIDDEN", "Your account is not assigned to a location.");
     }

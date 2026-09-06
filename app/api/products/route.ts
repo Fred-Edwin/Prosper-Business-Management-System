@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
 import { requireApiRole } from "@/lib/api/require-role";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import {
   createProductSchema,
@@ -46,8 +47,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // `effectiveRole` so an Admin acting as staff sees the staff view
+    // (buyingPrice stripped), matching the screen she's driving.
     const products = await listProducts(parsed.data, {
-      role: auth.user.role,
+      role: effectiveRole(auth),
     });
     return ok(products);
   } catch (e) {

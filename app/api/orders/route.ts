@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
-import { requireApiRole } from "@/lib/api/require-role";
+import { requireActingRole } from "@/lib/api/require-role";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
@@ -13,6 +13,9 @@ const ORDER_READ_ROLES: readonly Role[] = ["admin", "cashier"];
  * `GET /api/orders` — role-scoped list. Admin sees all (optionally narrowed
  * by `?cashierId=`); a Cashier sees only their own (a foreign `cashierId`
  * filter returns `[]`). No margin / cost field in any row.
+ *
+ * Guard stays `requireApiRoleIn` (it admits real `admin`); scoping keys off
+ * `effectiveRole` so an Admin acting as Cashier sees the Cashier's own view.
  */
 export async function GET(req: NextRequest) {
   const auth = await requireApiRoleIn(ORDER_READ_ROLES);
@@ -33,7 +36,7 @@ export async function GET(req: NextRequest) {
   try {
     const orders = await listOrders(parsed.data, {
       userId: auth.user.id,
-      role: auth.user.role,
+      role: effectiveRole(auth),
     });
     return ok(orders);
   } catch (e) {
@@ -50,7 +53,7 @@ export async function GET(req: NextRequest) {
  * Restaurant balance.
  */
 export async function POST(req: NextRequest) {
-  const auth = await requireApiRole("cashier");
+  const auth = await requireActingRole("cashier");
   if (auth instanceof NextResponse) return auth;
 
   let body: unknown;

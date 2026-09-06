@@ -78,6 +78,16 @@
   /* --- Color: brand (masthead-only — never a component token, §3) --------- */
   --color-gold-brand: oklch(68% 0.110 84.2);
 
+  /* --- Color: Admin "acting as" (role-switching, M7) --------------------- *
+   * A muted, authoritative gold — its own role, distinct from the amber
+   * --color-warning (this is not a warning; it's a persistent "you are in
+   * someone else's seat" cue). Values from Paper M7 artboard "3 — Staff
+   * list screen on desktop" (the banner): text/icon #6D5005, a 14%-alpha
+   * ground and a 30%-alpha hairline off the #B89240 gold. Banner-only. */
+  --color-acting-as: #6d5005;
+  --color-acting-as-bg: rgb(184 146 64 / 14%);
+  --color-acting-as-border: rgb(184 146 64 / 30%);
+
   /* --- Color: semantic surfaces ----------------------------------------- */
   --surface-page: oklch(100% 0 0);
   --surface-subtle: var(--color-gray-50);

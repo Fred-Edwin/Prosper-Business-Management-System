@@ -3,6 +3,7 @@ import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 
 const GET_ROLES: readonly Role[] = ["admin", "canteen_attendant"];
@@ -27,9 +28,11 @@ export async function GET(req: NextRequest) {
   const auth = await requireApiRoleIn(GET_ROLES);
   if (auth instanceof NextResponse) return auth;
 
+  // `effectiveRole` (Session-form `resolveActorLocationId`) so an Admin acting
+  // as Canteen Attendant scopes to the canteen she picked, like a real one.
   let locationId: string | null = null;
-  if (auth.user.role === "canteen_attendant") {
-    locationId = await resolveActorLocationId(auth.user.id);
+  if (effectiveRole(auth) === "canteen_attendant") {
+    locationId = await resolveActorLocationId(auth);
     if (!locationId) {
       return fail("FORBIDDEN", "Your account is not assigned to a canteen.");
     }

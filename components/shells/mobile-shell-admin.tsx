@@ -35,6 +35,8 @@ export interface MobileShellAdminProps {
   accountName: string;
   accountRole: string;
   onAccountClick: () => void;
+  /** When set, a "Switch workspace" row appears in the nav drawer (M7). */
+  onSwitchWorkspace?: () => void;
   children: React.ReactNode;
 }
 
@@ -48,6 +50,7 @@ export function MobileShellAdmin({
   accountName,
   accountRole,
   onAccountClick,
+  onSwitchWorkspace,
   children,
 }: MobileShellAdminProps) {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
@@ -115,6 +118,7 @@ export function MobileShellAdmin({
         accountRole={accountRole}
         accountInitials={accountInitials}
         onAccountClick={onAccountClick}
+        onSwitchWorkspace={onSwitchWorkspace}
       />
     </div>
   );

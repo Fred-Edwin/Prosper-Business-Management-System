@@ -154,6 +154,8 @@ export interface MobileNavDrawerProps {
   accountRole: string;
   accountInitials: string;
   onAccountClick: () => void;
+  /** When set, a "Switch workspace" row is shown above the footer (M7). */
+  onSwitchWorkspace?: () => void;
 }
 
 /**
@@ -285,6 +287,7 @@ export function MobileNavDrawer({
   accountRole,
   accountInitials,
   onAccountClick,
+  onSwitchWorkspace,
 }: MobileNavDrawerProps) {
   const rootRef = React.useRef<HTMLDivElement>(null);
   const panelRef = React.useRef<HTMLDivElement>(null);
@@ -395,6 +398,27 @@ export function MobileNavDrawer({
             </div>
           ))}
         </nav>
+
+        {onSwitchWorkspace && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onSwitchWorkspace();
+            }}
+            className="flex items-center gap-[10px] py-[12px] px-[16px] border-t border-t-solid border-t-(--nav-border) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <polyline points="17 1 21 5 17 9" fill="none" stroke="var(--nav-text-strong)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M3 11V9a4 4 0 0 1 4-4h14" fill="none" stroke="var(--nav-text-strong)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <polyline points="7 23 3 19 7 15" fill="none" stroke="var(--nav-text-strong)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M21 13v2a4 4 0 0 1-4 4H3" fill="none" stroke="var(--nav-text-strong)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="font-ui text-sm/micro font-(--weight-medium) inline-block text-(--nav-text-strong)">
+              Switch workspace
+            </span>
+          </button>
+        )}
 
         {/* Drawer Footer — 229-0. Raw #00000026 / #FFFFFF2E → --nav-bg-avatar /
             --nav-bg-divider-strong (the codified names). */}

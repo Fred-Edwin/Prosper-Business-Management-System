@@ -7,6 +7,8 @@ import { LayoutGrid, Boxes, ShoppingBag, Home, MessageSquare, Wallet } from "luc
 import { StaffShell } from "@/components/shells/staff-shell";
 import { ToastProvider } from "@/components/kit/toast";
 import type { BottomNavItem } from "@/components/kit/bottom-nav";
+import { AppSessionProvider } from "@/components/layout/app-session-provider";
+import { ActingAsBanner } from "@/components/layout/acting-as-banner";
 
 // Per-role bottom nav item sets, keyed by the role's base route. The nav-item
 // definitions — including the icon JSX — live in this Client Component (not
@@ -99,12 +101,18 @@ export function StaffShellClient({
   roleLabel,
   locationLabel,
   accountInitials,
+  actingLocationName,
   children,
 }: {
   basePath: string;
   roleLabel: string;
   locationLabel: string;
   accountInitials: string;
+  /**
+   * When an Admin is acting as this role, the server-resolved name of the
+   * location she picked — for the acting-as banner's first paint.
+   */
+  actingLocationName?: string | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -113,22 +121,29 @@ export function StaffShellClient({
   const navItems = React.useMemo(() => toNavItems(defs), [defs]);
 
   return (
-    // Session 12 (ADR-43): the staff route tree gets bottom-center toasts —
-    // the mirror of the admin tree's top-right (app/admin/admin-shell-client.tsx).
-    // Every staff issue / production / transfer / non-sale / receipt / accept
-    // success fires one via useToast().
-    <ToastProvider placement="bottom-center">
-      <StaffShell
-        roleLabel={roleLabel}
-        locationLabel={locationLabel}
-        accountInitials={accountInitials}
-        navItems={navItems}
-        activeNavKey={activeNavKeyFromPathname(basePath, pathname, defs)}
-        onNavigate={(key: string) => router.push(hrefForKey(basePath, defs, key))}
-        onAccountClick={() => signOut({ callbackUrl: "/login" })}
-      >
-        {children}
-      </StaffShell>
-    </ToastProvider>
+    // <AppSessionProvider> is needed for the acting-as banner's useSession();
+    // it's the only client session consumer in the staff tree.
+    <AppSessionProvider>
+      {/* Session 12 (ADR-43): the staff route tree gets bottom-center toasts —
+          the mirror of the admin tree's top-right. Every staff issue /
+          production / transfer / non-sale / receipt / accept success fires
+          one via useToast(). */}
+      <ToastProvider placement="bottom-center">
+        <StaffShell
+          roleLabel={roleLabel}
+          locationLabel={locationLabel}
+          accountInitials={accountInitials}
+          navItems={navItems}
+          activeNavKey={activeNavKeyFromPathname(basePath, pathname, defs)}
+          onNavigate={(key: string) =>
+            router.push(hrefForKey(basePath, defs, key))
+          }
+          onAccountClick={() => signOut({ callbackUrl: "/login" })}
+          topBanner={<ActingAsBanner locationName={actingLocationName} />}
+        >
+          {children}
+        </StaffShell>
+      </ToastProvider>
+    </AppSessionProvider>
   );
 }

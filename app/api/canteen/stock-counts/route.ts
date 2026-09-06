@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
-import { requireApiRole } from "@/lib/api/require-role";
+import { requireActingRole } from "@/lib/api/require-role";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
 import { effectiveRole } from "@/lib/auth/roles";
@@ -32,12 +32,14 @@ export async function GET(req: NextRequest) {
     return fail("VALIDATION_ERROR", issue.message, issue.path.join("."));
   }
 
-  const locationId = await resolveActorLocationId(auth.user.id);
+  // Session-form: an Admin acting as Canteen Attendant scopes to the canteen
+  // she picked, not "every canteen".
+  const locationId = await resolveActorLocationId(auth);
 
   try {
     const rows = await listDerivedSales(parsed.data, {
       userId: auth.user.id,
-      role: auth.user.role,
+      role: effectiveRole(auth),
       locationId,
     });
     return ok(rows);
@@ -54,7 +56,7 @@ export async function GET(req: NextRequest) {
  * `StockMovement`, and a `canteen_sale` `MoneyMovement` (Cash).
  */
 export async function POST(req: NextRequest) {
-  const auth = await requireApiRole("canteen_attendant");
+  const auth = await requireActingRole("canteen_attendant");
   if (auth instanceof NextResponse) return auth;
 
   let body: unknown;

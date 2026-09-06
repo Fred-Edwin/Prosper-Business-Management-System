@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { resolveActorLocationId } from "@/lib/api/actor-location";
+import { effectiveRole } from "@/lib/auth/roles";
 import { ok, fail } from "@/lib/api/response";
 import { previewStockCountQuerySchema } from "@/lib/validation/canteen";
 import { DomainError, previewStockCount } from "@/lib/domain/sales";
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
     return fail("VALIDATION_ERROR", issue.message, issue.path.join("."));
   }
 
-  const locationId = await resolveActorLocationId(auth.user.id);
+  const locationId = await resolveActorLocationId(auth);
   if (!locationId) {
     return fail("FORBIDDEN", "Your account is not assigned to a canteen.");
   }
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
           ? new Date(parsed.data.occurredAt)
           : undefined,
       },
-      { userId: auth.user.id, role: auth.user.role, locationId },
+      { userId: auth.user.id, role: effectiveRole(auth), locationId },
     );
     return ok(preview);
   } catch (e) {

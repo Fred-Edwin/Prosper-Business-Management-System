@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Getting Started with Prosper Business Management System</title>
+<style>
+  @page {
+    size: A4;
+    margin: 22mm 18mm 20mm 18mm;
+    @bottom-center {
+      content: counter(page);
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      font-size: 9pt;
+      color: #8a8a8a;
+    }
+  }
+
+  :root {
+    --ink: #1c1c1c;
+    --ink-soft: #4a4a4a;
+    --ink-faint: #8a8a8a;
+    --accent: #31115e;
+    --accent-soft: #ede6f5;
+    --warn-bg: #fdf3e7;
+    --warn-border: #d98a2b;
+    --rule: #e2e2e2;
+    --card-bg: #fafafa;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    font-size: 11pt;
+    line-height: 1.55;
+  }
+
+  .cover {
+    min-height: 235mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    page-break-after: always;
+    break-after: page;
+  }
+  .cover .eyebrow {
+    font-size: 12pt;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 14mm;
+  }
+  .cover h1 {
+    font-size: 34pt;
+    margin: 0 0 6mm 0;
+    line-height: 1.15;
+  }
+  .cover .sub {
+    font-size: 13pt;
+    color: var(--ink-soft);
+    max-width: 120mm;
+  }
+  .cover .footer-note {
+    margin-top: 30mm;
+    font-size: 10pt;
+    color: var(--ink-faint);
+  }
+
+  .toc { page-break-after: always; break-after: page; }
+  .toc h2 { margin-top: 0; }
+  .toc ol {
+    list-style: none;
+    padding: 0;
+    margin: 8mm 0 0 0;
+    counter-reset: toc;
+  }
+  .toc li {
+    counter-increment: toc;
+    padding: 0;
+    border-bottom: 1px dotted var(--rule);
+    font-size: 12pt;
+  }
+  .toc li a {
+    display: flex;
+    align-items: baseline;
+    gap: 3mm;
+    padding: 3.2mm 0;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .toc li .num {
+    color: var(--accent);
+    font-weight: 700;
+    min-width: 7mm;
+  }
+
+  section {
+    page-break-before: always;
+    break-before: page;
+    padding-top: 2mm;
+  }
+  section:first-of-type { page-break-before: auto; break-before: auto; }
+
+  h2 {
+    font-size: 19pt;
+    margin: 0 0 3mm 0;
+    color: var(--ink);
+  }
+  h3 {
+    font-size: 13.5pt;
+    margin: 7mm 0 2mm 0;
+    color: var(--ink);
+  }
+  p { margin: 0 0 3mm 0; }
+
+  .lede {
+    font-size: 12.5pt;
+    color: var(--ink-soft);
+    margin-bottom: 6mm;
+  }
+
+  .shot {
+    margin: 4mm 0 6mm 0;
+    text-align: center;
+  }
+  .shot img {
+    width: 100%;
+    max-width: 100%;
+    border: 1px solid var(--rule);
+    border-radius: 2mm;
+    display: block;
+  }
+  .shot .cap {
+    font-size: 9.5pt;
+    color: var(--ink-faint);
+    margin-top: 2mm;
+    text-align: center;
+  }
+  .shot.mobile img {
+    width: auto;
+    max-width: 62mm;
+    margin: 0 auto;
+  }
+
+  ol.steps {
+    margin: 0 0 5mm 0;
+    padding-left: 0;
+    list-style: none;
+    counter-reset: step;
+  }
+  ol.steps > li {
+    counter-increment: step;
+    position: relative;
+    padding: 3mm 0 3mm 10mm;
+    border-bottom: 1px solid var(--rule);
+  }
+  ol.steps > li:last-child { border-bottom: none; }
+  ol.steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 3mm;
+    width: 7mm;
+    height: 7mm;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 10pt;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  ol.steps > li strong.title { display: block; font-size: 11.5pt; margin-bottom: 1mm; }
+  ol.steps ol.substeps {
+    list-style: none;
+    padding: 0;
+    margin: 2mm 0 0 0;
+  }
+  ol.steps ol.substeps li {
+    padding: 1.5mm 0 1.5mm 0;
+  }
+
+  ul.plain { margin: 0 0 4mm 0; padding-left: 5mm; }
+  ul.plain li { margin-bottom: 1.5mm; }
+
+  .callout {
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    padding: 3mm 4mm;
+    border-radius: 1mm;
+    margin: 3mm 0 5mm 0;
+    font-size: 10.8pt;
+  }
+  .warn {
+    background: var(--warn-bg);
+    border-left: 3px solid var(--warn-border);
+    padding: 3mm 4mm;
+    border-radius: 1mm;
+    margin: 3mm 0 5mm 0;
+    font-size: 10.8pt;
+  }
+  .warn strong { color: #8a4a0f; }
+
+  .credential-box {
+    display: inline-block;
+    background: var(--card-bg);
+    border: 1px solid var(--rule);
+    border-radius: 2mm;
+    padding: 4mm 6mm;
+    margin: 3mm 0 5mm 0;
+    font-size: 12pt;
+  }
+  .credential-box .row { margin: 1mm 0; }
+  .credential-box .label { color: var(--ink-faint); font-size: 9.5pt; text-transform: uppercase; letter-spacing: 0.06em; }
+  .credential-box .val { font-weight: 700; font-family: "Courier New", monospace; font-size: 13pt; }
+
+  .concept-card {
+    border: 1px solid var(--rule);
+    border-radius: 2mm;
+    padding: 4mm;
+    margin-bottom: 4mm;
+    background: var(--card-bg);
+  }
+  .concept-card h3 { margin: 0 0 1.5mm 0; font-size: 12.5pt; }
+  .concept-card p { margin: 0; color: var(--ink-soft); }
+
+  .role-block { margin-bottom: 6mm; }
+  .role-block h3 { margin-bottom: 2mm; }
+
+  table.glossary {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10.5pt;
+  }
+  table.glossary td {
+    padding: 3mm 2mm;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  table.glossary td.term {
+    font-weight: 700;
+    width: 38mm;
+    color: var(--accent);
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="eyebrow">Prosper Business Management System</div>
+  <h1>Getting Started<br>with Prosper BMS</h1>
+  <p class="sub">A short guide to logging in, setting up, and running your
+  business day to day.</p>
+  <div class="footer-note">Prepared for the Owner &amp; Admin</div>
+</div>
+
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#welcome"><span class="num">1.</span> Welcome</a></li>
+    <li><a href="#logging-in"><span class="num">2.</span> Logging in</a></li>
+    <li><a href="#three-things"><span class="num">3.</span> Three things to understand before you start</a></li>
+    <li><a href="#setup"><span class="num">4.</span> Setting up for the first time</a></li>
+    <li><a href="#dashboard"><span class="num">5.</span> Your daily dashboard</a></li>
+    <li><a href="#everyday"><span class="num">6.</span> Everyday tasks</a></li>
+    <li><a href="#closing"><span class="num">7.</span> Closing a day</a></li>
+    <li><a href="#team"><span class="num">8.</span> What your team sees</a></li>
+    <li><a href="#fixing"><span class="num">9.</span> Fixing a mistake</a></li>
+    <li><a href="#glossary"><span class="num">10.</span> Quick reference</a></li>
+  </ol>
+</div>
+
+<section id="welcome">
+  <h2>1. Welcome</h2>
+  <p class="lede">Prosper BMS keeps track of your stock and your money across
+  your Restaurant, Canteen, and Store — automatically, every day. You will
+  always know what stock you have, what cash and M-Pesa you should have,
+  and what your business made, without doing the maths yourself.</p>
+  <p>This guide gets you set up and shows you what to expect on a normal
+  day. It takes about fifteen minutes to read.</p>
+</section>
+
+<section id="logging-in">
+  <h2>2. Logging in</h2>
+  <p>You sign in with a name and a 4-digit PIN — not an email address or
+  password.</p>
+
+  <div class="shot">
+    <img src="assets/01-login.png" alt="Prosper BMS login screen">
+    <div class="cap">The sign-in screen. Enter your name and PIN here.</div>
+  </div>
+
+  <div class="credential-box">
+    <div class="row"><span class="label">Name</span><br><span class="val">Admin</span></div>
+    <div class="row"><span class="label">PIN</span><br><span class="val">1234</span></div>
+  </div>
+
+  <p>To change your PIN: go to <strong>Staff</strong> in the menu, then
+  tap <strong>Your account</strong> at the top of the list.</p>
+
+  <div class="shot">
+    <img src="assets/02-change-pin-drawer.png" alt="Change your PIN screen">
+    <div class="cap">Your account — enter your current PIN, then your new one twice.</div>
+  </div>
+</section>
+
+<section id="three-things">
+  <h2>3. Three things to understand before you start</h2>
+  <p class="lede">These three ideas explain almost everything you will
+  see in Prosper BMS. Read them once and the rest of the app will make
+  sense.</p>
+
+  <div class="concept-card">
+    <h3>Locations</h3>
+    <p>Your Restaurant, Canteen, and Store each keep their own stock and
+    their own prices. Moving stock from one to another is always
+    recorded as a transfer, so nothing goes missing between them.</p>
+  </div>
+
+  <div class="concept-card">
+    <h3>Mistakes are easy to fix</h3>
+    <p>If a figure was entered wrong, you can correct it. Open the day
+    it happened, tap the number, and enter the right one. Your totals
+    update straight away.</p>
+  </div>
+
+  <div class="concept-card">
+    <h3>Handover &amp; closing the day</h3>
+    <p>At the end of each shift, your staff tell Prosper BMS how much cash
+    and M-Pesa they collected. You confirm what you actually received.
+    Once everything for a day is confirmed, you close that day.</p>
+  </div>
+</section>
+
+<section id="setup">
+  <h2>4. Setting up for the first time</h2>
+  <p class="lede">Do these steps once, in order, before your first real
+  day of business.</p>
+
+  <ol class="steps">
+    <li>
+      <strong class="title">Confirm your locations</strong>
+      Check that your Restaurant, Canteen, and Store are all set up under
+      Catalog.
+    </li>
+    <li>
+      <strong class="title">Add your products and their prices</strong>
+      Add everything you buy, sell, or make, with what it costs and what
+      you sell it for.
+    </li>
+    <li>
+      <strong class="title">Add your staff</strong>
+      Go to Staff and add each team member with their role and a starting
+      PIN.
+    </li>
+    <li>
+      <strong class="title">Tell Prosper BMS where you're starting from</strong>
+      <ol class="substeps">
+        <li>
+          <strong>a. Count what's currently in stock.</strong> Open
+          <strong>Ledger</strong> from the menu, then <strong>Opening
+          Stock</strong>, and enter the physical count for every item at
+          every location.
+          <div class="shot">
+            <img src="assets/04a-opening-stock-day1.png" alt="Opening stock count screen">
+            <div class="cap">Opening Stock — enter what you physically have, once.</div>
+          </div>
+        </li>
+        <li>
+          <strong>b. Enter your starting cash and M-Pesa balances.</strong>
+          Go to Financials, then Opening Balances.
+          <div class="shot">
+            <img src="assets/04b-opening-balances-empty.png" alt="Opening balances entry form">
+            <div class="cap">Before you set it — an empty form.</div>
+          </div>
+          <div class="shot">
+            <img src="assets/04c-opening-balances-set.png" alt="Opening balances after being set">
+            <div class="cap">After you save — your Day 1 figures, locked in.</div>
+          </div>
+        </li>
+      </ol>
+      <div class="callout">
+        <strong>You do this once.</strong> After today, Prosper BMS tracks
+        your money and stock for you. You won't come back to this screen
+        to log today's balance.
+      </div>
+    </li>
+    <li>
+      <strong class="title">You're ready</strong>
+      Start recording sales, deliveries, and handovers as they happen.
+    </li>
+  </ol>
+</section>
+
+<section id="dashboard">
+  <h2>5. Your daily dashboard</h2>
+  <p>Your dashboard is the first thing you see when you sign in. It's
+  your morning check — a two-minute look before you start the day.</p>
+
+  <div class="shot">
+    <img src="assets/05-dashboard.png" alt="Admin dashboard">
+    <div class="cap">Your dashboard — today's numbers and what needs your attention.</div>
+  </div>
+
+  <ul class="plain">
+    <li><strong>Revenue, expenses, and profit</strong> — for today, this
+    week, or this month, whichever you choose.</li>
+    <li><strong>Cash at hand and M-Pesa / Bank</strong> — your real
+    balances right now.</li>
+    <li><strong>Needs attention</strong> — anything waiting on you, like a
+    handover to receive or a day still open.</li>
+    <li><strong>Close today</strong> — the switch you use at the end of
+    the day, once everything is confirmed.</li>
+  </ul>
+</section>
+
+<section id="everyday">
+  <h2>6. Everyday tasks</h2>
+
+  <h3>Checking stock</h3>
+  <p>Open <strong>Ledger</strong> from the menu — the page is titled
+  <em>Stock &amp; Reconciliation</em> — to see what's on hand at every
+  location, and every change that got it there.</p>
+  <div class="shot">
+    <img src="assets/06c-stock-ledger.png" alt="Stock ledger screen">
+    <div class="cap">Stock &amp; Reconciliation — current levels and their full history.</div>
+  </div>
+
+  <h3>Managing your products</h3>
+  <p>Go to Catalog to add new products, change prices, or set up a new
+  location.</p>
+  <div class="shot">
+    <img src="assets/06b-catalog.png" alt="Catalog screen">
+    <div class="cap">Catalog — your products and locations.</div>
+  </div>
+
+  <h3>Recording a delivery or purchase, reviewing sales, and expenses</h3>
+  <p>Go to Financials for stock purchases, deliveries, expenses, owner
+  withdrawals, and handovers — all in one place, organised into tabs.</p>
+  <div class="shot">
+    <img src="assets/06d-financials.png" alt="Financials screen">
+    <div class="cap">Financials — purchases, deliveries, expenses, and more.</div>
+  </div>
+  <div class="callout">
+    You won't see a starting balance field here — that's set up once,
+    back in Step 4.
+  </div>
+
+  <h3>Customer credit</h3>
+  <p>Go to Customers to see who owes you money and record when they pay
+  it back.</p>
+  <div class="shot">
+    <img src="assets/06e-customers.png" alt="Customers screen">
+    <div class="cap">Customers — credit balances and repayments.</div>
+  </div>
+
+  <h3>Staff, attendance, and pay</h3>
+  <p>Go to Staff to manage your roster, mark attendance, and pay your
+  team.</p>
+  <div class="shot">
+    <img src="assets/06-staff-roster.png" alt="Staff roster screen">
+    <div class="cap">Staff &amp; Pay — your team, their roles, and their pay.</div>
+  </div>
+</section>
+
+<section id="closing">
+  <h2>7. Closing a day</h2>
+  <p>At the end of each shift, your staff declare the cash and M-Pesa
+  they collected. You then confirm what you actually received before
+  closing the day.</p>
+
+  <div class="shot">
+    <img src="assets/07-handover-reconciliation.png" alt="Handover reconciliation screen">
+    <div class="cap">A handover awaiting your receipt — declared amounts on the left, waiting for you to confirm.</div>
+  </div>
+
+  <p>If what you received doesn't match what was declared, Prosper BMS shows
+  you the difference so you can follow up before the day is closed.
+  Once every handover for a day is confirmed, close that day from your
+  dashboard.</p>
+</section>
+
+<section id="team">
+  <h2>8. What your team sees</h2>
+  <p class="lede">Your staff each get a simpler screen built for their
+  job. You don't need to operate these yourself — this is just so you
+  know what they're doing.</p>
+
+  <div class="role-block">
+    <h3>Store Manager</h3>
+    <p>Receives deliveries, issues ingredients to the kitchen, records
+    what was made, and transfers stock to the Canteen.</p>
+    <div class="shot mobile">
+      <img src="assets/10a-store-manager.png" alt="Store Manager screen">
+      <div class="cap">Store Manager — quick actions for the day's stock work.</div>
+    </div>
+  </div>
+
+  <div class="role-block">
+    <h3>Cashier</h3>
+    <p>Records orders and payments through the day, then declares cash
+    and M-Pesa at the end of their shift.</p>
+    <div class="shot mobile">
+      <img src="assets/10b-cashier.png" alt="Cashier screen">
+      <div class="cap">Cashier — today's orders and takings.</div>
+    </div>
+  </div>
+
+  <div class="role-block">
+    <h3>Canteen Attendant</h3>
+    <p>Receives deliveries, counts stock at the end of the day — which
+    tells Prosper BMS what sold — and declares their handover.</p>
+    <div class="shot mobile">
+      <img src="assets/10c-canteen-attendant.png" alt="Canteen Attendant screen">
+      <div class="cap">Canteen Attendant — deliveries, counts, and transfers.</div>
+    </div>
+  </div>
+</section>
+
+<section id="fixing">
+  <h2>9. Fixing a mistake</h2>
+  <p>If a figure was entered wrong — a delivery counted short, an issue
+  logged twice — you can fix it yourself from the table.</p>
+
+  <h3>Correcting a figure in the table</h3>
+  <ol class="steps">
+    <li>Open <strong>Ledger</strong> from the menu and choose the day the
+    mistake happened.</li>
+    <li>Find the row for that item, and <strong>tap the number</strong>
+    you need to change — in Received, Issued, Non-Sale, or any other
+    column.</li>
+    <li>Type the correct figure and tap
+    <strong>Confirm &amp; Save Correction</strong>.</li>
+  </ol>
+
+  <div class="shot">
+    <img src="assets/09c-ledger-correction.png" alt="Correcting a figure in the Ledger table">
+    <div class="cap">Tap a figure in the table, enter the correct one, and save.</div>
+  </div>
+
+  <p>Enter what the figure <em>should</em> be, not the difference. Your
+  stock levels and totals update straight away.</p>
+
+  <div class="callout">
+    If a single number covers more than one movement that day, tapping
+    it opens the list behind it, so you can pick the exact one to fix.
+  </div>
+
+  <h3>Correcting your starting balance</h3>
+  <p>If the cash or M-Pesa figure you entered on Day 1 was wrong, open
+  <strong>Financials</strong>, then <strong>Opening Balances</strong>, and
+  tap <strong>Correct Cash at hand</strong> or
+  <strong>Correct M-Pesa / Bank</strong>.</p>
+
+  <div class="shot">
+    <img src="assets/09-correct-opening-balance.png" alt="Correcting an opening balance">
+    <div class="cap">Correcting a Day 1 figure — a warning appears before you confirm.</div>
+  </div>
+
+  <div class="callout">
+    This is safe. Every sale, expense, and handover recorded since is
+    completely untouched — correcting it is the same as if you had
+    entered the right number on Day 1.
+  </div>
+
+  <div class="warn">
+    <strong>Only use this to fix a wrong Day 1 figure.</strong> It is
+    never how you record today's cash — that happens automatically from
+    your sales, handovers, and expenses.
+  </div>
+</section>
+
+<section id="glossary">
+  <h2>10. Quick reference</h2>
+  <table class="glossary">
+    <tr>
+      <td class="term">Location</td>
+      <td>Restaurant, Canteen, or Store — each with its own stock and prices.</td>
+    </tr>
+    <tr>
+      <td class="term">Correction</td>
+      <td>Fixing a figure that was entered wrong. Tap the number in the table and enter the right one.</td>
+    </tr>
+    <tr>
+      <td class="term">Handover</td>
+      <td>The cash and M-Pesa a staff member declares at the end of their shift.</td>
+    </tr>
+    <tr>
+      <td class="term">Closing the day</td>
+      <td>Sealing a business day once every handover is confirmed.</td>
+    </tr>
+    <tr>
+      <td class="term">Day 1 / starting balance</td>
+      <td>What your business had in stock and cash the day you started using Prosper BMS. Set once.</td>
+    </tr>
+    <tr>
+      <td class="term">PIN</td>
+      <td>Your 4-digit code to sign in — set your own after your first login.</td>
+    </tr>
+  </table>
+</section>
+
+</body>
+</html>

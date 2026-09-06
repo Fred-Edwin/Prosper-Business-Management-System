@@ -10,6 +10,9 @@ import {
   AdminShellVisibility,
 } from "@/components/shells/admin-toolbar-context";
 import { ToastProvider } from "@/components/kit/toast";
+import { AppSessionProvider } from "@/components/layout/app-session-provider";
+import { ActingAsBanner } from "@/components/layout/acting-as-banner";
+import { WorkspaceSwitcher } from "./workspace-switcher";
 
 // Resolve the active nav key by longest matching href prefix — items sit at
 // /admin/<key> and a nested route still lights its top-level item, so a bare
@@ -110,59 +113,69 @@ export function AdminShellClient({
     [],
   );
 
+  // Admin role-switching (M7). The switcher drawer is shared by both shells.
+  const [switcherOpen, setSwitcherOpen] = React.useState(false);
+  const openSwitcher = React.useCallback(() => setSwitcherOpen(true), []);
+  const closeSwitcher = React.useCallback(() => setSwitcherOpen(false), []);
+
   return (
-    // Session 11: the admin route tree gets top-right toasts (ADR-43). Every
-    // admin save / record / correction success fires one via useToast(). The
-    // staff tree gets placement="bottom-center" in Session 12, not here.
-    <ToastProvider placement="top-right">
-      {/* ADR-56: one header row per admin screen. The page publishes its title +
-          actions through <AdminToolbarProvider>; each shell renders them in its
-          single header row alongside the account avatar. Wraps BOTH shells and
-          `children` so the provider sits above the shell's header row and the
-          page subtree alike. */}
-      <AdminToolbarProvider>
-        {/* M2 6b: two-shell responsive switch. The desktop sidebar shell and the
-            mobile hamburger + MobileNavDrawer shell are BOTH real, verified
-            layouts (Paper 649-0/67T-0 and 6B1-0/1ZP-0). Rather than merge two
-            different box models into one tree, render each and toggle with the
-            same `hidden md:*` pattern the screens use — `children` renders in
-            both (a client subtree, no server-only effects; the hidden shell's
-            hooks still run — an accepted cost). */}
-        <div className="hidden md:block">
-          <AdminShell
-            activeNavKey={activeNavKey}
-            activeTabParam={tabParam}
-            onNavigate={navigate}
-            accountName="Admin"
-            accountRole="Admin"
-            accountInitials={accountInitials}
-            onAccountClick={handleAccountClick}
-            collapsed={collapsed}
-            onToggleCollapsed={toggleCollapsed}
-          >
-            <AdminShellVisibility visible={isDesktop}>
-              {children}
-            </AdminShellVisibility>
-          </AdminShell>
-        </div>
-        <div className="md:hidden">
-          <MobileShellAdmin
-            activeNavKey={activeNavKey}
-            activeTabParam={tabParam}
-            onNavigate={navigate}
-            brandLabel="Prosper"
-            brandSubLabel="Admin"
-            accountName="Admin"
-            accountRole="Admin"
-            accountInitials={accountInitials}
-            onAccountClick={handleAccountClick}
-          >
-            <AdminShellVisibility visible={!isDesktop}>
-              {children}
-            </AdminShellVisibility>
-          </MobileShellAdmin>
-        </div>
-      </AdminToolbarProvider>
-    </ToastProvider>
+    // <AppSessionProvider>: the admin tree's client session consumer — the
+    // workspace switcher hook (useSession().update) and the acting-as banner.
+    <AppSessionProvider>
+      {/* Session 11: the admin route tree gets top-right toasts (ADR-43).
+          Every admin save / record / correction success fires one via
+          useToast(). The staff tree gets placement="bottom-center". */}
+      <ToastProvider placement="top-right">
+        {/* ADR-56: one header row per admin screen. The page publishes its
+            title + actions through <AdminToolbarProvider>; each shell renders
+            them in its single header row alongside the account avatar. */}
+        <AdminToolbarProvider>
+          {/* M7: the "you're acting as X" strip — only shown when the Admin
+              has navigated back to /admin while still acting as a staff role
+              (her effective-role home is a staff route, so this is the
+              recovery path, not the norm). */}
+          <ActingAsBanner />
+          {/* M2 6b: two-shell responsive switch (Paper 649-0/67T-0 and
+              6B1-0/1ZP-0). Each is rendered and toggled with `hidden md:*`. */}
+          <div className="hidden md:block">
+            <AdminShell
+              activeNavKey={activeNavKey}
+              activeTabParam={tabParam}
+              onNavigate={navigate}
+              accountName="Admin"
+              accountRole="Admin"
+              accountInitials={accountInitials}
+              onAccountClick={handleAccountClick}
+              onSwitchWorkspace={openSwitcher}
+              collapsed={collapsed}
+              onToggleCollapsed={toggleCollapsed}
+            >
+              <AdminShellVisibility visible={isDesktop}>
+                {children}
+              </AdminShellVisibility>
+            </AdminShell>
+          </div>
+          <div className="md:hidden">
+            <MobileShellAdmin
+              activeNavKey={activeNavKey}
+              activeTabParam={tabParam}
+              onNavigate={navigate}
+              brandLabel="Prosper"
+              brandSubLabel="Admin"
+              accountName="Admin"
+              accountRole="Admin"
+              accountInitials={accountInitials}
+              onAccountClick={handleAccountClick}
+              onSwitchWorkspace={openSwitcher}
+            >
+              <AdminShellVisibility visible={!isDesktop}>
+                {children}
+              </AdminShellVisibility>
+            </MobileShellAdmin>
+          </div>
+          <WorkspaceSwitcher open={switcherOpen} onClose={closeSwitcher} />
+        </AdminToolbarProvider>
+      </ToastProvider>
+    </AppSessionProvider>
   );
 }

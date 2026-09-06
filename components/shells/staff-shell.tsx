@@ -31,6 +31,11 @@ export interface StaffShellProps {
   onNavigate: (key: string) => void;
   onAccountClick: () => void;
   stickyActionBar?: React.ReactNode;
+  /**
+   * Full-width strip rendered above the header — used for the Admin
+   * "acting as" banner (docs/sprints/role-switching-session-2-handoff.md).
+   */
+  topBanner?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -43,10 +48,12 @@ export function StaffShell({
   onNavigate,
   onAccountClick,
   stickyActionBar,
+  topBanner,
   children,
 }: StaffShellProps) {
   return (
     <div className="[font-synthesis:none] flex flex-col h-screen w-full bg-(--surface-page) antialiased text-caption/micro">
+      {topBanner}
       {/* Header — 25K-0 (no hamburger; bottom nav is the only staff nav) */}
       <div className="flex items-center justify-between h-[48px] shrink-0 px-[16px] bg-(--surface-page) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
         <div className="flex flex-col gap-px">

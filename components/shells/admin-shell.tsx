@@ -171,10 +171,26 @@ export interface AdminShellProps {
   accountRole: string;
   accountInitials: string;
   onAccountClick: () => void;
+  /**
+   * When set, a "Switch workspace" control is shown in the sidebar footer
+   * (Admin role-switching — docs/sprints/role-switching-session-2-handoff.md).
+   */
+  onSwitchWorkspace?: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   children: React.ReactNode;
 }
+
+// Two-arrows "switch" glyph for the workspace switcher trigger (Paper M7
+// artboard 1, "Switch chevron").
+const ICON_SWITCH = (
+  <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <polyline points="17 1 21 5 17 9" fill="none" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M3 11V9a4 4 0 0 1 4-4h14" fill="none" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <polyline points="7 23 3 19 7 15" fill="none" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M21 13v2a4 4 0 0 1-4 4H3" fill="none" stroke="rgb(255 255 255 / 85%)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 /**
  * One desktop side-nav row. Plain link when `item.children` is absent;
@@ -302,6 +318,7 @@ export function AdminShell({
   accountRole,
   accountInitials,
   onAccountClick,
+  onSwitchWorkspace,
   collapsed,
   onToggleCollapsed,
   children,
@@ -358,7 +375,17 @@ export function AdminShell({
               );
             })}
           </div>
-          <div className="flex items-center justify-center shrink-0 pt-[12px] pb-[16px]">
+          <div className="flex flex-col items-center shrink-0 pt-[12px] pb-[16px] gap-[8px]">
+            {onSwitchWorkspace && (
+              <button
+                type="button"
+                onClick={onSwitchWorkspace}
+                aria-label="Switch workspace"
+                className="w-[30px] h-[30px] flex items-center justify-center rounded-sm shrink-0 bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
+              >
+                {ICON_SWITCH}
+              </button>
+            )}
             <button
               type="button"
               onClick={onAccountClick}
@@ -450,16 +477,28 @@ export function AdminShell({
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onAccountClick}
-              className="flex items-center py-[5px] px-[8px] rounded-sm gap-[4px] bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
-            >
-              {ICON_SIGNOUT}
-              <span className="font-ui text-micro font-(--weight-medium) inline-block leading-[14px] text-(--nav-text-strong)">
-                Sign out
-              </span>
-            </button>
+            <div className="flex items-center gap-[6px]">
+              {onSwitchWorkspace && (
+                <button
+                  type="button"
+                  onClick={onSwitchWorkspace}
+                  aria-label="Switch workspace"
+                  className="flex items-center justify-center w-[26px] h-[26px] shrink-0 rounded-sm bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
+                >
+                  {ICON_SWITCH}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onAccountClick}
+                className="flex items-center py-[5px] px-[8px] rounded-sm gap-[4px] bg-(--nav-bg-chip) kit-interactive kit-focus-ring kit-focus-on-dark [--kit-hover-bg:var(--nav-bg-hover)]"
+              >
+                {ICON_SIGNOUT}
+                <span className="font-ui text-micro font-(--weight-medium) inline-block leading-[14px] text-(--nav-text-strong)">
+                  Sign out
+                </span>
+              </button>
+            </div>
           </div>
         </nav>
       )}
