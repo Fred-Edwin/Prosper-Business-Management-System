@@ -251,6 +251,115 @@ desktop staff sidebar shell (`TE6-0` / `TLE-0`), acting-as only.
 
 ---
 
+## Admin role-switching — Session 3 (desktop staff shell) (Developer — 2026-09-06) — DONE
+
+The one piece Session 2 deferred: the desktop staff sidebar shell the
+Paper M7 designs (`TE6-0` "Staff list screen on desktop", `TLE-0` "Staff
+flow screen on desktop") show for the acting-as screens. Frontend only —
+no `lib/**`, no route, no schema change. Should be the last session for
+the feature.
+
+**Scoping (owner, 2026-09-06):** the desktop staff sidebar renders **only
+while an Admin is acting-as**. A real staff user on a desktop browser
+keeps today's mobile-first bottom-nav shell at every width — staff are a
+phone-first audience; the sidebar exists for the Admin's benefit while she
+drives staff screens on her laptop. The shell choice keys off `actingAs`
+(via `useActingAs()`), **not** the viewport.
+
+**What shipped:**
+- `components/shells/staff-desktop-shell.tsx` (new) — a build of `TE6-0`'s
+  chrome, structure copied from `admin-shell.tsx`: root `flex h-full
+  w-full` (not `h-screen` — the full-width `<ActingAsBanner>` sits above
+  it in the client wrapper, as for `AdminShell`); `w-[240px]`
+  `bg-(--nav-bg)` sidebar with the Prosper brand row, hairline, the
+  role's nav rows (active row = `bg-(--nav-bg-active)` + 2px left accent
+  bar, matching the admin shell), and a footer (avatar · role label ·
+  Sign out). Body is `min-w-0` (same wide-table fix + comment as the
+  admin shell), a thin header row (account avatar only — staff screens
+  render their own in-page headers, so there is no shell title/toolbar
+  the way admin screens have `<AdminPageHeader>`; `TE6-0`/`TLE-0` confirm
+  the row is just a border + avatar), then `{children}` as the only
+  scroll region. Props mirror the `StaffShell` overlap (`roleLabel`,
+  `accountInitials`, `navItems`, `activeNavKey`, `onNavigate`,
+  `onAccountClick`, `children`) so `StaffChrome` feeds both shells from
+  one set of values. Nav-item type is `StaffDesktopNavItem`
+  (`{ key, label, href, icon }`), the icon a lucide element sized/stroked
+  by the caller (white on `--nav-bg`).
+- `components/layout/staff-shell-client.tsx` — `StaffChrome` extended to
+  the two-shell responsive pair, mirroring `admin-shell-client.tsx`.
+  When `actingAs` is `null` (real staff): renders `<StaffShell>` only,
+  exactly as before — no wrapper change, no desktop shell. When
+  `actingAs` is set: a new `ActingAsShellPair` renders
+  `<StaffDesktopShell>` in `hidden md:flex` and `<StaffShell>` in
+  `md:hidden`, each toggled with `hidden md:*` exactly as the admin
+  shells are. `toDesktopNavItems(basePath, defs)` reuses
+  `NAV_DEFS_BY_BASE` (Store Manager / Canteen: Hub, Stock; Cashier:
+  Today, New Order, Customers, Handover) and `hrefForKey` for routing.
+
+**Deviations from the handoff — flagged:**
+- **Banner rendered once per side, not one banner + a `matchMedia`
+  density flip.** The handoff offered either; I took the simpler branch —
+  `ActingAsShellPair` puts a `density="desktop"` `<ActingAsBanner>` above
+  the `hidden md:flex` desktop column and a `density="mobile"` one above
+  the `md:hidden` mobile column. No `isDesktop` state needed here (unlike
+  `admin-shell-client.tsx`, which needs it for the `<AdminShellVisibility>`
+  header-publishing guard — the staff shell has no toolbar context, so
+  there is nothing to gate). The banners are pure display; rendering both
+  and letting CSS pick is cheaper than a resize listener.
+- **No `AdminShellVisibility`-equivalent added.** `children` mounts in
+  both the desktop and mobile subtrees (both `hidden md:*` mounts run
+  their hooks) — the same accepted cost as the admin shell. The staff
+  screens are client subtrees with no server-only mount effects and no
+  toolbar-context publishing race, so no visibility gate was needed. If a
+  future staff screen adds a mount effect that must not double-fire, it
+  needs a staff `AdminShellVisibility` analogue.
+- **Header row shape:** the desktop shell's content header is a thin
+  border + account avatar only (no title, no page-actions slot). `TE6-0`
+  shows a "Stock & Reconciliation" title + Date/Maximize actions in that
+  row, but those are the *screen's* in-page header — staff screens render
+  their own (unlike admin screens, which publish up via
+  `<AdminPageHeader>`). Matching the admin toolbar-context pattern into
+  the staff tree was out of scope for an acting-as-only shell; the row
+  carries just the avatar, as `TLE-0` also shows.
+- **No switcher trigger in the staff sidebar footer** — as the handoff
+  directed and `TE6-0`/`TLE-0` confirm. The Admin exits via the banner's
+  "Exit to Admin", then re-opens the switcher from the Admin shell.
+
+**Check (owner walkthrough, `pnpm dev`, Playwright):** signed in as
+Admin at 1440×900 → switched into Store Manager → landed on
+`/store-manager` in the **desktop sidebar shell** (full-width acting-as
+banner on top, dark `w-[240px]` sidebar with Hub active + Stock, footer
+avatar · "Store Manager" · Sign out, content column with thin
+avatar-only header) — matches `TE6-0`. Navigated Hub → Stock via the
+sidebar (active row + accent bar moves, screen swaps in the content
+column). Opened Receive Goods, recorded a `+1 kg` Rice receipt (`303`
+redirect to hub, toast) — verified in Postgres the resulting
+`StockMovement.recordedById` is the **real Admin id** (`884af3c9…`,
+role `admin`), not the seeded Store Manager. Resized to 400×800 → the
+shell flipped to the mobile bottom-nav shell (hamburger, short "Exit"
+banner label, bottom nav), no reload artifacts, the `+1 kg` receipt
+shows in the movement log. "Exit to Admin" from the banner → back to
+`/admin`. Signed out, signed in as the **real seeded Store Manager**
+(PIN 1234) at 1440×900 → still gets the mobile-first shell (bottom nav
+Hub/Stock, no dark sidebar, no banner) — the acting-as-only scoping
+holds.
+
+**Gate:** `pnpm typecheck` clean; `pnpm build` clean; `pnpm test:unit`
+483/483. Full `pnpm test` — 1189/1193, the 4 failures a pre-existing
+cross-suite DB teardown FK-ordering flake in
+`lib/domain/sales/test-helpers.ts` (`product_location` RESTRICT during
+concurrent runs; Session 2 noted the same class of flake) — each failing
+file passes clean run in isolation, and this change touches no
+domain/schema code. New screen spec
+`tests/screens/staff-desktop-shell.screen.test.tsx`
+(5 cases): the desktop shell renders the role's nav + `onNavigate` fires
+the right key, active row gets `aria-current`, no switcher trigger in the
+footer, and — the scoping guard — `StaffShellClient` renders no desktop
+sidebar for a real staff user (`actingAs: null`) but does for an
+acting-as Admin. No `TODO(mock)` introduced. No schema migration.
+
+---
+
 ## Opening balances + Day-1 pinning (Developer — 2026-09-05) — DONE
 
 Owner request, ad hoc (not tied to a milestone plan): the Admin could

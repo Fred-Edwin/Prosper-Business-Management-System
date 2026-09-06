@@ -5,6 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { LayoutGrid, Boxes, ShoppingBag, Home, MessageSquare, Wallet } from "lucide-react";
 import { StaffShell } from "@/components/shells/staff-shell";
+import {
+  StaffDesktopShell,
+  type StaffDesktopNavItem,
+} from "@/components/shells/staff-desktop-shell";
 import { ToastProvider } from "@/components/kit/toast";
 import type { BottomNavItem } from "@/components/kit/bottom-nav";
 import { AppSessionProvider } from "@/components/layout/app-session-provider";
@@ -70,6 +74,23 @@ function toNavItems(defs: StaffNavDef[]): BottomNavItem[] {
     label,
     activeIcon: <Icon width={20} height={20} strokeWidth={1.5} stroke="var(--color-accent)" aria-hidden />,
     inactiveIcon: <Icon width={20} height={20} strokeWidth={1.5} stroke="var(--text-tertiary)" aria-hidden />,
+  }));
+}
+
+// The desktop staff sidebar rows reuse the same per-role nav defs. Icons are
+// white on the dark --nav-bg (matching admin-shell.tsx's 16px stroked glyphs);
+// the shell recolours the label but leaves the icon a constant white.
+function toDesktopNavItems(
+  basePath: string,
+  defs: StaffNavDef[],
+): StaffDesktopNavItem[] {
+  return defs.map(({ key, label, icon: Icon }) => ({
+    key,
+    label,
+    href: hrefForKey(basePath, defs, key),
+    icon: (
+      <Icon width={16} height={16} strokeWidth={1.5} stroke="var(--nav-text-active)" aria-hidden />
+    ),
   }));
 }
 
@@ -165,33 +186,121 @@ function StaffChrome({
   const router = useRouter();
   const defs = NAV_DEFS_BY_BASE[basePath] ?? [];
   const navItems = React.useMemo(() => toNavItems(defs), [defs]);
+  const desktopNavItems = React.useMemo(
+    () => toDesktopNavItems(basePath, defs),
+    [basePath, defs],
+  );
 
   const { actingAs } = useActingAs();
   const [menuOpen, setMenuOpen] = React.useState(false);
 
+  const activeNavKey = activeNavKeyFromPathname(basePath, pathname, defs);
+  const navigate = React.useCallback(
+    (key: string) => router.push(hrefForKey(basePath, defs, key)),
+    [router, basePath, defs],
+  );
+  const signOutFn = React.useCallback(
+    () => signOut({ callbackUrl: "/login" }),
+    [],
+  );
+
+  // The mobile-first bottom-nav shell — always for a real staff user (actingAs
+  // null), and the < md half of the responsive pair while an Admin is acting-as.
+  const mobileShell = (
+    <StaffShell
+      roleLabel={roleLabel}
+      locationLabel={locationLabel}
+      accountInitials={accountInitials}
+      navItems={navItems}
+      activeNavKey={activeNavKey}
+      onNavigate={navigate}
+      onAccountClick={signOutFn}
+      onMenuClick={actingAs ? () => setMenuOpen(true) : undefined}
+    >
+      {children}
+    </StaffShell>
+  );
+
+  // A real staff user always gets the mobile-first shell (bottom nav), at every
+  // width — staff are a phone-first audience. The desktop sidebar exists only
+  // for the Admin's benefit while she drives staff screens on her laptop
+  // (role-switching Session 3, owner 2026-09-06); it keys off `actingAs`, not
+  // the viewport.
+  if (!actingAs) {
+    return (
+      <div className="flex flex-col h-screen w-full">
+        <div className="flex-1 min-h-0">{mobileShell}</div>
+      </div>
+    );
+  }
+
+  // Acting-as: the responsive two-shell pair, mirroring
+  // app/admin/admin-shell-client.tsx — each rendered and toggled with
+  // `hidden md:*`. The full-width <ActingAsBanner> spans above both (the shells
+  // are `h-full`, not `h-screen`, so they fill the space under it). `children`
+  // mounts in both subtrees; the staff screens are client subtrees with no
+  // server-only mount effects, so this double-mount is an accepted cost (same
+  // as the admin shell). Banner density is "mobile" ("Exit") below md and
+  // "desktop" ("Exit to Admin") at md+ — one banner, density picked from a
+  // matchMedia state, like admin-shell-client.tsx's isDesktop.
   return (
-    <div className="flex flex-col h-screen w-full">
-      {/* density "mobile" — the staff tree is the mobile-first shell until the
-          desktop staff sidebar ships (role-switching Session 3). "Exit" fits
-          the 16px-padded strip at every width. */}
-      <ActingAsBanner locationName={actingLocationName} density="mobile" />
-      <div className="flex-1 min-h-0">
-        <StaffShell
+    <ActingAsShellPair
+      banner={<ActingAsBanner locationName={actingLocationName} density="mobile" />}
+      desktopBanner={
+        <ActingAsBanner locationName={actingLocationName} density="desktop" />
+      }
+      desktopShell={
+        <StaffDesktopShell
           roleLabel={roleLabel}
-          locationLabel={locationLabel}
           accountInitials={accountInitials}
-          navItems={navItems}
-          activeNavKey={activeNavKeyFromPathname(basePath, pathname, defs)}
-          onNavigate={(key: string) =>
-            router.push(hrefForKey(basePath, defs, key))
-          }
-          onAccountClick={() => signOut({ callbackUrl: "/login" })}
-          onMenuClick={actingAs ? () => setMenuOpen(true) : undefined}
+          navItems={desktopNavItems}
+          activeNavKey={activeNavKey}
+          onNavigate={navigate}
+          onAccountClick={signOutFn}
         >
           {children}
-        </StaffShell>
+        </StaffDesktopShell>
+      }
+      mobileShell={mobileShell}
+      menu={
+        <WorkspaceSwitcher open={menuOpen} onClose={() => setMenuOpen(false)} />
+      }
+    />
+  );
+}
+
+/**
+ * The acting-as responsive pair: full-width banner above, then the desktop
+ * sidebar shell (md+) and the mobile bottom-nav shell (< md), each toggled
+ * with `hidden md:*`. The banner's density follows the same `md` breakpoint,
+ * so its label reads "Exit to Admin" on the desktop mount and "Exit" on the
+ * mobile one — rendered once per side rather than measured, matching how
+ * AdminShellClient renders one banner and flips a single density.
+ */
+function ActingAsShellPair({
+  banner,
+  desktopBanner,
+  desktopShell,
+  mobileShell,
+  menu,
+}: {
+  banner: React.ReactNode;
+  desktopBanner: React.ReactNode;
+  desktopShell: React.ReactNode;
+  mobileShell: React.ReactNode;
+  menu: React.ReactNode;
+}) {
+  return (
+    <>
+      <div className="hidden md:flex md:flex-col h-screen w-full">
+        {desktopBanner}
+        <div className="flex-1 min-h-0">{desktopShell}</div>
       </div>
-      <WorkspaceSwitcher open={menuOpen} onClose={() => setMenuOpen(false)} />
-    </div>
+      <div className="flex flex-col md:hidden h-screen w-full">
+        {banner}
+        <div className="flex-1 min-h-0">{mobileShell}</div>
+      </div>
+      {menu}
+    </>
   );
 }
