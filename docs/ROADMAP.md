@@ -1,26 +1,15 @@
 # Prosper — Roadmap
 
-**Status:** Stage 1 (this milestone list) approved.
+**Status:** Milestones 1–5 all **DONE** — the initial build is complete
+and the app is with the client. The project is in maintenance mode
+(`docs/maintenance.md`). This roadmap is kept as the feature-history
+record and as context for scoping new client-requested features.
 
-**Milestone 1 — DONE (2026-08-29).** All three features (Catalog &
-Locations, Store & Stock Movements incl. the `/admin/financials`
-stock+reconciliation slice + A5 Archive, Assets) are built, wired, and
-through an adversarial QA pass (Session 17: `pnpm test` 226/226, `tsc` 0,
-`build` clean; the one High finding — F-1 correction-stacking — fixed
-in-session). Two non-blocking follow-ups are recorded: F-2 (2-phase
-transfer receiver visibility — a Design call, M2 territory) and the
-misleading ledger "Edit" column (Design Sprint). Record: the
-`docs/PROGRESS.md` M1 ledger + `docs/DECISIONS.md` ADR-13–48;
-`docs/sprints/milestone-1-plan.md` is a closed stub.
-
-**Milestone 2 — DONE (2026-09-01).** Restaurant Sales (Orders), Customers
-& Credit, Canteen Derived Sales — the money ledger is live, all balances
-derived. Landed on `main` as one merge (M2 Submission 1 = M1 + M2), all
-12 screens matching Paper on desktop and mobile. Closed plan:
-**`docs/sprints/milestone-2-plan.md`**; shipped detail:
-`docs/PROGRESS.md`; deferrals: `docs/sprints/m2-followups.md`.
-
-Milestones 3–5 below are unchanged and not yet broken into sprints.
+The durable record for what shipped: `docs/PROGRESS.md` (the "Milestones
+2–5 — COMPLETE" ledger + recent entries), `docs/DECISIONS.md`
+(ADR-13–69), and git history. The per-milestone sprint plans and handoff
+docs were removed in the 2026-09-06 maintenance-mode cleanup — see git if
+you need one.
 
 This roadmap groups the system's features into milestones, ordered by
 dependency, and framed around what the business can actually *do* once
@@ -61,10 +50,7 @@ Design/Development/QA pattern.
 
 ## Milestone 1 — The business exists in the system — DONE (2026-08-29)
 
-**Record:** `docs/PROGRESS.md` (per-session ledger) + `docs/DECISIONS.md`
-ADR-13–48. [`docs/sprints/milestone-1-plan.md`](sprints/milestone-1-plan.md)
-is a closed stub; [`docs/milestones/milestone-01-the-business-exists.md`](milestones/milestone-01-the-business-exists.md)
-is retained for original intent only.
+**Record:** `docs/PROGRESS.md` M1 ledger + `docs/DECISIONS.md` ADR-13–48.
 
 | Feature | PRD | Status |
 |---|---|---|
@@ -96,9 +82,7 @@ no dependency on stock, sales, or money.
 
 ## Milestone 2 — Staff can sell, every day — DONE (2026-09-01)
 
-**Plan & session sequence:** [`docs/sprints/milestone-2-plan.md`](sprints/milestone-2-plan.md)
-(closed). Shipped detail: [`docs/PROGRESS.md`](PROGRESS.md); deferrals:
-[`docs/sprints/m2-followups.md`](sprints/m2-followups.md).
+**Record:** `docs/PROGRESS.md` M2 ledger + `docs/DECISIONS.md` ADR-49–51.
 
 | Feature | PRD | Status |
 |---|---|---|
