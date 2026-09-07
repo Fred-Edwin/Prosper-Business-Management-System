@@ -16,6 +16,51 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature — Stock ledger KPI band now shows stock-VALUE figures, scoped by location (2026-09-07) — DONE
+
+Client asked to see opening and closing stock *value* on the Stock &
+Reconciliation screen, per location (Restaurant / Canteen / Store).
+
+**What changed.** The Admin Stock KPI band was four FLOW figures (Sales
+Revenue / COGS / Non-Sale Value / Gross Profit) from `useFinancialSummary`.
+Revenue and Gross Profit already live on the Dashboard, so they were
+dropped here. The band is now four STOCK-VALUE figures for the selected
+range:
+
+- **Opening Stock Value** — derived, at cost
+- **Closing Stock Value** — derived, at cost
+- **Cost of Goods Sold** — the `getFinancialSummary` per-location sweep
+  (`opening + purchase receipts − closing`). Relabelled **"Stock Issued
+  Out"** for the Store, which never sells — same number, honest label.
+- **Non-Sale Stock Value** — non-sale consumption over the range
+
+A local **All / Restaurant / Canteen / Store** `SegmentedControl` above
+the band re-scopes all four cells. It is its own control, NOT the
+FilterToolbar Location select — per ADR-57 the band is deliberately
+independent of the transaction-tab filters.
+
+**Canteen note (client asked):** only *revenue* is derived at the Canteen
+(no cashier). Opening/closing/non-sale are ordinary `StockMovement` rows
+there, so these figures are as solid at the Canteen as anywhere.
+
+- **New domain module:** `lib/domain/stock/stock-value-kpis.ts` —
+  `deriveStockValueKpis`, a pure helper computing per-scope
+  `{ openingValue, closingValue, nonSaleValue }` from the same movements +
+  closing balances the grid uses (ADR-11 walk-back; ADR-55 valuation —
+  ingredient/goods at `buyingPrice`, dish on-hand at 0, dish non-sale at
+  `dishWasteCostPercent × Restaurant sellingPrice`, matching the
+  Financials screen's Non-Sale figure exactly). `+ stock-value-kpis.test.ts`.
+- **Screen:** `app/admin/stock/stock-client.tsx` — new scope state +
+  toggle, desktop and mobile bands rebuilt from `deriveStockValueKpis` +
+  `summary.perLocation`. Kit unchanged (`SegmentedControl` composed).
+- **Files:** `lib/domain/stock/{stock-value-kpis.ts,index.ts}`,
+  `app/admin/stock/stock-client.tsx`,
+  `tests/screens/{stock-ledger-v2,stock}.screen.test.tsx`. No API or
+  schema change. No new ADR (no contract changed; ADR-55/57/11 unchanged).
+- **Gates:** `pnpm typecheck` ✅ · `pnpm test` ✅ · `pnpm build` ✅
+
+---
+
 ## Fix — long product name broke Stock ledger column alignment (2026-09-07) — DONE
 
 The Admin Stock ledger (and every other `DenseLedger` consumer) renders as
@@ -65,6 +110,29 @@ inflated, opening-stock term empty → today's profit understated).
   no product/location with more than one opening, downstream issue /
   production / transfer rows untouched.
 - Gate: not run — no repository change (docs only).
+
+---
+
+## Investigation — "COGS 1,265 with zero sales" is expected, not a bug (2026-09-07) — DONE
+
+Client reported COGS = 1,265 / gross = net = −1,265 on the dashboard with
+no sales recorded, after the opening-stock reclassification above.
+
+**Not a bug and not caused by the reclassification.** COGS =
+`opening + purchase_receipts − closing` (ADR-55). During setup the client
+issued 8 ingredient lots from the Store to the kitchen (`issue` rows,
+−1,265 at `buyingPrice`) and ran `production` for dishes. Dishes are
+valued at 0 (ADR-33), so ingredient cost is booked at **issue time**, not
+per-plate. The `issue` rows are inside the closing term but not the
+opening term, so COGS picks them up in full; the dishes they became
+haven't sold, so no offsetting revenue. `production` (4 dish rows, cost 0)
+and the Mandazi `transfer` (dish, cost 0, both legs) contribute nothing —
+verified by SQL. The 1,265 would show identically had the Opening Stock
+button been used; the reclassification only zeroed the *purchases* term.
+
+Self-corrects once sales are recorded. If the client wants COGS to land
+only on sale, that's an ADR-level change to the costing model, not a
+maintenance fix. No code change.
 
 ---
 

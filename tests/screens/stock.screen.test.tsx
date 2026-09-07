@@ -260,15 +260,16 @@ function mobile(): HTMLElement {
 }
 
 describe("/admin/stock — mobile branch", () => {
-  it("shows the dark KPI strip with Gross Profit and Sales Revenue (Ledger v2 — money figures)", () => {
+  it("shows the dark KPI strip with the stock-value figures", () => {
     render(
       <ToastProvider placement="top-right">
         <StockClient />
       </ToastProvider>,
     );
     const m = within(mobile());
-    expect(m.getByText("Gross Profit")).toBeInTheDocument();
-    expect(m.getByText("Sales Revenue")).toBeInTheDocument();
+    expect(m.getByText("Opening Stock Value")).toBeInTheDocument();
+    expect(m.getByText("Closing Stock Value")).toBeInTheDocument();
+    expect(m.getByText("Non-Sale Stock Value")).toBeInTheDocument();
   });
 
   it("shows a 'KES —' sub-line under each row's closing quantity (M3-unwired)", () => {
