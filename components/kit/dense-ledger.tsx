@@ -24,9 +24,9 @@
 //             font-(--weight-semibold) text-sm/micro, text-white / text-success / text-danger;
 //             the trailing Edit slot is text-transparent.
 //
-// Column widths from the artboard header: Product `grow shrink min-w-[140px] max-w-[280px]
-// truncate` (artboard was `grow min-w-[140px]` — the shrink/max/truncate were added to stop a
-// long product name breaking row-to-row column alignment; see COLUMNS below), Opening `w-[90px]`,
+// Column widths from the artboard header: Product `w-[220px] truncate` (artboard was
+// `grow min-w-[140px]` — changed to a fixed width + truncate so a long product name can't
+// shift the numeric columns out of row-to-row alignment; see COLUMNS below), Opening `w-[90px]`,
 // Purchases `w-[100px]`, Issues `w-[90px]`, Production `w-[100px]`, Transfer In `w-[110px]`,
 // Transfer Out `w-[120px]`, Sold `w-[80px]`, Sold Value `w-[100px]`, Closing `w-[90px]`,
 // Closing Value `w-[110px]`, Edit `w-[50px]`. Non-Sale `w-[100px]` (added this session,
@@ -147,13 +147,15 @@ export interface DenseLedgerProps {
 
 // (key, header, width class, whether numeric/right-aligned)
 const COLUMNS: [keyof LedgerRow & string, string, string, boolean][] = [
-  // `grow shrink min-w-[140px] max-w-[280px] truncate` — the name is the only
-  // cell allowed to give way (design-principles.md §4.3). Without `shrink` +
-  // `truncate` a long product name ("Potaoes za Mukimo (Kasuku)") widens this
-  // flex cell past its slot and pushes every numeric cell in that row out of
-  // column alignment. Must stay identical on the header / data-row / footer
-  // render sites below so the sticky-left divider reads as one line.
-  ["product", "Product", "grow shrink min-w-[140px] max-w-[280px] truncate", false],
+  // FIXED width + `truncate` — NOT `grow`. Every numeric column is a fixed
+  // width; the Product column must be too, or the number columns start at a
+  // different x on every row depending on the name's length (a `grow` cell's
+  // rendered width tracks its content until the row runs out of space, which
+  // at full desktop width it never does). A long name ("Potaoes za Mukimo
+  // (Kasuku)") is clipped with an ellipsis; the full name is in the row's
+  // `title`. Must stay identical on the header / data-row / footer render
+  // sites below so the sticky-left divider reads as one line.
+  ["product", "Product", "w-[220px] truncate", false],
   ["opening", "Opening", "w-[90px]", true],
   ["purchases", "Purchases (+)", "w-[100px]", true],
   ["issues", "Kitchen (-)", "w-[90px]", true],
@@ -360,7 +362,7 @@ export function DenseLedger({
                   : undefined
               }
               className={cn(
-                "font-ui font-(--weight-medium) grow shrink min-w-[140px] max-w-[280px] truncate [color:var(--text-primary)] text-sm/micro",
+                "font-ui font-(--weight-medium) w-[220px] shrink-0 truncate [color:var(--text-primary)] text-sm/micro",
                 horizontalScroll &&
                   "kit-ledger-sticky sticky [z-index:var(--z-sticky)] border-r border-r-solid [border-right-color:var(--border-subtle)]",
               )}
@@ -410,7 +412,7 @@ export function DenseLedger({
                 : undefined
             }
             className={cn(
-              "font-ui font-(--weight-semibold) grow shrink min-w-[140px] max-w-[280px] truncate text-(--text-inverse) text-sm/micro",
+              "font-ui font-(--weight-semibold) w-[220px] shrink-0 truncate text-(--text-inverse) text-sm/micro",
               horizontalScroll &&
                 "sticky [z-index:var(--z-sticky)] bg-gray-900 border-r border-r-solid [border-right-color:var(--nav-border)]",
             )}
