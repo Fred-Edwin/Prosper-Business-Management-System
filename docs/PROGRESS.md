@@ -16,6 +16,58 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix — long product name broke Stock ledger column alignment (2026-09-07) — DONE
+
+The Admin Stock ledger (and every other `DenseLedger` consumer) renders as
+flexbox rows, not an HTML `<table>` — row-to-row column alignment depends on
+every cell being a fixed identical width. The Product cell was
+`grow min-w-[140px]` with no `shrink` / `truncate` / `max-width`, so a long
+name ("Potaoes za Mukimo (Kasuku)") widened that one flex cell past its slot
+and pushed every numeric cell in that row out of column alignment with the
+rows above and below (and with the header). The mobile `LedgerRowSummary`
+already handled this with `min-w-0 truncate`; the desktop grid was
+transcribed verbatim from a Paper artboard whose sample data was never long
+enough to expose it.
+
+- **Kit fix.** `components/kit/dense-ledger.tsx` — Product column class is now
+  `grow shrink min-w-[140px] max-w-[280px] truncate`, applied identically at
+  all three render sites (header / data row / footer) so the sticky-left
+  divider stays one continuous line. Data row also gets `title={row.product}`
+  so the full name is available on hover when clipped. Frozen-kit change, same
+  footing as the ADR-37a Location column / this-session Non-Sale column — a
+  bug fix restoring intended §4.3 behaviour ("the name is the only element
+  allowed to give way"), not a new pattern.
+- **Files:** `components/kit/dense-ledger.tsx`. No API, schema, or domain
+  change. No new ADR (no contract changed).
+- **Gates:** `pnpm typecheck` ✅ · `pnpm build` ✅ · `pnpm test` ✅
+
+---
+
+## Data fix — client-entered receipts reclassified as opening stock (2026-09-07) — DONE
+
+During setup the client entered ~49 starting on-hand quantities via the
+stock **Receive** flow instead of the **Opening Stock** button, writing
+`purchase_receipt` `StockMovement` rows. No money was affected — a plain
+receipt writes no `MoneyMovement` and creates no `purchase_payment` row
+(`lib/domain/stock/purchases.ts`) — so there were no phantom payments to
+unwind; only the COGS period classification was wrong (purchases term
+inflated, opening-stock term empty → today's profit understated).
+
+- **Production data only, no code change.** One-off `UPDATE` in the Neon
+  SQL editor: the 49 rows (all dated 2026-09-07, none linked to a payment,
+  none corrections) relabelled `movement_type = 'opening'` with
+  `occurred_at` pinned to Day-1 00:00 Africa/Nairobi, matching
+  `setOpeningStock` / `resolveOpeningDay` (ADR-70). Safe: no `DayClose`
+  row, no prior `opening` / `opening_balance` row, and `opening` vs
+  `purchase_receipt` sum identically into the derived balance so no
+  on-hand quantity moved.
+- **Verified after:** 0 `purchase_receipt` rows remain, 49 `opening` rows,
+  no product/location with more than one opening, downstream issue /
+  production / transfer rows untouched.
+- Gate: not run — no repository change (docs only).
+
+---
+
 ## In-app screen help — Staff roles (Developer — 2026-09-06) — DONE
 
 Extends the Admin help panel (entry below) to the cashier, store-manager
