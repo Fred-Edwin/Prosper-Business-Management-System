@@ -44,3 +44,10 @@ export {
   listOutstandingPurchasesForLocation,
 } from "./list-movements";
 export { resolveReceivingDestinationIds } from "./receiving-scope";
+export {
+  deriveStockValueKpis,
+  type StockValueKpis,
+  type StockValueFigures,
+  type StockValueScope,
+  type DeriveStockValueKpisInput,
+} from "./stock-value-kpis";

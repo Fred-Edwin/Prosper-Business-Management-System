@@ -40,6 +40,11 @@ import { useLedger, usePeriodLedger, useProductDayLedger } from "./use-stock";
 import { deriveLedgerRows } from "./derive-ledger";
 import { derivePeriodSummaryRows } from "./derive-period-summary";
 import { deriveProductDayRows } from "./derive-product-days";
+import {
+  deriveStockValueKpis,
+  type StockValueScope,
+} from "@/lib/domain/stock/stock-value-kpis";
+import { SegmentedControl } from "@/components/kit/segmented-control";
 import { AdminDateRangeControl } from "@/app/admin/date-range-control";
 import { useAdminDateRange, shortBusinessDateWithYear } from "@/app/admin/use-date-range";
 import { useFinancialSummary } from "@/app/admin/financials/use-financials";
@@ -310,22 +315,87 @@ export function StockClient() {
     [isSingleDay, singleDayAllRows, periodAllRows, category, kindByProduct, search],
   );
 
-  // Desktop KPI band — 4 money figures from the FLOW summary for the whole
-  // range (ADR-57 precedent from the Financials Profit panel: KPI figures
-  // are unfiltered by Location/Category, always the full range).
+  // KPI band — STOCK-VALUE figures for the selected range (client request
+  // 2026-09-07): Opening Stock Value, Closing Stock Value, COGS (labelled
+  // "Stock Issued Out" for the Store, which never sells — same sweep,
+  // honest label), Non-Sale Stock Value. Revenue / Gross Profit live on
+  // the Dashboard and were dropped from here on purpose.
+  //
+  // Scoped by a local All / Restaurant / Canteen / Store toggle — its OWN
+  // control, not the FilterToolbar Location select: per ADR-57 the band is
+  // deliberately independent of the transaction-tab filters, and matching
+  // that precedent this toggle is the one thing that re-scopes it.
+  //
+  // Opening/closing/non-sale come from `deriveStockValueKpis` over the
+  // same movements + closing balances the grid uses (ADR-11 walk-back,
+  // ADR-55 valuation). COGS comes from `useFinancialSummary`'s
+  // per-location slice — the same sweep the Financials screen shows.
   const { summary, loading: summaryLoading, error: summaryError, refresh: refreshSummary } =
     useFinancialSummary(range.from, range.to);
 
+  const [kpiScope, setKpiScope] = React.useState<StockValueScope>("all");
+
+  const stockValueKpis = React.useMemo(() => {
+    const closingByPair = isSingleDay
+      ? singleDay.data.dayClosing
+      : period.data.periodClosing;
+    return deriveStockValueKpis({
+      movements: activeData.movements,
+      closingByPair,
+      products: activeData.products,
+      locations: activeData.locations,
+      dishWasteCostPercent: Number(
+        summary?.nonSaleConsumption?.dishWasteCostPercent ?? "0.6",
+      ),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSingleDay, singleDay.data, period.data, activeData, summary]);
+
+  // COGS for the active scope, from the financial summary (the stock-value
+  // sweep). "all" → consolidated; a location scope → its perLocation row,
+  // matched by Location.type.
+  const scopeCogs = React.useMemo(() => {
+    if (!summary) return undefined;
+    if (kpiScope === "all") return summary.consolidated.cogs;
+    const loc = activeData.locations.find((l) => l.type === kpiScope);
+    if (!loc) return undefined;
+    return summary.perLocation.find((p) => p.locationId === loc.id)?.cogs ?? "0";
+  }, [summary, kpiScope, activeData.locations]);
+
   const kpiStats: PositionStat[] = React.useMemo(() => {
-    const c = summary?.consolidated;
-    const nonSale = summary?.nonSaleConsumption?.total;
+    const f = stockValueKpis[kpiScope];
+    // The Store never sells — its sweep figure is the value of stock
+    // issued OUT to the kitchens, not cost of goods sold. Honest label.
+    const cogsLabel = kpiScope === "store" ? "Stock Issued Out" : "Cost of Goods Sold";
     return [
-      { label: "Sales Revenue", value: money(c?.revenue), tone: "[color:var(--text-primary)]" },
-      { label: "Cost of Goods Sold", value: money(c?.cogs), tone: "[color:var(--text-primary)]" },
-      { label: "Non-Sale Stock Value", value: money(nonSale), tone: "[color:var(--color-warning)]" },
-      { label: "Gross Profit", value: money(c?.grossProfit), tone: "[color:var(--color-success)]" },
+      { label: "Opening Stock Value", value: money(String(f.openingValue)), tone: "[color:var(--text-primary)]" },
+      { label: "Closing Stock Value", value: money(String(f.closingValue)), tone: "[color:var(--text-primary)]" },
+      { label: cogsLabel, value: money(scopeCogs), tone: "[color:var(--text-primary)]" },
+      { label: "Non-Sale Stock Value", value: money(String(f.nonSaleValue)), tone: "[color:var(--color-warning)]" },
     ];
-  }, [summary]);
+  }, [stockValueKpis, kpiScope, scopeCogs]);
+
+  // Scope toggle — labels double as the value map (Location.type / "all").
+  const KPI_SCOPE_LABELS: Record<StockValueScope, string> = {
+    all: "All",
+    restaurant: "Restaurant",
+    canteen: "Canteen",
+    store: "Store",
+  };
+  const kpiScopeOptions = Object.values(KPI_SCOPE_LABELS);
+  const kpiScopeToggle = (
+    <SegmentedControl
+      aria-label="Stock value scope"
+      options={kpiScopeOptions}
+      value={KPI_SCOPE_LABELS[kpiScope]}
+      onChange={(label) => {
+        const next = (Object.keys(KPI_SCOPE_LABELS) as StockValueScope[]).find(
+          (k) => KPI_SCOPE_LABELS[k] === label,
+        );
+        if (next) setKpiScope(next);
+      }}
+    />
+  );
 
   // Date-control display label ("Aug 24"), per LDZ-0. Single-day only — the
   // FilterToolbar's own Date control stays single-day (Today/Custom); the
@@ -544,6 +614,10 @@ export function StockClient() {
       {/* ───────── Desktop ───────── */}
       <div className="hidden md:flex flex-col grow gap-(--sp-8) min-w-0">
         <div className="[width:100%] shrink-0 flex flex-col gap-(--sp-6)">
+          <div className="flex items-center justify-between gap-(--sp-6)">
+            <Caption>Stock value · {KPI_SCOPE_LABELS[kpiScope]}</Caption>
+            {kpiScopeToggle}
+          </div>
           <LedgerPositionBand stats={kpiStats} />
           <FilterToolbar
             aria-label="Filter the stock ledger"
@@ -656,39 +730,26 @@ export function StockClient() {
           rougher than desktop, functionally correct: no per-cell
           correction target, a "View days" affordance instead). */}
       <div className="flex md:hidden flex-col grow min-h-0">
-        {/* KPI band — the same four money figures as desktop (RM6-0
-            "KPI Strip (2×2)"), laid out 2×2 rather than desktop's 4-across.
-            Measured from the artboard: band py 12 / px 16, row gap 12; each
-            cell flex-1 basis-0 min-w-0 so the two columns are equal (163px)
-            rather than content-sized; figures --text-h2 at lh 22 (NOT
-            desktop's h1 — Geist Mono is wider than Paper's JetBrains Mono
-            and h1 collides at 390px); labels --nav-text-label. Revenue and
-            COGS are white here; only Non-Sale and Gross Profit carry a
-            semantic colour, in the -on-dark variants. */}
+        {/* KPI band — the same four STOCK-VALUE figures as desktop, laid
+            out 2×2. Same 2026-09-07 client request: Opening / Closing stock
+            value, COGS (or "Stock Issued Out" for the Store), Non-Sale
+            value, for the selected range. The scope toggle sits above the
+            band, on its own row, and re-scopes all four cells. */}
         <div className="flex flex-col [width:100%] shrink-0 py-(--sp-5) px-(--sp-6) gap-(--sp-5) mb-(--sp-5) [background-color:var(--nav-bg)]">
+          <div className="overflow-x-auto -mx-(--sp-2) px-(--sp-2)">{kpiScopeToggle}</div>
           <div className="flex gap-(--sp-6)">
-            <MobileKpiCell label="Sales Revenue" value={money(summary?.consolidated.revenue)} />
+            <MobileKpiCell label={kpiStats[0].label} value={kpiStats[0].value} />
             <div className="w-px shrink-0 [background-color:var(--nav-border)]" />
-            <MobileKpiCell label="Cost of Goods Sold" value={money(summary?.consolidated.cogs)} />
+            <MobileKpiCell label={kpiStats[1].label} value={kpiStats[1].value} />
           </div>
           <div className="h-px [width:100%] shrink-0 [background-color:var(--nav-border)]" />
           <div className="flex gap-(--sp-6)">
-            <MobileKpiCell
-              label="Non-Sale Stock Value"
-              value={money(summary?.nonSaleConsumption?.total)}
-              tone="[color:var(--color-warning-on-dark)]"
-            />
+            <MobileKpiCell label={kpiStats[2].label} value={kpiStats[2].value} />
             <div className="w-px shrink-0 [background-color:var(--nav-border)]" />
-            {/* A loss reads red, not green — same rule as the Dashboard's
-                per-location grossProfit cells (dashboard-client.tsx:779). */}
             <MobileKpiCell
-              label="Gross Profit"
-              value={money(summary?.consolidated.grossProfit)}
-              tone={
-                Number(summary?.consolidated.grossProfit ?? "0") < 0
-                  ? "[color:var(--color-danger-on-dark)]"
-                  : "[color:var(--color-success-on-dark)]"
-              }
+              label={kpiStats[3].label}
+              value={kpiStats[3].value}
+              tone="[color:var(--color-warning-on-dark)]"
             />
           </div>
         </div>

@@ -225,17 +225,24 @@ beforeEach(() => {
 });
 
 describe("/admin/stock — Ledger v2 KPI band", () => {
-  it("renders 4 money figures sourced from useFinancialSummary", () => {
+  it("renders the 4 stock-value figures (COGS from useFinancialSummary)", () => {
     renderScreen();
     const d = within(desktop());
-    expect(d.getByText("Sales Revenue")).toBeInTheDocument();
+    expect(d.getByText("Opening Stock Value")).toBeInTheDocument();
+    expect(d.getByText("Closing Stock Value")).toBeInTheDocument();
     expect(d.getByText("Cost of Goods Sold")).toBeInTheDocument();
     expect(d.getByText("Non-Sale Stock Value")).toBeInTheDocument();
-    expect(d.getByText("Gross Profit")).toBeInTheDocument();
-    expect(d.getByText("KES 84,200")).toBeInTheDocument();
+    // Empty ledger fixture → opening/closing/non-sale are KES 0; COGS is
+    // the consolidated sweep figure from the summary stub.
     expect(d.getByText("KES 31,000")).toBeInTheDocument();
-    expect(d.getByText("KES 1,200")).toBeInTheDocument();
-    expect(d.getByText("KES 53,200")).toBeInTheDocument();
+  });
+
+  it("the scope toggle relabels COGS to 'Stock Issued Out' for the Store", async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    const d = within(desktop());
+    await user.click(d.getByRole("radio", { name: "Store" }));
+    expect(d.getByText("Stock Issued Out")).toBeInTheDocument();
   });
 });
 
