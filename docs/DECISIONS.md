@@ -3809,3 +3809,76 @@ wildcard, and an exact literal route always out-ranks a wildcard.
 **Consequences.** Keeping a screen's help correct is now part of changing
 that screen — update its `lib/help` entry in the same change. A screen
 with no entry simply has no **?** button (graceful incremental rollout).
+
+---
+
+## ADR-72: Every ledger-row create path ships with its correction path (Owner + Developer, 2026-09-07)
+
+**Context.** The client recorded a supplier purchase payment (biscuits,
+"Chieni Wholesale") with the wrong quantity and cost. There was **no way
+to fix it in the app** — `recordPurchasePayment` had no `correctX` at any
+layer, the `purchase_payment` row never appears on the stock ledger grid
+(`COLUMN_FOR_TYPE.purchase_payment = null`), and the Financials → Stock
+Purchases table was read-only. The fix was a raw SQL `DELETE` in the Neon
+console.
+
+An audit of every create path found the same wall on **owner draws /
+returns, debt repayments, pay advances/deductions, staff payouts, and
+closed-day canteen counts** — all ledger rows created *outside* the
+Order/Handover flows. Those two flows got the full "Correct this"
+treatment during the initial build (ADR-15); these did not. The pattern
+was documented (§4 of CONVENTIONS) but never enforced as a build step, so
+each new `recordX` shipped without its `correctX`.
+
+**Decision.**
+
+1. **Rule.** A new create path for a **ledger row** (anything summed to
+   derive a stock or money balance — CLAUDE.md non-negotiables) is
+   **incomplete** until it ships its correction path in the **same PR**: a
+   `correctX` (restate to a new final value) and, where a full undo makes
+   sense, a `voidX` (reverse to zero). Both follow the `correctExpense`
+   shape (`lib/domain/financials/expenses.ts`):
+   - Admin-only; **not** day-close gated (an Admin delta row is always
+     allowed — `assertActorMayCorrectOnDate` is only for paths where staff
+     may also correct).
+   - Load the original (never mutate); reject correcting a correction
+     (`corrects<X>Id !== null`); `delta = corrected − (original + Σ prior
+     deltas)`; a zero delta is `VALIDATION_ERROR` (idempotent — M1 F-1).
+   - Write ONE new linked row (`corrects<X>Id` set, `amount` = signed
+     delta) + the paired offsetting `MoneyMovement` via
+     `recordMoneyMovement`, in one transaction.
+   - `AuditLog` `action: "correct"` with `oldValue` **and** `newValue`
+     sharing scalar keys, so `/admin/audit-trail` renders a real
+     `Field · Was · Now` table (the `correctExpense` "newValue only" shape
+     shows `— → value` and is **not** the model to copy for this).
+   - List reads fold corrections into the derived value and never return
+     correction rows standalone (`where: { corrects<X>Id: null }` + a
+     delta `groupBy`).
+2. **Frontend.** Reuse the Correction-drawer pattern
+   (`expense-drawer.tsx`, `mode: "correct"`) — a per-row **Correct**
+   button (Admin only) and a **Void** button behind a confirm step. No new
+   kit component.
+
+**Consequences.**
+
+- Migration `20260907120000_add_correction_links_owner_repayment_purchase`
+  adds `owner_transaction.corrects_owner_transaction_id`,
+  `repayment.corrects_repayment_id`, and
+  `stock_movement.purchase_prior_buying_price` (a purchase payment does a
+  true edit of the product's catalog `buyingPrice`; a void needs the prior
+  value to roll it back). Purchase payments reuse the existing
+  `stock_movement.corrects_movement_id`.
+- **Shipped in this PR:** purchase payments only —
+  `correctPurchasePayment` / `voidPurchasePayment`
+  (`lib/domain/stock/correct-purchase-payment.ts`), routes
+  `POST /api/stock-movements/:id/correct-purchase` + `/void-purchase`, and
+  the row action + drawer on Financials → Stock Purchases. A purchase
+  payment with a matched `purchase_receipt` is **`CONFLICT`** — the
+  delivery must be unmatched or corrected first (mirrors the manual SQL
+  fix's safety check).
+- **Deferred to follow-up single-request sessions** (the migration
+  already carries their columns): owner draws / returns, debt repayments,
+  pay adjustments, staff payout reversal, closed-day canteen count
+  correction.
+- The rule is added to the Loop B checklist in `docs/maintenance.md` and
+  `CLAUDE.md`.

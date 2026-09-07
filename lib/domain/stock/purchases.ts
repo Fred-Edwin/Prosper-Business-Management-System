@@ -91,7 +91,7 @@ export async function recordPurchasePayment(
 
     const product = await tx.product.findUnique({
       where: { id: input.productId },
-      select: { unitLabel: true },
+      select: { unitLabel: true, buyingPrice: true },
     });
     const unit = product?.unitLabel ?? "unit";
     const paidFromLabel = PAID_FROM_DISPLAY[input.paidFromAccount];
@@ -110,6 +110,9 @@ export async function recordPurchasePayment(
         purchaseOrderedQty: orderedQty,
         purchaseTotalCost: cost,
         purchasePaidFrom: input.paidFromAccount,
+        // Capture the catalog price this payment is about to overwrite, so
+        // `voidPurchasePayment` can roll it back (ADR-15 correction path).
+        purchasePriorBuyingPrice: product?.buyingPrice ?? null,
         // Human sentence for display / audit — no longer the source of truth.
         note: supplier
           ? `Ordered ${trimQty(orderedQty)} ${unit} from ${supplier}; KES ${fmtMoney(cost)} from ${paidFromLabel}`

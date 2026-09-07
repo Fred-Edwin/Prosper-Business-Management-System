@@ -204,6 +204,20 @@ export const correctMovementSchema = z.object({
   note: z.string().trim().min(1).nullable().optional(),
 });
 
+// POST /api/stock-movements/:id/correct-purchase — the corrected FINAL
+// values of a `purchase_payment` row (Admin). The domain computes the cost
+// delta and writes an append-only correction row + a paired MoneyMovement.
+export const correctPurchasePaymentSchema = z.object({
+  supplier: z.string().trim().optional(),
+  orderedQty: magnitudeString,
+  cost: moneyString,
+  paidFromAccount: z.enum(["cash", "mpesa_bank"]),
+  note: z.string().trim().min(1).nullable().optional(),
+});
+export type CorrectPurchasePaymentBody = z.infer<
+  typeof correctPurchasePaymentSchema
+>;
+
 // Phase 2 accept. Body is optional; when present it may carry
 // `receivedQuantity` — an unsigned magnitude of what actually arrived
 // (the receiver adjusting a line down/up). Absent ⇒ received == dispatched.

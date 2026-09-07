@@ -22,6 +22,7 @@
 import * as React from "react";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
 import { StatusChip } from "@/components/kit/status-chip";
+import { Button } from "@/components/kit/button";
 import { ErrorState } from "@/components/kit/error-state";
 import type {
   OutstandingPurchases,
@@ -30,6 +31,7 @@ import type {
 import type { Location, ProductWithLocations } from "@/lib/domain/catalog";
 import { stockApi } from "../stock/use-stock";
 import { PaymentDrawer } from "./payment-drawer";
+import { PurchasePaymentCorrectionDrawer } from "./purchase-payment-correction-drawer";
 import { HandoversView } from "./handovers-tab";
 
 export type TxTabKey = "purchases" | "deliveries" | "handovers";
@@ -108,6 +110,8 @@ export function TransactionsTab({
   const [drawerProductId, setDrawerProductId] = React.useState<
     string | undefined
   >(undefined);
+  const [correctTarget, setCorrectTarget] =
+    React.useState<StockMovementView | null>(null);
 
   const openDrawer = React.useCallback((productId?: string) => {
     setDrawerProductId(productId);
@@ -265,6 +269,21 @@ export function TransactionsTab({
         return <StatusChip variant={s.variant}>{s.label}</StatusChip>;
       },
     },
+    {
+      key: "action",
+      header: "",
+      width: "w-[100px] shrink-0",
+      align: "right",
+      render: (m) => (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setCorrectTarget(m)}
+        >
+          Correct
+        </Button>
+      ),
+    },
   ];
 
   const deliveryColumns: SimpleTableColumn<StockMovementView>[] = [
@@ -412,6 +431,7 @@ export function TransactionsTab({
                 productById={productById}
                 locationById={locationById}
                 awaitingIds={awaitingIds}
+                onCorrect={setCorrectTarget}
                 dateLabel={dateLabel}
               />
             ) : (
@@ -440,6 +460,15 @@ export function TransactionsTab({
           onRecorded={refresh}
         />
       )}
+
+      {correctTarget && (
+        <PurchasePaymentCorrectionDrawer
+          payment={correctTarget}
+          product={productById.get(correctTarget.productId)}
+          onClose={() => setCorrectTarget(null)}
+          onDone={refresh}
+        />
+      )}
     </>
   );
 }
@@ -451,12 +480,14 @@ function MobilePurchaseCards({
   productById,
   locationById,
   awaitingIds,
+  onCorrect,
   dateLabel,
 }: {
   rows: StockMovementView[];
   productById: Map<string, ProductWithLocations>;
   locationById: Map<string, Location>;
   awaitingIds: Set<string>;
+  onCorrect: (m: StockMovementView) => void;
   dateLabel: string;
 }) {
   if (rows.length === 0) {
@@ -506,8 +537,15 @@ function MobilePurchaseCards({
               {" · "}
               {fmtDate(m.occurredAt)}
             </div>
-            <div>
+            <div className="flex items-center justify-between gap-(--sp-4)">
               <StatusChip variant={s.variant}>{s.label}</StatusChip>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => onCorrect(m)}
+              >
+                Correct
+              </Button>
             </div>
           </div>
         );

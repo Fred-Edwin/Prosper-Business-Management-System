@@ -236,6 +236,29 @@ export type CorrectMovementInput = {
   recordedById: string;
 };
 
+/**
+ * Correct a `purchase_payment` row (ADR-15). Carries the **corrected final**
+ * values of the payment; the domain computes the cost delta and writes an
+ * append-only correction row + a paired `MoneyMovement` delta. Not
+ * `correctMovement` — that one only moves `quantity`, and a purchase
+ * payment's quantity is always `0` (its magnitude lives in
+ * `purchaseOrderedQty`, its money in `purchaseTotalCost`).
+ */
+export type CorrectPurchasePaymentInput = {
+  /** The original `purchase_payment` row being corrected. */
+  movementId: string;
+  /** Corrected supplier name (optional — a payment may have no named supplier). */
+  supplier?: string | null;
+  /** Corrected unsigned magnitude ordered. */
+  orderedQty: string;
+  /** Corrected total cost — decimal string, `Decimal(14,2)`. */
+  cost: string;
+  /** Corrected paid-from account. */
+  paidFromAccount: "cash" | "mpesa_bank";
+  note?: string | null;
+  recordedById: string;
+};
+
 export type ListMovementsFilter = {
   productId?: string;
   locationId?: string;

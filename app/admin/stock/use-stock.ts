@@ -98,6 +98,16 @@ export type CorrectionInput = {
   note?: string;
 };
 
+export type CorrectPurchasePaymentInput = {
+  movementId: string;
+  /** Corrected FINAL values of the payment. Never a delta. */
+  supplier?: string;
+  orderedQty: string;
+  cost: string;
+  paidFromAccount: "cash" | "mpesa_bank";
+  note?: string;
+};
+
 // ── Low-level API calls (no React state) ────────────────────────────────
 
 export const stockApi = {
@@ -158,6 +168,25 @@ export const stockApi = {
           note: input.note && input.note.trim() !== "" ? input.note.trim() : undefined,
         }),
       },
+    );
+  },
+
+  /** Correct a `purchase_payment` row to new final values (Admin). */
+  correctPurchasePayment(
+    input: CorrectPurchasePaymentInput,
+  ): Promise<StockMovementView> {
+    const { movementId, ...body } = input;
+    return request<StockMovementView>(
+      `/api/stock-movements/${movementId}/correct-purchase`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  },
+
+  /** Fully reverse a `purchase_payment` (Admin). */
+  voidPurchasePayment(movementId: string): Promise<StockMovementView> {
+    return request<StockMovementView>(
+      `/api/stock-movements/${movementId}/void-purchase`,
+      { method: "POST" },
     );
   },
 

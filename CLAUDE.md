@@ -126,6 +126,11 @@ day boundaries), `lib/db` (Prisma), `lib/api/*` (route helpers —
 - **Corrections are new rows, never overwrites.** Only the Admin may
   correct a record dated to an already-closed day; staff edit their own
   same-day entries directly before close.
+- **A ledger-row create path ships with its correction path in the same
+  PR** (ADR-72). A new `recordX` writing a stock/money ledger row is
+  incomplete without a `correctX` (and, where a full undo fits, a
+  `voidX`) — domain + route + a per-row screen action. Copy
+  `correctExpense` / `correctPurchasePayment`.
 - **`app/api/*` route handlers contain no business logic.** Parse →
   validate (Zod) → check auth/role/ownership → call `lib/domain/<module>`
   → return the standard response shape.

@@ -39,6 +39,10 @@ export {
 } from "./transfer";
 export { correctMovement } from "./correct-movement";
 export {
+  correctPurchasePayment,
+  voidPurchasePayment,
+} from "./correct-purchase-payment";
+export {
   listMovements,
   listOutstandingPurchases,
   listOutstandingPurchasesForLocation,

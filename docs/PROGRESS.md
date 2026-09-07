@@ -16,6 +16,59 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix + Feature — Correct / Void a supplier purchase payment; audit of every "no undo" ledger path (2026-09-07) — DONE
+
+Client recorded a supplier purchase payment (biscuits, "Chieni Wholesale")
+with the wrong quantity and cost and could not fix it in the app — the fix
+was a raw SQL `DELETE` in Neon. Root cause: `recordPurchasePayment` had no
+correction path at any layer, and the Financials → Stock Purchases table
+was read-only.
+
+**Immediate.** SQL delete of the wrong `purchase_payment` + its paired
+`purchase_payment` `MoneyMovement` (given to the client to run; a matched
+delivery would have blocked it — it wasn't).
+
+**Feature (this PR — purchase payments only).**
+- `correctPurchasePayment` / `voidPurchasePayment`
+  (`lib/domain/stock/correct-purchase-payment.ts`) — append-only
+  correction row (ADR-15) + paired `MoneyMovement` delta(s) (two legs when
+  the paid-from account changes) + catalog `buyingPrice` reset. Void
+  refunds the account and rolls the buying price back to
+  `stock_movement.purchase_prior_buying_price` (new column, captured at
+  payment time). A payment with a matched `purchase_receipt` → `CONFLICT`.
+- Routes `POST /api/stock-movements/:id/correct-purchase` +
+  `/void-purchase` (thin, `requireApiRole("admin")`).
+- `listMovements` folds `purchase_payment` corrections into one line with
+  the current values; correction rows dropped from that list.
+- Financials → Stock Purchases: per-row **Correct** action +
+  `PurchasePaymentCorrectionDrawer` (compose of the kit rail Drawer;
+  Void behind a confirm step). Desktop + mobile.
+- Audit-trail: `oldValue`/`newValue` share scalar keys so the entry
+  renders a real was→now table; `purchase*` numeric keys + `reversalId`
+  added to `audit-format.ts`.
+
+**Audit + rule.** Every ledger row created outside the Order/Handover
+flows was checked; owner draws/returns, repayments, pay adjustments,
+staff payouts and closed-day canteen counts have the same "no undo" wall
+and are **deferred to follow-up sessions** (the migration already carries
+their `corrects_*_id` columns). New **ADR-72**: a `recordX` for a ledger
+row is incomplete without its `correctX` in the same PR — added to the
+Loop B checklist in `CLAUDE.md` + `docs/maintenance.md`.
+
+**Files.** `prisma/schema.prisma` +
+migration `20260907120000_add_correction_links_owner_repayment_purchase`;
+`lib/domain/stock/{correct-purchase-payment.ts,purchases.ts,list-movements.ts,index.ts,types.ts}`;
+`lib/validation/stock.ts`;
+`app/api/stock-movements/[id]/{correct-purchase,void-purchase}/route.ts`;
+`app/admin/financials/{transactions-tab.tsx,purchase-payment-correction-drawer.tsx}`;
+`app/admin/stock/use-stock.ts`; `app/admin/audit-trail/audit-format.ts`;
+tests `lib/domain/stock/correct-purchase-payment.test.ts` (10) +
+`tests/screens/financials.screen.test.tsx` (+2). ADR-72, ADR-15.
+
+**Gate.** `pnpm typecheck` ✓ · `pnpm build` ✓ · `pnpm test` ✓ (1220/1220).
+
+---
+
 ## Feature — Stock ledger KPI band now shows stock-VALUE figures, scoped by location (2026-09-07) — DONE
 
 Client asked to see opening and closing stock *value* on the Stock &
