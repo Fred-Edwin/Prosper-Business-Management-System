@@ -40,7 +40,10 @@ import { useLedger, usePeriodLedger, useProductDayLedger } from "./use-stock";
 import { deriveLedgerRows } from "./derive-ledger";
 import { derivePeriodSummaryRows } from "./derive-period-summary";
 import { deriveProductDayRows } from "./derive-product-days";
-import { deriveStockValueKpis, type StockValueScope } from "@/lib/domain/stock";
+import {
+  deriveStockValueKpis,
+  type StockValueScope,
+} from "@/lib/domain/stock/stock-value-kpis";
 import { SegmentedControl } from "@/components/kit/segmented-control";
 import { AdminDateRangeControl } from "@/app/admin/date-range-control";
 import { useAdminDateRange, shortBusinessDateWithYear } from "@/app/admin/use-date-range";
