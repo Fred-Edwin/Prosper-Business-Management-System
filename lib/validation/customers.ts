@@ -45,6 +45,19 @@ export const recordRepaymentSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+/**
+ * `POST /api/customers/:id/repayments/:repaymentId/correct` — append-only
+ * correction (Admin, ADR-72). `amount` is the corrected FINAL value; the
+ * domain writes a linked delta `Repayment` row + paired `MoneyMovement`.
+ * `account` / `note` fall back to the original row when omitted.
+ */
+export const correctRepaymentSchema = z.object({
+  amount: decimalString,
+  account: moneyAccount.optional(),
+  note: z.string().trim().max(500).optional(),
+});
+
 export type CreateCustomerBody = z.infer<typeof createCustomerSchema>;
 export type ListCustomersQuery = z.infer<typeof listCustomersQuerySchema>;
 export type RecordRepaymentBody = z.infer<typeof recordRepaymentSchema>;
+export type CorrectRepaymentBody = z.infer<typeof correctRepaymentSchema>;

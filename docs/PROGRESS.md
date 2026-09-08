@@ -16,6 +16,56 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature — Correct / Void for Debt Repayments (2026-09-08) — DONE
+
+Third ADR-72 follow-up: `Repayment` now has its correction path, matching
+the purchase-payment / owner-transaction template. Uses the
+`corrects_repayment_id` self-FK from the PR #8 migration — **no new
+migration**.
+
+- **Domain** — `lib/domain/customers/correct-repayment.ts`:
+  `correctRepayment({ repaymentId, amount, account?, note? }, actor)` /
+  `voidRepayment(id, actor)`. Admin-only, not day-close gated. A
+  correction is a signed `Repayment` row on `correctsRepaymentId` carrying
+  the delta = `corrected − (original + Σ prior deltas)`; zero delta with
+  an unchanged account → `VALIDATION_ERROR`; correcting a correction →
+  `VALIDATION_ERROR`. One linked `Repayment` + a paired `MoneyMovement`
+  (`sourceType: "repayment"`, +delta = money in; an account change refunds
+  the old account and debits the new). `AuditLog` `"correct"` /
+  `"soft_delete"` with `oldValue` + `newValue` sharing `amount` / `account`
+  keys (real Was/Now table).
+- **Read fold** — `getCustomerLedger` folds each repayment's correction
+  deltas into its derived `amount`, drops the correction rows from
+  `entries`, and drops a voided-to-zero repayment entirely; the running
+  balance and `listCustomers`' `SUM(Repayment.amount)` already sum the
+  signed rows blindly, so no change there. Ledger entries now carry
+  `repaymentId` (the original's id, the correct/void target).
+- **Routes** — `app/api/customers/[id]/repayments/[repaymentId]/correct`
+  + `/void`, thin `requireApiRole("admin")` handlers.
+- **Zod** — `correctRepaymentSchema` in `lib/validation/customers.ts`.
+- **Frontend** — per-row **Correct** action on the Admin customer-detail
+  ledger (desktop table col + mobile card); new
+  `app/admin/customers/[id]/repayment-correction-drawer.tsx` (prefilled
+  corrected amount / account / note + Void-behind-confirm), following
+  `purchase-payment-correction-drawer.tsx`. Wired through
+  `useCustomerLedger` (`correctRepayment`, `voidRepayment`).
+- **Tests** — `correct-repayment.test.ts` (13 cases: delta math, money
+  ledger sign, account-change two-leg, ledger fold, idempotent re-submit,
+  no-chaining, zero/negative amount, non-admin `FORBIDDEN`, audit payload,
+  overpaying-correction → negative balance, void-to-zero + ledger drop,
+  void-after-correct, double-void, soft_delete audit). 3 screen cases in
+  `admin-customers.screen.test.tsx` (Correct only on repayment rows,
+  drawer prefill/submit, Void confirm step).
+- **Owner decision flagged** — a correction/void that overpays drives the
+  customer balance negative. Kept consistent with `recordRepayment`'s
+  deliberate overpayment allowance (ADR-19) rather than inventing a block
+  or warning; noted in the PR for the owner to confirm.
+- **ADR touched** — ADR-72 (deferred list: debt repayments now done).
+- **Gates** — `pnpm test` 1248 pass (150 files) · `typecheck` clean ·
+  `build` clean.
+
+---
+
 ## Feature — Correct / Void for Owner Draws & Returns (2026-09-08) — DONE
 
 Second ADR-72 follow-up: `OwnerTransaction` now has its correction path,

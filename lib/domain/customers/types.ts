@@ -67,6 +67,13 @@ export type CustomerLedgerEntry = {
   account?: MoneyAccount;
   /** Present only for `kind: "repayment"` — the optional free-text note. */
   note?: string;
+  /**
+   * Present only for `kind: "repayment"` — the original `Repayment.id`,
+   * the target of `POST …/repayments/:id/correct` | `/void` (ADR-72). The
+   * `amount` above is the CURRENT derived value (folded corrections); the
+   * correction rows themselves are not returned as entries.
+   */
+  repaymentId?: string;
   /** Balance after applying this entry (+debt, −repayment), decimal string. */
   runningBalance: string;
 };
@@ -95,6 +102,20 @@ export type Repayment = {
   account: MoneyAccount;
   occurredAt: string;
   createdAt: string;
+};
+
+/**
+ * `correctRepayment` input (ADR-72). `amount` is the corrected FINAL
+ * repayment value (decimal string, > 0), not a delta — the domain
+ * computes the signed delta vs. the row's current derived amount and
+ * writes one linked `Repayment` row + the paired `MoneyMovement`.
+ * `account` / `note` default to the original row's when omitted.
+ */
+export type CorrectRepaymentInput = {
+  repaymentId: string;
+  amount: string;
+  account?: MoneyAccount;
+  note?: string;
 };
 
 /**
