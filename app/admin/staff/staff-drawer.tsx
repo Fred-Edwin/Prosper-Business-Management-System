@@ -34,6 +34,8 @@ import { ROLE_LABEL } from "./format";
 import type { LocationOption } from "./use-staff";
 import { StaffRequestError } from "./use-staff";
 
+type CreateWithAccess = Extract<CreateStaffBody, { appAccess: true }>;
+
 const ROLE_OPTIONS = (
   ["store_manager", "cashier", "canteen_attendant"] as const
 ).map((r) => ({ value: r, label: ROLE_LABEL[r] }));
@@ -73,8 +75,18 @@ export function StaffDrawer({
   const { toast } = useToast();
   const isEdit = mode === "edit";
 
+  // App access decides the shape: ON → role + PIN + a login `User`;
+  // OFF → a job title only, no login (a cook / casual). Fixed at creation
+  // — the edit drawer shows it read-only (granting/revoking access is a
+  // deactivate-and-re-add, mirroring how the Active toggle only goes off).
+  const [appAccess, setAppAccess] = React.useState<boolean>(
+    target ? target.appAccess : true,
+  );
   const [name, setName] = React.useState(target?.name ?? "");
   const [role, setRole] = React.useState<string>(target?.role ?? "");
+  const [jobTitle, setJobTitle] = React.useState<string>(
+    target?.jobTitle ?? "",
+  );
   const [locationId, setLocationId] = React.useState<string>(
     target?.locationId ?? "",
   );
@@ -101,10 +113,12 @@ export function StaffDrawer({
 
   const canSubmit =
     name.trim().length > 0 &&
-    role !== "" &&
     locationId !== "" &&
     validRate(dailyRate) &&
-    (isEdit ? pin === "" || validPin(pin) : validPin(pin)) &&
+    (appAccess
+      ? role !== "" &&
+        (isEdit ? pin === "" || validPin(pin) : validPin(pin))
+      : jobTitle.trim().length > 0) &&
     !submitting;
 
   async function submit() {
@@ -124,20 +138,34 @@ export function StaffDrawer({
         }
         const body: UpdateStaffBody = {
           name: name.trim(),
-          role: role as CreateStaffBody["role"],
           locationId,
           dailyRate: dailyRate.trim(),
-          ...(pin.trim() ? { pin: pin.trim() } : {}),
+          ...(target.appAccess
+            ? {
+                role: role as CreateWithAccess["role"],
+                ...(pin.trim() ? { pin: pin.trim() } : {}),
+              }
+            : { jobTitle: jobTitle.trim() }),
         };
         await onUpdate(target.id, body);
         toast("Staff member updated", { tone: "success" });
-      } else {
+      } else if (appAccess) {
         await onCreate({
+          appAccess: true,
           name: name.trim(),
-          role: role as CreateStaffBody["role"],
+          role: role as CreateWithAccess["role"],
           locationId,
           dailyRate: dailyRate.trim(),
           pin: pin.trim(),
+        });
+        toast("Staff member added", { tone: "success" });
+      } else {
+        await onCreate({
+          appAccess: false,
+          name: name.trim(),
+          jobTitle: jobTitle.trim(),
+          locationId,
+          dailyRate: dailyRate.trim(),
         });
         toast("Staff member added", { tone: "success" });
       }
@@ -159,7 +187,13 @@ export function StaffDrawer({
       open
       onClose={onClose}
       title={isEdit ? "Edit staff member" : "Add staff"}
-      subtitle={isEdit ? (target?.name ?? "") : "New team member with a login"}
+      subtitle={
+        isEdit
+          ? (target?.name ?? "")
+          : appAccess
+            ? "New team member with a login"
+            : "New team member — roster only, no login"
+      }
       variant="rail"
       footer={
         <>
@@ -200,15 +234,62 @@ export function StaffDrawer({
         )}
       </FormField>
 
-      <Select
-        label="Role"
-        required
-        className="w-full"
-        placeholder="Select a role…"
-        value={role}
-        onChange={setRole}
-        options={ROLE_OPTIONS}
-      />
+      {/* App access — decides the shape of the rest of the form. Fixed at
+          creation; shown read-only when editing. */}
+      <div className="flex items-start gap-(--sp-5) pt-(--sp-2)">
+        <ToggleSwitch
+          checked={appAccess}
+          disabled={isEdit}
+          onChange={setAppAccess}
+          aria-label="Can log into the app"
+        />
+        <div className="flex flex-col gap-(--sp-1)">
+          <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
+            Can log into the app
+          </span>
+          <span className="font-ui [color:var(--text-tertiary)] text-caption/micro">
+            {isEdit
+              ? appAccess
+                ? "This staff member has an app login. Access can't be changed here."
+                : "Roster-only — attendance and pay are tracked, but no app login. This can't be changed here."
+              : appAccess
+                ? "They'll get a login PIN and an app role."
+                : "For cooks and casuals — tracked for attendance and pay, no login. Give them a job title instead of a role."}
+          </span>
+        </div>
+      </div>
+
+      {appAccess ? (
+        <Select
+          label="Role"
+          required
+          className="w-full"
+          placeholder="Select a role…"
+          value={role}
+          onChange={setRole}
+          options={ROLE_OPTIONS}
+        />
+      ) : (
+        <FormField label="Job title" required error={fieldErrors.jobTitle}>
+          {({
+            id,
+            "aria-describedby": describedBy,
+            "aria-invalid": invalid,
+          }) => (
+            <div className={fieldBox}>
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
+                value={jobTitle}
+                onChange={(e) => setJobTitle(e.target.value)}
+                placeholder="e.g. Cook"
+                className="font-ui [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
+              />
+            </div>
+          )}
+        </FormField>
+      )}
 
       <Select
         label="Location"
@@ -245,34 +326,40 @@ export function StaffDrawer({
         )}
       </FormField>
 
-      <FormField
-        label={isEdit ? "Reset login PIN" : "4-digit login PIN"}
-        required={!isEdit}
-        hint={
-          isEdit
-            ? "Leave blank to keep the current PIN."
-            : "The Admin sets the initial PIN."
-        }
-        error={fieldErrors.pin}
-      >
-        {({ id, "aria-describedby": describedBy, "aria-invalid": invalid }) => (
-          <div className={fieldBox}>
-            <input
-              id={id}
-              aria-describedby={describedBy}
-              aria-invalid={invalid}
-              value={pin}
-              onChange={(e) =>
-                setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
-              }
-              inputMode="numeric"
-              autoComplete="off"
-              placeholder={isEdit ? "••••" : "1234"}
-              className="font-mono [color:var(--text-primary)] text-body/body w-full bg-transparent outline-none [letter-spacing:0.4em] placeholder:[color:var(--text-tertiary)] placeholder:[letter-spacing:0.4em]"
-            />
-          </div>
-        )}
-      </FormField>
+      {appAccess && (
+        <FormField
+          label={isEdit ? "Reset login PIN" : "4-digit login PIN"}
+          required={!isEdit}
+          hint={
+            isEdit
+              ? "Leave blank to keep the current PIN."
+              : "The Admin sets the initial PIN."
+          }
+          error={fieldErrors.pin}
+        >
+          {({
+            id,
+            "aria-describedby": describedBy,
+            "aria-invalid": invalid,
+          }) => (
+            <div className={fieldBox}>
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
+                value={pin}
+                onChange={(e) =>
+                  setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+                }
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder={isEdit ? "••••" : "1234"}
+                className="font-mono [color:var(--text-primary)] text-body/body w-full bg-transparent outline-none [letter-spacing:0.4em] placeholder:[color:var(--text-tertiary)] placeholder:[letter-spacing:0.4em]"
+              />
+            </div>
+          )}
+        </FormField>
+      )}
 
       <div className="flex items-start gap-(--sp-5) pt-(--sp-2)">
         <ToggleSwitch

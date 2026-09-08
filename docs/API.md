@@ -1050,14 +1050,25 @@ blocked state, not a toast. Clean ⇒ the row is deleted. Returns
 > amount is always recomputed server-side, never client-supplied.
 
 ### `POST /api/staff`
-Body: `{ name, role: "store_manager" | "cashier" | "canteen_attendant",
-locationId, dailyRate, pin }` (`pin` = exactly 4 digits). Creates the
-`Staff` row **and** its linked login `User` in one transaction — the PIN
-is bcrypt-hashed exactly as the login flow expects (owner decision: the
-Admin sets the PIN; no first-login self-service). `locationId` must be an
-existing **active** location → else `400 VALIDATION_ERROR`. A login name
-already taken (`User.name` is unique) → `409 CONFLICT`. `201` with
-`{ data: StaffView }`.
+Body is discriminated on `appAccess`:
+
+- `{ appAccess: true, name, role: "store_manager" | "cashier" |
+  "canteen_attendant", locationId, dailyRate, pin }` (`pin` = exactly 4
+  digits) — a team member who signs in. Creates the `Staff` row **and**
+  its linked login `User` in one transaction; the PIN is bcrypt-hashed
+  exactly as the login flow expects (owner decision: the Admin sets the
+  PIN; no first-login self-service). A login name already taken
+  (`User.name` is unique) → `409 CONFLICT`.
+- `{ appAccess: false, name, jobTitle, locationId, dailyRate }` — a
+  **roster-only** staff member (a cook / casual the owner wants for
+  attendance + pay but who never uses the app). Just a `Staff` row:
+  `role` is `null`, `jobTitle` is a required free-text label, **no
+  `User`, no PIN**. The name need not be unique.
+
+`locationId` must be an existing **active** location → else
+`400 VALIDATION_ERROR`. `201` with `{ data: StaffView }`. `StaffView`
+carries `role` (`null` for roster-only), `jobTitle` (`null` when `role`
+is set), and `appAccess`.
 
 ### `GET /api/staff`
 Query: `?search=&active=&locationId=` (all optional; `active` is
@@ -1069,12 +1080,16 @@ Query: `?search=&active=&locationId=` (all optional; `active` is
 ### `PATCH /api/staff/:id`
 Two modes:
 
-- **Edit** (no query): body `{ name?, role?, locationId?, dailyRate?,
-  pin? }` (at least one key). `name` / `role` propagate to the linked
-  `User`; a name clash → `409 CONFLICT`. `locationId` (the field that
-  drives role-scoping) is validated against an active location. `pin`
-  resets `User.pinHash`. A true edit, not a correction row. `200` with
-  `{ data: StaffView }`.
+- **Edit** (no query): body `{ name?, role?, jobTitle?, locationId?,
+  dailyRate?, pin? }` (at least one key; `role` and `jobTitle` are
+  mutually exclusive). `name` / `role` propagate to the linked `User`; a
+  name clash → `409 CONFLICT`. `locationId` (the field that drives
+  role-scoping) is validated against an active location. `pin` resets
+  `User.pinHash`. For a **roster-only** staff member (no `User`):
+  `jobTitle` edits, but `role` / `pin` → `400 VALIDATION_ERROR`
+  (granting app access is a deactivate-and-re-add); for a login-holding
+  staff member, `jobTitle` → `400`. A true edit, not a correction row.
+  `200` with `{ data: StaffView }`.
 - **Deactivate** (`?mode=deactivate`, body ignored): soft — sets
   `Staff.active = false` **and `User.active = false`** in one transaction
   (ADR-59), so the staff member can no longer sign in and any live

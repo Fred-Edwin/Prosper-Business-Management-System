@@ -4058,3 +4058,63 @@ recur on any deploy whose migrate step leaked a connection.
 - Follow-up (owner, Vercel dashboard): append `&connect_timeout=30` to
   the prod `DATABASE_URL` env var as belt-and-braces against the
   original socket timeout.
+
+---
+
+## ADR-75: A staff member can exist with no login — `Staff.role` is nullable and `job_title` carries the label instead (Owner + Developer, 2026-09-08)
+
+**Context.** The client runs staff who never use the app — cooks, casual
+labour — but she still wants them on the roster so she can mark their
+attendance and track/pay them. Until now every `Staff` row was created in
+one transaction with a linked login `User` (`createStaff`), which needs a
+PIN and one of the three staff `Role` values. There was no way to have a
+person on the roster who cannot sign in.
+
+This is PR 1 of a three-part staff-pay rework (the other two: a
+daily-entry pay model where the Admin types the day's amount instead of
+`rate × days`, and multiple partial payouts per staff-month — both
+deferred to their own PRs).
+
+**Decision.**
+
+1. **`Staff.role` becomes nullable; add `Staff.job_title` (nullable
+   free-text).** A staff member is one of two shapes:
+   - **app access** — `role` set, a linked `User`, a PIN. Unchanged.
+   - **roster-only** — `role` NULL, `job_title` set ("Cook", "Casual"),
+     **no `User`**. Still has a `location_id`, `daily_rate`, attendance,
+     and pay.
+   Exactly one of (`role` + `User`) or (`job_title`, no `User`) holds.
+   Enforced in `createStaff`, **not** the DB — there is no clean
+   single-table CHECK for "has a `user` row", and the app is the only
+   writer.
+
+2. **`job_title` is a display label only.** Nothing branches on it.
+   Location scoping keys off `User.role` via the session, so a
+   roster-only staff member (no session) never reaches those paths. The
+   four `/admin/staff` captions that showed `ROLE_LABEL[s.role]` now call
+   `staffLabel(s)` — the role label, or `job_title` when `role` is null.
+
+3. **`createStaff` input is discriminated on `appAccess`** (`true` →
+   `role` + `pin` required; `false` → `job_title` required, no `User`).
+   A roster-only name need not be globally unique — there is no login to
+   collide with.
+
+4. **`updateStaff` cannot grant or revoke app access.** For a
+   roster-only staff member `role` / `pin` are rejected
+   (`VALIDATION_ERROR`); for a login-holding one `job_title` is
+   rejected. Changing access is deactivate + re-add — the same "one-way,
+   do it deliberately" shape the Active toggle already has.
+
+**Consequences.**
+
+- Migration `20260908140000_add_roster_only_staff` is widening only:
+  `ALTER COLUMN role DROP NOT NULL` + `ADD COLUMN job_title`. Every
+  existing row keeps its `role` and `User`.
+- `StaffView` now carries `role: StaffRole | null`, `jobTitle: string |
+  null`, `appAccess: boolean`. Consumers that assumed a non-null `role`
+  (all display-only) updated.
+- `deactivateStaff` / `listStaff` already `?.`-guarded the `user`
+  relation, so they needed no change for the no-`User` case.
+- No `TODO(mock)`. The pay side is untouched — a roster-only staff
+  member is paid by exactly the same `rate × days present` path today;
+  the daily-entry model is a later PR.

@@ -17,7 +17,7 @@ import { Button } from "@/components/kit/button";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
 import type { StaffView } from "@/lib/domain/staff";
-import { ROLE_LABEL, money } from "./format";
+import { money, staffLabel } from "./format";
 import { StaffDrawer } from "./staff-drawer";
 import { ChangePinDrawer } from "./change-pin-drawer";
 import { useChangeOwnPin, useLocations, useRoster } from "./use-staff";
@@ -96,7 +96,7 @@ export function RosterTab({
       width: "w-[150px] shrink-0",
       render: (s) => (
         <span className="font-ui [color:var(--text-secondary)] text-sm/sm">
-          {ROLE_LABEL[s.role] ?? s.role}
+          {staffLabel(s)}
         </span>
       ),
     },
@@ -223,7 +223,7 @@ export function RosterTab({
                     {s.name}
                   </span>
                   <span className="font-ui [color:var(--text-tertiary)] text-sm/sm truncate">
-                    {ROLE_LABEL[s.role] ?? s.role} · {s.locationName}
+                    {staffLabel(s)} · {s.locationName}
                   </span>
                 </div>
                 <div className="flex flex-col items-end shrink-0 gap-(--sp-1)">

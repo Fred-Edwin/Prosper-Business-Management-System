@@ -103,6 +103,8 @@ function staff(over: Partial<StaffView> = {}): StaffView {
     id: "s1",
     name: "Grace Wanjiru",
     role: "cashier",
+    jobTitle: null,
+    appAccess: true,
     locationId: "loc-r",
     locationName: "Restaurant",
     dailyRate: "800.00",
@@ -219,6 +221,7 @@ describe("Roster — add staff drawer", () => {
     await waitFor(() => expect(createStaff).toHaveBeenCalledOnce());
     expect(createStaff).toHaveBeenCalledWith(
       expect.objectContaining({
+        appAccess: true,
         name: "Brian Kiptoo",
         role: "cashier",
         locationId: "loc-c",
@@ -227,6 +230,53 @@ describe("Roster — add staff drawer", () => {
       }),
     );
     expect(await screen.findByText("Staff member added")).toBeInTheDocument();
+  });
+
+  it("adds a roster-only staff member — job title, no role or PIN", async () => {
+    const user = userEvent.setup();
+    let openAdd: () => void = () => {};
+    render(
+      <ToastProvider placement="top-right">
+        <RosterTab registerAddStaff={(fn) => (openAdd = fn)} />
+      </ToastProvider>,
+    );
+
+    openAdd();
+    const dialog = await screen.findByRole("dialog");
+
+    await user.click(
+      within(dialog).getByLabelText(/Can log into the app/i),
+    );
+
+    // Role select and PIN field are gone; a Job title field appears.
+    expect(
+      within(dialog).queryByRole("combobox", { name: /Role/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByLabelText(/login PIN/i),
+    ).not.toBeInTheDocument();
+
+    await user.type(within(dialog).getByLabelText(/^Full name/), "Mama Njeri");
+    await user.type(within(dialog).getByLabelText(/^Job title/), "Cook");
+    await user.click(within(dialog).getByRole("combobox", { name: /Location/ }));
+    await user.click(await screen.findByRole("option", { name: "Canteen" }));
+    await user.type(within(dialog).getByLabelText(/^Daily rate/), "800");
+
+    await user.click(within(dialog).getByRole("button", { name: "Add staff" }));
+
+    await waitFor(() => expect(createStaff).toHaveBeenCalledOnce());
+    expect(createStaff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appAccess: false,
+        name: "Mama Njeri",
+        jobTitle: "Cook",
+        locationId: "loc-c",
+        dailyRate: "800",
+      }),
+    );
+    expect(createStaff).toHaveBeenCalledWith(
+      expect.not.objectContaining({ pin: expect.anything() }),
+    );
   });
 
   it("keeps Add staff disabled until the PIN is exactly 4 digits", async () => {

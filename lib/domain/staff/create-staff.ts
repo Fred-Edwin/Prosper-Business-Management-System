@@ -3,6 +3,7 @@ import { DomainError } from "./errors";
 import {
   assertStaffRole,
   hashPin,
+  normaliseJobTitle,
   normaliseName,
   parseDailyRate,
   staffInclude,
@@ -11,22 +12,31 @@ import {
 import type { CreateStaffInput, StaffActor, StaffView } from "./types";
 
 /**
- * Create a staff member AND their login account in ONE transaction
- * (owner decision, M4 S8A). **Admin-only** — enforced at the route; the
- * `actor.role` check here is defence in depth.
+ * Create a staff member (M4; roster-only staff added in the staff-pay
+ * rework, PR 1). **Admin-only** — enforced at the route; the `actor.role`
+ * check here is defence in depth.
  *
- *   - `Staff`: name, role, locationId (REQUIRED — drives role-scoping),
- *     dailyRate, active: true.
- *   - `User`: name (must be globally unique — `User.name @unique`), the
- *     bcrypt-hashed PIN (10 rounds, exactly as the seed / login flow),
- *     the same `role`, `staffId` linking back, active: true.
+ * Two shapes, discriminated by `input.appAccess`:
  *
- * `User.name` is unique, so a name already taken by any login (staff or a
- * prior Admin account) is `CONFLICT` — nothing is written.
+ *   - `appAccess: true` — a team member who signs into the app. In ONE
+ *     transaction:
+ *       - `Staff`: name, role, locationId (REQUIRED — drives role-scoping),
+ *         dailyRate, jobTitle: null, active: true.
+ *       - `User`: name (globally unique — `User.name @unique`), the
+ *         bcrypt-hashed PIN (10 rounds, exactly as the seed / login flow),
+ *         the same `role`, `staffId` linking back, active: true.
+ *     `User.name` is unique, so a name already taken by any login is
+ *     `CONFLICT` — nothing is written.
  *
- * Writes an `AuditLog` row — a staff member is not a ledger entity, so its
- * creation isn't otherwise self-evident (the `createCustomer` pattern).
- * The PIN is never put in `newValue`.
+ *   - `appAccess: false` — a roster-only staff member (a cook / casual the
+ *     owner wants for attendance + pay but who never uses the app). Just a
+ *     `Staff` row: name, jobTitle (REQUIRED), locationId, dailyRate,
+ *     role: null. NO `User`, NO PIN. The name need not be globally unique
+ *     (there is no login to collide with).
+ *
+ * Writes an `AuditLog` row either way — a staff member is not a ledger
+ * entity, so its creation isn't otherwise self-evident (the
+ * `createCustomer` pattern). The PIN is never put in `newValue`.
  */
 export async function createStaff(
   input: CreateStaffInput,
@@ -37,9 +47,7 @@ export async function createStaff(
   }
 
   const name = normaliseName(input.name);
-  assertStaffRole(input.role);
   const dailyRate = parseDailyRate(input.dailyRate);
-  const pinHash = await hashPin(input.pin);
 
   const location = await prisma.location.findUnique({
     where: { id: input.locationId },
@@ -60,6 +68,50 @@ export async function createStaff(
     );
   }
 
+  // ── Roster-only: a bare Staff row, no login ──────────────────────────
+  if (input.appAccess === false) {
+    const jobTitle = normaliseJobTitle(input.jobTitle);
+
+    const row = await prisma.$transaction(async (tx) => {
+      const staff = await tx.staff.create({
+        data: {
+          name,
+          role: null,
+          jobTitle,
+          locationId: input.locationId,
+          dailyRate,
+          active: true,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: actor.actorId,
+          action: "create",
+          entityType: "staff",
+          entityId: staff.id,
+          newValue: {
+            name: staff.name,
+            jobTitle,
+            locationId: staff.locationId,
+            dailyRate: dailyRate.toFixed(2),
+            appAccess: false,
+          },
+          occurredAt: staff.createdAt,
+        },
+      });
+      return tx.staff.findUniqueOrThrow({
+        where: { id: staff.id },
+        include: staffInclude,
+      });
+    });
+
+    return toStaffView(row);
+  }
+
+  // ── App access: Staff + linked login User ────────────────────────────
+  assertStaffRole(input.role);
+  const pinHash = await hashPin(input.pin);
+
   const nameClash = await prisma.user.findUnique({
     where: { name },
     select: { id: true },
@@ -77,6 +129,7 @@ export async function createStaff(
       data: {
         name,
         role: input.role,
+        jobTitle: null,
         locationId: input.locationId,
         dailyRate,
         active: true,
@@ -102,6 +155,7 @@ export async function createStaff(
           role: staff.role,
           locationId: staff.locationId,
           dailyRate: dailyRate.toFixed(2),
+          appAccess: true,
         },
         occurredAt: staff.createdAt,
       },

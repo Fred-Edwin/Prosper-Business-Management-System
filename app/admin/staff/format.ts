@@ -7,6 +7,19 @@ export const ROLE_LABEL: Record<string, string> = {
   canteen_attendant: "Canteen Attendant",
 };
 
+/**
+ * The role/job caption for a staff member. A login-holding staff member
+ * shows their app role; a roster-only one (cook / casual — `role` null)
+ * shows their free-text `jobTitle`.
+ */
+export function staffLabel(s: {
+  role: string | null;
+  jobTitle: string | null;
+}): string {
+  if (s.role) return ROLE_LABEL[s.role] ?? s.role;
+  return s.jobTitle ?? "—";
+}
+
 export const ACCOUNT_LABEL: Record<string, string> = {
   cash: "Cash",
   mpesa_bank: "M-Pesa / Bank",

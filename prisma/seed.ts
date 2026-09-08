@@ -140,6 +140,7 @@ async function main() {
     const staffFields = {
       name: s.name,
       role: s.role,
+      jobTitle: null,
       locationId: s.locationId,
       dailyRate: s.dailyRate,
       active: true,
@@ -156,6 +157,29 @@ async function main() {
     });
   }
 
+  // One roster-only staff member (ADR-75): a cook who never uses the app
+  // but is tracked for attendance + pay. No `role`, no linked `User`.
+  await prisma.staff.upsert({
+    where: { id: "seed-staff-cook" },
+    update: {
+      name: "Cook",
+      role: null,
+      jobTitle: "Cook",
+      locationId: restaurant.id,
+      dailyRate: "800.00",
+      active: true,
+    },
+    create: {
+      id: "seed-staff-cook",
+      name: "Cook",
+      role: null,
+      jobTitle: "Cook",
+      locationId: restaurant.id,
+      dailyRate: "800.00",
+      active: true,
+    },
+  });
+
   // Any other login left over from an earlier seed or a manual test is
   // deactivated rather than deleted (AuditLog RESTRICT), so the PIN
   // screen only offers the five accounts above.
@@ -167,7 +191,14 @@ async function main() {
   // Staff rows carry no AuditLog FK, so orphans from earlier seeds CAN be
   // deleted — and must be, or they surface as phantom staff.
   await prisma.staff.deleteMany({
-    where: { id: { notIn: staffSeeds.map((s) => `seed-staff-${s.key}`) } },
+    where: {
+      id: {
+        notIn: [
+          ...staffSeeds.map((s) => `seed-staff-${s.key}`),
+          "seed-staff-cook",
+        ],
+      },
+    },
   });
 
   // ── §3 Catalogue ─────────────────────────────────────────────────────

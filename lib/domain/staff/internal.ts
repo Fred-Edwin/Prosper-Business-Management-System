@@ -42,6 +42,19 @@ export function normaliseName(name: string, field = "name"): string {
   return trimmed;
 }
 
+/** Trim + require a non-empty job title (roster-only staff). */
+export function normaliseJobTitle(value: string, field = "jobTitle"): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "Job title is required for a staff member without app access.",
+      field,
+    );
+  }
+  return trimmed;
+}
+
 const RATE_RE = /^\d+(\.\d{1,2})?$/;
 
 /** Decimal string → `Prisma.Decimal`, must be ≥ 0. */
@@ -64,7 +77,8 @@ export function parseDailyRate(value: string, field = "dailyRate"): Prisma.Decim
 type StaffRow = {
   id: string;
   name: string;
-  role: string;
+  role: string | null;
+  jobTitle: string | null;
   locationId: string;
   location: { name: string };
   dailyRate: Prisma.Decimal;
@@ -79,7 +93,9 @@ export function toStaffView(row: StaffRow): StaffView {
   return {
     id: row.id,
     name: row.name,
-    role: row.role as StaffRole,
+    role: (row.role as StaffRole | null) ?? null,
+    jobTitle: row.jobTitle,
+    appAccess: row.user !== null,
     locationId: row.locationId,
     locationName: row.location.name,
     dailyRate: row.dailyRate.toFixed(2),

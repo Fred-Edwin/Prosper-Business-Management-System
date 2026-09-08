@@ -4,6 +4,7 @@ import { DomainError } from "./errors";
 import {
   assertStaffRole,
   hashPin,
+  normaliseJobTitle,
   normaliseName,
   parseDailyRate,
   staffInclude,
@@ -19,14 +20,20 @@ import type { StaffActor, StaffView, UpdateStaffInput } from "./types";
  * `User` never drift:
  *
  *   - `name`       → updated on BOTH rows (`User.name` is the login handle
- *     and is `@unique`, so a clash with another login is `CONFLICT`).
+ *     and is `@unique`, so a clash with another login is `CONFLICT`). A
+ *     roster-only staff member has no `User`, so only `Staff.name` moves.
  *   - `role`       → updated on BOTH rows (the session's role comes from
- *     `User.role`).
+ *     `User.role`). **Rejected for a roster-only staff member** — there is
+ *     no login to carry a role; granting app access is deactivate +
+ *     re-create.
+ *   - `jobTitle`   → `Staff` only, roster-only staff. Rejected for a
+ *     staff member who has app access (`role` is the label there).
  *   - `locationId` → THE field that drives role-scoping. Reassigning it
  *     moves which orders / handovers / stock the staff member sees. The
  *     target location must exist and be active.
  *   - `dailyRate`  → `Staff` only.
  *   - `pin`        → re-hashes `User.pinHash` (10 rounds). Never surfaced.
+ *     **Rejected for a roster-only staff member** (no login).
  *
  * `NOT_FOUND` if the staff id is unknown.
  */
@@ -52,6 +59,9 @@ export async function updateStaff(
     staffData.role = input.role;
     userData.role = input.role;
   }
+  if (input.jobTitle !== undefined) {
+    staffData.jobTitle = normaliseJobTitle(input.jobTitle);
+  }
   if (input.dailyRate !== undefined) {
     staffData.dailyRate = parseDailyRate(input.dailyRate);
   }
@@ -66,6 +76,34 @@ export async function updateStaff(
     });
     if (!existing) {
       throw new DomainError("NOT_FOUND", "Staff member not found.");
+    }
+
+    // Roster-only staff have no login: role / pin are meaningless and
+    // jobTitle is theirs alone; the inverse for a staff member with a
+    // login. Reject the mismatch rather than silently dropping the field.
+    if (existing.user) {
+      if (input.jobTitle !== undefined) {
+        throw new DomainError(
+          "VALIDATION_ERROR",
+          "This staff member signs into the app — set a role, not a job title.",
+          "jobTitle",
+        );
+      }
+    } else {
+      if (input.role !== undefined) {
+        throw new DomainError(
+          "VALIDATION_ERROR",
+          "This staff member has no app login. Granting app access is a deactivate-and-re-add.",
+          "role",
+        );
+      }
+      if (input.pin !== undefined) {
+        throw new DomainError(
+          "VALIDATION_ERROR",
+          "This staff member has no app login, so there is no PIN to reset.",
+          "pin",
+        );
+      }
     }
 
     if (input.locationId !== undefined && input.locationId !== existing.locationId) {
@@ -120,6 +158,9 @@ export async function updateStaff(
         newValue: {
           ...(input.name !== undefined ? { name: input.name.trim() } : {}),
           ...(input.role !== undefined ? { role: input.role } : {}),
+          ...(input.jobTitle !== undefined
+            ? { jobTitle: input.jobTitle.trim() }
+            : {}),
           ...(input.locationId !== undefined
             ? { locationId: input.locationId }
             : {}),

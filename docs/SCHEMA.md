@@ -44,11 +44,15 @@ Pay/attendance profile, distinct from login credentials.
 
 | Column | Notes |
 |---|---|
-| name | |
-| role | same enum as User.role |
+| name | not unique — a roster-only staff member has no login to collide with |
+| role | same enum as User.role; **nullable** — `NULL` for a roster-only staff member (a cook / casual with no app login) |
+| job_title | nullable free-text — set instead of `role` for a roster-only staff member; a display label only, nothing branches on it |
 | location_id | FK → `Location` |
 | daily_rate | NUMERIC |
 | active | |
+
+Exactly one of (`role` + a linked `User`) or (`job_title`, no `User`) is
+set — enforced in `createStaff`, not the DB.
 
 ---
 
