@@ -1,7 +1,7 @@
 import { Prisma, type MoneyAccount } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { assertDayOpen } from "@/lib/domain/audit";
-import { recordExpense } from "@/lib/domain/financials";
+import { recordExpense, recordMoneyMovement } from "@/lib/domain/financials";
 import {
   businessDateOnly,
   businessMonthRange,
@@ -51,6 +51,7 @@ type PayoutRow = {
   date: Date;
   paidFromAccount: MoneyAccount;
   expenseId: string;
+  reversedAt: Date | null;
 };
 
 function toPayoutView(row: PayoutRow): StaffPayoutView {
@@ -62,6 +63,7 @@ function toPayoutView(row: PayoutRow): StaffPayoutView {
     date: toBusinessDate(row.date),
     paidFromAccount: row.paidFromAccount,
     expenseId: row.expenseId,
+    reversedAt: row.reversedAt ? row.reversedAt.toISOString() : null,
   };
 }
 
@@ -288,6 +290,12 @@ export type StaffPayoutView = {
   paidFromAccount: MoneyAccount;
   /** The Salaries `Expense` this payout created. */
   expenseId: string;
+  /**
+   * ISO instant the payout was reversed (ADR-73), else `null`. A live
+   * payout (the only kind `getStaffPay.payout` returns) is always `null`
+   * here; the field carries history for a reversed-payout view.
+   */
+  reversedAt: string | null;
 };
 
 /**
@@ -337,8 +345,11 @@ export async function getStaffPay(
       },
       orderBy: { date: "asc" },
     }),
-    prisma.staffPayout.findUnique({
-      where: { staffId_month: { staffId, month: monthStartDate(month) } },
+    // Only a LIVE payout counts — a reversed one (ADR-73) leaves the
+    // staff-month payable again. The partial unique index guarantees at
+    // most one row matches.
+    prisma.staffPayout.findFirst({
+      where: { staffId, month: monthStartDate(month), reversedAt: null },
     }),
   ]);
 
@@ -453,7 +464,9 @@ export async function getPayrollSummary(month: string): Promise<PayrollSummary> 
       orderBy: { date: "asc" },
     }),
     prisma.staffPayout.findMany({
-      where: { staffId: { in: ids }, month: monthStartDate(month) },
+      // LIVE payouts only — a reversed one (ADR-73) makes the staff-month
+      // unpaid again.
+      where: { staffId: { in: ids }, month: monthStartDate(month), reversedAt: null },
     }),
   ]);
 
@@ -718,6 +731,149 @@ export async function payStaff(
   await prisma.$transaction((tx) => writePayout(tx, pay, input, actor));
 
   return getStaffPay(input.staffId, input.month);
+}
+
+/**
+ * Reverse a recorded staff payout (ADR-73, per ADR-72's deferred list).
+ * **Admin-only.** A payout's entire money/profit effect lives in the
+ * Salaries `Expense` it created, so a reversal:
+ *
+ *   1. loads the payout (never mutated) — rejects if the id is unknown
+ *      (`NOT_FOUND`) or it is already reversed (`reversedAt` set →
+ *      `CONFLICT`);
+ *   2. computes the linked expense's CURRENT derived amount
+ *      (`original + Σ any ADR-15 correction deltas an Admin already
+ *      applied via Financials → Expenses) and, if that is non-zero,
+ *      writes ONE offsetting `Expense` correction row
+ *      (`correctsExpenseId` = the expense id, `amount` = −currentDerived)
+ *      plus its paired positive `MoneyMovement`, restoring Cash and Net
+ *      Profit — the same body `correctExpense` uses (that function rejects
+ *      `"0.00"`, so it cannot be called directly for a full zero-out);
+ *   3. stamps `StaffPayout.reversedAt`. From then on `getStaffPay` /
+ *      `getPayrollSummary` / `payStaff` ignore this row (they filter
+ *      `reversedAt: null`), so the staff-month is **payable again** — a
+ *      fresh `payStaff` writes a new payout + a new Salaries `Expense`.
+ *
+ * All in ONE transaction. The disbursement date's day being closed does
+ * **not** block a reversal — an Admin delta row is always allowed (ADR-72
+ * rule §1: `correctX` is never day-close gated).
+ *
+ * Guards (each has a test):
+ *   - not admin → `FORBIDDEN`
+ *   - payout id unknown → `NOT_FOUND`
+ *   - already reversed → `CONFLICT`
+ */
+export async function reversePayout(
+  payoutId: string,
+  actor: StaffActor,
+): Promise<StaffPayoutView> {
+  if (actor.role !== "admin") {
+    throw new DomainError(
+      "FORBIDDEN",
+      "Only an administrator can reverse a payout.",
+    );
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const payout = await tx.staffPayout.findUnique({
+      where: { id: payoutId },
+    });
+    if (!payout) {
+      throw new DomainError("NOT_FOUND", "Payout not found.", "payoutId");
+    }
+    if (payout.reversedAt !== null) {
+      throw new DomainError(
+        "CONFLICT",
+        "This payout has already been reversed.",
+        "payoutId",
+      );
+    }
+
+    // Zero out the linked Salaries Expense. Fold in any correction deltas
+    // an Admin already applied to that expense so we offset its CURRENT
+    // derived value, not its as-recorded amount.
+    const expense = await tx.expense.findUniqueOrThrow({
+      where: { id: payout.expenseId },
+    });
+    const priorDeltas = await tx.expense.aggregate({
+      _sum: { amount: true },
+      where: { correctsExpenseId: expense.id },
+    });
+    const currentValue = expense.amount.add(priorDeltas._sum.amount ?? 0);
+    const delta = currentValue.negated();
+
+    if (!delta.isZero()) {
+      const note = `Reversed staff payout — ${toBusinessDate(payout.date)}`;
+      const correction = await tx.expense.create({
+        data: {
+          category: expense.category,
+          amount: delta,
+          date: expense.date,
+          paidFromAccount: expense.paidFromAccount,
+          note,
+          recordedById: actor.actorId,
+          correctsExpenseId: expense.id,
+        },
+      });
+
+      // Paired money delta — a positive amount: the Salaries expense
+      // shrank to zero, so the cash goes back to `paidFromAccount`.
+      await recordMoneyMovement(
+        {
+          account: expense.paidFromAccount,
+          amount: delta.negated(),
+          sourceType: "expense",
+          sourceId: correction.id,
+          occurredAt: expense.date,
+          note,
+        },
+        { actorId: actor.actorId, tx },
+      );
+
+      await tx.auditLog.create({
+        data: {
+          userId: actor.actorId,
+          action: "correct",
+          entityType: "expense",
+          entityId: expense.id,
+          newValue: {
+            correctionId: correction.id,
+            amountTo: "0.00",
+            amountDelta: delta.toFixed(2),
+          },
+          occurredAt: expense.date,
+        },
+      });
+    }
+
+    const reversed = await tx.staffPayout.update({
+      where: { id: payout.id },
+      data: { reversedAt: new Date() },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId: actor.actorId,
+        action: "correct",
+        entityType: "staff_payout",
+        entityId: payout.id,
+        oldValue: {
+          reversedAt: null,
+          netPaid: payout.netPaid.toFixed(2),
+        },
+        newValue: {
+          reversedAt: reversed.reversedAt?.toISOString() ?? null,
+          netPaid: "0.00",
+        },
+        occurredAt: businessDateOnly(toBusinessDate(payout.date)),
+      },
+    });
+  });
+
+  const row = await prisma.staffPayout.findUniqueOrThrow({
+    where: { id: payoutId },
+  });
+  return toPayoutView(row);
 }
 
 export type PayAllUnpaidInput = {

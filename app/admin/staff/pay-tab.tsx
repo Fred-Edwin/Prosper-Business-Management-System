@@ -30,6 +30,7 @@ import { ROLE_LABEL, money, negMoney, shortDate } from "./format";
 import { monthLabel } from "./month-picker";
 import { AdvanceDrawer } from "./advance-drawer";
 import { PayoutDrawer } from "./payout-drawer";
+import { PayoutReversalDrawer } from "./payout-reversal-drawer";
 import { StaffAdjustmentsDrawer } from "./staff-adjustments-drawer";
 import { ShortfallsCard } from "./shortfalls-card";
 import {
@@ -85,15 +86,23 @@ function AdjCell({
 function PayoutCell({
   row,
   onPay,
+  onReverse,
 }: {
   row: StaffPay;
   onPay: (row: StaffPay) => void;
+  onReverse: (row: StaffPay) => void;
 }) {
   if (row.paid && row.payout) {
+    // Paid state doubles as the entry point to reverse the payout
+    // (ADR-73) — Admin only, this whole screen is Admin.
     return (
-      <span className="font-ui text-success text-sm/sm">
+      <button
+        type="button"
+        onClick={() => onReverse(row)}
+        className="font-ui text-success text-sm/sm underline decoration-dotted underline-offset-2 hover:[color:var(--text-primary)]"
+      >
         Paid · {shortDate(row.payout.date)}
-      </span>
+      </button>
     );
   }
   const netPositive = Number(row.netPay) > 0;
@@ -139,6 +148,7 @@ export function PayTab({
     correctAdjustment,
     voidAdjustment,
     payOne,
+    reversePayout,
     payAll,
   } = usePayroll(month);
 
@@ -171,6 +181,9 @@ export function PayTab({
   );
 
   const [drawer, setDrawer] = React.useState<StaffPay | null>(null);
+  const [reverseDrawer, setReverseDrawer] = React.useState<StaffPay | null>(
+    null,
+  );
   const [adjDrawer, setAdjDrawer] = React.useState<StaffPay | null>(null);
   const [payingAll, setPayingAll] = React.useState(false);
 
@@ -300,7 +313,7 @@ export function PayTab({
       key: "payout",
       header: "Payout",
       width: "w-[150px] shrink-0",
-      render: (r) => <PayoutCell row={r} onPay={setDrawer} />,
+      render: (r) => <PayoutCell row={r} onPay={setDrawer} onReverse={setReverseDrawer} />,
     },
   ];
 
@@ -447,7 +460,7 @@ export function PayTab({
                     </div>
                   )}
                   <div className="pt-(--sp-1)">
-                    <PayoutCell row={r} onPay={setDrawer} />
+                    <PayoutCell row={r} onPay={setDrawer} onReverse={setReverseDrawer} />
                   </div>
                 </div>
               );
@@ -466,6 +479,15 @@ export function PayTab({
           today={today}
           onPayOne={payOne}
           onClose={() => setDrawer(null)}
+        />
+      )}
+
+      {reverseDrawer?.payout && (
+        <PayoutReversalDrawer
+          pay={reverseDrawer}
+          month={month}
+          onReverse={reversePayout}
+          onClose={() => setReverseDrawer(null)}
         />
       )}
 

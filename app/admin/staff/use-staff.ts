@@ -292,6 +292,22 @@ export function usePayroll(month: string) {
     [refresh],
   );
 
+  /**
+   * Reverse a recorded payout (ADR-73). Zeroes the linked Salaries
+   * Expense (restoring Cash + Net Profit) and frees the staff-month to be
+   * paid again. No body.
+   */
+  const reversePayout = React.useCallback(
+    async (payoutId: string): Promise<void> => {
+      await request(
+        `/api/pay/payout/${encodeURIComponent(payoutId)}/reverse`,
+        { method: "POST", body: JSON.stringify({}) },
+      );
+      await refresh();
+    },
+    [refresh],
+  );
+
   /** Pay every unpaid active staff member for the month. */
   const payAll = React.useCallback(
     async (body: {
@@ -326,6 +342,7 @@ export function usePayroll(month: string) {
     correctAdjustment,
     voidAdjustment,
     payOne,
+    reversePayout,
     payAll,
   };
 }

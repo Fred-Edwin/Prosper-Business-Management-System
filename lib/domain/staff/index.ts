@@ -31,6 +31,7 @@ export {
   getPayrollSummary,
   payStaff,
   payAllUnpaid,
+  reversePayout,
   type PayAdjustmentType,
   type PayAdjustmentView,
   type RecordPayAdjustmentInput,

@@ -16,6 +16,59 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature — First-class Staff Payout reversal (2026-09-08) — DONE
+
+Fifth ADR-72 follow-up (**ADR-73** records the shape). ADR-60 already
+documented that a payout's whole money/profit effect lives in its linked
+Salaries `Expense`, so zeroing that expense reverses it — this exposes it
+as a first-class action and frees the staff-month to be paid again.
+
+- **Decision (owner)** — thin wrapper, **not** a `corrects_staff_payout_id`
+  lineage; and a reversed staff-month becomes **payable again** (new
+  payout + new Expense), not permanently "paid then reversed".
+- **Migration** —
+  `prisma/migrations/20260908130000_add_staff_payout_reversal/`: adds
+  `staff_payout.reversed_at` (`TIMESTAMP(3)` null), **drops**
+  `staff_payout_staff_id_month_key` and replaces it with a plain
+  `staff_payout_staff_id_month_idx` + a PARTIAL unique
+  `staff_payout_staff_id_month_live_key ... WHERE reversed_at IS NULL`
+  (at most one *live* payout per staff-month). `schema.prisma`:
+  `@@unique([staffId, month])` → `@@index([staffId, month])` + the
+  `reversedAt` field; the partial unique is raw SQL only (Prisma has no
+  syntax for it). `prisma migrate deploy` clean.
+- **Domain** — `reversePayout(payoutId, actor)` in
+  `lib/domain/staff/pay.ts`. Admin-only, **not** day-close gated. One tx:
+  load payout (already-reversed → `CONFLICT`, unknown → `NOT_FOUND`);
+  offset the linked expense's *current* derived amount (folds in any
+  earlier manual `correctExpense`) with one `correctsExpenseId` delta row
+  + paired positive `MoneyMovement` + `AuditLog` `correct`; stamp
+  `reversedAt`. `correctExpense` is **not** called (it rejects `"0.00"`)
+  — the tx body mirrors it. `getStaffPay` / `getPayrollSummary` switch
+  their payout lookup to `findFirst({ ..., reversedAt: null })`;
+  `StaffPayoutView` gains `reversedAt: string | null`.
+- **API** — `POST /api/pay/payout/:id/reverse` (no body, Admin-only,
+  thin handler). `201` `{ data: StaffPayoutView }`.
+- **Frontend** — Pay tab (`app/admin/staff/pay-tab.tsx`): the "Paid ·
+  <date>" cell becomes a button → `payout-reversal-drawer.tsx`, a
+  Void-only drawer (amount / date / account, then a destructive "Reverse
+  payout" behind a confirm step, per
+  `pay-adjustment-correction-drawer.tsx`). `usePayroll().reversePayout`.
+- **Tests** — `lib/domain/staff/reverse-payout.test.ts` (6: Cash/Net
+  Profit restored exactly + month re-payable + two payout rows one live,
+  already-reversed `CONFLICT`, unknown `NOT_FOUND`, non-admin `FORBIDDEN`
+  writes nothing, closed disbursement day does NOT block, folds in an
+  earlier manual expense correction). Screen tests in
+  `tests/screens/admin-staff.screen.test.tsx` (2: open from Paid cell +
+  reverse behind confirm step, already-reversed `CONFLICT` inline).
+- **Gate** — `pnpm typecheck` clean · `pnpm build` clean · unit lane
+  507/507 · DB lane blast-radius suites (staff + financials + pay API)
+  140/140 · full `pnpm test:db` exit 0.
+- ADR-72 deferred list updated (payout reversal struck through — only
+  closed-day canteen count correction remains); ADR-60 addendum added;
+  ADR-73 written.
+
+---
+
 ## Feature — Correct / Void for Staff Pay Advances & Deductions (2026-09-08) — DONE
 
 Fourth ADR-72 follow-up: `StaffPayAdjustment` now has its correction path.
