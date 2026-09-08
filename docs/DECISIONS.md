@@ -3890,7 +3890,22 @@ each new `recordX` shipped without its `correctX`.
   row on `corrects_repayment_id`, folded into the derived ledger amount
   and dropped from the entry list, voided-to-zero drops off entirely;
   an overpaying correction drives the balance negative, same rule as a
-  fresh overpayment — ADR-19), pay adjustments, staff payout reversal,
-  closed-day canteen count correction.
+  fresh overpayment — ADR-19), ~~pay adjustments~~ (done 2026-09-08 —
+  `correctPayAdjustment` / `voidPayAdjustment`,
+  `lib/domain/staff/correct-pay-adjustment.ts`, migration
+  `20260908120000_add_pay_adjustment_correction_link` adds
+  `staff_pay_adjustment.corrects_adjustment_id` (self-FK), routes
+  `POST /api/pay/adjustments/:id/correct` + `/void`, per-row Correct
+  action via `staff-adjustments-drawer.tsx` +
+  `pay-adjustment-correction-drawer.tsx` reached from the Advances /
+  Deductions cell on the Pay tab. **Sole ADR-72 exception to the "+
+  paired `MoneyMovement`" clause of rule §1:** a `StaffPayAdjustment`
+  is not a cash-ledger event — it only nets the derived pay figure at
+  read time (`getStaffPay` / `getPayrollSummary`), cash moves only when
+  a payout is recorded — so the correction writes ONLY the linked
+  signed-delta `StaffPayAdjustment` row, keeping the original's `type`;
+  a plain per-type sum folds it in, and `getStaffPay` collapses the
+  list to one view per original), staff payout reversal, closed-day
+  canteen count correction.
 - The rule is added to the Loop B checklist in `docs/maintenance.md` and
   `CLAUDE.md`.

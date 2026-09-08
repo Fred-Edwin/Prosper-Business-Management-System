@@ -30,6 +30,7 @@ import { ROLE_LABEL, money, negMoney, shortDate } from "./format";
 import { monthLabel } from "./month-picker";
 import { AdvanceDrawer } from "./advance-drawer";
 import { PayoutDrawer } from "./payout-drawer";
+import { StaffAdjustmentsDrawer } from "./staff-adjustments-drawer";
 import { ShortfallsCard } from "./shortfalls-card";
 import {
   useLocations,
@@ -46,6 +47,39 @@ function locationFilterOptions(
     { key: "all", label: "All locations" },
     ...locations.map((l) => ({ key: l.id, label: l.name })),
   ];
+}
+
+/**
+ * The Advances / Deductions cell. Non-zero → a button that opens the
+ * per-staff adjustments list (Correct / Void per row, ADR-72). Zero → an
+ * inert em-dash.
+ */
+function AdjCell({
+  row,
+  field,
+  onOpen,
+}: {
+  row: StaffPay;
+  field: "advances" | "deductions";
+  onOpen: (row: StaffPay) => void;
+}) {
+  const value = row[field];
+  const hasAny = row.adjustments.some((a) =>
+    field === "advances" ? a.type === "advance" : a.type === "deduction",
+  );
+  if (!hasAny) {
+    return <span className="[color:var(--text-secondary)]">{negMoney(value)}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(row)}
+      className="font-mono [color:var(--text-secondary)] underline decoration-dotted underline-offset-2 hover:[color:var(--text-primary)] outline-none focus-visible:[outline:2px_solid_var(--focus-ring)]"
+      aria-label={`Review ${field} for ${row.staffName}`}
+    >
+      {negMoney(value)}
+    </button>
+  );
 }
 
 function PayoutCell({
@@ -96,8 +130,17 @@ export function PayTab({
   const { locations } = useLocations();
   const [locFilter, setLocFilter] = React.useState("all");
 
-  const { payroll, loading, error, refresh, recordAdjustment, payOne, payAll } =
-    usePayroll(month);
+  const {
+    payroll,
+    loading,
+    error,
+    refresh,
+    recordAdjustment,
+    correctAdjustment,
+    voidAdjustment,
+    payOne,
+    payAll,
+  } = usePayroll(month);
 
   const [advanceOpen, setAdvanceOpen] = React.useState(false);
   React.useEffect(() => {
@@ -128,7 +171,19 @@ export function PayTab({
   );
 
   const [drawer, setDrawer] = React.useState<StaffPay | null>(null);
+  const [adjDrawer, setAdjDrawer] = React.useState<StaffPay | null>(null);
   const [payingAll, setPayingAll] = React.useState(false);
+
+  // Keep the open adjustments drawer pointed at the freshest row after a
+  // correct / void refreshes payroll.
+  const adjRow = React.useMemo(
+    () =>
+      adjDrawer
+        ? (payroll?.rows.find((r) => r.staffId === adjDrawer.staffId) ??
+          adjDrawer)
+        : null,
+    [adjDrawer, payroll],
+  );
 
   const totals = payroll?.totals;
 
@@ -209,9 +264,7 @@ export function PayTab({
       width: "w-[100px] shrink-0",
       align: "right",
       cell: "mono",
-      render: (r) => (
-        <span className="[color:var(--text-secondary)]">{negMoney(r.advances)}</span>
-      ),
+      render: (r) => <AdjCell row={r} field="advances" onOpen={setAdjDrawer} />,
     },
     {
       key: "deductions",
@@ -220,9 +273,7 @@ export function PayTab({
       align: "right",
       cell: "mono",
       render: (r) => (
-        <span className="[color:var(--text-secondary)]">
-          {negMoney(r.deductions)}
-        </span>
+        <AdjCell row={r} field="deductions" onOpen={setAdjDrawer} />
       ),
     },
     {
@@ -384,6 +435,17 @@ export function PayTab({
                       ? ` · deductions ${negMoney(r.deductions)}`
                       : ""}
                   </div>
+                  {r.adjustments.length > 0 && (
+                    <div className="pt-(--sp-1)">
+                      <Button
+                        variant="tertiary"
+                        size="sm"
+                        onClick={() => setAdjDrawer(r)}
+                      >
+                        Review advances / deductions
+                      </Button>
+                    </div>
+                  )}
                   <div className="pt-(--sp-1)">
                     <PayoutCell row={r} onPay={setDrawer} />
                   </div>
@@ -413,6 +475,16 @@ export function PayTab({
           today={today}
           onRecord={recordAdjustment}
           onClose={() => setAdvanceOpen(false)}
+        />
+      )}
+
+      {adjRow && (
+        <StaffAdjustmentsDrawer
+          pay={adjRow}
+          month={month}
+          onCorrect={correctAdjustment}
+          onVoid={voidAdjustment}
+          onClose={() => setAdjDrawer(null)}
         />
       )}
     </div>

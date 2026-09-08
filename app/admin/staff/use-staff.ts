@@ -243,6 +243,37 @@ export function usePayroll(month: string) {
     [refresh],
   );
 
+  /**
+   * Correct a pay advance / deduction (ADR-72). `amount` is the corrected
+   * FINAL magnitude; the server writes ONE signed-delta row (no
+   * MoneyMovement — a pay adjustment is not a cash-ledger event).
+   */
+  const correctAdjustment = React.useCallback(
+    async (
+      adjustmentId: string,
+      body: { amount: string; note?: string },
+    ): Promise<void> => {
+      await request(
+        `/api/pay/adjustments/${encodeURIComponent(adjustmentId)}/correct`,
+        { method: "POST", body: JSON.stringify(body) },
+      );
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /** Void a pay advance / deduction (ADR-72) — a correction to zero. */
+  const voidAdjustment = React.useCallback(
+    async (adjustmentId: string): Promise<void> => {
+      await request(
+        `/api/pay/adjustments/${encodeURIComponent(adjustmentId)}/void`,
+        { method: "POST", body: JSON.stringify({}) },
+      );
+      await refresh();
+    },
+    [refresh],
+  );
+
   /** Pay ONE staff member for the month. Server recomputes the amount. */
   const payOne = React.useCallback(
     async (body: {
@@ -286,7 +317,17 @@ export function usePayroll(month: string) {
     [refresh],
   );
 
-  return { payroll, loading, error, refresh, recordAdjustment, payOne, payAll };
+  return {
+    payroll,
+    loading,
+    error,
+    refresh,
+    recordAdjustment,
+    correctAdjustment,
+    voidAdjustment,
+    payOne,
+    payAll,
+  };
 }
 
 // ── Own account (self-service PIN change) ───────────────────────────

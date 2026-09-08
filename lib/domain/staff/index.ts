@@ -41,3 +41,9 @@ export {
   type PayAllUnpaidInput,
   type PayAllUnpaidResult,
 } from "./pay";
+
+export {
+  correctPayAdjustment,
+  voidPayAdjustment,
+  type CorrectPayAdjustmentInput,
+} from "./correct-pay-adjustment";

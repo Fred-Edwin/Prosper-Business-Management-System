@@ -76,6 +76,17 @@ export const recordPayAdjustmentSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+/**
+ * `POST /api/pay/adjustments/:id/correct` (ADR-72). Admin-only,
+ * append-only: the domain writes ONE linked signed-delta
+ * `StaffPayAdjustment` row (NO `MoneyMovement` — a pay adjustment is not
+ * a cash-ledger event). `amount` is the corrected FINAL magnitude.
+ */
+export const correctPayAdjustmentSchema = z.object({
+  amount: decimalString,
+  note: z.string().trim().max(500).optional(),
+});
+
 export const payQuerySchema = z.object({
   month,
   staffId: z.string().min(1).optional(),
@@ -106,5 +117,8 @@ export type UpdateStaffBody = z.infer<typeof updateStaffSchema>;
 export type SetAttendanceBody = z.infer<typeof setAttendanceSchema>;
 export type SetAttendanceBulkBody = z.infer<typeof setAttendanceBulkSchema>;
 export type RecordPayAdjustmentBody = z.infer<typeof recordPayAdjustmentSchema>;
+export type CorrectPayAdjustmentBody = z.infer<
+  typeof correctPayAdjustmentSchema
+>;
 export type PayStaffBody = z.infer<typeof payStaffSchema>;
 export type PayAllUnpaidBody = z.infer<typeof payAllUnpaidSchema>;

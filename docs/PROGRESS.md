@@ -16,6 +16,60 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature — Correct / Void for Staff Pay Advances & Deductions (2026-09-08) — DONE
+
+Fourth ADR-72 follow-up: `StaffPayAdjustment` now has its correction path.
+**The one ADR-72 correction that writes NO `MoneyMovement`** — an
+advance/deduction only nets into the derived pay figure at read time
+(`getStaffPay` / `getPayrollSummary`); it is not a cash-ledger event until
+a payout is recorded (`payStaff` → Salaries `Expense`). So the correction
+writes ONLY the linked delta row.
+
+- **Migration** —
+  `prisma/migrations/20260908120000_add_pay_adjustment_correction_link/`:
+  adds `staff_pay_adjustment.corrects_adjustment_id` (nullable self-FK,
+  `ON DELETE SET NULL`, no index — same shape as the `corrects_*` columns
+  from the PR #8 migration). Applied locally via `prisma db execute
+  --file` + `prisma migrate resolve --applied`; `migrate status` clean.
+- **Domain** — `lib/domain/staff/correct-pay-adjustment.ts`:
+  `correctPayAdjustment({ adjustmentId, amount, note? }, actor)` /
+  `voidPayAdjustment(id, actor)`. Admin-only, not day-close gated. A
+  correction is a new `StaffPayAdjustment` keeping the original's `type` /
+  `staffId` / `date`, `amount` = signed delta = `corrected − (original + Σ
+  prior deltas)` (may be negative); zero delta → `VALIDATION_ERROR`
+  (idempotent). Correcting a correction is rejected. `AuditLog`
+  `correct` / `soft_delete` with `oldValue` + `newValue` sharing scalar
+  keys.
+- **Read model** — `getStaffPay` / `getPayrollSummary`: a plain per-type
+  sum already folds the signed delta rows in; `PayAdjustmentView` now
+  carries `amount` (derived), `originalAmount`, `corrected`, and the
+  `adjustments` list is collapsed to one view per original (correction
+  rows never surface standalone — `toAdjustmentViews`).
+- **API** — `POST /api/pay/adjustments/:adjustmentId/correct` (Zod
+  `correctPayAdjustmentSchema`, body `{ amount, note? }`) and
+  `POST /api/pay/adjustments/:adjustmentId/void` (no body). Thin handlers.
+- **Frontend** — Pay tab (`app/admin/staff/pay-tab.tsx`): the Advances /
+  Deductions cell becomes a button when it has rows → opens
+  `staff-adjustments-drawer.tsx` (per-staff month list, Correct/View per
+  row) → `pay-adjustment-correction-drawer.tsx` (prefilled correct mode +
+  Void behind a confirm step, following
+  `purchase-payment-correction-drawer.tsx`). Mobile card gets a "Review
+  advances / deductions" button. `advance-drawer.tsx` footer copy fixed
+  (an advance does NOT post to the money ledger).
+- **Tests** — `lib/domain/staff/correct-pay-adjustment.test.ts` (11:
+  delta math, negative delta, stacking, idempotent re-submit, no
+  chaining, non-admin FORBIDDEN, NOT_FOUND, not day-close gated, void
+  once-only, `getStaffPay` / `getPayrollSummary` fold-in, audit payload —
+  each asserts NO `MoneyMovement`). Screen tests added to
+  `tests/screens/admin-staff.screen.test.tsx` (4: open list + submit
+  correction with FINAL amount, Void confirm-step, inline
+  VALIDATION_ERROR, voided row is read-only).
+- **Gate** — `pnpm test` 1263 pass · `pnpm typecheck` clean · `pnpm
+  build` clean.
+- ADR-72 deferred list updated (pay adjustments struck through).
+
+---
+
 ## Feature — Correct / Void for Debt Repayments (2026-09-08) — DONE
 
 Third ADR-72 follow-up: `Repayment` now has its correction path, matching

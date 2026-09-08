@@ -71,7 +71,17 @@ export type PayAdjustmentView = {
   id: string;
   staffId: string;
   type: PayAdjustmentType;
+  /**
+   * The row's CURRENT magnitude — the original amount plus any ADR-72
+   * correction deltas linked to it. This is the figure that nets into
+   * `advances` / `deductions` and the value the Correct drawer prefills.
+   * A voided adjustment reads `"0.00"`.
+   */
   amount: string;
+  /** The as-recorded amount before any correction (audit reference). */
+  originalAmount: string;
+  /** True once one or more correction rows point at this adjustment. */
+  corrected: boolean;
   date: string;
   note: string | null;
 };
@@ -85,6 +95,47 @@ export type RecordPayAdjustmentInput = {
   date: string;
   note?: string;
 };
+
+type AdjRow = {
+  id: string;
+  staffId: string;
+  type: PayAdjustmentType;
+  amount: Prisma.Decimal;
+  date: Date;
+  note: string | null;
+  correctsAdjustmentId: string | null;
+};
+
+/**
+ * Collapse a month's `StaffPayAdjustment` rows to one view per ORIGINAL,
+ * folding each ADR-72 correction delta into its target's `amount`. A
+ * correction row is never surfaced standalone (ADR-72: list reads fold
+ * corrections into the derived value). Ordered by the original's date.
+ */
+function toAdjustmentViews(rows: AdjRow[]): PayAdjustmentView[] {
+  const deltaByOriginal = new Map<string, Prisma.Decimal>();
+  for (const r of rows) {
+    if (r.correctsAdjustmentId === null) continue;
+    const acc = deltaByOriginal.get(r.correctsAdjustmentId) ?? ZERO;
+    deltaByOriginal.set(r.correctsAdjustmentId, acc.plus(r.amount));
+  }
+  return rows
+    .filter((r) => r.correctsAdjustmentId === null)
+    .map((r) => {
+      const delta = deltaByOriginal.get(r.id);
+      const current = delta ? r.amount.plus(delta) : r.amount;
+      return {
+        id: r.id,
+        staffId: r.staffId,
+        type: r.type,
+        amount: current.toFixed(2),
+        originalAmount: r.amount.toFixed(2),
+        corrected: delta !== undefined,
+        date: toBusinessDate(r.date),
+        note: r.note,
+      };
+    });
+}
 
 /**
  * Record a salary advance or deduction against a staff member (PRD §4.8).
@@ -181,6 +232,8 @@ export async function recordPayAdjustment(
     staffId: row.staffId,
     type: row.type,
     amount: row.amount.toFixed(2),
+    originalAmount: row.amount.toFixed(2),
+    corrected: false,
     date: toBusinessDate(row.date),
     note: row.note,
   };
@@ -295,6 +348,10 @@ export async function getStaffPay(
   const dailyRate = staff.dailyRate;
   const grossPay = dailyRate.times(daysPresent);
 
+  // Sum EVERY row (originals + ADR-72 correction deltas, which carry a
+  // signed `amount` and keep the original's `type`) so a corrected /
+  // voided adjustment nets correctly. The `adjustments` list below shows
+  // only originals — a correction row is never surfaced standalone.
   let advances = ZERO;
   let deductions = ZERO;
   for (const a of adjRows) {
@@ -302,6 +359,7 @@ export async function getStaffPay(
     else deductions = deductions.plus(a.amount);
   }
   const netPay = grossPay.minus(advances).minus(deductions);
+  const adjViews = toAdjustmentViews(adjRows);
 
   return {
     staffId: staff.id,
@@ -315,14 +373,7 @@ export async function getStaffPay(
     advances: advances.toFixed(2),
     deductions: deductions.toFixed(2),
     netPay: netPay.toFixed(2),
-    adjustments: adjRows.map((a) => ({
-      id: a.id,
-      staffId: a.staffId,
-      type: a.type,
-      amount: a.amount.toFixed(2),
-      date: toBusinessDate(a.date),
-      note: a.note,
-    })),
+    adjustments: adjViews,
     paid: payoutRow !== null,
     payout: payoutRow ? toPayoutView(payoutRow) : null,
   };
@@ -464,14 +515,7 @@ export async function getPayrollSummary(month: string): Promise<PayrollSummary> 
       advances: advances.toFixed(2),
       deductions: deductions.toFixed(2),
       netPay: netPay.toFixed(2),
-      adjustments: list.map((a) => ({
-        id: a.id,
-        staffId: a.staffId,
-        type: a.type,
-        amount: a.amount.toFixed(2),
-        date: toBusinessDate(a.date),
-        note: a.note,
-      })),
+      adjustments: toAdjustmentViews(list),
       paid: payout !== null,
       payout: payout ? toPayoutView(payout) : null,
     };

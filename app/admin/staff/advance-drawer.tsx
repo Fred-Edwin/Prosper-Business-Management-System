@@ -213,9 +213,10 @@ export function AdvanceDrawer({
       </FormField>
 
       <div className="font-ui [color:var(--text-secondary)] text-caption/micro">
-        {type === "advance"
-          ? "An advance posts to the money ledger on its date — cash leaves the till now and the payout later pays only the balance."
-          : "A deduction moves no cash — it only lowers the eventual payout."}
+        Neither an advance nor a deduction moves cash now — both only net
+        off this month&apos;s payout when it is recorded. Record a mistake
+        the other way, or Correct / Void it from the row&apos;s advances /
+        deductions cell.
       </div>
     </Drawer>
   );

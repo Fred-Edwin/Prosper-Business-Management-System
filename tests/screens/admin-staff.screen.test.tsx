@@ -25,6 +25,8 @@ const saveBulk = vi.fn();
 const payOne = vi.fn();
 const payAll = vi.fn();
 const recordAdjustment = vi.fn();
+const correctAdjustment = vi.fn();
+const voidAdjustment = vi.fn();
 const changePin = vi.fn();
 
 let rosterState: { staff: StaffView[]; loading: boolean; error: string | null };
@@ -73,6 +75,8 @@ vi.mock("@/app/admin/staff/use-staff", async (importOriginal) => {
       error: payrollState.error,
       refresh: vi.fn(),
       recordAdjustment,
+      correctAdjustment,
+      voidAdjustment,
       payOne,
       payAll,
     }),
@@ -162,8 +166,24 @@ beforeEach(() => {
   payOne.mockResolvedValue(pay({ paid: true }));
   payAll.mockResolvedValue({ month: "2026-09", paid: [{}], skipped: [] });
   recordAdjustment.mockResolvedValue(undefined);
+  correctAdjustment.mockResolvedValue(undefined);
+  voidAdjustment.mockResolvedValue(undefined);
   changePin.mockResolvedValue(undefined);
 });
+
+function adj(over: Partial<import("@/lib/domain/staff").PayAdjustmentView> = {}) {
+  return {
+    id: "adj-1",
+    staffId: "s1",
+    type: "advance" as const,
+    amount: "5000.00",
+    originalAmount: "5000.00",
+    corrected: false,
+    date: "2026-09-10",
+    note: "school fees",
+    ...over,
+  };
+}
 
 // ── Add-staff drawer + PIN entry ─────────────────────────────────────
 
@@ -540,5 +560,157 @@ describe("Pay — record advance / deduction", () => {
       }),
     );
     expect(await screen.findByText("Advance recorded")).toBeInTheDocument();
+  });
+});
+
+// ── Correct / Void a pay advance / deduction (ADR-72) ────────────────
+
+describe("Pay — correct / void an advance", () => {
+  function renderPay() {
+    render(
+      <ToastProvider placement="top-right">
+        <PayTab
+          month="2026-09"
+          today="2026-09-30"
+          registerRecordAdjustment={() => {}}
+        />
+      </ToastProvider>,
+    );
+  }
+
+  beforeEach(() => {
+    payrollState = {
+      payroll: payroll([pay({ adjustments: [adj()] })]),
+      loading: false,
+      error: null,
+    };
+  });
+
+  it("opens the adjustments list from the Advances cell and submits a correction (FINAL amount, no money leg)", async () => {
+    const user = userEvent.setup();
+    renderPay();
+
+    // The Advances cell is now a button (there is an advance to review).
+    await user.click(
+      screen.getAllByRole("button", { name: /Review advances for/i })[0],
+    );
+    const list = await screen.findByRole("dialog");
+    await user.click(
+      within(list).getAllByRole("button", { name: "Correct" })[0],
+    );
+
+    const editor = await screen.findByRole("dialog", {
+      name: /Correct Advance/i,
+    });
+    const amount = within(editor).getByLabelText(/Corrected advance amount/i);
+    await user.clear(amount);
+    await user.type(amount, "3500");
+    await user.click(
+      within(editor).getByRole("button", { name: "Save Correction" }),
+    );
+
+    await waitFor(() => expect(correctAdjustment).toHaveBeenCalledOnce());
+    expect(correctAdjustment).toHaveBeenCalledWith("adj-1", {
+      amount: "3500",
+      note: "school fees",
+    });
+    expect(await screen.findByText("Adjustment corrected")).toBeInTheDocument();
+  });
+
+  it("Void is behind a confirm step and posts no body", async () => {
+    const user = userEvent.setup();
+    renderPay();
+
+    await user.click(
+      screen.getAllByRole("button", { name: /Review advances for/i })[0],
+    );
+    const list = await screen.findByRole("dialog");
+    await user.click(
+      within(list).getAllByRole("button", { name: "Correct" })[0],
+    );
+    const editor = await screen.findByRole("dialog", {
+      name: /Correct Advance/i,
+    });
+
+    // First click only reveals the confirm button.
+    await user.click(
+      within(editor).getByRole("button", { name: /Void advance…/i }),
+    );
+    expect(voidAdjustment).not.toHaveBeenCalled();
+    await user.click(
+      within(editor).getByRole("button", { name: "Confirm void" }),
+    );
+
+    await waitFor(() => expect(voidAdjustment).toHaveBeenCalledOnce());
+    expect(voidAdjustment).toHaveBeenCalledWith("adj-1");
+    expect(await screen.findByText("Adjustment voided")).toBeInTheDocument();
+  });
+
+  it("an idempotent-resubmit VALIDATION_ERROR surfaces inline in the editor", async () => {
+    const user = userEvent.setup();
+    const { StaffRequestError } = await import("@/app/admin/staff/use-staff");
+    correctAdjustment.mockRejectedValueOnce(
+      new StaffRequestError(400, {
+        code: "VALIDATION_ERROR",
+        message: "same as current",
+        field: "amount",
+      }),
+    );
+    renderPay();
+
+    await user.click(
+      screen.getAllByRole("button", { name: /Review advances for/i })[0],
+    );
+    const list = await screen.findByRole("dialog");
+    await user.click(
+      within(list).getAllByRole("button", { name: "Correct" })[0],
+    );
+    const editor = await screen.findByRole("dialog", {
+      name: /Correct Advance/i,
+    });
+    await user.click(
+      within(editor).getByRole("button", { name: "Save Correction" }),
+    );
+
+    expect(
+      await within(editor).findByText(/Check the amount and try again/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Adjustment corrected")).not.toBeInTheDocument();
+  });
+
+  it("a zero-amount (voided) adjustment shows View, not Correct, and the editor is read-only", async () => {
+    const user = userEvent.setup();
+    payrollState = {
+      payroll: payroll([
+        pay({
+          advances: "0.00",
+          adjustments: [adj({ amount: "0.00", corrected: true })],
+        }),
+      ]),
+      loading: false,
+      error: null,
+    };
+    renderPay();
+
+    // Advances is 0 → the desktop cell is an inert em-dash; reach the list
+    // via the mobile "Review advances / deductions" button (jsdom renders both).
+    await user.click(
+      screen.getByRole("button", { name: /Review advances \/ deductions/i }),
+    );
+    const list = await screen.findByRole("dialog");
+    expect(
+      within(list).queryByRole("button", { name: "Correct" }),
+    ).not.toBeInTheDocument();
+    await user.click(within(list).getByRole("button", { name: "View" }));
+
+    const editor = await screen.findByRole("dialog", {
+      name: /Correct Advance/i,
+    });
+    expect(
+      within(editor).getByText(/already been voided/i),
+    ).toBeInTheDocument();
+    expect(
+      within(editor).queryByRole("button", { name: /Void advance…/i }),
+    ).not.toBeInTheDocument();
   });
 });
