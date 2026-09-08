@@ -3877,8 +3877,11 @@ each new `recordX` shipped without its `correctX`.
   delivery must be unmatched or corrected first (mirrors the manual SQL
   fix's safety check).
 - **Deferred to follow-up single-request sessions** (the migration
-  already carries their columns): owner draws / returns, debt repayments,
-  pay adjustments, staff payout reversal, closed-day canteen count
-  correction.
+  already carries their columns): ~~owner draws / returns~~ (done
+  2026-09-08 — `correctOwnerTransaction` / `voidOwnerTransaction`,
+  `lib/domain/financials/correct-owner-transaction.ts`, routes
+  `POST /api/owner-transactions/:id/correct` + `/void`, row action +
+  drawer on Financials → Owner Draws), debt repayments, pay adjustments,
+  staff payout reversal, closed-day canteen count correction.
 - The rule is added to the Loop B checklist in `docs/maintenance.md` and
   `CLAUDE.md`.

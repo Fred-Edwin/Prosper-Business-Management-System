@@ -226,6 +226,12 @@ export async function cleanupFinancialsTestData(scope: string): Promise<void> {
       await prisma.expense.deleteMany({ where: { id: { in: expenseIds } } });
     }
   }
+  // Null the correction self-FK (ADR-72) before the batch delete —
+  // Postgres won't order deletes within one `deleteMany`.
+  await prisma.ownerTransaction.updateMany({
+    where: { note: { startsWith: prefix } },
+    data: { correctsOwnerTransactionId: null },
+  });
   await prisma.ownerTransaction.deleteMany({
     where: { note: { startsWith: prefix } },
   });

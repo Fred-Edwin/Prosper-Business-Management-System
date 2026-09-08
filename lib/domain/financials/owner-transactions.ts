@@ -25,21 +25,46 @@ function assertBusinessDate(date: string, field = "date"): void {
   }
 }
 
-function toOwnerTransactionView(row: {
-  id: string;
-  type: OwnerTransactionView["type"];
-  amount: Prisma.Decimal;
-  date: Date;
-  note: string | null;
-}): OwnerTransactionView {
+function toOwnerTransactionView(
+  row: {
+    id: string;
+    type: OwnerTransactionView["type"];
+    amount: Prisma.Decimal;
+    date: Date;
+    note: string | null;
+  },
+  derived?: { type: OwnerTransactionView["type"]; amount: Prisma.Decimal; corrected: boolean },
+): OwnerTransactionView {
   return {
     id: row.id,
-    type: row.type,
-    amount: moneyString(row.amount),
+    type: derived ? derived.type : row.type,
+    amount: moneyString(derived ? derived.amount : row.amount),
     date: row.date.toISOString(),
     note: row.note,
     occurredAt: row.date.toISOString(),
+    ...(derived ? { corrected: derived.corrected } : {}),
   };
+}
+
+/**
+ * Signed cash effect of an owner-transaction row: `draw` → negative
+ * (money out of `cash`), `return` → positive. A correction row stores its
+ * delta the same way; folding = summing these, then splitting back.
+ */
+function signedAmount(
+  type: OwnerTransactionView["type"],
+  amount: Prisma.Decimal,
+): Prisma.Decimal {
+  return type === "draw" ? amount.negated() : amount;
+}
+
+function splitSigned(signed: Prisma.Decimal): {
+  type: OwnerTransactionView["type"];
+  amount: Prisma.Decimal;
+} {
+  return signed.isNegative()
+    ? { type: "draw", amount: signed.negated() }
+    : { type: "return", amount: signed };
 }
 
 /**
@@ -126,7 +151,11 @@ export async function recordOwnerTransaction(
 export async function listOwnerTransactions(
   filter: ListOwnerTransactionsFilter = {},
 ): Promise<OwnerTransactionView[]> {
-  const where: Prisma.OwnerTransactionWhereInput = {};
+  const where: Prisma.OwnerTransactionWhereInput = {
+    // Correction rows (ADR-72) never appear on their own — their signed
+    // deltas are folded into each original's derived type / amount below.
+    correctsOwnerTransactionId: null,
+  };
   if (filter.from || filter.to) {
     where.date = {};
     if (filter.from) {
@@ -143,7 +172,28 @@ export async function listOwnerTransactions(
     where,
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
   });
-  return rows.map(toOwnerTransactionView);
+
+  const ids = rows.map((r) => r.id);
+  const deltaSignedById = new Map<string, Prisma.Decimal>();
+  if (ids.length > 0) {
+    const corrections = await prisma.ownerTransaction.findMany({
+      where: { correctsOwnerTransactionId: { in: ids } },
+      select: { correctsOwnerTransactionId: true, type: true, amount: true },
+    });
+    for (const c of corrections) {
+      const oid = c.correctsOwnerTransactionId as string;
+      const prev = deltaSignedById.get(oid) ?? new Prisma.Decimal(0);
+      deltaSignedById.set(oid, prev.add(signedAmount(c.type, c.amount)));
+    }
+  }
+
+  return rows.map((r) => {
+    const delta = deltaSignedById.get(r.id);
+    if (!delta) return toOwnerTransactionView(r);
+    const derivedSigned = signedAmount(r.type, r.amount).add(delta);
+    const split = splitSigned(derivedSigned);
+    return toOwnerTransactionView(r, { ...split, corrected: true });
+  });
 }
 
 /**
@@ -159,17 +209,38 @@ export async function getOwnerDrawsForPeriod(
 ): Promise<Prisma.Decimal> {
   assertBusinessDate(from, "from");
   assertBusinessDate(to, "to");
-  const agg = await prisma.ownerTransaction.aggregate({
-    _sum: { amount: true },
-    where: {
-      type: "draw",
-      date: {
-        gte: businessDateStartUtc(from),
-        lt: businessDateEndUtc(to),
-      },
-    },
+  const range = {
+    gte: businessDateStartUtc(from),
+    lt: businessDateEndUtc(to),
+  };
+
+  // Originals dated in range (correction rows share their original's date;
+  // fold their signed deltas in, then keep only the net draw magnitude).
+  const originals = await prisma.ownerTransaction.findMany({
+    where: { correctsOwnerTransactionId: null, date: range },
+    select: { id: true, type: true, amount: true },
   });
-  return agg._sum.amount ?? new Prisma.Decimal(0);
+  if (originals.length === 0) return new Prisma.Decimal(0);
+
+  const deltaSignedById = new Map<string, Prisma.Decimal>();
+  const corrections = await prisma.ownerTransaction.findMany({
+    where: { correctsOwnerTransactionId: { in: originals.map((o) => o.id) } },
+    select: { correctsOwnerTransactionId: true, type: true, amount: true },
+  });
+  for (const c of corrections) {
+    const oid = c.correctsOwnerTransactionId as string;
+    const prev = deltaSignedById.get(oid) ?? new Prisma.Decimal(0);
+    deltaSignedById.set(oid, prev.add(signedAmount(c.type, c.amount)));
+  }
+
+  return originals.reduce((acc, o) => {
+    const derivedSigned = signedAmount(o.type, o.amount).add(
+      deltaSignedById.get(o.id) ?? new Prisma.Decimal(0),
+    );
+    // Net draw only (money out) — a net return contributes nothing, like
+    // the pre-correction `type = "draw"` filter.
+    return derivedSigned.isNegative() ? acc.add(derivedSigned.negated()) : acc;
+  }, new Prisma.Decimal(0));
 }
 
 /**

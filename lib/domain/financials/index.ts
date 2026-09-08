@@ -27,6 +27,10 @@ export {
   getOwnerDrawsForPeriod,
 } from "./owner-transactions";
 export {
+  correctOwnerTransaction,
+  voidOwnerTransaction,
+} from "./correct-owner-transaction";
+export {
   setOpeningBalance,
   getOpeningBalances,
 } from "./opening-balance";

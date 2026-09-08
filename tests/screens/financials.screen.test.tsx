@@ -100,11 +100,13 @@ vi.mock("@/app/admin/financials/use-financials", async (importOriginal) => {
       correct: vi.fn(),
     }),
     useOwnerTransactions: () => ({
-      transactions: [],
+      transactions: ownerTxnState.transactions,
       loading: false,
       error: null,
       refresh: vi.fn(),
-      create: vi.fn(),
+      create: ownerTxnState.create,
+      correct: ownerTxnState.correct,
+      voidTxn: ownerTxnState.voidTxn,
     }),
     useOwingCustomers: () => ({ ...owingState, refresh: vi.fn() }),
     useNonSaleConsumption: () => ({
@@ -113,6 +115,20 @@ vi.mock("@/app/admin/financials/use-financials", async (importOriginal) => {
     }),
   };
 });
+
+// Owner Draws tab — transactions + the create / correct / void spies
+// (ADR-72). Stateful so a spec can seed rows before rendering.
+const ownerTxnState: {
+  transactions: import("@/lib/domain/financials").OwnerTransactionView[];
+  create: ReturnType<typeof vi.fn>;
+  correct: ReturnType<typeof vi.fn>;
+  voidTxn: ReturnType<typeof vi.fn>;
+} = {
+  transactions: [],
+  create: vi.fn(),
+  correct: vi.fn(),
+  voidTxn: vi.fn(),
+};
 
 // v2 — the Debts card's rows (a BALANCE read, no range).
 let owingState: {
@@ -239,6 +255,10 @@ beforeEach(() => {
   };
   kpiState = null;
   kpiErrorState = null;
+  ownerTxnState.transactions = [];
+  ownerTxnState.create = vi.fn();
+  ownerTxnState.correct = vi.fn();
+  ownerTxnState.voidTxn = vi.fn();
 });
 
 const nairobiToday = () =>
@@ -493,6 +513,81 @@ describe("/admin/financials — Stock Purchases tab", () => {
     );
     await waitFor(() =>
       expect(api.voidPurchasePayment).toHaveBeenCalledWith("pp1"),
+    );
+  });
+});
+
+describe("/admin/financials — Owner Draws corrections (ADR-72)", () => {
+  function ownerRow(over: Partial<import("@/lib/domain/financials").OwnerTransactionView> = {}) {
+    return {
+      id: "ot1",
+      type: "draw" as const,
+      amount: "5000.00",
+      date: new Date("2026-09-05T12:00:00+03:00").toISOString(),
+      note: "Petty cash",
+      occurredAt: new Date("2026-09-05T12:00:00+03:00").toISOString(),
+      ...over,
+    };
+  }
+
+  async function openOwnerTab(user: ReturnType<typeof userEvent.setup>) {
+    renderScreen();
+    await waitFor(() => expect(api.listMovements).toHaveBeenCalled());
+    await user.click(screen.getByRole("tab", { name: "Owner Draws" }));
+  }
+
+  it("a row's Correct action opens a drawer prefilled with the current values and submits the corrected values", async () => {
+    ownerTxnState.transactions = [ownerRow()];
+    ownerTxnState.correct.mockResolvedValue(ownerRow({ amount: "3000.00" }));
+    const user = userEvent.setup();
+    await openOwnerTab(user);
+
+    const table = await screen.findByRole("table");
+    await user.click(within(table).getAllByRole("button", { name: "Correct" })[0]);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /Correct Owner Draw \/ Return/,
+    });
+    // Prefilled from the current values.
+    expect(within(dialog).getByDisplayValue("5000")).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue("Petty cash")).toBeInTheDocument();
+
+    const amount = within(dialog).getByLabelText(/^Amount/);
+    await user.clear(amount);
+    await user.type(amount, "3000");
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save Correction" }),
+    );
+
+    await waitFor(() =>
+      expect(ownerTxnState.correct).toHaveBeenCalledWith(
+        "ot1",
+        expect.objectContaining({ type: "draw", amount: "3000" }),
+      ),
+    );
+  });
+
+  it("the Void action needs a confirm step before it calls the API", async () => {
+    ownerTxnState.transactions = [ownerRow()];
+    ownerTxnState.voidTxn.mockResolvedValue(ownerRow({ amount: "0.00" }));
+    const user = userEvent.setup();
+    await openOwnerTab(user);
+
+    const table = await screen.findByRole("table");
+    await user.click(within(table).getAllByRole("button", { name: "Correct" })[0]);
+    const dialog = await screen.findByRole("dialog");
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /Void transaction/ }),
+    );
+    expect(ownerTxnState.voidTxn).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Confirm void" }),
+    );
+    await waitFor(() =>
+      expect(ownerTxnState.voidTxn).toHaveBeenCalledWith("ot1"),
     );
   });
 });
