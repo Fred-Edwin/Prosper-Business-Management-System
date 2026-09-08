@@ -100,12 +100,18 @@ describe("HelpPanel", () => {
     ).toBeInTheDocument();
     expect(within(dialog).getByText("Record a purchase")).toBeInTheDocument();
 
-    // The kit Drawer plays an exit transition and unmounts on transitionend,
-    // which jsdom never fires — assert it entered the closing state instead.
+    // The kit Drawer plays an exit transition then unmounts. jsdom never
+    // fires `transitionend`, so the unmount comes via useOverlayTransition's
+    // ~400ms fallback timer. Either outcome means "it closed": the panel is
+    // in its `closing` phase, or it has already unmounted. Asserting only
+    // the transient `closing` state races that timer on a slow runner.
     await user.keyboard("{Escape}");
-    await waitFor(() =>
-      expect(screen.getByRole("dialog")).toHaveAttribute("data-state", "closing"),
-    );
+    await waitFor(() => {
+      const panel = screen.queryByRole("dialog");
+      expect(
+        panel === null || panel.getAttribute("data-state") === "closing",
+      ).toBe(true);
+    });
   });
 
   it("shows the per-tab section when ?tab= is set", async () => {
