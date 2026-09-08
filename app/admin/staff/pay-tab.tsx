@@ -22,11 +22,12 @@ import {
 } from "@/components/kit/simple-table";
 import { PillFilter } from "@/components/kit/pill-filter";
 import { Button } from "@/components/kit/button";
+import { StatusChip } from "@/components/kit/status-chip";
 import { ErrorState } from "@/components/kit/error-state";
 import { EmptyState } from "@/components/kit/empty-state";
 import { useToast } from "@/components/kit/toast";
 import type { StaffPay } from "@/lib/domain/staff";
-import { money, negMoney, shortDate, staffLabel } from "./format";
+import { money, negMoney, staffLabel } from "./format";
 import { monthLabel } from "./month-picker";
 import { AdvanceDrawer } from "./advance-drawer";
 import { LogDailyPayDrawer } from "./log-daily-pay-drawer";
@@ -87,12 +88,19 @@ function AdjCell({
 
 /**
  * The Payout cell (staff-pay rework PR 3 — a staff-month accrues many
- * partial payouts). Three states:
- *   - Unpaid              → "Unpaid" + a "Pay out" button (payout drawer)
- *   - Partly paid         → "Partly paid · KES X of Y" (opens the payout
- *                            list, per-row Reverse) + a "Pay out" button
- *   - Paid (fully settled)→ "Paid · <date>" (opens the payout list to
- *                            reverse the last instalment)
+ * partial payouts). One consistent shape: a <StatusChip> that answers
+ * "where does this staff-month stand?" at a glance. The amount owed lives
+ * in `Net pay` + the footer, the instalment breakdown lives in the list
+ * drawer — never crammed into this column.
+ *
+ *   - Unpaid              → neutral chip. + a "Pay out" button when there
+ *                            is something to disburse (drawer).
+ *   - Partly paid         → warning chip (click → list drawer), with a
+ *                            2px progress bar underneath (netPaid /
+ *                            netPay). "Pay another instalment" lives in
+ *                            the list drawer footer.
+ *   - Paid (fully settled)→ success chip (click → list drawer, per-row
+ *                            Reverse — ADR-73).
  */
 function PayoutCell({
   row,
@@ -107,52 +115,56 @@ function PayoutCell({
   const remaining = Number(row.netRemaining);
 
   if (row.paid && hasPayouts) {
-    // Fully settled — the cell is the entry point to reverse an
-    // instalment (ADR-73). Admin only, this whole screen is Admin.
-    const last = row.payouts[row.payouts.length - 1];
+    // Fully settled — the chip is the entry point to reverse an instalment.
     return (
       <button
         type="button"
         onClick={() => onOpenList(row)}
-        className="font-ui text-success text-sm/sm underline decoration-dotted underline-offset-2 hover:[color:var(--text-primary)]"
+        className="outline-none focus-visible:[outline:2px_solid_var(--focus-ring)] rounded-lg"
+        aria-label={`View payouts for ${row.staffName}`}
       >
-        Paid · {shortDate(last.date)}
+        <StatusChip variant="success" className="underline decoration-dotted underline-offset-2">
+          Paid
+        </StatusChip>
       </button>
     );
   }
 
   if (hasPayouts) {
-    // Partly paid — a summary that opens the list, plus a way to add
-    // another instalment.
+    // Partly paid — chip opens the list; a thin progress bar shows how far
+    // along without a competing number.
+    const pct = Math.max(
+      0,
+      Math.min(100, (Number(row.netPaid) / Number(row.netPay)) * 100),
+    );
     return (
-      <span className="flex items-center gap-(--sp-4)">
-        <button
-          type="button"
-          onClick={() => onOpenList(row)}
-          className="font-ui text-warning text-sm/sm underline decoration-dotted underline-offset-2 hover:[color:var(--text-primary)]"
-        >
-          Partly paid · KES {money(row.netPaid)} of {money(row.netPay)}
-        </button>
-        <Button variant="secondary" size="sm" onClick={() => onPay(row)}>
-          Pay out
-        </Button>
-      </span>
+      <button
+        type="button"
+        onClick={() => onOpenList(row)}
+        className="flex flex-col gap-(--sp-1) outline-none focus-visible:[outline:2px_solid_var(--focus-ring)] rounded-lg"
+        aria-label={`View payouts for ${row.staffName} · ${money(row.netPaid)} of ${money(row.netPay)} paid`}
+      >
+        <StatusChip variant="warning" className="underline decoration-dotted underline-offset-2">
+          Partly paid
+        </StatusChip>
+        <span className="block h-[2px] w-[64px] rounded-full [background-color:var(--surface-subtle)] overflow-hidden">
+          <span
+            className="block h-full rounded-full bg-warning"
+            style={{ width: `${pct}%` }}
+          />
+        </span>
+      </button>
     );
   }
 
   return (
     <span className="flex items-center gap-(--sp-4)">
-      <span className="font-ui [color:var(--text-tertiary)] text-sm/sm">
-        Unpaid
-      </span>
-      <Button
-        variant="secondary"
-        size="sm"
-        disabled={remaining <= 0}
-        onClick={() => onPay(row)}
-      >
-        Pay out
-      </Button>
+      <StatusChip variant="neutral">Unpaid</StatusChip>
+      {remaining > 0 && (
+        <Button variant="secondary" size="sm" onClick={() => onPay(row)}>
+          Pay out
+        </Button>
+      )}
     </span>
   );
 }
@@ -406,7 +418,7 @@ export function PayTab({
     {
       key: "payout",
       header: "Payout",
-      width: "w-[150px] shrink-0",
+      width: "w-[132px] shrink-0",
       render: (r) => <PayoutCell row={r} onPay={setDrawer} onOpenList={setListDrawer} />,
     },
   ];
@@ -495,7 +507,7 @@ export function PayTab({
                 <div className="w-[116px] shrink-0 text-right font-mono font-(--weight-medium) text-(--nav-text-active) text-sm/sm">
                   {money(totals.netPay)}
                 </div>
-                <div className="w-[150px] shrink-0 flex flex-col justify-center">
+                <div className="w-[132px] shrink-0 flex flex-col justify-center">
                   <span className="font-ui text-(--nav-text-subtle) text-micro/caption">
                     {totals.paidCount} of {totals.paidCount + totals.unpaidCount}{" "}
                     paid
@@ -604,6 +616,7 @@ export function PayTab({
           pay={listRow}
           month={month}
           onReverse={reversePayout}
+          onPay={setDrawer}
           onClose={() => setListDrawer(null)}
         />
       )}

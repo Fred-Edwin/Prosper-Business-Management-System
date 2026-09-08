@@ -22,17 +22,21 @@ export function PayoutListDrawer({
   pay,
   month,
   onReverse,
+  onPay,
   onClose,
 }: {
   pay: StaffPay;
   /** `YYYY-MM`. */
   month: string;
   onReverse: (payoutId: string) => Promise<void>;
+  /** Open the payout drawer to add another instalment. Omit when nothing is owed. */
+  onPay?: (row: StaffPay) => void;
   onClose: () => void;
 }) {
   const [reversing, setReversing] = React.useState<StaffPayoutView | null>(null);
 
   const rows = pay.payouts;
+  const owes = Number(pay.netRemaining) > 0;
 
   return (
     <>
@@ -43,15 +47,37 @@ export function PayoutListDrawer({
         subtitle={`${pay.staffName} · ${monthLabel(month)}`}
         variant="rail"
         footer={
-          <Button variant="secondary" className="grow" onClick={onClose}>
-            Done
-          </Button>
+          owes && onPay ? (
+            <>
+              <Button variant="secondary" onClick={onClose}>
+                Done
+              </Button>
+              <Button
+                variant="primary"
+                className="grow"
+                onClick={() => {
+                  onPay(pay);
+                  onClose();
+                }}
+              >
+                Pay another instalment
+              </Button>
+            </>
+          ) : (
+            <Button variant="secondary" className="grow" onClick={onClose}>
+              Done
+            </Button>
+          )
         }
       >
         <div className="font-ui [color:var(--text-secondary)] text-caption/micro">
-          {`Paid ${money(pay.netPaid)} of ${money(pay.netPay)} this month · ${money(
-            pay.netRemaining,
-          )} still owed. Reversing one instalment frees that much of the net to be paid again.`}
+          {owes
+            ? `Paid ${money(pay.netPaid)} of ${money(pay.netPay)} this month · ${money(
+                pay.netRemaining,
+              )} still owed. Reversing one instalment frees that much of the net to be paid again.`
+            : `Fully paid — ${money(pay.netPaid)} disbursed across ${
+                rows.length
+              } ${rows.length === 1 ? "payout" : "payouts"}. Reversing one frees that much of the net to be paid again.`}
         </div>
 
         {rows.length === 0 ? (

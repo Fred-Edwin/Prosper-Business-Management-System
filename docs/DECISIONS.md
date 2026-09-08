@@ -4267,12 +4267,20 @@ staff, ADR-75; PR 2 = daily-entry pay model, ADR-76).
   each". `POST /api/pay/payout/:id/reverse` contract unchanged — it now
   frees a partial.
 - **Screens.** `payout-drawer.tsx` — the reconciliation gains
-  *Already paid this month* → *Remaining* (highlighted) → an
-  *Amount to pay now* input defaulting to the full remaining, capped, with
-  an inline over-amount error. `pay-tab.tsx` — the Payout cell is
-  `Unpaid` → `Partly paid · KES X of Y` → `Paid · <date>`; "Partly paid"
-  and "Paid" open a new `payout-list-drawer.tsx` (this month's live
-  payouts, per-row **Reverse** via the existing
+  *Net for the month* → *− Already paid this month* → *Remaining*
+  (highlighted) → an *Amount to pay now* input defaulting to the full
+  remaining, capped, with an inline over-amount error. `pay-tab.tsx` — the
+  Payout cell is a single `<StatusChip>` for all three states
+  (`Unpaid` / `Partly paid` / `Paid`) so every row is the same height and
+  the column stops competing with `Net pay`; the *amount* owed lives in
+  `Net pay` + the footer, the instalment breakdown in the drawer, never
+  the cell. `Unpaid` keeps a trailing `Pay out` button (hidden when
+  nothing is owed); `Partly paid` carries a 2px `netPaid / netPay`
+  progress bar and, like `Paid`, opens a new `payout-list-drawer.tsx`
+  (this month's live payouts, per-row **Reverse** via
   `payout-reversal-drawer.tsx`, mirroring `staff-adjustments-drawer.tsx`).
+  The list drawer's footer carries a primary **Pay another instalment**
+  action while the month still owes — that action is deliberately *not*
+  an inline button on the row.
 - No `TODO(mock)`. The staff-pay rework (ADR-75 / ADR-76 / ADR-77) is
   complete.

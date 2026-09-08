@@ -47,13 +47,18 @@ owed. Previously a staff-month could be paid exactly once.
   `POST /api/pay/payout` body gains `amount`; `GET /api/pay`
   `payout` → `payouts[]` + `netPaid` / `netRemaining`.
 - **Screens** (`app/admin/staff/`) — `payout-drawer.tsx`: reconciliation
-  gains *Already paid this month* → *Remaining* (highlighted) → an
-  *Amount to pay now* input (defaults to full remaining, capped, inline
-  over-amount error). `pay-tab.tsx`: Payout cell is `Unpaid` →
-  `Partly paid · KES X of Y` → `Paid · <date>`; the latter two open a new
+  gains *Net for the month* → *− Already paid this month* → *Remaining*
+  (highlighted) → an *Amount to pay now* input (defaults to full
+  remaining, capped, inline over-amount error). `pay-tab.tsx`: the Payout
+  cell is a single `<StatusChip>` for all three states
+  (`Unpaid` / `Partly paid` / `Paid`) — one consistent row height, no
+  money figure competing with `Net pay`; `Partly paid` carries a 2px
+  `netPaid / netPay` progress bar and, with `Paid`, opens a new
   `payout-list-drawer.tsx` (this month's live payouts, per-row Reverse
-  via `payout-reversal-drawer.tsx`, now taking an explicit `payout` prop).
-  Mobile cards mirror. `use-staff.ts` `payOne` gains `amount`.
+  via `payout-reversal-drawer.tsx` which now takes an explicit `payout`
+  prop). The list drawer footer carries a primary **Pay another
+  instalment** action while the month still owes. Mobile cards mirror.
+  `use-staff.ts` `payOne` gains `amount`.
 - **Docs** — ADR-77; `API.md`, `SCHEMA.md`, PRD §4.8.
 - **Tests** — `payout.test.ts` (two partials sum to net; a third
   over-pays → rejected; `netPaid` / `netRemaining` / `payouts[]` through

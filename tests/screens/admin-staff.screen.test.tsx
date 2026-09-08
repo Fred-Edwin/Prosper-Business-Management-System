@@ -626,7 +626,7 @@ describe("Pay — payout drawer", () => {
     ).toBeInTheDocument();
   });
 
-  it("disables Pay out and blocks the drawer when the remaining net ≤ 0", async () => {
+  it("hides the Pay out button when the remaining net ≤ 0 (nothing to disburse)", async () => {
     const user = userEvent.setup();
     payrollState = {
       payroll: payroll([
@@ -642,9 +642,9 @@ describe("Pay — payout drawer", () => {
     };
     renderPay();
 
-    // The row button is disabled (nothing to pay) — can't open the drawer.
-    const payBtns = screen.getAllByRole("button", { name: "Pay out" });
-    payBtns.forEach((b) => expect(b).toBeDisabled());
+    // No "Pay out" button at all — the cell is just an "Unpaid" chip.
+    expect(screen.queryByRole("button", { name: "Pay out" })).toBeNull();
+    expect(screen.getAllByText("Unpaid").length).toBeGreaterThan(0);
     void user;
   });
 
@@ -702,11 +702,15 @@ describe("Pay — payout list + per-row reversal", () => {
     );
   }
 
-  it("a fully-settled row shows 'Paid · <date>' and opens the payouts list", async () => {
+  it("a fully-settled row shows a 'Paid' chip that opens the payouts list", async () => {
     const user = userEvent.setup();
     renderRows([pay({ payouts: [payoutView()] })]);
 
-    await user.click(screen.getAllByRole("button", { name: /Paid · /i })[0]);
+    // The cell is a "Paid" chip — the click target is labelled for a11y.
+    expect(screen.getAllByText("Paid").length).toBeGreaterThan(0);
+    await user.click(
+      screen.getAllByRole("button", { name: /View payouts for Grace Wanjiru/i })[0],
+    );
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/Payouts this month/i)).toBeInTheDocument();
     // One payout row, with its amount and a Reverse action.
@@ -714,9 +718,13 @@ describe("Pay — payout list + per-row reversal", () => {
     expect(
       within(dialog).getAllByRole("button", { name: "Reverse" }),
     ).toHaveLength(1);
+    // Fully settled — no "pay another" action.
+    expect(
+      within(dialog).queryByRole("button", { name: /Pay another instalment/i }),
+    ).toBeNull();
   });
 
-  it("a partly-paid row shows 'Partly paid · KES X of Y' and opens the list; a per-row Reverse reverses behind a confirm step", async () => {
+  it("a partly-paid row shows a 'Partly paid' chip; the list carries a per-row Reverse and a 'Pay another instalment' action", async () => {
     const user = userEvent.setup();
     renderRows([
       pay({
@@ -727,24 +735,51 @@ describe("Pay — payout list + per-row reversal", () => {
       }),
     ]);
 
-    // Cell summary.
-    expect(
-      screen.getAllByRole("button", {
-        name: /Partly paid · KES 9,000.00 of 15,300.00/i,
-      })[0],
-    ).toBeInTheDocument();
+    // The cell is a "Partly paid" chip — no KES figure crammed into the row.
+    expect(screen.getAllByText("Partly paid").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/KES 9,000.00 of 15,300.00/)).toBeNull();
 
     await user.click(
-      screen.getAllByRole("button", {
-        name: /Partly paid · KES 9,000.00 of 15,300.00/i,
-      })[0],
+      screen.getAllByRole("button", { name: /View payouts for Grace Wanjiru/i })[0],
     );
     const dialog = await screen.findByRole("dialog");
+    // The "how far along" summary lives in the drawer, not the row.
+    expect(
+      within(dialog).getByText(/Paid 9,000.00 of 15,300.00 this month/i),
+    ).toBeInTheDocument();
     // Two payout rows, each with a Reverse.
     const reverseBtns = within(dialog).getAllByRole("button", { name: "Reverse" });
     expect(reverseBtns).toHaveLength(2);
 
-    // Reverse the first (po-1) — opens the Void-only reversal drawer.
+    // "Pay another instalment" opens the payout drawer.
+    await user.click(
+      within(dialog).getByRole("button", { name: /Pay another instalment/i }),
+    );
+    const payDialog = await screen.findByRole("dialog", {
+      name: /Pay out salary/i,
+    });
+    expect(
+      within(payDialog).getByLabelText(/Amount to pay now/i),
+    ).toBeInTheDocument();
+  });
+
+  it("a per-row Reverse in the list reverses behind a confirm step", async () => {
+    const user = userEvent.setup();
+    renderRows([
+      pay({
+        payouts: [
+          payoutView({ id: "po-1", netPaid: "5000.00", date: "2026-09-12" }),
+          payoutView({ id: "po-2", netPaid: "4000.00", date: "2026-09-20" }),
+        ],
+      }),
+    ]);
+
+    await user.click(
+      screen.getAllByRole("button", { name: /View payouts for Grace Wanjiru/i })[0],
+    );
+    const dialog = await screen.findByRole("dialog");
+    const reverseBtns = within(dialog).getAllByRole("button", { name: "Reverse" });
+
     await user.click(reverseBtns[0]);
     const reverseDialog = await screen.findByRole("dialog", {
       name: /Reverse payout/i,
@@ -772,7 +807,9 @@ describe("Pay — payout list + per-row reversal", () => {
     );
     renderRows([pay({ payouts: [payoutView()] })]);
 
-    await user.click(screen.getAllByRole("button", { name: /Paid · /i })[0]);
+    await user.click(
+      screen.getAllByRole("button", { name: /View payouts for Grace Wanjiru/i })[0],
+    );
     const listDialog = await screen.findByRole("dialog", {
       name: /Payouts this month/i,
     });
