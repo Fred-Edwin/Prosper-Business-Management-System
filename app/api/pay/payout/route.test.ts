@@ -94,7 +94,7 @@ describe("/api/pay/payout role gates", () => {
     await prisma.$disconnect();
   });
 
-  const single = { staffId: "", month: "2026-01", paidFromAccount: "cash", date: "2026-02-01" };
+  const single = { staffId: "", month: "2026-01", paidFromAccount: "cash", date: "2026-02-01", amount: "15500.00" };
   const all = { month: "2026-01", paidFromAccount: "cash", date: "2026-02-01" };
 
   it("401 when unauthenticated", async () => {
@@ -116,12 +116,16 @@ describe("/api/pay/payout role gates", () => {
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
   });
 
-  it("admin can record a single payout through the route (201)", async () => {
+  it("admin can record a single partial payout through the route (201)", async () => {
     mockSession.current = sessionFor("admin", adminId);
+    // Jan 2026 gross = 500 × 31 = 15500. Pay it all in one instalment.
     const res = await postPayout({ ...single, staffId });
     expect(res.status).toBe(201);
     expect(res.body.data.paid).toBe(true);
-    expect(res.body.data.payout.netPaid).toBe(res.body.data.netPay);
+    expect(res.body.data.payouts).toHaveLength(1);
+    expect(res.body.data.payouts[0].netPaid).toBe("15500.00");
+    expect(res.body.data.netPaid).toBe("15500.00");
+    expect(res.body.data.netRemaining).toBe("0.00");
   });
 
   // NOTE: `?mode=all` is business-wide (pays every unpaid active staff in

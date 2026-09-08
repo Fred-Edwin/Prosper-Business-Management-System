@@ -486,23 +486,28 @@ staff-day (same trick as `staff_payout`'s partial unique). Writes **no
 Recording is day-close gated (`assertDayOpen`); an Admin correction /
 void row is not.
 
-### `StaffPayout` (M4 S9A, ADR-60)
+### `StaffPayout` (M4 S9A, ADR-60; partial payouts ADR-77)
 | Column | Notes |
 |---|---|
 | staff_id | FK → `Staff` |
 | month | `@db.Date`, stored as the 1st of the covered calendar month |
-| net_paid | `NUMERIC(12,2)` — net disbursed, recomputed from the ledger at record time, always > 0 |
+| net_paid | `NUMERIC(12,2)` — **this instalment's** amount, Admin-entered, > 0, ≤ the then-remaining net |
 | date | `@db.Date` — the business day the disbursement is dated to (day-close gated) |
 | paid_from_account | enum `MoneyAccount` (`cash` \| `mpesa_bank`) |
 | recorded_by | FK → `User` |
 | expense_id | FK → `Expense`, **unique** — the one Salaries `Expense` this payout created (which carries the paired `MoneyMovement`) |
+| reversed_at | `DateTime?` — set by `reversePayout` (ADR-73). A reversed row is ignored by `getStaffPay` / `getPayrollSummary`, freeing that instalment's slice of the net to be paid again |
 
-Unique on (`staff_id`, `month`) — a staff-month can be paid at most once,
-enforced by the database. Recording a payout does **not** write a bespoke
-`MoneyMovement`; it goes through `recordExpense`, so Cash and Net Profit
-move exactly once through the shared path. No new `MoneySourceType`.
-Reversal = correct the linked `Expense` to zero (ADR-60); a first-class
-void is deferred.
+A staff-month accrues **many** payouts — partial disbursements across the
+month (ADR-77). Plain index on (`staff_id`, `month`) backs the month
+lookups. Through ADR-73 a **partial unique** index
+(`staff_payout_staff_id_month_live_key`, `WHERE reversed_at IS NULL`) held
+"one live payout per staff-month"; ADR-77's migration
+`20260908160000_drop_staff_payout_live_unique` **drops** it. The
+`amount ≤ netRemaining` check in `payStaff` is the only bound now.
+Recording a payout does **not** write a bespoke `MoneyMovement`; it goes
+through `recordExpense`, so Cash and Net Profit move exactly once through
+the shared path. No new `MoneySourceType`.
 
 ### `HandoverShortfall`
 | Column | Notes |

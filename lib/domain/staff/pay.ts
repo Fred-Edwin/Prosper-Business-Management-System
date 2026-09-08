@@ -289,21 +289,44 @@ export type StaffPay = {
   netPay: string;
   adjustments: PayAdjustmentView[];
   /**
-   * Whether this staff-month has been paid out (M4 S9A). When `paid`, the
-   * disbursement created one Salaries `Expense`; `netPay` above is what was
-   * owed, `payout.netPaid` is what was actually disbursed (they are equal
-   * — the amount is recomputed at payout time, never client-supplied).
+   * Σ `netPaid` over this month's LIVE payouts (staff-pay rework PR 3 — a
+   * staff-month accrues many partial disbursements, not one). A reversed
+   * payout (ADR-73) does not count. Decimal string.
+   */
+  netPaid: string;
+  /**
+   * `netPay − netPaid` — how much of the month's net is still owed.
+   * **Not floored** (consistent with ADR-60's `netPay`): if adjustments
+   * landed after a payout and drove `netPay` below what was already
+   * disbursed, this reads negative. A further payout's `amount` must be
+   * `≤` this; `netRemaining ≤ 0` refuses a payout the same way `netPay ≤
+   * 0` does.
+   */
+  netRemaining: string;
+  /**
+   * Whether this staff-month is fully settled — `netRemaining <= 0` **and**
+   * at least one payout was recorded (`netPaid > 0`). An over-advanced
+   * month with nothing disbursed (`netPay ≤ 0`, no payouts) is **not**
+   * "paid" — nothing moved (ADR-60): it reads `paid: false` and the
+   * over-advance stays as adjustments until the Admin corrects it. Each
+   * live payout created its own Salaries `Expense`; `netPay` above is what
+   * was owed, `netPaid` is what has been disbursed so far.
    */
   paid: boolean;
-  payout: StaffPayoutView | null;
+  /**
+   * This month's LIVE payouts, oldest first (staff-pay rework PR 3). A
+   * reversed payout (ADR-73) is not included. Empty when nothing has been
+   * disbursed yet.
+   */
+  payouts: StaffPayoutView[];
 };
 
-/** A recorded monthly disbursement (M4 S9A). Wire shape. */
+/** One recorded partial disbursement of a staff-month's net. Wire shape. */
 export type StaffPayoutView = {
   id: string;
   staffId: string;
   month: string;
-  /** Net pay disbursed — recomputed from the ledger, always > 0. */
+  /** This instalment's amount — Admin-entered, `> 0`, `≤` the then-remaining net. */
   netPaid: string;
   /** Business date the disbursement is dated to. */
   date: string;
@@ -312,7 +335,7 @@ export type StaffPayoutView = {
   expenseId: string;
   /**
    * ISO instant the payout was reversed (ADR-73), else `null`. A live
-   * payout (the only kind `getStaffPay.payout` returns) is always `null`
+   * payout (the only kind `getStaffPay.payouts` returns) is always `null`
    * here; the field carries history for a reversed-payout view.
    */
   reversedAt: string | null;
@@ -349,7 +372,7 @@ export async function getStaffPay(
   // A month entirely in the future has no payable days yet.
   const payableDays = payableTo < from ? 0 : daysInRange(from, payableTo);
 
-  const [absentRows, adjRows, dailyPayRows, payoutRow] = await Promise.all([
+  const [absentRows, adjRows, dailyPayRows, payoutRows] = await Promise.all([
     prisma.attendance.findMany({
       where: {
         staffId,
@@ -376,11 +399,12 @@ export async function getStaffPay(
           orderBy: { date: "asc" },
         })
       : Promise.resolve([]),
-    // Only a LIVE payout counts — a reversed one (ADR-73) leaves the
-    // staff-month payable again. The partial unique index guarantees at
-    // most one row matches.
-    prisma.staffPayout.findFirst({
+    // Every LIVE payout for the month — a staff-month accrues many partial
+    // disbursements (staff-pay rework PR 3). A reversed one (ADR-73) frees
+    // its slice of the net. Oldest first — the instalment order.
+    prisma.staffPayout.findMany({
       where: { staffId, month: monthStartDate(month), reversedAt: null },
+      orderBy: { date: "asc" },
     }),
   ]);
 
@@ -411,6 +435,10 @@ export async function getStaffPay(
   const netPay = grossPay.minus(advances).minus(deductions);
   const adjViews = toAdjustmentViews(adjRows);
 
+  const netPaid = payoutRows.reduce((acc, p) => acc.plus(p.netPaid), ZERO);
+  const netRemaining = netPay.minus(netPaid);
+  const settled = netRemaining.lessThanOrEqualTo(0) && netPaid.greaterThan(0);
+
   return {
     staffId: staff.id,
     staffName: staff.name,
@@ -426,8 +454,10 @@ export async function getStaffPay(
     deductions: deductions.toFixed(2),
     netPay: netPay.toFixed(2),
     adjustments: adjViews,
-    paid: payoutRow !== null,
-    payout: payoutRow ? toPayoutView(payoutRow) : null,
+    netPaid: netPaid.toFixed(2),
+    netRemaining: netRemaining.toFixed(2),
+    paid: settled,
+    payouts: payoutRows.map(toPayoutView),
   };
 }
 
@@ -439,13 +469,13 @@ export type PayrollSummary = {
     advances: string;
     deductions: string;
     netPay: string;
-    /** Σ `payout.netPaid` over the rows already paid this month (M4 S9A). */
+    /** Σ `netPaid` over the rows — every live partial payout this month. */
     netPaid: string;
-    /** Σ `netPay` over the rows NOT yet paid whose net is > 0 (M4 S9A). */
+    /** Σ `netRemaining` over the rows whose remaining net is still > 0. */
     netUnpaid: string;
-    /** How many of `rows` have a recorded payout. */
+    /** How many of `rows` are fully settled (`paid` — see `StaffPay.paid`). */
     paidCount: number;
-    /** How many of `rows` are unpaid (`rows.length − paidCount`). */
+    /** How many of `rows` are not fully settled (`rows.length − paidCount`). */
     unpaidCount: number;
   };
 };
@@ -517,13 +547,19 @@ export async function getPayrollSummary(month: string): Promise<PayrollSummary> 
         })
       : Promise.resolve([]),
     prisma.staffPayout.findMany({
-      // LIVE payouts only — a reversed one (ADR-73) makes the staff-month
-      // unpaid again.
+      // Every LIVE payout — a staff-month accrues many partials (PR 3); a
+      // reversed one (ADR-73) frees its slice. Oldest first per staff.
       where: { staffId: { in: ids }, month: monthStartDate(month), reversedAt: null },
+      orderBy: { date: "asc" },
     }),
   ]);
 
-  const payoutByStaff = new Map(payoutRows.map((p) => [p.staffId, p]));
+  const payoutsByStaff = new Map<string, typeof payoutRows>();
+  for (const p of payoutRows) {
+    const list = payoutsByStaff.get(p.staffId) ?? [];
+    list.push(p);
+    payoutsByStaff.set(p.staffId, list);
+  }
 
   const absentByStaff = new Map(
     absentRows.map((r) => [r.staffId, r._count._all]),
@@ -568,18 +604,20 @@ export async function getPayrollSummary(month: string): Promise<PayrollSummary> 
       else deductions = deductions.plus(a.amount);
     }
     const netPay = grossPay.minus(advances).minus(deductions);
-    const payout = payoutByStaff.get(s.id) ?? null;
+    const payouts = payoutsByStaff.get(s.id) ?? [];
+    const netPaid = payouts.reduce((acc, p) => acc.plus(p.netPaid), ZERO);
+    const netRemaining = netPay.minus(netPaid);
+    const settled = netRemaining.lessThanOrEqualTo(0) && netPaid.greaterThan(0);
 
     tGross = tGross.plus(grossPay);
     tAdv = tAdv.plus(advances);
     tDed = tDed.plus(deductions);
     tNet = tNet.plus(netPay);
-    if (payout) {
-      paidCount += 1;
-      tNetPaid = tNetPaid.plus(payout.netPaid);
-    } else if (netPay.greaterThan(0)) {
-      tNetUnpaid = tNetUnpaid.plus(netPay);
+    tNetPaid = tNetPaid.plus(netPaid);
+    if (netRemaining.greaterThan(0)) {
+      tNetUnpaid = tNetUnpaid.plus(netRemaining);
     }
+    if (settled) paidCount += 1;
 
     return {
       staffId: s.id,
@@ -596,8 +634,10 @@ export async function getPayrollSummary(month: string): Promise<PayrollSummary> 
       deductions: deductions.toFixed(2),
       netPay: netPay.toFixed(2),
       adjustments: toAdjustmentViews(list),
-      paid: payout !== null,
-      payout: payout ? toPayoutView(payout) : null,
+      netPaid: netPaid.toFixed(2),
+      netRemaining: netRemaining.toFixed(2),
+      paid: settled,
+      payouts: payouts.map(toPayoutView),
     };
   });
 
@@ -641,36 +681,42 @@ export type PayStaffInput = {
   paidFromAccount: MoneyAccount;
   /** Business date the disbursement is dated to (`YYYY-MM-DD`). */
   date: string;
+  /**
+   * This instalment's amount (decimal string, `> 0`). Admin-entered
+   * (staff-pay rework PR 3 — a staff-month accrues many partial payouts).
+   * Bounded: `≤` the month's remaining net (`getStaffPay.netRemaining`).
+   * "Pay the whole balance" is just `amount = netRemaining`.
+   */
+  amount: string;
 };
 
 const PAYOUT_NOTE = (name: string, month: string) =>
   `Staff pay — ${name} — ${month}`;
 
 /**
- * Core of a single payout, run inside a caller-supplied transaction so the
- * `Expense`, its paired `MoneyMovement`, and the `StaffPayout` row commit
- * together or not at all. Assumes `pay` was just recomputed from the
- * ledger and `pay.netPay > 0` (checked by the caller). Returns the new
- * payout row id.
+ * Core of a single partial payout, run inside a caller-supplied
+ * transaction so the `Expense`, its paired `MoneyMovement`, and the
+ * `StaffPayout` row commit together or not at all. `amount` is the
+ * caller-validated instalment (a positive `Decimal`, already checked `≤`
+ * the month's remaining net). Returns the new payout row id.
  *
- * The DB `@@unique([staffId, month])` is the real double-pay guard — a
- * concurrent second call fails here with `P2002`, which the caller maps to
- * `CONFLICT`.
+ * A staff-month accrues many live payouts now (staff-pay rework PR 3) —
+ * there is no `@@unique([staffId, month])` guard any more; the `≤
+ * remaining` bound in `payStaff` is what stops an over-payment.
  */
 async function writePayout(
   tx: Prisma.TransactionClient,
   pay: StaffPay,
   input: PayStaffInput,
+  amount: Prisma.Decimal,
   actor: StaffActor,
 ): Promise<string> {
   await assertDayOpen(input.date, tx);
 
-  const net = new Prisma.Decimal(pay.netPay);
-
   const expense = await recordExpense(
     {
       category: "salaries",
-      amount: net.toFixed(2),
+      amount: amount.toFixed(2),
       date: input.date,
       paidFromAccount: input.paidFromAccount,
       note: PAYOUT_NOTE(pay.staffName, input.month),
@@ -679,32 +725,17 @@ async function writePayout(
     { tx },
   );
 
-  let payout;
-  try {
-    payout = await tx.staffPayout.create({
-      data: {
-        staffId: input.staffId,
-        month: monthStartDate(input.month),
-        netPaid: net,
-        date: businessDateOnly(input.date),
-        paidFromAccount: input.paidFromAccount,
-        recordedById: actor.actorId,
-        expenseId: expense.id,
-      },
-    });
-  } catch (e) {
-    if (
-      e instanceof Prisma.PrismaClientKnownRequestError &&
-      e.code === "P2002"
-    ) {
-      throw new DomainError(
-        "CONFLICT",
-        "This staff member has already been paid for this month.",
-        "month",
-      );
-    }
-    throw e;
-  }
+  const payout = await tx.staffPayout.create({
+    data: {
+      staffId: input.staffId,
+      month: monthStartDate(input.month),
+      netPaid: amount,
+      date: businessDateOnly(input.date),
+      paidFromAccount: input.paidFromAccount,
+      recordedById: actor.actorId,
+      expenseId: expense.id,
+    },
+  });
 
   await tx.auditLog.create({
     data: {
@@ -715,7 +746,7 @@ async function writePayout(
       newValue: {
         staffId: input.staffId,
         month: input.month,
-        netPaid: net.toFixed(2),
+        netPaid: amount.toFixed(2),
         expenseId: expense.id,
         paidFromAccount: input.paidFromAccount,
       },
@@ -727,21 +758,24 @@ async function writePayout(
 }
 
 /**
- * Pay one staff member for a month (M4 S9A). **Admin-only.**
+ * Record one partial payout for a staff member's month (staff-pay rework
+ * PR 3, per ADR-60). **Admin-only.**
  *
- * In ONE transaction: recompute net pay from the ledger (never trust a
- * client amount — there is no amount in the input), create the Salaries
- * `Expense` via `recordExpense`, write the `StaffPayout` row linking to
- * it. Returns the refreshed `getStaffPay` view (now `paid: true`).
+ * A staff-month accrues N payouts — instalments across the month. Each
+ * call disburses an **Admin-entered** `amount`, bounded to the month's
+ * remaining net (`getStaffPay.netRemaining` = `netPay − Σ live payouts`),
+ * and posts its own Salaries `Expense` via `recordExpense` (one paired
+ * negative `MoneyMovement`, the ADR-60 path, unchanged). Returns the
+ * refreshed `getStaffPay` view.
  *
  * Guards (each has a test):
  *   - not admin → `FORBIDDEN`
- *   - malformed month / date → `VALIDATION_ERROR`
+ *   - malformed month / date / amount → `VALIDATION_ERROR`
  *   - a **future** month → `VALIDATION_ERROR` (nothing has been worked)
- *   - net pay ≤ 0 → `VALIDATION_ERROR` (ADR-60: the over-advance stays as
- *     unpaid adjustments; nothing is disbursed, no negative posts)
- *   - already paid for that month → `CONFLICT` (in code AND at the DB via
- *     `@@unique([staffId, month])`)
+ *   - remaining net ≤ 0 → `VALIDATION_ERROR` (`field: "net"`) — the same
+ *     "nothing to disburse" rejection `netPay ≤ 0` gives (ADR-60: an
+ *     over-advance stays as adjustments; nothing is disbursed)
+ *   - `amount` > remaining net → `VALIDATION_ERROR` (`field: "amount"`)
  *   - the disbursement date's day is closed → `FORBIDDEN` (`assertDayOpen`)
  */
 export async function payStaff(
@@ -769,6 +803,22 @@ export async function payStaff(
       "month",
     );
   }
+  const trimmedAmount = (input.amount ?? "").trim();
+  if (!RATE_RE.test(trimmedAmount)) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "Amount must be a number with up to 2 decimal places.",
+      "amount",
+    );
+  }
+  const amount = new Prisma.Decimal(trimmedAmount);
+  if (amount.lessThanOrEqualTo(0)) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "Amount must be greater than zero.",
+      "amount",
+    );
+  }
 
   const staff = await prisma.staff.findUnique({
     where: { id: input.staffId },
@@ -778,24 +828,26 @@ export async function payStaff(
     throw new DomainError("NOT_FOUND", "Staff member not found.", "staffId");
   }
 
-  // Recompute from the ledger — this is the ONLY source of the amount.
+  // Recompute from the ledger — the remaining net is the ONLY bound on
+  // the Admin-entered amount.
   const pay = await getStaffPay(input.staffId, input.month);
-  if (pay.paid) {
-    throw new DomainError(
-      "CONFLICT",
-      "This staff member has already been paid for this month.",
-      "month",
-    );
-  }
-  if (new Prisma.Decimal(pay.netPay).lessThanOrEqualTo(0)) {
+  const remaining = new Prisma.Decimal(pay.netRemaining);
+  if (remaining.lessThanOrEqualTo(0)) {
     throw new DomainError(
       "VALIDATION_ERROR",
-      "Net pay for this month is zero or less — nothing to disburse. Advances and deductions already recorded exceed what was earned; the excess stays on the books until you record a correcting entry.",
+      "There is nothing left to disburse for this month — the net is fully paid, or advances and deductions already recorded exceed what was earned.",
       "net",
     );
   }
+  if (amount.greaterThan(remaining)) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      `That is more than the ${remaining.toFixed(2)} still owed for this month. Enter that or less.`,
+      "amount",
+    );
+  }
 
-  await prisma.$transaction((tx) => writePayout(tx, pay, input, actor));
+  await prisma.$transaction((tx) => writePayout(tx, pay, input, amount, actor));
 
   return getStaffPay(input.staffId, input.month);
 }
@@ -956,15 +1008,18 @@ export type PayAllUnpaidResult = {
 };
 
 /**
- * Pay every unpaid ACTIVE staff member for a month (M4 S9A). **Admin-only.**
+ * Pay the remaining balance for every ACTIVE staff member for a month
+ * (staff-pay rework PR 3, per ADR-60). **Admin-only.**
  *
- * Each staff member's `Expense` + `StaffPayout` is its OWN transaction —
- * one failure (a race that already paid them, a zero net) is *skipped*,
- * not a rollback of the whole batch. One `Expense` per staff member paid.
+ * "Pay the remaining balance each" — for a staff-month already part-paid
+ * this disburses only `netRemaining`, adding one more partial payout;
+ * fully-settled staff-months are skipped. Each staff member's `Expense` +
+ * `StaffPayout` is its OWN transaction — one failure is *skipped*, not a
+ * rollback of the whole batch. One `Expense` per staff member paid.
  *
- * Skips, with a reason, any staff member who: is already paid, or whose
- * net pay is ≤ 0 for the month. A future month → `VALIDATION_ERROR` (the
- * whole call, nothing to do).
+ * Skips, with a reason, any staff member whose remaining net is ≤ 0
+ * (fully settled, or advances/deductions exceed earnings). A future month
+ * → `VALIDATION_ERROR` (the whole call, nothing to do).
  */
 export async function payAllUnpaid(
   input: PayAllUnpaidInput,
@@ -997,66 +1052,56 @@ export async function payAllUnpaid(
   const paid: StaffPayoutView[] = [];
   const skipped: PayAllUnpaidResult["skipped"] = [];
 
+  const settledReason = "the month's net is fully paid — nothing left to disburse";
+  const overAdvancedReason =
+    "net pay is zero or less — nothing to disburse";
+
   for (const row of summary.rows) {
-    if (row.paid) {
+    const rowRemaining = new Prisma.Decimal(row.netRemaining);
+    if (rowRemaining.lessThanOrEqualTo(0)) {
       skipped.push({
         staffId: row.staffId,
         staffName: row.staffName,
-        reason: "already paid for this month",
-      });
-      continue;
-    }
-    if (new Prisma.Decimal(row.netPay).lessThanOrEqualTo(0)) {
-      skipped.push({
-        staffId: row.staffId,
-        staffName: row.staffName,
-        reason: "net pay is zero or less — nothing to disburse",
+        reason:
+          row.payouts.length > 0 || new Prisma.Decimal(row.netPay).greaterThan(0)
+            ? settledReason
+            : overAdvancedReason,
       });
       continue;
     }
 
+    // Re-read so a concurrent payout / a just-added adjustment is
+    // reflected — the amount is the freshly-computed remaining net. A
+    // closed day (FORBIDDEN) or anything unexpected is NOT swallowed: it
+    // propagates so the caller knows the batch could not run.
+    const fresh = await getStaffPay(row.staffId, input.month);
+    const remaining = new Prisma.Decimal(fresh.netRemaining);
+    if (remaining.lessThanOrEqualTo(0)) {
+      skipped.push({
+        staffId: row.staffId,
+        staffName: row.staffName,
+        reason:
+          fresh.payouts.length > 0 ||
+          new Prisma.Decimal(fresh.netPay).greaterThan(0)
+            ? settledReason
+            : overAdvancedReason,
+      });
+      continue;
+    }
     const one: PayStaffInput = {
       staffId: row.staffId,
       month: input.month,
       paidFromAccount: input.paidFromAccount,
       date: input.date,
+      amount: remaining.toFixed(2),
     };
-    try {
-      // Re-read inside so a concurrent payout / a just-added adjustment is
-      // reflected; `writePayout` also has the DB unique as a backstop.
-      const fresh = await getStaffPay(row.staffId, input.month);
-      if (fresh.paid) {
-        skipped.push({
-          staffId: row.staffId,
-          staffName: row.staffName,
-          reason: "already paid for this month",
-        });
-        continue;
-      }
-      if (new Prisma.Decimal(fresh.netPay).lessThanOrEqualTo(0)) {
-        skipped.push({
-          staffId: row.staffId,
-          staffName: row.staffName,
-          reason: "net pay is zero or less — nothing to disburse",
-        });
-        continue;
-      }
-      await prisma.$transaction((tx) => writePayout(tx, fresh, one, actor));
-      const after = await getStaffPay(row.staffId, input.month);
-      if (after.payout) paid.push(after.payout);
-    } catch (e) {
-      if (e instanceof DomainError && e.code === "CONFLICT") {
-        skipped.push({
-          staffId: row.staffId,
-          staffName: row.staffName,
-          reason: "already paid for this month",
-        });
-        continue;
-      }
-      // A closed day (FORBIDDEN) or anything unexpected must not be
-      // swallowed — the caller needs to know the batch could not run.
-      throw e;
-    }
+    const payoutId = await prisma.$transaction((tx) =>
+      writePayout(tx, fresh, one, remaining, actor),
+    );
+    const created = await prisma.staffPayout.findUniqueOrThrow({
+      where: { id: payoutId },
+    });
+    paid.push(toPayoutView(created));
   }
 
   return { month: input.month, paid, skipped };

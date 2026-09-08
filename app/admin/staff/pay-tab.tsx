@@ -32,7 +32,7 @@ import { AdvanceDrawer } from "./advance-drawer";
 import { LogDailyPayDrawer } from "./log-daily-pay-drawer";
 import { DailyPayDrawer } from "./daily-pay-drawer";
 import { PayoutDrawer } from "./payout-drawer";
-import { PayoutReversalDrawer } from "./payout-reversal-drawer";
+import { PayoutListDrawer } from "./payout-list-drawer";
 import { StaffAdjustmentsDrawer } from "./staff-adjustments-drawer";
 import { ShortfallsCard } from "./shortfalls-card";
 import {
@@ -85,29 +85,61 @@ function AdjCell({
   );
 }
 
+/**
+ * The Payout cell (staff-pay rework PR 3 — a staff-month accrues many
+ * partial payouts). Three states:
+ *   - Unpaid              → "Unpaid" + a "Pay out" button (payout drawer)
+ *   - Partly paid         → "Partly paid · KES X of Y" (opens the payout
+ *                            list, per-row Reverse) + a "Pay out" button
+ *   - Paid (fully settled)→ "Paid · <date>" (opens the payout list to
+ *                            reverse the last instalment)
+ */
 function PayoutCell({
   row,
   onPay,
-  onReverse,
+  onOpenList,
 }: {
   row: StaffPay;
   onPay: (row: StaffPay) => void;
-  onReverse: (row: StaffPay) => void;
+  onOpenList: (row: StaffPay) => void;
 }) {
-  if (row.paid && row.payout) {
-    // Paid state doubles as the entry point to reverse the payout
-    // (ADR-73) — Admin only, this whole screen is Admin.
+  const hasPayouts = row.payouts.length > 0;
+  const remaining = Number(row.netRemaining);
+
+  if (row.paid && hasPayouts) {
+    // Fully settled — the cell is the entry point to reverse an
+    // instalment (ADR-73). Admin only, this whole screen is Admin.
+    const last = row.payouts[row.payouts.length - 1];
     return (
       <button
         type="button"
-        onClick={() => onReverse(row)}
+        onClick={() => onOpenList(row)}
         className="font-ui text-success text-sm/sm underline decoration-dotted underline-offset-2 hover:[color:var(--text-primary)]"
       >
-        Paid · {shortDate(row.payout.date)}
+        Paid · {shortDate(last.date)}
       </button>
     );
   }
-  const netPositive = Number(row.netPay) > 0;
+
+  if (hasPayouts) {
+    // Partly paid — a summary that opens the list, plus a way to add
+    // another instalment.
+    return (
+      <span className="flex items-center gap-(--sp-4)">
+        <button
+          type="button"
+          onClick={() => onOpenList(row)}
+          className="font-ui text-warning text-sm/sm underline decoration-dotted underline-offset-2 hover:[color:var(--text-primary)]"
+        >
+          Partly paid · KES {money(row.netPaid)} of {money(row.netPay)}
+        </button>
+        <Button variant="secondary" size="sm" onClick={() => onPay(row)}>
+          Pay out
+        </Button>
+      </span>
+    );
+  }
+
   return (
     <span className="flex items-center gap-(--sp-4)">
       <span className="font-ui [color:var(--text-tertiary)] text-sm/sm">
@@ -116,7 +148,7 @@ function PayoutCell({
       <Button
         variant="secondary"
         size="sm"
-        disabled={!netPositive}
+        disabled={remaining <= 0}
         onClick={() => onPay(row)}
       >
         Pay out
@@ -200,9 +232,7 @@ export function PayTab({
   );
 
   const [drawer, setDrawer] = React.useState<StaffPay | null>(null);
-  const [reverseDrawer, setReverseDrawer] = React.useState<StaffPay | null>(
-    null,
-  );
+  const [listDrawer, setListDrawer] = React.useState<StaffPay | null>(null);
   const [adjDrawer, setAdjDrawer] = React.useState<StaffPay | null>(null);
   const [payingAll, setPayingAll] = React.useState(false);
 
@@ -225,6 +255,17 @@ export function PayTab({
           dailyPayDrawer)
         : null,
     [dailyPayDrawer, payroll],
+  );
+
+  // And the payouts-this-month list, so a per-row Reverse re-renders the
+  // list against the freshened payroll.
+  const listRow = React.useMemo(
+    () =>
+      listDrawer
+        ? (payroll?.rows.find((r) => r.staffId === listDrawer.staffId) ??
+          listDrawer)
+        : null,
+    [listDrawer, payroll],
   );
 
   const totals = payroll?.totals;
@@ -366,7 +407,7 @@ export function PayTab({
       key: "payout",
       header: "Payout",
       width: "w-[150px] shrink-0",
-      render: (r) => <PayoutCell row={r} onPay={setDrawer} onReverse={setReverseDrawer} />,
+      render: (r) => <PayoutCell row={r} onPay={setDrawer} onOpenList={setListDrawer} />,
     },
   ];
 
@@ -536,7 +577,7 @@ export function PayTab({
                     </div>
                   )}
                   <div className="pt-(--sp-1)">
-                    <PayoutCell row={r} onPay={setDrawer} onReverse={setReverseDrawer} />
+                    <PayoutCell row={r} onPay={setDrawer} onOpenList={setListDrawer} />
                   </div>
                 </div>
               );
@@ -558,12 +599,12 @@ export function PayTab({
         />
       )}
 
-      {reverseDrawer?.payout && (
-        <PayoutReversalDrawer
-          pay={reverseDrawer}
+      {listRow && listRow.payouts.length > 0 && (
+        <PayoutListDrawer
+          pay={listRow}
           month={month}
           onReverse={reversePayout}
-          onClose={() => setReverseDrawer(null)}
+          onClose={() => setListDrawer(null)}
         />
       )}
 

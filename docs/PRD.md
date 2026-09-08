@@ -232,23 +232,30 @@ cylinders, tables, POS phones) — distinct from stock; never sold or consumed.
     Each entry is append-only — a mistake is Corrected or Voided, never
     overwritten.
 - As the Admin, I can record salary advances and deductions against a staff member, netted off monthly pay (either pay model).
-- As the Admin, I can **pay** a staff member for a month — recording the
-  payout. The net amount is recomputed from the ledger at that moment
-  (monthly gross per the pay model − advances − deductions); it is never
-  entered by hand. Recording a payout creates one Salaries `Expense` for
-  the net amount, which is what moves Cash and reduces Net Profit — there
-  is exactly one expense per payout, through the same path as any other
-  expense (ADR-60). Payroll disbursement happens **inside** the system.
-  - A staff-month can be paid at most once (enforced in the database).
+- As the Admin, I can **pay** a staff member for a month in **one or more
+  partial payouts, tracked against the month's net** (ADR-77). I enter
+  each instalment's amount by hand (e.g. KES 5,000 mid-month, the balance
+  on payday); the system caps it at what is still owed
+  (monthly gross per the pay model − advances − deductions − what I have
+  already paid this month) and tells me the remaining balance. Recording a
+  payout creates one Salaries `Expense` for that instalment's amount,
+  which is what moves Cash and reduces Net Profit — there is exactly one
+  expense per payout, through the same path as any other expense (ADR-60).
+  Payroll disbursement happens **inside** the system.
   - A future month cannot be paid; a payout dated to a closed day is
     rejected like any other create.
+  - I cannot pay more than the month's remaining net; once it reaches
+    zero the staff-month reads as fully paid.
   - If advances + deductions exceed what was earned, net pay is negative
-    and the payout is refused — the over-advance stays on the books as
+    and a payout is refused — the over-advance stays on the books as
     the recorded adjustments until the Admin posts a correcting entry; it
     is neither written off nor auto-carried to another month.
-  - "Pay all unpaid" pays every unpaid active staff member for the month
-    in one action, one Salaries `Expense` each, skipping (with a reason)
-    anyone already paid or whose net is zero or less.
+  - Reversing one instalment (ADR-73) frees exactly that amount of the
+    month's net to be paid again; the other instalments are untouched.
+  - "Pay all unpaid" pays the **remaining balance** for every staff-month
+    for the month in one action, one Salaries `Expense` each, skipping
+    (with a reason) any staff-month already fully paid or whose net is
+    zero or less.
 - As the Admin, I can record handover shortfalls with a required note against the responsible staff member; shortfalls do not block day-close, **do not auto-deduct pay, and never reduce a payout** (unchanged by ADR-60).
 
 ### 4.9 Recipes (Informational)
