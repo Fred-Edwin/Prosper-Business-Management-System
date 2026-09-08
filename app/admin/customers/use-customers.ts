@@ -68,6 +68,15 @@ export type RecordRepaymentArgs = {
   note?: string;
 };
 
+export type CorrectRepaymentArgs = {
+  customerId: string;
+  repaymentId: string;
+  /** The corrected FINAL amount, decimal string. */
+  amount: string;
+  account?: MoneyAccount;
+  note?: string;
+};
+
 export function useCustomers(filter: CustomersListFilter) {
   const [customers, setCustomers] = React.useState<CustomerListRow[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -169,5 +178,41 @@ export function useCustomerLedger(customerId: string | null) {
     [refresh],
   );
 
-  return { ledger, loading, error, refresh, recordRepayment };
+  const correctRepayment = React.useCallback(
+    async ({
+      customerId: id,
+      repaymentId,
+      amount,
+      account,
+      note,
+    }: CorrectRepaymentArgs) => {
+      await request<unknown>(
+        `/api/customers/${id}/repayments/${repaymentId}/correct`,
+        { method: "POST", body: JSON.stringify({ amount, account, note }) },
+      );
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const voidRepayment = React.useCallback(
+    async (id: string, repaymentId: string) => {
+      await request<unknown>(
+        `/api/customers/${id}/repayments/${repaymentId}/void`,
+        { method: "POST" },
+      );
+      await refresh();
+    },
+    [refresh],
+  );
+
+  return {
+    ledger,
+    loading,
+    error,
+    refresh,
+    recordRepayment,
+    correctRepayment,
+    voidRepayment,
+  };
 }

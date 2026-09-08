@@ -12,5 +12,6 @@ export { createCustomer } from "./create-customer";
 export { listCustomers } from "./list-customers";
 export { getCustomerLedger } from "./get-customer-ledger";
 export { recordRepayment } from "./record-repayment";
+export { correctRepayment, voidRepayment } from "./correct-repayment";
 export { recordDebt } from "./record-debt";
 export { correctDebt } from "./correct-debt";

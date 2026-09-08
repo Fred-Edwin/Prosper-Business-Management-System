@@ -3881,7 +3881,16 @@ each new `recordX` shipped without its `correctX`.
   2026-09-08 — `correctOwnerTransaction` / `voidOwnerTransaction`,
   `lib/domain/financials/correct-owner-transaction.ts`, routes
   `POST /api/owner-transactions/:id/correct` + `/void`, row action +
-  drawer on Financials → Owner Draws), debt repayments, pay adjustments,
-  staff payout reversal, closed-day canteen count correction.
+  drawer on Financials → Owner Draws), ~~debt repayments~~ (done
+  2026-09-08 — `correctRepayment` / `voidRepayment`,
+  `lib/domain/customers/correct-repayment.ts`, routes
+  `POST /api/customers/:id/repayments/:repaymentId/correct` + `/void`,
+  per-row Correct action + `repayment-correction-drawer.tsx` on the
+  Admin customer detail ledger; a correction is a signed `Repayment`
+  row on `corrects_repayment_id`, folded into the derived ledger amount
+  and dropped from the entry list, voided-to-zero drops off entirely;
+  an overpaying correction drives the balance negative, same rule as a
+  fresh overpayment — ADR-19), pay adjustments, staff payout reversal,
+  closed-day canteen count correction.
 - The rule is added to the Loop B checklist in `docs/maintenance.md` and
   `CLAUDE.md`.

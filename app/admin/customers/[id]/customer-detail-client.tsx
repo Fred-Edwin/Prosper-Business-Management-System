@@ -20,6 +20,7 @@ import { useToast } from "@/components/kit/toast";
 import type { CustomerLedgerEntry } from "@/lib/domain/customers";
 import { useCustomerLedger } from "../use-customers";
 import { RepaymentForm, fmtMoney } from "../repayment-form";
+import { RepaymentCorrectionDrawer } from "./repayment-correction-drawer";
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -46,10 +47,20 @@ function referenceFor(r: CustomerLedgerEntry): string {
 }
 
 export function CustomerDetailClient({ customerId }: { customerId: string }) {
-  const { ledger, loading, error, refresh, recordRepayment } =
-    useCustomerLedger(customerId);
+  const {
+    ledger,
+    loading,
+    error,
+    refresh,
+    recordRepayment,
+    correctRepayment,
+    voidRepayment,
+  } = useCustomerLedger(customerId);
   const { toast } = useToast();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  // The repayment ledger entry currently open in the correction drawer.
+  const [correcting, setCorrecting] =
+    React.useState<CustomerLedgerEntry | null>(null);
 
   const balance = ledger?.balance ?? "0.00";
   const owes = Number(balance) > 0;
@@ -100,6 +111,25 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
           KES {fmtMoney(r.runningBalance)}
         </span>
       ),
+    },
+    {
+      // ADR-72: a per-row Correct action on repayments (Admin). Opens the
+      // correction drawer prefilled with the current derived values; Void
+      // sits behind a confirm step inside it.
+      key: "actions",
+      header: "",
+      width: "w-[96px]",
+      align: "right",
+      render: (r) =>
+        r.kind === "repayment" && r.repaymentId ? (
+          <Button
+            variant="tertiary"
+            size="sm"
+            onClick={() => setCorrecting(r)}
+          >
+            Correct
+          </Button>
+        ) : null,
     },
   ];
 
@@ -226,6 +256,17 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
                       KES {fmtMoney(r.runningBalance)}
                     </span>
                   </div>
+                  {r.kind === "repayment" && r.repaymentId && (
+                    <div className="flex justify-end pt-(--sp-2)">
+                      <Button
+                        variant="tertiary"
+                        size="sm"
+                        onClick={() => setCorrecting(r)}
+                      >
+                        Correct
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ))
             )}
@@ -261,6 +302,31 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
                 {node}
               </div>
             )}
+          />
+        )}
+      </Drawer>
+
+      {/* ADR-72 — Correct / Void a repayment (Admin). */}
+      <Drawer
+        open={correcting !== null}
+        onClose={() => setCorrecting(null)}
+        variant="rail"
+        title="Correct Repayment"
+        subtitle={
+          ledger
+            ? `${ledger.customer.name} · ${ledger.customer.phone}`
+            : undefined
+        }
+        footer={null}
+      >
+        {correcting && (
+          <RepaymentCorrectionDrawer
+            customerId={customerId}
+            entry={correcting}
+            onCorrect={correctRepayment}
+            onVoid={voidRepayment}
+            onClose={() => setCorrecting(null)}
+            onDone={(message) => toast(message, { tone: "success" })}
           />
         )}
       </Drawer>

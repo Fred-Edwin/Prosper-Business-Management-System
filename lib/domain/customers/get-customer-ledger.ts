@@ -25,13 +25,35 @@ export async function getCustomerLedger(
     throw new DomainError("NOT_FOUND", "Customer not found.", "customerId");
   }
 
-  const [debts, repayments] = await Promise.all([
+  const [debts, allRepayments] = await Promise.all([
     prisma.debt.findMany({
       where: { customerId },
       include: { order: { select: { number: true } } },
     }),
     prisma.repayment.findMany({ where: { customerId } }),
   ]);
+
+  // Repayment corrections (ADR-15 / ADR-72): a correction is a signed
+  // `Repayment` row (`correctsRepaymentId` set) carrying the delta. The
+  // ledger shows one line per repayment with its CURRENT derived amount —
+  // fold each original's correction deltas into it and drop the correction
+  // rows from the list. A repayment voided to 0 drops off entirely.
+  const deltasByOriginal = new Map<string, Prisma.Decimal>();
+  for (const r of allRepayments) {
+    if (r.correctsRepaymentId) {
+      deltasByOriginal.set(
+        r.correctsRepaymentId,
+        (deltasByOriginal.get(r.correctsRepaymentId) ?? ZERO).plus(r.amount),
+      );
+    }
+  }
+  const repayments = allRepayments
+    .filter((r) => r.correctsRepaymentId === null)
+    .map((r) => {
+      const delta = deltasByOriginal.get(r.id);
+      return delta ? { ...r, amount: r.amount.plus(delta) } : r;
+    })
+    .filter((r) => !r.amount.isZero());
 
   type Raw = {
     kind: "debt" | "repayment";
@@ -42,6 +64,7 @@ export async function getCustomerLedger(
     orderNumber?: number;
     account?: "cash" | "mpesa_bank";
     note?: string;
+    repaymentId?: string;
   };
 
   const raw: Raw[] = [
@@ -60,6 +83,7 @@ export async function getCustomerLedger(
       createdAt: r.createdAt,
       account: r.account,
       note: r.note ?? undefined,
+      repaymentId: r.id,
     })),
   ];
 
@@ -81,6 +105,7 @@ export async function getCustomerLedger(
       ...(e.orderNumber != null ? { orderNumber: e.orderNumber } : {}),
       ...(e.account ? { account: e.account } : {}),
       ...(e.note ? { note: e.note } : {}),
+      ...(e.repaymentId ? { repaymentId: e.repaymentId } : {}),
       runningBalance: moneyString(running),
     };
   });

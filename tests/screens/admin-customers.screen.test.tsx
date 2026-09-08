@@ -60,6 +60,7 @@ const LEDGER: CustomerLedger = {
       amount: "500.00",
       occurredAt: "2026-08-25T10:00:00.000Z",
       account: "cash",
+      repaymentId: "r1",
       runningBalance: "-270.00",
     },
   ],
@@ -78,6 +79,8 @@ const ledgerState = {
   loading: false,
   error: null as string | null,
   recordRepayment: vi.fn().mockResolvedValue(undefined),
+  correctRepayment: vi.fn().mockResolvedValue(undefined),
+  voidRepayment: vi.fn().mockResolvedValue(undefined),
 };
 
 vi.mock("@/app/admin/customers/use-customers", async () => {
@@ -100,6 +103,8 @@ vi.mock("@/app/admin/customers/use-customers", async () => {
       error: ledgerState.error,
       refresh: vi.fn(),
       recordRepayment: ledgerState.recordRepayment,
+      correctRepayment: ledgerState.correctRepayment,
+      voidRepayment: ledgerState.voidRepayment,
     }),
   };
 });
@@ -129,6 +134,8 @@ beforeEach(() => {
   ledgerState.ledger = LEDGER;
   ledgerState.loading = false;
   ledgerState.error = null;
+  ledgerState.correctRepayment = vi.fn().mockResolvedValue(undefined);
+  ledgerState.voidRepayment = vi.fn().mockResolvedValue(undefined);
   vi.clearAllMocks();
 });
 
@@ -318,5 +325,72 @@ describe("A2 — Customer detail", () => {
     );
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByLabelText(/Amount/)).toBeInTheDocument();
+  });
+});
+
+describe("A2 — repayment corrections (ADR-72)", () => {
+  it("a repayment row has a Correct action; a debt row does not", () => {
+    renderA2();
+    const table = screen.getByRole("table");
+    // one repayment entry → exactly one Correct button in the table
+    expect(
+      within(table).getAllByRole("button", { name: "Correct" }),
+    ).toHaveLength(1);
+  });
+
+  it("Correct opens a drawer prefilled with the current values and submits the corrected values", async () => {
+    renderA2();
+    const user = userEvent.setup();
+    await user.click(
+      within(screen.getByRole("table")).getByRole("button", { name: "Correct" }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /Correct Repayment/,
+    });
+    // Prefilled from the current derived repayment.
+    expect(within(dialog).getByDisplayValue("500")).toBeInTheDocument();
+
+    const amount = within(dialog).getByLabelText(/Corrected amount/);
+    await user.clear(amount);
+    await user.type(amount, "350");
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save Correction" }),
+    );
+
+    await waitFor(() =>
+      expect(ledgerState.correctRepayment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerId: "c1",
+          repaymentId: "r1",
+          amount: "350",
+          account: "cash",
+        }),
+      ),
+    );
+    expect(await screen.findByText("Repayment corrected")).toBeInTheDocument();
+  });
+
+  it("the Void action needs a confirm step before it calls the API", async () => {
+    renderA2();
+    const user = userEvent.setup();
+    await user.click(
+      within(screen.getByRole("table")).getByRole("button", { name: "Correct" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /Void repayment/ }),
+    );
+    expect(ledgerState.voidRepayment).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Confirm void" }),
+    );
+    await waitFor(() =>
+      expect(ledgerState.voidRepayment).toHaveBeenCalledWith("c1", "r1"),
+    );
+    expect(await screen.findByText("Repayment voided")).toBeInTheDocument();
   });
 });
