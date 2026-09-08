@@ -26,7 +26,7 @@ import { ErrorState } from "@/components/kit/error-state";
 import { EmptyState } from "@/components/kit/empty-state";
 import { useToast } from "@/components/kit/toast";
 import type { StaffPay } from "@/lib/domain/staff";
-import { ROLE_LABEL, money, negMoney, shortDate } from "./format";
+import { money, negMoney, shortDate, staffLabel } from "./format";
 import { monthLabel } from "./month-picker";
 import { AdvanceDrawer } from "./advance-drawer";
 import { PayoutDrawer } from "./payout-drawer";
@@ -174,7 +174,7 @@ export function PayTab({
   const rowCaption = React.useCallback(
     (r: StaffPay): string => {
       const s = byId.get(r.staffId);
-      if (s) return `${ROLE_LABEL[s.role] ?? s.role} · ${s.locationName}`;
+      if (s) return `${staffLabel(s)} · ${s.locationName}`;
       return `${r.daysPresent} of ${r.payableDays} days present`;
     },
     [byId],

@@ -22,23 +22,46 @@ const businessDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be a YYYY-MM-DD date");
 const month = z.string().regex(/^\d{4}-\d{2}$/, "Must be a YYYY-MM month");
 
-export const createStaffSchema = z.object({
-  name: z.string().trim().min(1, "Name is required"),
-  role: staffRole,
-  locationId: z.string().min(1, "Location is required"),
-  dailyRate: decimalString,
-  pin,
-});
+/**
+ * Create a staff member. Discriminated on `appAccess`:
+ *
+ *   - `true`  → a login-holding team member: `role` + `pin` required
+ *     (`createStaff` also creates the `User`).
+ *   - `false` → a roster-only staff member (cook / casual): `jobTitle`
+ *     required, no `role`, no `pin`, no `User`.
+ */
+export const createStaffSchema = z.discriminatedUnion("appAccess", [
+  z.object({
+    appAccess: z.literal(true),
+    name: z.string().trim().min(1, "Name is required"),
+    role: staffRole,
+    locationId: z.string().min(1, "Location is required"),
+    dailyRate: decimalString,
+    pin,
+  }),
+  z.object({
+    appAccess: z.literal(false),
+    name: z.string().trim().min(1, "Name is required"),
+    jobTitle: z.string().trim().min(1, "Job title is required"),
+    locationId: z.string().min(1, "Location is required"),
+    dailyRate: decimalString,
+  }),
+]);
 
 export const updateStaffSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required").optional(),
     role: staffRole.optional(),
+    jobTitle: z.string().trim().min(1, "Job title is required").optional(),
     locationId: z.string().min(1).optional(),
     dailyRate: decimalString.optional(),
     pin: pin.optional(),
   })
-  .refine((v) => Object.keys(v).length > 0, { message: "Nothing to update." });
+  .refine((v) => Object.keys(v).length > 0, { message: "Nothing to update." })
+  .refine((v) => !(v.role !== undefined && v.jobTitle !== undefined), {
+    message: "A staff member has a role or a job title, not both.",
+    path: ["jobTitle"],
+  });
 
 export const listStaffQuerySchema = z.object({
   search: z.string().trim().optional(),

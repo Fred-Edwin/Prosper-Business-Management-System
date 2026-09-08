@@ -151,7 +151,16 @@ model User {
 model Staff {
   id         String   @id @default(uuid())
   name       String
-  role       Role
+  /// The app role this staff member signs in as. NULL for a roster-only
+  /// staff member (a cook / casual who never uses the app) — such a row
+  /// has `jobTitle` set instead and no linked `User`. Exactly one of
+  /// (`role` + a `User`) or (`jobTitle`, no `User`) is set; enforced in
+  /// `createStaff`, not the DB.
+  role       Role?
+  /// Free-text job description for a roster-only staff member ("Cook",
+  /// "Casual"). NULL when `role` is set. Purely a display label — nothing
+  /// branches on it.
+  jobTitle   String?  @map("job_title")
   locationId String   @map("location_id")
   location   Location @relation(fields: [locationId], references: [id])
   dailyRate  Decimal  @map("daily_rate") @db.Decimal(12, 2)

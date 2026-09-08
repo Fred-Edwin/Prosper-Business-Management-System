@@ -58,21 +58,31 @@ export async function setupStaffWorld(scope: string): Promise<StaffTestCtx> {
   };
 }
 
-/** Create a bare `Staff` row (no login) directly, for read/attendance/pay tests. */
+/**
+ * Create a bare `Staff` row (no login `User`) directly, for
+ * read/attendance/pay tests. Pass `rosterOnly: true` for a cook/casual
+ * shape — `role` null, `jobTitle` set. (The row never has a `User`
+ * either way; `rosterOnly` only flips which label column is populated,
+ * matching what `createStaff` writes.)
+ */
 export async function makeBareStaff(
   ctx: StaffTestCtx,
   overrides: Partial<{
     name: string;
     role: "store_manager" | "cashier" | "canteen_attendant";
+    rosterOnly: boolean;
+    jobTitle: string;
     locationId: string;
     dailyRate: string;
     active: boolean;
   }> = {},
 ): Promise<string> {
+  const rosterOnly = overrides.rosterOnly ?? false;
   const staff = await prisma.staff.create({
     data: {
       name: overrides.name ?? `${ctx.prefix} Worker ${Math.random()}`,
-      role: overrides.role ?? "cashier",
+      role: rosterOnly ? null : (overrides.role ?? "cashier"),
+      jobTitle: rosterOnly ? (overrides.jobTitle ?? "Cook") : null,
       locationId: overrides.locationId ?? ctx.locationAId,
       dailyRate: new Prisma.Decimal(overrides.dailyRate ?? "500.00"),
       active: overrides.active ?? true,

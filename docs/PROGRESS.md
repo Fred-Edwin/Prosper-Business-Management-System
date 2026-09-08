@@ -16,6 +16,53 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Staff — roster-only (non-login) staff members (2026-09-08) — DONE
+
+PR 1 of the staff-pay rework the client asked for (she runs cooks /
+casuals who never touch the app but she still wants their attendance and
+pay tracked). Adds a staff member with **no login**.
+
+- **`prisma/schema.prisma`** — `Staff.role` → `Role?` (nullable),
+  new `Staff.jobTitle String?`. Migration
+  `20260908140000_add_roster_only_staff` (widening only — every existing
+  row has a `role` + a `User`).
+- **`lib/domain/staff/create-staff.ts`** — `CreateStaffInput` is now a
+  union discriminated on `appAccess`. `appAccess: false` → a bare `Staff`
+  row (required `jobTitle`, no `role`, **no `User`, no PIN**); name need
+  not be unique. `appAccess: true` → unchanged (Staff + linked login
+  `User`).
+- **`lib/domain/staff/update-staff.ts`** — `jobTitle?` added; for a
+  roster-only staff member `role` / `pin` → `VALIDATION_ERROR` (granting
+  app access is deactivate-and-re-add), and for a login-holding one
+  `jobTitle` → `VALIDATION_ERROR`. `deactivateStaff` / `listStaff`
+  already `?.`-guarded the `user` relation.
+- **`lib/domain/staff/internal.ts` / `types.ts`** — `StaffView` gains
+  `jobTitle: string | null` and `appAccess: boolean`; `role` is now
+  `StaffRole | null`. New `normaliseJobTitle`.
+- **`lib/validation/staff.ts`** — `createStaffSchema` is a
+  `z.discriminatedUnion("appAccess", …)`; `updateStaffSchema` adds
+  `jobTitle` and a role⊕jobTitle refine.
+- **Screens** — `staff-drawer.tsx` gets a "Can log into the app" toggle
+  (fixed at creation, read-only when editing); OFF hides Role + PIN and
+  shows a Job title field. `format.ts` adds `staffLabel(s)` (role label,
+  or `jobTitle` when `role` is null); `roster-tab` / `attendance-tab` /
+  `pay-tab` / `advance-drawer` captions use it.
+- **Tests** — `lib/domain/staff/staff.test.ts` +5 cases (roster-only
+  create, jobTitle required, update guards both ways, deactivate with no
+  User); `tests/screens/admin-staff.screen.test.tsx` +1 (roster-only
+  add flow, no role/PIN fields). `test-helpers.makeBareStaff` gains a
+  `rosterOnly` flag.
+- **Docs** — `API.md` (`POST`/`PATCH /api/staff`), `SCHEMA.md` (`Staff`),
+  `DECISIONS.md` ADR-75.
+
+Not in this PR (the rest of the rework): the daily-entry pay model (PR 2)
+and multiple partial payouts per month (PR 3).
+
+Gates: `pnpm typecheck` green; `pnpm test` 1277 passed (152 files);
+`pnpm build` compiled successfully. No `TODO(mock)`.
+
+---
+
 ## Infra — Prisma migrations out of `vercel-build`, into a dedicated Actions job (2026-09-08) — DONE
 
 Merging PR #13 triggered two failed Production deploys with Prisma `P1002`

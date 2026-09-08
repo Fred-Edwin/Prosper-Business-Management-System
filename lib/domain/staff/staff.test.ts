@@ -30,6 +30,7 @@ describe("staff CRUD + login account", () => {
     const name = `${ctx.prefix} Alice`;
     const view = await createStaff(
       {
+        appAccess: true,
         name: `  ${name}  `,
         role: "cashier",
         locationId: ctx.locationAId,
@@ -68,6 +69,7 @@ describe("staff CRUD + login account", () => {
     await expect(
       createStaff(
         {
+          appAccess: true,
           name: `${ctx.prefix} Nope`,
           role: "cashier",
           locationId: ctx.locationAId,
@@ -84,6 +86,7 @@ describe("staff CRUD + login account", () => {
     await expect(
       createStaff(
         {
+          appAccess: true,
           name: `${ctx.prefix} BadPin`,
           role: "cashier",
           locationId: ctx.locationAId,
@@ -98,6 +101,7 @@ describe("staff CRUD + login account", () => {
   it("createStaff rejects a duplicate login name (CONFLICT) and an inactive/unknown location", async () => {
     await createStaff(
       {
+        appAccess: true,
         name: `${ctx.prefix} Dup`,
         role: "cashier",
         locationId: ctx.locationAId,
@@ -109,6 +113,7 @@ describe("staff CRUD + login account", () => {
     await expect(
       createStaff(
         {
+          appAccess: true,
           name: `${ctx.prefix} Dup`,
           role: "cashier",
           locationId: ctx.locationAId,
@@ -122,6 +127,7 @@ describe("staff CRUD + login account", () => {
     await expect(
       createStaff(
         {
+          appAccess: true,
           name: `${ctx.prefix} InactiveLoc`,
           role: "cashier",
           locationId: ctx.inactiveLocationId,
@@ -136,6 +142,7 @@ describe("staff CRUD + login account", () => {
   it("updateStaff reassigns locationId (the role-scoping field) and resets the PIN on the linked User", async () => {
     const created = await createStaff(
       {
+        appAccess: true,
         name: `${ctx.prefix} Mover`,
         role: "cashier",
         locationId: ctx.locationAId,
@@ -162,11 +169,11 @@ describe("staff CRUD + login account", () => {
 
   it("updateStaff renaming propagates to User.name and rejects a clash", async () => {
     const a = await createStaff(
-      { name: `${ctx.prefix} RN-A`, role: "cashier", locationId: ctx.locationAId, dailyRate: "500.00", pin: "1212" },
+      { appAccess: true as const, name: `${ctx.prefix} RN-A`, role: "cashier", locationId: ctx.locationAId, dailyRate: "500.00", pin: "1212" },
       admin(),
     );
     await createStaff(
-      { name: `${ctx.prefix} RN-B`, role: "cashier", locationId: ctx.locationAId, dailyRate: "500.00", pin: "1313" },
+      { appAccess: true as const, name: `${ctx.prefix} RN-B`, role: "cashier", locationId: ctx.locationAId, dailyRate: "500.00", pin: "1313" },
       admin(),
     );
 
@@ -182,7 +189,7 @@ describe("staff CRUD + login account", () => {
 
   it("deactivateStaff soft-deletes AND deactivates the login so they cannot sign in", async () => {
     const created = await createStaff(
-      { name: `${ctx.prefix} Leaver`, role: "cashier", locationId: ctx.locationAId, dailyRate: "500.00", pin: "7777" },
+      { appAccess: true as const, name: `${ctx.prefix} Leaver`, role: "cashier", locationId: ctx.locationAId, dailyRate: "500.00", pin: "7777" },
       admin(),
     );
 
@@ -217,6 +224,123 @@ describe("staff CRUD + login account", () => {
     expect(JSON.stringify(fetched)).not.toMatch(/\$2[aby]\$/);
 
     expect(await getStaff("no-such-id")).toBeNull();
+  });
+
+  it("createStaff with appAccess:false makes a roster-only staff member — no User, jobTitle set", async () => {
+    const view = await createStaff(
+      {
+        appAccess: false,
+        name: `${ctx.prefix} Cook One`,
+        jobTitle: "  Cook  ",
+        locationId: ctx.locationAId,
+        dailyRate: "800.00",
+      },
+      admin(),
+    );
+
+    expect(view.role).toBeNull();
+    expect(view.jobTitle).toBe("Cook"); // trimmed
+    expect(view.appAccess).toBe(false);
+    expect(view.userId).toBeNull();
+    expect(view.userActive).toBe(false);
+    expect(view.dailyRate).toBe("800.00");
+    expect(view.active).toBe(true);
+
+    // no login row was created for that name
+    expect(
+      await prisma.user.findUnique({ where: { name: `${ctx.prefix} Cook One` } }),
+    ).toBeNull();
+
+    // a duplicate roster-only name is fine — there is no login to collide
+    await expect(
+      createStaff(
+        {
+          appAccess: false,
+          name: `${ctx.prefix} Cook One`,
+          jobTitle: "Cook",
+          locationId: ctx.locationAId,
+          dailyRate: "800.00",
+        },
+        admin(),
+      ),
+    ).resolves.toMatchObject({ jobTitle: "Cook" });
+  });
+
+  it("createStaff with appAccess:false requires a non-empty jobTitle", async () => {
+    await expect(
+      createStaff(
+        {
+          appAccess: false,
+          name: `${ctx.prefix} No Title`,
+          jobTitle: "   ",
+          locationId: ctx.locationAId,
+          dailyRate: "800.00",
+        },
+        admin(),
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "jobTitle" });
+  });
+
+  it("updateStaff on a roster-only staff member: jobTitle edits, role/pin are rejected", async () => {
+    const cook = await createStaff(
+      {
+        appAccess: false,
+        name: `${ctx.prefix} Cook Edit`,
+        jobTitle: "Cook",
+        locationId: ctx.locationAId,
+        dailyRate: "800.00",
+      },
+      admin(),
+    );
+
+    const renamed = await updateStaff(
+      cook.id,
+      { jobTitle: "Head Cook", dailyRate: "900.00" },
+      admin(),
+    );
+    expect(renamed.jobTitle).toBe("Head Cook");
+    expect(renamed.dailyRate).toBe("900.00");
+    expect(renamed.role).toBeNull();
+
+    await expect(
+      updateStaff(cook.id, { role: "cashier" }, admin()),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "role" });
+    await expect(
+      updateStaff(cook.id, { pin: "1234" }, admin()),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "pin" });
+  });
+
+  it("updateStaff on a login-holding staff member rejects a jobTitle", async () => {
+    const withLogin = await createStaff(
+      {
+        appAccess: true,
+        name: `${ctx.prefix} HasLogin`,
+        role: "cashier",
+        locationId: ctx.locationAId,
+        dailyRate: "550.00",
+        pin: "9091",
+      },
+      admin(),
+    );
+    await expect(
+      updateStaff(withLogin.id, { jobTitle: "Cook" }, admin()),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "jobTitle" });
+  });
+
+  it("deactivateStaff works for a roster-only staff member (no User to touch)", async () => {
+    const cook = await createStaff(
+      {
+        appAccess: false,
+        name: `${ctx.prefix} Cook Leaver`,
+        jobTitle: "Cook",
+        locationId: ctx.locationAId,
+        dailyRate: "800.00",
+      },
+      admin(),
+    );
+    const out = await deactivateStaff(cook.id, admin());
+    expect(out.active).toBe(false);
+    expect(out.userId).toBeNull();
   });
 
   it("listStaff filters by active flag and locationId", async () => {

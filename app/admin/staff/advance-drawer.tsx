@@ -19,7 +19,7 @@ import { FormField } from "@/components/kit/form-field";
 import { SegmentedControl } from "@/components/kit/segmented-control";
 import { Select } from "@/components/kit/select";
 import { useToast } from "@/components/kit/toast";
-import { ROLE_LABEL } from "./format";
+import { staffLabel } from "./format";
 import { monthLabel } from "./month-picker";
 import type { PayAdjustmentBody } from "./use-staff";
 import { StaffRequestError, useRoster } from "./use-staff";
@@ -64,7 +64,7 @@ export function AdvanceDrawer({
         .filter((s) => s.active)
         .map((s) => ({
           value: s.id,
-          label: `${s.name} · ${ROLE_LABEL[s.role] ?? s.role}`,
+          label: `${s.name} · ${staffLabel(s)}`,
         })),
     [staff],
   );

@@ -24,19 +24,47 @@ export const STAFF_ROLES = [
 
 export type StaffRole = (typeof STAFF_ROLES)[number];
 
-export type CreateStaffInput = {
-  name: string;
-  role: StaffRole;
-  locationId: string;
-  /** Decimal string, e.g. "550.00"; must be ≥ 0. */
-  dailyRate: string;
-  /** Exactly 4 digits. Set by the Admin. */
-  pin: string;
-};
+/**
+ * Create a staff member. Two shapes, discriminated by `appAccess`:
+ *
+ *   - `appAccess: true`  → a team member who signs into the app. `role`
+ *     (one of `STAFF_ROLES`) and `pin` are required; `createStaff` also
+ *     creates the linked login `User`.
+ *   - `appAccess: false` → a roster-only staff member (a cook / casual).
+ *     `jobTitle` is required; there is NO `role`, NO `pin`, NO `User`.
+ *     They still get a location, attendance, and pay.
+ */
+export type CreateStaffInput =
+  | {
+      appAccess: true;
+      name: string;
+      role: StaffRole;
+      locationId: string;
+      /** Decimal string, e.g. "550.00"; must be ≥ 0. */
+      dailyRate: string;
+      /** Exactly 4 digits. Set by the Admin. */
+      pin: string;
+    }
+  | {
+      appAccess: false;
+      name: string;
+      /** Free-text job description, e.g. "Cook". Required, non-empty. */
+      jobTitle: string;
+      locationId: string;
+      /** Decimal string, e.g. "550.00"; must be ≥ 0. */
+      dailyRate: string;
+    };
 
 export type UpdateStaffInput = {
   name?: string;
+  /**
+   * Only meaningful for a staff member who HAS app access (a linked
+   * `User`). Ignored for a roster-only staff member — `updateStaff`
+   * cannot grant or revoke app access; that's deactivate + re-create.
+   */
   role?: StaffRole;
+  /** Roster-only staff: rename the job title. Non-empty when present. */
+  jobTitle?: string;
   /** Reassigning this re-scopes everything the staff member can see. */
   locationId?: string;
   dailyRate?: string;
@@ -48,7 +76,15 @@ export type UpdateStaffInput = {
 export type StaffView = {
   id: string;
   name: string;
-  role: StaffRole;
+  /**
+   * The app role, or `null` for a roster-only staff member. A UI caption
+   * shows `role` when set, otherwise `jobTitle`.
+   */
+  role: StaffRole | null;
+  /** Free-text job label for a roster-only staff member; `null` otherwise. */
+  jobTitle: string | null;
+  /** `true` when this staff member has a login `User` (i.e. `role` is set). */
+  appAccess: boolean;
   locationId: string;
   locationName: string;
   dailyRate: string;

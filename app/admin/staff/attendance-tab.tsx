@@ -24,7 +24,7 @@ import { ErrorState } from "@/components/kit/error-state";
 import { EmptyState } from "@/components/kit/empty-state";
 import { useToast } from "@/components/kit/toast";
 import type { StaffView } from "@/lib/domain/staff";
-import { ROLE_LABEL } from "./format";
+import { staffLabel } from "./format";
 import { useAttendance, useLocations, useRoster } from "./use-staff";
 import { StaffRequestError } from "./use-staff";
 
@@ -174,7 +174,7 @@ export function AttendanceTab({
       width: "w-[160px] shrink-0",
       render: (s) => (
         <span className="font-ui [color:var(--text-secondary)] text-sm/sm">
-          {ROLE_LABEL[s.role] ?? s.role}
+          {staffLabel(s)}
         </span>
       ),
     },
@@ -279,7 +279,7 @@ export function AttendanceTab({
                     {s.name}
                   </span>
                   <span className="font-ui [color:var(--text-tertiary)] text-sm/sm truncate">
-                    {ROLE_LABEL[s.role] ?? s.role} · {s.locationName}
+                    {staffLabel(s)} · {s.locationName}
                   </span>
                 </div>
                 <div className="shrink-0 w-[150px]">
