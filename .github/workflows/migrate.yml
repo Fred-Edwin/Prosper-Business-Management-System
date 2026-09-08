@@ -1,0 +1,63 @@
+name: Migrate (production)
+
+# Applies pending Prisma migrations to the production database, once, on
+# every push to `main`. This step was moved OUT of `vercel-build`
+# (package.json) after a leaked advisory lock (Prisma P1002) wedged two
+# consecutive Production deploys of PR #13 — see ADR-74. `vercel-build`
+# ran `prisma migrate deploy` on EVERY deploy (previews included) against
+# the same Neon prod DB with no serialization; a build container's DB
+# socket dropped (Neon pooler / autosuspend) before Prisma released the
+# session-level migrate lock, and every later deploy then timed out
+# acquiring it.
+#
+# This job is the single, serialized writer:
+#   - `on: push: branches: [main]` only — never runs on PRs / preview
+#     deploys, so previews no longer touch the prod schema at all.
+#   - `concurrency` with `cancel-in-progress: false` — two pushes to
+#     `main` queue rather than race the advisory lock.
+#
+# Requires repo secret `PRODUCTION_DATABASE_URL` (the Neon prod
+# connection string). If it is unset the job fails fast with a clear
+# message — only the repo owner can add it.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: prod-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check prod DB secret is set
+        env:
+          PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          if [ -z "$PRODUCTION_DATABASE_URL" ]; then
+            echo "::error::Repo secret PRODUCTION_DATABASE_URL is not set. The repo owner must add it (Settings → Secrets and variables → Actions) before migrations can run."
+            exit 1
+          fi
+
+      # `version` explicit AND package.json has `packageManager` — mirrors
+      # ci.yml; either alone is enough, both removes ambiguity.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.14.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply pending migrations
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: pnpm prisma migrate deploy

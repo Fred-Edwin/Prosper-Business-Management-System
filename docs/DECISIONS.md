@@ -3999,3 +3999,62 @@ fix was "correct the expense to zero, then an Admin deletes the
   unchanged.
 - No `TODO(mock)`. ADR-72's deferred list: payout reversal struck
   through; only "closed-day canteen count correction" remains.
+
+---
+
+## ADR-74: Prisma migrations run in a dedicated GitHub Actions job on push to `main`, not in `vercel-build` (Owner + Developer, 2026-09-08)
+
+**Context.** `package.json` `vercel-build` was
+`prisma generate && prisma migrate deploy && next build`, so `prisma
+migrate deploy` ran on **every** Vercel deploy — production *and* every
+preview — all against the single Neon **production** database, with no
+serialization between them.
+
+Merging PR #13 (ADR-73) triggered a Production deploy that failed twice
+with Prisma `P1002`:
+
+    P1002 — The database server was reached but timed out.
+    Timed out trying to acquire a postgres advisory lock
+    (SELECT pg_advisory_lock(72707369)). Timeout: 10000ms.
+
+The first `main` deploy acquired the migrate advisory lock and applied
+migration `20260908130000_add_staff_payout_reversal`, but its DB
+connection was then dropped (Neon pooler / autosuspend) **before** Prisma
+released the session-level lock. Every later deploy — including
+unrelated preview builds — then timed out trying to acquire it. Manual
+recovery: find the holding backend in Neon
+(`pg_locks WHERE locktype='advisory' AND objid=72707369`),
+`pg_terminate_backend(<pid>)`, then `vercel redeploy <url>`. This would
+recur on any deploy whose migrate step leaked a connection.
+
+**Decision.** Migrations move out of the build entirely.
+
+1. **`vercel-build` becomes `prisma generate && next build`.** Vercel
+   builds (prod and preview) no longer touch the database schema.
+
+2. **`.github/workflows/migrate.yml`** — `on: push: branches: [main]`
+   only — runs `pnpm prisma migrate deploy` once per merge to `main`.
+   `concurrency: { group: prod-migrate, cancel-in-progress: false }` so
+   two merges queue instead of racing the advisory lock. It is the
+   single writer of the prod schema.
+
+3. **Secret `PRODUCTION_DATABASE_URL`** (Neon prod connection string) —
+   a repo Actions secret, added by the owner (CI has no DB secret
+   today; the `build` job uses a localhost placeholder). The job fails
+   fast with an actionable message if it is unset.
+
+**Consequences.**
+
+- A migration is applied *before* the code that needs it only if the
+  Actions job finishes before the Vercel deploy does. In practice the
+  migrate job (install + `migrate deploy`) is faster than a Next build,
+  and this project's App Router pages fetch at request time, so a
+  brief window where new code sees the old schema is tolerable and
+  self-heals within a minute. If a future migration is genuinely
+  breaking, split it (expand → deploy → contract) as normal.
+- Preview deploys can no longer be used to smoke-test a migration —
+  acceptable: there is no staging DB anyway (ADR-12), previews always
+  pointed at prod.
+- Follow-up (owner, Vercel dashboard): append `&connect_timeout=30` to
+  the prod `DATABASE_URL` env var as belt-and-braces against the
+  original socket timeout.
