@@ -612,9 +612,25 @@ model StaffPayAdjustment {
   staffId String                  @map("staff_id")
   staff   Staff                   @relation(fields: [staffId], references: [id])
   type    StaffPayAdjustmentType
+  /// Signed magnitude. A recorded advance/deduction is stored positive
+  /// (the sign is implied by `type` and applied at read time). A
+  /// **correction** row (`correctsAdjustmentId` set) carries the signed
+  /// DELTA — it may be negative — and keeps the original's `type` so a
+  /// plain per-type sum in `getStaffPay` folds it in (ADR-72). Unlike
+  /// every other ADR-72 correction, this writes NO `MoneyMovement`: an
+  /// advance/deduction only nets the derived pay figure at read time, it
+  /// is not a cash-ledger event until a payout is recorded.
   amount  Decimal                 @db.Decimal(12, 2)
   date    DateTime                @db.Date
   note    String?
+
+  // Append-only correction link (ADR-15 / ADR-72). A correction is a new
+  // `StaffPayAdjustment` row carrying the signed delta, pointing at the
+  // original; the original is never mutated. `correctPayAdjustment` /
+  // `voidPayAdjustment`. Corrections never chain.
+  correctsAdjustmentId String?              @map("corrects_adjustment_id")
+  correctsAdjustment   StaffPayAdjustment?  @relation("StaffPayAdjustmentCorrection", fields: [correctsAdjustmentId], references: [id])
+  corrections          StaffPayAdjustment[] @relation("StaffPayAdjustmentCorrection")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
