@@ -16,6 +16,30 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Infra — Prisma migrations out of `vercel-build`, into a dedicated Actions job (2026-09-08) — DONE
+
+Merging PR #13 triggered two failed Production deploys with Prisma `P1002`
+(timed out acquiring the migrate advisory lock). Root cause: `vercel-build`
+ran `prisma migrate deploy` on **every** deploy (previews included) against
+the one Neon prod DB, unserialized; a build container's DB socket dropped
+before Prisma released the session-level lock, wedging later deploys.
+
+- **`package.json`** — `vercel-build` is now `prisma generate && next build`
+  (no `migrate deploy`).
+- **`.github/workflows/migrate.yml`** (new) — `on: push: branches: [main]`
+  only; `concurrency: { group: prod-migrate, cancel-in-progress: false }`;
+  runs `pnpm prisma migrate deploy` as the single serialized prod-schema
+  writer. Fails fast if the secret is missing.
+- **ADR-74** records the decision + the P1002 incident.
+- **Owner action required** — add repo Actions secret
+  `PRODUCTION_DATABASE_URL` (Neon prod connection string); no DB secret
+  exists in the repo today. Optional follow-up: append `&connect_timeout=30`
+  to the prod `DATABASE_URL` in the Vercel dashboard.
+- **Gates** — `pnpm typecheck` ✅ · `pnpm build` ✅ (no app code touched;
+  `pnpm test` not re-run — change is CI/deploy config only).
+
+---
+
 ## Feature — First-class Staff Payout reversal (2026-09-08) — DONE
 
 Fifth ADR-72 follow-up (**ADR-73** records the shape). ADR-60 already
