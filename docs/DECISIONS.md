@@ -4193,3 +4193,94 @@ staff, ADR-75; PR 3 = multiple partial payouts per staff-month).
   seed).
 - No `TODO(mock)`. PR 3 (multiple partial payouts) is unblocked but not
   started.
+
+---
+
+## ADR-77: A staff-month accrues MANY partial payouts, each an Admin-entered amount bounded to the remaining net — the `payout` field becomes `payouts[]` (Owner + Developer, 2026-09-08)
+
+**Context.** Through ADR-60 / ADR-76 a staff-month could be paid exactly
+**once**: `payStaff` posted one Salaries `Expense` for the full computed
+net, and a partial unique index
+(`staff_payout_staff_id_month_live_key`, `WHERE reversed_at IS NULL`, from
+migration `20260908130000`) enforced one *live* payout per staff-month.
+The client pays in **instalments** — KES 5,000 mid-month, the balance on
+payday — and wants the system to track how much of the month's net is
+still owed. This is PR 3 of 3 of the staff-pay rework (PR 1 = roster-only
+staff, ADR-75; PR 2 = daily-entry pay model, ADR-76).
+
+**Decision.**
+
+1. **N payouts per staff-month, not 1.** Each `POST /api/pay/payout`
+   records one partial disbursement of an **Admin-entered** `amount`,
+   posts its own Salaries `Expense` via `recordExpense` (one paired
+   negative `MoneyMovement` — the ADR-60 path, unchanged), and links it.
+   The "one live payout per staff-month" partial unique index is
+   **dropped** (migration
+   `20260908160000_drop_staff_payout_live_unique`); the plain
+   `@@index([staffId, month])` stays. No columns change —
+   `StaffPayout.netPaid` is already per-row (now "this instalment's
+   amount") and `reversedAt` already frees one instalment's slice.
+
+2. **`amount` is Admin-entered but bounded.** `PayStaffInput` gains
+   `amount` (decimal string, `> 0`). It must be `≤` **remaining net** =
+   `getStaffPay.netPay − Σ (this month's live payouts' netPaid)`.
+   Over-payment → `VALIDATION_ERROR` (`field: "amount"`). Remaining net
+   `≤ 0` → the same "nothing to disburse" rejection (`field: "net"`) that
+   `netPay ≤ 0` gave before (ADR-60 — the over-advance stays on the
+   books). "Pay the whole balance" is just `amount = netRemaining`.
+
+3. **`StaffPay` gains the instalment picture.** New fields: `netPaid`
+   (Σ live payouts this month), `netRemaining` (`netPay − netPaid`, **not
+   floored** — consistent with ADR-60), and `payouts: StaffPayoutView[]`
+   (all live payouts for the month, oldest first) — **replacing** the
+   single `payout` field. `paid` becomes `netRemaining <= 0` **and**
+   `netPaid > 0` — an over-advanced month with nothing disbursed is not
+   "paid" (nothing moved). `getPayrollSummary` totals sum the same way:
+   `netPaid` / `netUnpaid` sum partials; `paidCount` = staff-months fully
+   settled.
+
+4. **`reversePayout` (ADR-73) is per-row, unchanged.** It keys off the
+   payout id, so reversing one partial writes its offsetting `Expense`
+   correction + frees exactly that instalment's slice of the month's net;
+   the other live payouts are untouched. Verified with a test, not
+   assumed.
+
+5. **`payAllUnpaid` pays the remaining balance each.** For every
+   staff-month with `netRemaining > 0` it disburses `netRemaining` as one
+   more partial payout (one `Expense` each), skipping fully-settled ones.
+   Same skip-not-fail semantics.
+
+6. **Both pay models (ADR-76) are unaffected** — `netPay` is computed per
+   `payModel` upstream; partial payouts just draw it down.
+
+**Consequences.**
+
+- Migration `20260908160000_drop_staff_payout_live_unique` — `DROP INDEX
+  staff_payout_staff_id_month_live_key`. Safe to run ahead of the code
+  (dropping a unique constraint only widens what is allowed). Runs via
+  `.github/workflows/migrate.yml` on merge to `main` (ADR-74), not in the
+  Vercel build.
+- **API contract change.** `GET /api/pay` (`&staffId` and the summary):
+  `payout` → `payouts[]`; adds `netPaid` / `netRemaining`. `POST
+  /api/pay/payout` body gains `amount`. `POST /api/pay/payout?mode=all`
+  is unchanged in shape; its semantics are now "pay the remaining balance
+  each". `POST /api/pay/payout/:id/reverse` contract unchanged — it now
+  frees a partial.
+- **Screens.** `payout-drawer.tsx` — the reconciliation gains
+  *Net for the month* → *− Already paid this month* → *Remaining*
+  (highlighted) → an *Amount to pay now* input defaulting to the full
+  remaining, capped, with an inline over-amount error. `pay-tab.tsx` — the
+  Payout cell is a single `<StatusChip>` for all three states
+  (`Unpaid` / `Partly paid` / `Paid`) so every row is the same height and
+  the column stops competing with `Net pay`; the *amount* owed lives in
+  `Net pay` + the footer, the instalment breakdown in the drawer, never
+  the cell. `Unpaid` keeps a trailing `Pay out` button (hidden when
+  nothing is owed); `Partly paid` carries a 2px `netPaid / netPay`
+  progress bar and, like `Paid`, opens a new `payout-list-drawer.tsx`
+  (this month's live payouts, per-row **Reverse** via
+  `payout-reversal-drawer.tsx`, mirroring `staff-adjustments-drawer.tsx`).
+  The list drawer's footer carries a primary **Pay another instalment**
+  action while the month still owes — that action is deliberately *not*
+  an inline button on the row.
+- No `TODO(mock)`. The staff-pay rework (ADR-75 / ADR-76 / ADR-77) is
+  complete.

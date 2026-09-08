@@ -326,13 +326,18 @@ export function usePayroll(month: string) {
     [refresh],
   );
 
-  /** Pay ONE staff member for the month. Server recomputes the amount. */
+  /**
+   * Record ONE partial payout for a staff member's month (staff-pay
+   * rework PR 3). `amount` is Admin-entered but the server bounds it to
+   * the month's remaining net.
+   */
   const payOne = React.useCallback(
     async (body: {
       staffId: string;
       month: string;
       paidFromAccount: "cash" | "mpesa_bank";
       date: string;
+      amount: string;
     }): Promise<StaffPay> => {
       const res = await request<StaffPay>(`/api/pay/payout`, {
         method: "POST",

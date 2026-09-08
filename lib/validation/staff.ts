@@ -144,14 +144,18 @@ export const payQuerySchema = z.object({
 const moneyAccount = z.enum(["cash", "mpesa_bank"]);
 
 /**
- * `POST /api/pay/payout` — disburse one staff member's month (M4 S9A).
- * **No amount field** — the net is recomputed server-side from the ledger.
+ * `POST /api/pay/payout` — record one PARTIAL payout of a staff member's
+ * month (staff-pay rework PR 3). `amount` is Admin-entered (decimal
+ * string, `> 0`) but bounded server-side to the month's remaining net
+ * (`getStaffPay.netRemaining`); over-payment → `VALIDATION_ERROR`
+ * (`field: "amount"`).
  */
 export const payStaffSchema = z.object({
   staffId: z.string().min(1),
   month,
   paidFromAccount: moneyAccount,
   date: businessDate,
+  amount: decimalString,
 });
 
 /** `POST /api/pay/payout?mode=all` — pay every unpaid active staff member. */

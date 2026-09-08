@@ -74,6 +74,7 @@ export async function makeBareStaff(
     jobTitle: string;
     locationId: string;
     dailyRate: string;
+    payModel: "fixed_daily_rate" | "daily_entry";
     active: boolean;
   }> = {},
 ): Promise<string> {
@@ -85,6 +86,7 @@ export async function makeBareStaff(
       jobTitle: rosterOnly ? (overrides.jobTitle ?? "Cook") : null,
       locationId: overrides.locationId ?? ctx.locationAId,
       dailyRate: new Prisma.Decimal(overrides.dailyRate ?? "500.00"),
+      payModel: overrides.payModel ?? "fixed_daily_rate",
       active: overrides.active ?? true,
     },
   });

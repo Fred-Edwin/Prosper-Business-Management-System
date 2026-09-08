@@ -125,7 +125,7 @@ function staff(over: Partial<StaffView> = {}): StaffView {
 }
 
 function pay(over: Partial<StaffPay> = {}): StaffPay {
-  return {
+  const base: StaffPay = {
     staffId: "s1",
     staffName: "Grace Wanjiru",
     month: "2026-09",
@@ -140,10 +140,21 @@ function pay(over: Partial<StaffPay> = {}): StaffPay {
     deductions: "500.00",
     netPay: "15300.00",
     adjustments: [],
+    netPaid: "0.00",
+    netRemaining: "15300.00",
     paid: false,
-    payout: null,
+    payouts: [],
     ...over,
   };
+  // Keep netPaid / netRemaining / paid consistent with `payouts` unless the
+  // caller set them explicitly.
+  if (over.payouts && over.netPaid === undefined) {
+    const paidNum = over.payouts.reduce((s, p) => s + Number(p.netPaid), 0);
+    base.netPaid = paidNum.toFixed(2);
+    base.netRemaining = (Number(base.netPay) - paidNum).toFixed(2);
+    if (over.paid === undefined) base.paid = Number(base.netRemaining) <= 0;
+  }
+  return base;
 }
 
 function payroll(rows: StaffPay[]): PayrollSummary {
@@ -158,10 +169,10 @@ function payroll(rows: StaffPay[]): PayrollSummary {
       advances: num((r) => r.advances),
       deductions: num((r) => r.deductions),
       netPay: num((r) => r.netPay),
-      netPaid: "0.00",
+      netPaid: num((r) => r.netPaid),
       netUnpaid: rows
-        .filter((r) => !r.paid && Number(r.netPay) > 0)
-        .reduce((s, r) => s + Number(r.netPay), 0)
+        .filter((r) => Number(r.netRemaining) > 0)
+        .reduce((s, r) => s + Number(r.netRemaining), 0)
         .toFixed(2),
       paidCount,
       unpaidCount: rows.length - paidCount,
@@ -176,7 +187,22 @@ beforeEach(() => {
   payrollState = { payroll: payroll([pay()]), loading: false, error: null };
   createStaff.mockResolvedValue(staff());
   saveBulk.mockResolvedValue([]);
-  payOne.mockResolvedValue(pay({ paid: true }));
+  payOne.mockResolvedValue(
+    pay({
+      payouts: [
+        {
+          id: "po-1",
+          staffId: "s1",
+          month: "2026-09",
+          netPaid: "15300.00",
+          date: "2026-09-28",
+          paidFromAccount: "cash",
+          expenseId: "exp-1",
+          reversedAt: null,
+        },
+      ],
+    }),
+  );
   reversePayout.mockResolvedValue(undefined);
   payAll.mockResolvedValue({ month: "2026-09", paid: [{}], skipped: [] });
   recordAdjustment.mockResolvedValue(undefined);
@@ -515,38 +541,76 @@ describe("Pay — payout drawer", () => {
     );
   }
 
-  it("submits a payout with no client amount (server recomputes)", async () => {
+  it("submits a partial payout — defaults to the full remaining, sends the amount", async () => {
     const user = userEvent.setup();
     renderPay();
 
     await user.click(screen.getAllByRole("button", { name: "Pay out" })[0]);
     const dialog = await screen.findByRole("dialog");
-    // Reconciliation is visible.
-    expect(within(dialog).getByText(/Net to pay now/)).toBeInTheDocument();
+    // Reconciliation is visible, ending in the highlighted Remaining row.
+    expect(within(dialog).getByText(/Remaining/)).toBeInTheDocument();
+    // The amount input defaults to the full remaining.
+    const amountInput = within(dialog).getByLabelText(/Amount to pay now/i);
+    expect(amountInput).toHaveValue("15300.00");
 
     await user.click(
       within(dialog).getByRole("button", { name: "Confirm payout" }),
     );
 
     await waitFor(() => expect(payOne).toHaveBeenCalledOnce());
-    const body = payOne.mock.calls[0][0];
-    expect(body).toEqual({
+    expect(payOne.mock.calls[0][0]).toEqual({
       staffId: "s1",
       month: "2026-09",
       paidFromAccount: "cash",
       date: "2026-09-30",
+      amount: "15300.00",
     });
-    expect(body).not.toHaveProperty("amount");
   });
 
-  it("surfaces an already-paid CONFLICT inline, not as a generic toast", async () => {
+  it("sends a hand-typed partial amount below the remaining", async () => {
+    const user = userEvent.setup();
+    renderPay();
+
+    await user.click(screen.getAllByRole("button", { name: "Pay out" })[0]);
+    const dialog = await screen.findByRole("dialog");
+    const amountInput = within(dialog).getByLabelText(/Amount to pay now/i);
+    await user.clear(amountInput);
+    await user.type(amountInput, "5000");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Confirm payout" }),
+    );
+
+    await waitFor(() => expect(payOne).toHaveBeenCalledOnce());
+    expect(payOne.mock.calls[0][0].amount).toBe("5000.00");
+  });
+
+  it("blocks submit and shows an inline error when the amount exceeds the remaining", async () => {
+    const user = userEvent.setup();
+    renderPay();
+
+    await user.click(screen.getAllByRole("button", { name: "Pay out" })[0]);
+    const dialog = await screen.findByRole("dialog");
+    const amountInput = within(dialog).getByLabelText(/Amount to pay now/i);
+    await user.clear(amountInput);
+    await user.type(amountInput, "20000");
+
+    expect(
+      within(dialog).getByText(/More than the KES 15,300.00 still owed/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Confirm payout" }),
+    ).toBeDisabled();
+    expect(payOne).not.toHaveBeenCalled();
+  });
+
+  it("surfaces an over-amount VALIDATION_ERROR from the server inline (field 'amount')", async () => {
     const user = userEvent.setup();
     const { StaffRequestError } = await import("@/app/admin/staff/use-staff");
     payOne.mockRejectedValueOnce(
-      new StaffRequestError(409, {
-        code: "CONFLICT",
-        message: "Already paid.",
-        field: "month",
+      new StaffRequestError(400, {
+        code: "VALIDATION_ERROR",
+        message: "Too much.",
+        field: "amount",
       }),
     );
     renderPay();
@@ -558,36 +622,41 @@ describe("Pay — payout drawer", () => {
     );
 
     expect(
-      await within(dialog).findByText(/already been paid for September 2026/i),
+      await within(dialog).findByText(/more than the KES 15,300.00 still owed/i),
     ).toBeInTheDocument();
   });
 
-  it("disables Pay out and blocks the drawer submit when net ≤ 0", async () => {
+  it("hides the Pay out button when the remaining net ≤ 0 (nothing to disburse)", async () => {
     const user = userEvent.setup();
     payrollState = {
       payroll: payroll([
-        pay({ advances: "22000.00", deductions: "0.00", netPay: "-1200.00" }),
+        pay({
+          advances: "22000.00",
+          deductions: "0.00",
+          netPay: "-1200.00",
+          netRemaining: "-1200.00",
+        }),
       ]),
       loading: false,
       error: null,
     };
     renderPay();
 
-    // The row button is disabled (net negative) — can't even open the drawer.
-    const payBtns = screen.getAllByRole("button", { name: "Pay out" });
-    payBtns.forEach((b) => expect(b).toBeDisabled());
+    // No "Pay out" button at all — the cell is just an "Unpaid" chip.
+    expect(screen.queryByRole("button", { name: "Pay out" })).toBeNull();
+    expect(screen.getAllByText("Unpaid").length).toBeGreaterThan(0);
     void user;
   });
 
   it("net ≤ 0 error from the server surfaces inline with the 'net' field copy", async () => {
     const user = userEvent.setup();
     const { StaffRequestError } = await import("@/app/admin/staff/use-staff");
-    // Row shows positive net so the drawer opens, but the server rejects
-    // (an advance landed between load and submit).
+    // Row shows positive remaining so the drawer opens, but the server
+    // rejects (an advance landed between load and submit).
     payOne.mockRejectedValueOnce(
       new StaffRequestError(400, {
         code: "VALIDATION_ERROR",
-        message: "Net pay is zero or less.",
+        message: "Nothing left.",
         field: "net",
       }),
     );
@@ -600,35 +669,28 @@ describe("Pay — payout drawer", () => {
     );
 
     expect(
-      await within(dialog).findByText(/Net pay is zero or less/i),
+      await within(dialog).findByText(/nothing left to disburse/i),
     ).toBeInTheDocument();
   });
 });
 
-// ── Payout reversal drawer ──────────────────────────────────────────
+// ── Payout list + per-row reversal ──────────────────────────────────
 
-describe("Pay — reverse a payout", () => {
-  const paidRow = () =>
-    pay({
-      paid: true,
-      payout: {
-        id: "po-1",
-        staffId: "s1",
-        month: "2026-09",
-        netPaid: "15300.00",
-        date: "2026-09-28",
-        paidFromAccount: "cash",
-        expenseId: "exp-1",
-        reversedAt: null,
-      },
-    });
+const payoutView = (over: Partial<import("@/lib/domain/staff").StaffPayoutView> = {}) => ({
+  id: "po-1",
+  staffId: "s1",
+  month: "2026-09",
+  netPaid: "15300.00",
+  date: "2026-09-28",
+  paidFromAccount: "cash" as const,
+  expenseId: "exp-1",
+  reversedAt: null,
+  ...over,
+});
 
-  function renderPaid() {
-    payrollState = {
-      payroll: payroll([paidRow()]),
-      loading: false,
-      error: null,
-    };
+describe("Pay — payout list + per-row reversal", () => {
+  function renderRows(rows: StaffPay[]) {
+    payrollState = { payroll: payroll(rows), loading: false, error: null };
     render(
       <ToastProvider placement="top-right">
         <PayTab
@@ -640,33 +702,100 @@ describe("Pay — reverse a payout", () => {
     );
   }
 
-  it("opens the reversal drawer from the Paid cell and reverses behind a confirm step", async () => {
+  it("a fully-settled row shows a 'Paid' chip that opens the payouts list", async () => {
     const user = userEvent.setup();
-    renderPaid();
+    renderRows([pay({ payouts: [payoutView()] })]);
 
+    // The cell is a "Paid" chip — the click target is labelled for a11y.
+    expect(screen.getAllByText("Paid").length).toBeGreaterThan(0);
     await user.click(
-      screen.getAllByRole("button", { name: /Paid · /i })[0],
+      screen.getAllByRole("button", { name: /View payouts for Grace Wanjiru/i })[0],
     );
     const dialog = await screen.findByRole("dialog");
-    expect(
-      within(dialog).getByText(/Amount to reverse/i),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/Payouts this month/i)).toBeInTheDocument();
+    // One payout row, with its amount and a Reverse action.
     expect(within(dialog).getByText("KES 15,300.00")).toBeInTheDocument();
+    expect(
+      within(dialog).getAllByRole("button", { name: "Reverse" }),
+    ).toHaveLength(1);
+    // Fully settled — no "pay another" action.
+    expect(
+      within(dialog).queryByRole("button", { name: /Pay another instalment/i }),
+    ).toBeNull();
+  });
 
-    // First click reveals the confirm; nothing sent yet.
+  it("a partly-paid row shows a 'Partly paid' chip; the list carries a per-row Reverse and a 'Pay another instalment' action", async () => {
+    const user = userEvent.setup();
+    renderRows([
+      pay({
+        payouts: [
+          payoutView({ id: "po-1", netPaid: "5000.00", date: "2026-09-12" }),
+          payoutView({ id: "po-2", netPaid: "4000.00", date: "2026-09-20" }),
+        ],
+      }),
+    ]);
+
+    // The cell is a "Partly paid" chip — no KES figure crammed into the row.
+    expect(screen.getAllByText("Partly paid").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/KES 9,000.00 of 15,300.00/)).toBeNull();
+
     await user.click(
-      within(dialog).getByRole("button", { name: /Reverse payout…/i }),
+      screen.getAllByRole("button", { name: /View payouts for Grace Wanjiru/i })[0],
+    );
+    const dialog = await screen.findByRole("dialog");
+    // The "how far along" summary lives in the drawer, not the row.
+    expect(
+      within(dialog).getByText(/Paid 9,000.00 of 15,300.00 this month/i),
+    ).toBeInTheDocument();
+    // Two payout rows, each with a Reverse.
+    const reverseBtns = within(dialog).getAllByRole("button", { name: "Reverse" });
+    expect(reverseBtns).toHaveLength(2);
+
+    // "Pay another instalment" opens the payout drawer.
+    await user.click(
+      within(dialog).getByRole("button", { name: /Pay another instalment/i }),
+    );
+    const payDialog = await screen.findByRole("dialog", {
+      name: /Pay out salary/i,
+    });
+    expect(
+      within(payDialog).getByLabelText(/Amount to pay now/i),
+    ).toBeInTheDocument();
+  });
+
+  it("a per-row Reverse in the list reverses behind a confirm step", async () => {
+    const user = userEvent.setup();
+    renderRows([
+      pay({
+        payouts: [
+          payoutView({ id: "po-1", netPaid: "5000.00", date: "2026-09-12" }),
+          payoutView({ id: "po-2", netPaid: "4000.00", date: "2026-09-20" }),
+        ],
+      }),
+    ]);
+
+    await user.click(
+      screen.getAllByRole("button", { name: /View payouts for Grace Wanjiru/i })[0],
+    );
+    const dialog = await screen.findByRole("dialog");
+    const reverseBtns = within(dialog).getAllByRole("button", { name: "Reverse" });
+
+    await user.click(reverseBtns[0]);
+    const reverseDialog = await screen.findByRole("dialog", {
+      name: /Reverse payout/i,
+    });
+    await user.click(
+      within(reverseDialog).getByRole("button", { name: /Reverse payout…/i }),
     );
     expect(reversePayout).not.toHaveBeenCalled();
-
     await user.click(
-      within(dialog).getByRole("button", { name: "Confirm reversal" }),
+      within(reverseDialog).getByRole("button", { name: "Confirm reversal" }),
     );
     await waitFor(() => expect(reversePayout).toHaveBeenCalledOnce());
     expect(reversePayout).toHaveBeenCalledWith("po-1");
   });
 
-  it("surfaces an already-reversed CONFLICT inline", async () => {
+  it("surfaces an already-reversed CONFLICT inline in the reversal drawer", async () => {
     const user = userEvent.setup();
     const { StaffRequestError } = await import("@/app/admin/staff/use-staff");
     reversePayout.mockRejectedValueOnce(
@@ -676,21 +805,29 @@ describe("Pay — reverse a payout", () => {
         field: "payoutId",
       }),
     );
-    renderPaid();
+    renderRows([pay({ payouts: [payoutView()] })]);
 
     await user.click(
-      screen.getAllByRole("button", { name: /Paid · /i })[0],
+      screen.getAllByRole("button", { name: /View payouts for Grace Wanjiru/i })[0],
     );
-    const dialog = await screen.findByRole("dialog");
+    const listDialog = await screen.findByRole("dialog", {
+      name: /Payouts this month/i,
+    });
     await user.click(
-      within(dialog).getByRole("button", { name: /Reverse payout…/i }),
+      within(listDialog).getAllByRole("button", { name: "Reverse" })[0],
+    );
+    const reverseDialog = await screen.findByRole("dialog", {
+      name: /Reverse payout/i,
+    });
+    await user.click(
+      within(reverseDialog).getByRole("button", { name: /Reverse payout…/i }),
     );
     await user.click(
-      within(dialog).getByRole("button", { name: "Confirm reversal" }),
+      within(reverseDialog).getByRole("button", { name: "Confirm reversal" }),
     );
 
     expect(
-      await within(dialog).findByText(/already been reversed/i),
+      await within(reverseDialog).findByText(/already been reversed/i),
     ).toBeInTheDocument();
   });
 });

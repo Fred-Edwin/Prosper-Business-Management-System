@@ -1,0 +1,21 @@
+-- Multiple partial payouts per staff-month (staff-pay rework PR 3 of 3).
+--
+-- Through PR 2 a staff-month was paid exactly ONCE: `payStaff` posted one
+-- Salaries `Expense` for the full computed net and the partial unique
+-- index `staff_payout_staff_id_month_live_key` (`WHERE reversed_at IS
+-- NULL`, from `20260908130000`) enforced one LIVE payout per staff-month.
+--
+-- The client pays in instalments across the month — KES 5,000 mid-month,
+-- the balance on payday. So a staff-month now accrues N live payouts, not
+-- 1: each `POST /api/pay/payout` records one partial disbursement of an
+-- Admin-entered amount (bounded to ≤ the month's remaining net), posts
+-- its own Salaries `Expense` via `recordExpense`, and links it.
+--
+-- This migration drops the "one live payout per staff-month" partial
+-- unique index. The plain `staff_payout_staff_id_month_idx` (also from
+-- `20260908130000`, backs the month lookups) stays. No columns change —
+-- `net_paid` is already per-row and `reversed_at` already lets
+-- `reversePayout` free one partial's slice of the month's net.
+
+-- DropIndex (the partial unique — a staff-month may now have many live payouts)
+DROP INDEX "staff_payout_staff_id_month_live_key";

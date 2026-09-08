@@ -744,16 +744,18 @@ model StaffPayout {
   /// Set by `reversePayout` (ADR-73) when a payout is undone: the offsetting
   /// Expense delta row + paired MoneyMovement are written elsewhere, this
   /// row is stamped and thereafter ignored by `getStaffPay` /
-  /// `getPayrollSummary` / `payStaff`, so the staff-month is payable again.
+  /// `getPayrollSummary`, so that slice of the month's net is payable
+  /// again.
   reversedAt DateTime? @map("reversed_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // At most one LIVE (non-reversed) payout per staff-month. Enforced by a
-  // PARTIAL unique index (`WHERE reversed_at IS NULL`) created in migration
-  // 20260908130000 — Prisma has no partial-index syntax, so this is a
-  // plain index here and the partial unique lives in raw SQL.
+  // A staff-month accrues MANY live payouts — partial disbursements across
+  // the month, each ≤ the remaining net (staff-pay rework PR 3). The
+  // "one live payout per staff-month" partial unique index
+  // (`staff_payout_staff_id_month_live_key`) was dropped in migration
+  // 20260908160000. This plain index backs the month lookups.
   @@index([staffId, month])
   @@map("staff_payout")
 }

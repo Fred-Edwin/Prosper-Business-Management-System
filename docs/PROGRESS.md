@@ -16,6 +16,63 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Staff — multiple partial payouts per staff-month (2026-09-08) — DONE
+
+PR 3 of 3 of the staff-pay rework (ADR-77). The client pays staff in
+instalments across the month — KES 5,000 mid-month, the balance on payday
+— and wants the system to track how much of the month's net is still
+owed. Previously a staff-month could be paid exactly once.
+
+- **`prisma/schema.prisma` + migration
+  `20260908160000_drop_staff_payout_live_unique`** — drop the partial
+  unique index `staff_payout_staff_id_month_live_key` (one live payout
+  per staff-month, from `20260908130000`); keep the plain
+  `@@index([staffId, month])`. No columns change — `netPaid` is already
+  per-row, `reversedAt` already frees one instalment.
+- **`lib/domain/staff/pay.ts`** — `payStaff` now takes an Admin-entered
+  `amount` (decimal string, `> 0`), bounded to the month's remaining net
+  (`netPay − Σ live payouts`): over-payment → `VALIDATION_ERROR`
+  (`field: "amount"`), remaining ≤ 0 → the ADR-60 `field: "net"`
+  rejection. `writePayout` writes one `StaffPayout` + one Salaries
+  `Expense` per instalment (no more `@@unique` / P2002 handling).
+  `StaffPay` drops `payout`, adds `netPaid` / `netRemaining` /
+  `payouts: StaffPayoutView[]` (live, oldest first); `paid` =
+  `netRemaining <= 0 && netPaid > 0`. `getPayrollSummary` totals sum the
+  same way. `payAllUnpaid` pays each staff-month's remaining balance as
+  one more partial, skipping fully-settled ones. `reversePayout`
+  unchanged (keys off the payout id — reversing one partial frees its
+  slice, verified by test).
+- **`lib/validation/staff.ts`** — `payStaffSchema` gains `amount`.
+- **API** (`app/api/pay/payout/route.ts` unchanged — already thin) —
+  `POST /api/pay/payout` body gains `amount`; `GET /api/pay`
+  `payout` → `payouts[]` + `netPaid` / `netRemaining`.
+- **Screens** (`app/admin/staff/`) — `payout-drawer.tsx`: reconciliation
+  gains *Net for the month* → *− Already paid this month* → *Remaining*
+  (highlighted) → an *Amount to pay now* input (defaults to full
+  remaining, capped, inline over-amount error). `pay-tab.tsx`: the Payout
+  cell is a single `<StatusChip>` for all three states
+  (`Unpaid` / `Partly paid` / `Paid`) — one consistent row height, no
+  money figure competing with `Net pay`; `Partly paid` carries a 2px
+  `netPaid / netPay` progress bar and, with `Paid`, opens a new
+  `payout-list-drawer.tsx` (this month's live payouts, per-row Reverse
+  via `payout-reversal-drawer.tsx` which now takes an explicit `payout`
+  prop). The list drawer footer carries a primary **Pay another
+  instalment** action while the month still owes. Mobile cards mirror.
+  `use-staff.ts` `payOne` gains `amount`.
+- **Docs** — ADR-77; `API.md`, `SCHEMA.md`, PRD §4.8.
+- **Tests** — `payout.test.ts` (two partials sum to net; a third
+  over-pays → rejected; `netPaid` / `netRemaining` / `payouts[]` through
+  the sequence; `payAllUnpaid` tops up a part-paid month; a `daily_entry`
+  staff-month paid in two instalments; non-positive/malformed amount).
+  `reverse-payout.test.ts` (+ reversing one of several partials frees
+  exactly its amount, leaves the others live). `admin-staff.screen`
+  (partial amount + over-amount inline error; Partly-paid cell → payout
+  list → per-row reverse; helper `pay()` grows `netPaid`/`netRemaining`/
+  `payouts`). `route.test.ts` body gains `amount`.
+
+Gates: `pnpm test` / `typecheck` / `build` all green. No `TODO(mock)`.
+The staff-pay rework (ADR-75 / 76 / 77) is complete.
+
 ## Staff — daily-entry pay model (2026-09-08) — DONE
 
 PR 2 of 3 of the staff-pay rework. The client pays some staff (cooks,

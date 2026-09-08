@@ -1045,9 +1045,11 @@ blocked state, not a toast. Clean ⇒ the row is deleted. Returns
 > `camelCase`. `dailyRate`, adjustment `amount`, and all payout money
 > figures are decimal strings. **A PIN is never returned or logged in
 > any read** (ADR-59 context — a `StaffView` carries no PIN/hash field).
-> A **payout** (`POST /api/pay/payout`) records that a staff-month was
-> paid and posts one Salaries `Expense` for the net — see ADR-60; the
-> amount is always recomputed server-side, never client-supplied.
+> A **payout** (`POST /api/pay/payout`) records **one partial
+> disbursement** of a staff-month's net and posts one Salaries `Expense`
+> for that amount — see ADR-60 / ADR-77. A staff-month accrues many
+> payouts (instalments); each `amount` is Admin-entered but bounded to
+> the month's remaining net.
 >
 > **Pay model (ADR-76).** Each staff member is on `payModel`
 > `"fixed_daily_rate"` (default — gross = `dailyRate × daysPresent`, from
@@ -1170,15 +1172,15 @@ Payroll for **every active staff member**: `{ data: PayrollSummary }` —
 `{ month, rows: StaffPay[], totals: { grossPay, advances, deductions,
 netPay, netPaid, netUnpaid, paidCount, unpaidCount } }`. Set-wise (one
 attendance groupBy + one adjustments query + one payouts query).
-`netPaid` = Σ `payout.netPaid` over the rows already paid; `netUnpaid` =
-Σ `netPay` over unpaid rows whose net is > 0; `paidCount` / `unpaidCount`
-partition `rows`.
+`netPaid` = Σ every live partial payout across the rows; `netUnpaid` =
+Σ `netRemaining` over the rows whose remaining net is > 0;
+`paidCount` = rows fully settled (`paid`), `unpaidCount` = the rest.
 
 ### `GET /api/pay?month=YYYY-MM&staffId=…`
 One staff member: `{ data: StaffPay }` —
 `{ staffId, staffName, month, payModel, dailyRate, payableDays,
 daysPresent, daysAbsent, grossPay, dailyPay, advances, deductions, netPay,
-adjustments, paid, payout }`.
+adjustments, netPaid, netRemaining, paid, payouts }`.
 Nothing stored; all derived.
 - `payModel: "fixed_daily_rate"` → `grossPay = dailyRate × daysPresent`;
   `dailyPay` is `[]`.
@@ -1196,46 +1198,62 @@ future month → `0`). `netPay = grossPay − Σ advances − Σ deductions` —
 **not floored**, so it may be negative (ADR-60). Handover shortfalls do
 **not** auto-deduct and never reduce a payout (PRD §4.8).
 
-`paid` (boolean) and `payout` — `null` when unpaid, else
-`{ id, staffId, month: "YYYY-MM", netPaid, date: "YYYY-MM-DD",
-paidFromAccount, expenseId }`. `netPaid` is what was disbursed (recomputed
-from the ledger at payout time — equal to `netPay` unless adjustments
-changed after the payout); `expenseId` is the Salaries `Expense` the
-payout created.
+**Partial payouts (ADR-77).** A staff-month accrues **many** payouts —
+instalments across the month:
+- `netPaid` = Σ `netPaid` over the month's **live** payouts (a reversed
+  one, ADR-73, does not count).
+- `netRemaining` = `netPay − netPaid` — how much of the net is still
+  owed. **Not floored** (same as `netPay`).
+- `paid` = `netRemaining <= 0` **and** `netPaid > 0` (at least one payout
+  recorded). An over-advanced month with nothing disbursed reads
+  `paid: false` — nothing moved.
+- `payouts` = `StaffPayoutView[]`, the month's live payouts oldest first:
+  `{ id, staffId, month: "YYYY-MM", netPaid, date: "YYYY-MM-DD",
+  paidFromAccount, expenseId, reversedAt }` (`reversedAt` always `null`
+  here — a reversed payout is dropped from the list).
 
-### `POST /api/pay/payout`  — pay one staff member for a month
-**Admin only** (PRD §4.8, ADR-60). Body:
+### `POST /api/pay/payout`  — record one partial payout for a staff-month
+**Admin only** (PRD §4.8, ADR-60, ADR-77). Body:
 `{ staffId, month: "YYYY-MM", paidFromAccount: "cash" | "mpesa_bank",
-date: "YYYY-MM-DD" }`. **There is no `amount` field** — the net is
-recomputed server-side from the ledger; any `amount` in the body is
-ignored.
+date: "YYYY-MM-DD", amount }`. `amount` is a decimal string, Admin-entered,
+`> 0`, and **≤ the month's remaining net** (`getStaffPay.netRemaining`).
+"Pay the whole balance" is just `amount = netRemaining`.
 
-In one transaction: recompute net pay, create **one** Salaries `Expense`
-for that net via the shared `recordExpense` path (which writes the paired
-negative `MoneyMovement`), write the `StaffPayout` row linking to the
-expense. `201` with `{ data: StaffPay }` — the refreshed pay view, now
-`paid: true` with `payout` populated.
+In one transaction: create **one** Salaries `Expense` for `amount` via the
+shared `recordExpense` path (which writes the paired negative
+`MoneyMovement`), write a `StaffPayout` row linking to the expense. `201`
+with `{ data: StaffPay }` — the refreshed pay view (`netPaid` /
+`netRemaining` / `payouts` updated, `paid: true` once the net is fully
+disbursed).
 
 Errors:
-- `409 CONFLICT` (`field: "month"`) — this staff-month is already paid.
-  Enforced in code **and** by a DB unique `(staffId, month)`.
+- `400 VALIDATION_ERROR` (`field: "amount"`) — malformed / non-positive
+  `amount`, **or** `amount` exceeds the month's remaining net.
+- `400 VALIDATION_ERROR` (`field: "net"`) — the remaining net is ≤ 0
+  (already fully paid, or advances + deductions exceed earnings). Nothing
+  is written (ADR-60).
 - `400 VALIDATION_ERROR` (`field: "month"`) — the month is in the future.
-- `400 VALIDATION_ERROR` (`field: "net"`) — net pay is ≤ 0 (advances +
-  deductions exceed earnings). Nothing is written; the over-advance stays
-  as the recorded adjustments (ADR-60).
 - `403 FORBIDDEN` — the disbursement `date`'s day is closed
   (`assertDayOpen`), or the caller is not an admin.
 - `404 NOT_FOUND` (`field: "staffId"`) — no such staff member.
 
-### `POST /api/pay/payout?mode=all`  — pay every unpaid active staff member
-**Admin only.** Body: `{ month, paidFromAccount, date }` (no `staffId`).
-Pays each unpaid active staff member for the month — **one Salaries
+### `POST /api/pay/payout?mode=all`  — pay the remaining balance for every staff-month
+**Admin only.** Body: `{ month, paidFromAccount, date }` (no `staffId`, no
+`amount`). For each active staff member, disburses the **remaining
+balance** (`netRemaining`) as one more partial payout — **one Salaries
 `Expense` each**, each in its own transaction. `201` with
 `{ data: { month, paid: PayoutView[], skipped: [{ staffId, staffName,
-reason }] } }`. Skips (does not fail the batch) anyone already paid
-(`reason` mentions "already paid") or whose net is ≤ 0 (`reason` mentions
-"zero or less"). A future month → `400 VALIDATION_ERROR` (`field:
+reason }] } }`. Skips (does not fail the batch) any staff-month whose
+remaining net is ≤ 0 — `reason` mentions "fully paid" / "nothing left"
+when the net was (partly) disbursed, "zero or less" when it is an
+over-advance. A future month → `400 VALIDATION_ERROR` (`field:
 "month"`), nothing done.
+
+### `POST /api/pay/payout/:id/reverse`  — reverse one partial payout
+**Admin only** (ADR-73). No body. Unchanged contract — now frees that one
+instalment's slice of the month's net to be paid again (the other live
+payouts are untouched). `201` with `{ data: StaffPayoutView }`
+(`reversedAt` set). `409 CONFLICT` if already reversed; `404` unknown id.
 
 ### `GET /api/pay/shortfalls?month=YYYY-MM`  — handover shortfalls for a month
 **Admin only. READ-ONLY.** Added M4 S9B for the Pay & advances screen's

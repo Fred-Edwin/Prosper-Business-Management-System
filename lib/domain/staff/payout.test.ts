@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { closeDay, reopenDay } from "@/lib/domain/audit";
 import { getFinancialSummary } from "@/lib/domain/financials";
 import { setAttendance } from "./attendance";
+import { recordDailyPay } from "./daily-pay";
 import {
   getPayrollSummary,
   getStaffPay,
@@ -21,9 +22,11 @@ import {
 const SCOPE = "payout";
 
 /**
- * Staff payout (M4 S9A, ADR-60). A payout creates ONE Salaries `Expense`
- * via `recordExpense`; that expense writes the paired negative
- * `MoneyMovement`. Cash drops once, Net Profit drops once.
+ * Staff payout (ADR-60; staff-pay rework PR 3 — a staff-month accrues
+ * MANY partial payouts, each of an Admin-entered amount bounded to the
+ * remaining net). Each payout creates ONE Salaries `Expense` via
+ * `recordExpense`; that expense writes the paired negative
+ * `MoneyMovement`.
  *
  * All months here are wholly in the PAST relative to the seeded
  * `currentDate` (2026-09-03) so `payableDays` is the whole month and the
@@ -33,6 +36,20 @@ const SCOPE = "payout";
 describe("staff payout", () => {
   let ctx: StaffTestCtx;
   const admin = () => ({ actorId: ctx.adminId, role: "admin" });
+
+  /** Pay the whole remaining balance for a staff-month (one instalment). */
+  const payFull = async (
+    staffId: string,
+    month: string,
+    date: string,
+    paidFromAccount: "cash" | "mpesa_bank" = "cash",
+  ) => {
+    const { netRemaining } = await getStaffPay(staffId, month);
+    return payStaff(
+      { staffId, month, paidFromAccount, date, amount: netRemaining },
+      admin(),
+    );
+  };
 
   beforeAll(async () => {
     ctx = await setupStaffWorld(SCOPE);
@@ -62,15 +79,14 @@ describe("staff payout", () => {
       where: { category: "salaries", date: { gte: new Date("2026-07-01T00:00:00+03:00"), lt: new Date("2026-08-01T00:00:00+03:00") } },
     });
 
-    const result = await payStaff(
-      { staffId: id, month, paidFromAccount: "cash", date },
-      admin(),
-    );
+    const result = await payFull(id, month, date);
 
     expect(result.paid).toBe(true);
-    expect(result.payout).not.toBeNull();
-    expect(result.payout!.netPaid).toBe("18000.00");
-    expect(result.payout!.paidFromAccount).toBe("cash");
+    expect(result.payouts).toHaveLength(1);
+    expect(result.payouts[0].netPaid).toBe("18000.00");
+    expect(result.payouts[0].paidFromAccount).toBe("cash");
+    expect(result.netPaid).toBe("18000.00");
+    expect(result.netRemaining).toBe("0.00");
 
     // Exactly ONE Salaries expense was added in the window.
     const expensesAfter = await prisma.expense.count({
@@ -81,7 +97,7 @@ describe("staff payout", () => {
     // Exactly ONE expense row is linked to this payout, and exactly ONE
     // paired MoneyMovement (written by recordExpense, not by us).
     const payoutRow = await prisma.staffPayout.findUniqueOrThrow({
-      where: { id: result.payout!.id },
+      where: { id: result.payouts[0].id },
     });
     const linkedExpense = await prisma.expense.findUniqueOrThrow({
       where: { id: payoutRow.expenseId },
@@ -111,49 +127,111 @@ describe("staff payout", () => {
     expect(dCash.toFixed(2)).toBe("-18000.00");
   });
 
-  it("paying the same staff-month twice is rejected — CONFLICT, and the DB unique also holds", async () => {
+  it("two partials sum to the month net; a third that would over-pay is rejected", async () => {
     const id = await makeBareStaff(ctx, {
-      name: `${ctx.prefix} Twice`,
+      name: `${ctx.prefix} Instalments`,
       dailyRate: "500.00",
     });
-    await payStaff(
-      { staffId: id, month: "2026-05", paidFromAccount: "cash", date: "2026-06-01" },
+    const month = "2026-05"; // 31 days → gross 15500, net 15500
+
+    // First instalment: KES 5,000 mid-month.
+    const after1 = await payStaff(
+      { staffId: id, month, paidFromAccount: "cash", date: "2026-06-01", amount: "5000.00" },
       admin(),
     );
+    expect(after1.netPaid).toBe("5000.00");
+    expect(after1.netRemaining).toBe("10500.00");
+    expect(after1.paid).toBe(false);
+    expect(after1.payouts).toHaveLength(1);
+
+    // Second instalment: the balance on payday.
+    const after2 = await payStaff(
+      { staffId: id, month, paidFromAccount: "mpesa_bank", date: "2026-06-05", amount: "10500.00" },
+      admin(),
+    );
+    expect(after2.netPaid).toBe("15500.00");
+    expect(after2.netRemaining).toBe("0.00");
+    expect(after2.paid).toBe(true);
+    expect(after2.payouts).toHaveLength(2);
+    // Oldest first.
+    expect(after2.payouts.map((p) => p.netPaid)).toEqual([
+      "5000.00",
+      "10500.00",
+    ]);
+    expect(after2.payouts.map((p) => p.paidFromAccount)).toEqual([
+      "cash",
+      "mpesa_bank",
+    ]);
+
+    // A third payout — nothing left to disburse.
     await expect(
       payStaff(
-        { staffId: id, month: "2026-05", paidFromAccount: "mpesa_bank", date: "2026-06-02" },
+        { staffId: id, month, paidFromAccount: "cash", date: "2026-06-06", amount: "1.00" },
         admin(),
       ),
-    ).rejects.toMatchObject({ code: "CONFLICT" });
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "net" });
 
-    // The DB constraint itself refuses a direct duplicate insert.
-    const first = await prisma.staffPayout.findFirstOrThrow({
-      where: { staffId: id },
+    // Two live payouts, two Salaries expenses — one per instalment.
+    const rows = await prisma.staffPayout.findMany({ where: { staffId: id } });
+    expect(rows).toHaveLength(2);
+    const expenses = await prisma.expense.findMany({
+      where: { id: { in: rows.map((r) => r.expenseId) } },
     });
-    await expect(
-      prisma.staffPayout.create({
-        data: {
-          staffId: id,
-          month: first.month,
-          netPaid: new Prisma.Decimal("1.00"),
-          date: first.date,
-          paidFromAccount: "cash",
-          recordedById: ctx.adminId,
-          expenseId: `${first.expenseId}-x`, // unique expense id, dup [staff,month]
-        },
-      }),
-    ).rejects.toMatchObject({ code: "P2002" });
+    expect(expenses.map((e) => e.amount.toFixed(2)).sort()).toEqual([
+      "10500.00",
+      "5000.00",
+    ]);
+  });
 
-    // Only one payout, one Salaries expense for that month.
+  it("a single instalment over the remaining net is VALIDATION_ERROR (field 'amount'), nothing written", async () => {
+    const id = await makeBareStaff(ctx, {
+      name: `${ctx.prefix} OverPay`,
+      dailyRate: "500.00",
+    });
+    const month = "2026-05"; // net 15500
+    await payStaff(
+      { staffId: id, month, paidFromAccount: "cash", date: "2026-06-01", amount: "10000.00" },
+      admin(),
+    );
+    // Remaining is 5500 — asking for 5500.01 is refused.
+    await expect(
+      payStaff(
+        { staffId: id, month, paidFromAccount: "cash", date: "2026-06-02", amount: "5500.01" },
+        admin(),
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "amount" });
     expect(await prisma.staffPayout.count({ where: { staffId: id } })).toBe(1);
+
+    // Exactly the remaining IS allowed.
+    const done = await payStaff(
+      { staffId: id, month, paidFromAccount: "cash", date: "2026-06-02", amount: "5500.00" },
+      admin(),
+    );
+    expect(done.paid).toBe(true);
+    expect(done.netRemaining).toBe("0.00");
+  });
+
+  it("a non-positive / malformed amount is VALIDATION_ERROR (field 'amount')", async () => {
+    const id = await makeBareStaff(ctx, {
+      name: `${ctx.prefix} BadAmount`,
+      dailyRate: "500.00",
+    });
+    for (const amount of ["0", "0.00", "-100.00", "abc", "10.999"]) {
+      await expect(
+        payStaff(
+          { staffId: id, month: "2026-05", paidFromAccount: "cash", date: "2026-06-01", amount },
+          admin(),
+        ),
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "amount" });
+    }
+    expect(await prisma.staffPayout.count({ where: { staffId: id } })).toBe(0);
   });
 
   it("a FUTURE month is rejected", async () => {
     const id = await makeBareStaff(ctx, { name: `${ctx.prefix} Future`, dailyRate: "500.00" });
     await expect(
       payStaff(
-        { staffId: id, month: "2027-01", paidFromAccount: "cash", date: "2026-09-02" },
+        { staffId: id, month: "2027-01", paidFromAccount: "cash", date: "2026-09-02", amount: "100.00" },
         admin(),
       ),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "month" });
@@ -167,7 +245,7 @@ describe("staff payout", () => {
     try {
       await expect(
         payStaff(
-          { staffId: id, month: "2026-04", paidFromAccount: "cash", date: day },
+          { staffId: id, month: "2026-04", paidFromAccount: "cash", date: day, amount: "1000.00" },
           admin(),
         ),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -198,10 +276,11 @@ describe("staff payout", () => {
     );
     const pay = await getStaffPay(id, "2026-06");
     expect(pay.netPay).toBe("-5000.00"); // NOT floored
+    expect(pay.netRemaining).toBe("-5000.00");
 
     await expect(
       payStaff(
-        { staffId: id, month: "2026-06", paidFromAccount: "cash", date: "2026-07-01" },
+        { staffId: id, month: "2026-06", paidFromAccount: "cash", date: "2026-07-01", amount: "100.00" },
         admin(),
       ),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "net" });
@@ -213,22 +292,22 @@ describe("staff payout", () => {
     expect(still.paid).toBe(false);
   });
 
-  it("the amount is ALWAYS recomputed server-side — a client 'amount' has no effect", async () => {
+  it("the amount is Admin-entered and posted verbatim (bounded, not recomputed)", async () => {
     const id = await makeBareStaff(ctx, {
-      name: `${ctx.prefix} ServerAmount`,
+      name: `${ctx.prefix} AdminAmount`,
       dailyRate: "700.00",
     });
-    // June net = 21000. Pass a bogus amount alongside the valid input.
+    // June net = 21000. Disburse a hand-typed 12345.67.
     const result = await payStaff(
-      // @ts-expect-error — amount is not part of PayStaffInput; ignored at runtime
-      { staffId: id, month: "2026-06", paidFromAccount: "cash", date: "2026-07-01", amount: "1.00" },
+      { staffId: id, month: "2026-06", paidFromAccount: "cash", date: "2026-07-01", amount: "12345.67" },
       admin(),
     );
-    expect(result.payout!.netPaid).toBe("21000.00");
+    expect(result.payouts[0].netPaid).toBe("12345.67");
+    expect(result.netRemaining).toBe("8654.33");
     const exp = await prisma.expense.findUniqueOrThrow({
-      where: { id: result.payout!.expenseId },
+      where: { id: result.payouts[0].expenseId },
     });
-    expect(exp.amount.toFixed(2)).toBe("21000.00");
+    expect(exp.amount.toFixed(2)).toBe("12345.67");
   });
 
   it("handover shortfalls still do NOT affect net pay (S8A assertion kept)", async () => {
@@ -268,11 +347,8 @@ describe("staff payout", () => {
     const pay = await getStaffPay(id, "2026-06");
     expect(pay.netPay).toBe("15000.00"); // 500 × 30, shortfall ignored
 
-    const result = await payStaff(
-      { staffId: id, month: "2026-06", paidFromAccount: "cash", date: "2026-07-01" },
-      admin(),
-    );
-    expect(result.payout!.netPaid).toBe("15000.00");
+    const result = await payFull(id, "2026-06", "2026-07-01");
+    expect(result.payouts[0].netPaid).toBe("15000.00");
 
     // cleanup local handover rows (not covered by the scope prefix cleanup)
     await prisma.handoverShortfall.deleteMany({ where: { staffId: id } });
@@ -320,9 +396,18 @@ describe("staff payout", () => {
         { staffId: c, type: "advance", amount: "999999.00", date: "2026-02-05" },
         localAdmin,
       );
-      // a: pay individually first → must be SKIPPED as already-paid
+      // a: pay in FULL individually first → must be SKIPPED as settled
+      {
+        const { netRemaining } = await getStaffPay(a, MONTH);
+        await payStaff(
+          { staffId: a, month: MONTH, paidFromAccount: "cash", date: "2026-03-01", amount: netRemaining },
+          localAdmin,
+        );
+      }
+      // d: part-paid → payAllUnpaid must top up the remaining balance only
+      const d = await makeBareStaff(local, { name: `${local.prefix} D Partial`, dailyRate: "600.00" });
       await payStaff(
-        { staffId: a, month: MONTH, paidFromAccount: "cash", date: "2026-03-01" },
+        { staffId: d, month: MONTH, paidFromAccount: "cash", date: "2026-03-01", amount: "5000.00" },
         localAdmin,
       );
 
@@ -347,14 +432,25 @@ describe("staff payout", () => {
       expect(bExpenses[0].category).toBe("salaries");
       expect(bExpenses[0].amount.toFixed(2)).toBe("19600.00");
 
-      // a: skipped, already paid. c: skipped, zero net. Neither got a 2nd
+      // a: skipped, fully settled. c: skipped, zero net. Neither got a 2nd
       // payout row.
       expect(res.paid.some((p) => p.staffId === a)).toBe(false);
       expect(res.paid.some((p) => p.staffId === c)).toBe(false);
-      expect(res.skipped.find((s) => s.staffId === a)!.reason).toMatch(/already paid/);
+      expect(res.skipped.find((s) => s.staffId === a)!.reason).toMatch(/fully paid|nothing left/);
       expect(res.skipped.find((s) => s.staffId === c)!.reason).toMatch(/zero or less/);
       expect(await prisma.staffPayout.count({ where: { staffId: a } })).toBe(1);
       expect(await prisma.staffPayout.count({ where: { staffId: c } })).toBe(0);
+
+      // d: topped up — a SECOND payout of exactly the remaining balance.
+      // Feb 2026 net = 600 × 28 = 16800; already paid 5000 → remaining 11800.
+      const dPaid = res.paid.find((p) => p.staffId === d);
+      expect(dPaid).toBeDefined();
+      expect(dPaid!.netPaid).toBe("11800.00");
+      expect(await prisma.staffPayout.count({ where: { staffId: d } })).toBe(2);
+      const dRow = await getStaffPay(d, MONTH);
+      expect(dRow.netPaid).toBe("16800.00");
+      expect(dRow.netRemaining).toBe("0.00");
+      expect(dRow.paid).toBe(true);
 
       // Inactive staff never appears in either list.
       const inactive = await prisma.staff.findFirstOrThrow({
@@ -387,7 +483,7 @@ describe("staff payout", () => {
     const id = await makeBareStaff(ctx, { name: `${ctx.prefix} Guard`, dailyRate: "500.00" });
     await expect(
       payStaff(
-        { staffId: id, month: "2026-06", paidFromAccount: "cash", date: "2026-07-01" },
+        { staffId: id, month: "2026-06", paidFromAccount: "cash", date: "2026-07-01", amount: "100.00" },
         { actorId: ctx.adminId, role: "cashier" },
       ),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -399,31 +495,71 @@ describe("staff payout", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("getStaffPay / getPayrollSummary carry paid status, the date, account and payout id", async () => {
+  it("getStaffPay / getPayrollSummary carry settled status, netPaid/netRemaining and the payouts list", async () => {
     const id = await makeBareStaff(ctx, { name: `${ctx.prefix} Status`, dailyRate: "500.00" });
     const before = await getStaffPay(id, "2026-06");
     expect(before.paid).toBe(false);
-    expect(before.payout).toBeNull();
+    expect(before.netPaid).toBe("0.00");
+    expect(before.netRemaining).toBe("15000.00");
+    expect(before.payouts).toEqual([]);
 
-    const paid = await payStaff(
-      { staffId: id, month: "2026-06", paidFromAccount: "mpesa_bank", date: "2026-07-03" },
-      admin(),
-    );
+    const paid = await payFull(id, "2026-06", "2026-07-03", "mpesa_bank");
     expect(paid.paid).toBe(true);
-    expect(paid.payout).toMatchObject({
+    expect(paid.netPaid).toBe("15000.00");
+    expect(paid.netRemaining).toBe("0.00");
+    expect(paid.payouts).toHaveLength(1);
+    expect(paid.payouts[0]).toMatchObject({
       staffId: id,
       month: "2026-06",
       netPaid: "15000.00",
       date: "2026-07-03",
       paidFromAccount: "mpesa_bank",
+      reversedAt: null,
     });
-    expect(paid.payout!.id).toBeTruthy();
-    expect(paid.payout!.expenseId).toBeTruthy();
+    expect(paid.payouts[0].id).toBeTruthy();
+    expect(paid.payouts[0].expenseId).toBeTruthy();
 
     const summary = await getPayrollSummary("2026-06");
     const row = summary.rows.find((r) => r.staffId === id)!;
     expect(row.paid).toBe(true);
-    expect(row.payout!.date).toBe("2026-07-03");
-    expect(row.payout!.paidFromAccount).toBe("mpesa_bank");
+    expect(row.payouts[0].date).toBe("2026-07-03");
+    expect(row.payouts[0].paidFromAccount).toBe("mpesa_bank");
+  });
+
+  it("a daily_entry staff-month is paid in two instalments (payModel is upstream of the draw-down)", async () => {
+    const id = await makeBareStaff(ctx, {
+      name: `${ctx.prefix} DailyEntry2x`,
+      dailyRate: "0.00",
+      payModel: "daily_entry",
+    });
+    // Two hand-typed daily entries → gross 3500, net 3500.
+    await recordDailyPay(
+      { staffId: id, amount: "2000.00", date: "2026-06-03" },
+      admin(),
+    );
+    await recordDailyPay(
+      { staffId: id, amount: "1500.00", date: "2026-06-04" },
+      admin(),
+    );
+    const pay = await getStaffPay(id, "2026-06");
+    expect(pay.payModel).toBe("daily_entry");
+    expect(pay.grossPay).toBe("3500.00");
+    expect(pay.netPay).toBe("3500.00");
+
+    const after1 = await payStaff(
+      { staffId: id, month: "2026-06", paidFromAccount: "cash", date: "2026-07-02", amount: "2000.00" },
+      admin(),
+    );
+    expect(after1.netRemaining).toBe("1500.00");
+    expect(after1.paid).toBe(false);
+
+    const after2 = await payStaff(
+      { staffId: id, month: "2026-06", paidFromAccount: "cash", date: "2026-07-10", amount: "1500.00" },
+      admin(),
+    );
+    expect(after2.netPaid).toBe("3500.00");
+    expect(after2.netRemaining).toBe("0.00");
+    expect(after2.paid).toBe(true);
+    expect(after2.payouts).toHaveLength(2);
   });
 });
