@@ -57,11 +57,11 @@ export function OwnerDrawsView({
   /** Called after a draw / return so the parent can refresh the summary + KPIs. */
   onMutated: () => void;
 }) {
-  const { transactions, loading, error, refresh, create } = useOwnerTransactions(
-    from,
-    to,
-  );
+  const { transactions, loading, error, refresh, create, correct, voidTxn } =
+    useOwnerTransactions(from, to);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [correcting, setCorrecting] =
+    React.useState<OwnerTransactionView | null>(null);
   /** A new draw / return is dated to the range's END day. */
   const entryDate = to;
 
@@ -72,6 +72,24 @@ export function OwnerDrawsView({
       return row;
     },
     [create, onMutated],
+  );
+
+  const handleCorrect = React.useCallback(
+    async (id: string, input: Parameters<typeof correct>[1]) => {
+      const row = await correct(id, input);
+      onMutated();
+      return row;
+    },
+    [correct, onMutated],
+  );
+
+  const handleVoid = React.useCallback(
+    async (id: string) => {
+      const row = await voidTxn(id);
+      onMutated();
+      return row;
+    },
+    [voidTxn, onMutated],
   );
 
   const owed = owedToBusiness != null ? Number(owedToBusiness) : null;
@@ -114,6 +132,17 @@ export function OwnerDrawsView({
       align: "right",
       cell: "mono",
       render: (t) => `${t.type === "draw" ? "−" : "+"}${money(t.amount)}`,
+    },
+    {
+      key: "actions",
+      header: "",
+      width: "w-[92px] shrink-0",
+      align: "right",
+      render: (t) => (
+        <Button variant="tertiary" size="sm" onClick={() => setCorrecting(t)}>
+          Correct
+        </Button>
+      ),
     },
   ];
 
@@ -223,9 +252,18 @@ export function OwnerDrawsView({
                     {t.type === "draw" ? "−" : "+"}KES {money(t.amount)}
                   </span>
                 </div>
-                <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
-                  {t.note ? `${t.note} · ` : ""}
-                  {fmtDate(t.date)}
+                <div className="flex items-center justify-between gap-(--sp-4)">
+                  <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
+                    {t.note ? `${t.note} · ` : ""}
+                    {fmtDate(t.date)}
+                  </div>
+                  <Button
+                    variant="tertiary"
+                    size="sm"
+                    onClick={() => setCorrecting(t)}
+                  >
+                    Correct
+                  </Button>
                 </div>
               </div>
             ))}
@@ -238,6 +276,15 @@ export function OwnerDrawsView({
           date={entryDate}
           onCreate={handleCreate}
           onClose={() => setDrawerOpen(false)}
+        />
+      )}
+
+      {correcting && (
+        <OwnerDrawDrawer
+          transaction={correcting}
+          onCorrect={handleCorrect}
+          onVoid={handleVoid}
+          onClose={() => setCorrecting(null)}
         />
       )}
     </div>

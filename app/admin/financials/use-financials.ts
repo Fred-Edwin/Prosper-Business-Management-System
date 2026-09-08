@@ -164,7 +164,34 @@ export function useOwnerTransactions(from: string, to: string) {
     [refresh],
   );
 
-  return { transactions, loading, error, refresh, create };
+  const correct = React.useCallback(
+    async (
+      id: string,
+      input: { type: "draw" | "return"; amount: string; note?: string },
+    ): Promise<OwnerTransactionView> => {
+      const row = await request<OwnerTransactionView>(
+        `/api/owner-transactions/${id}/correct`,
+        { method: "POST", body: JSON.stringify(input) },
+      );
+      await refresh();
+      return row;
+    },
+    [refresh],
+  );
+
+  const voidTxn = React.useCallback(
+    async (id: string): Promise<OwnerTransactionView> => {
+      const row = await request<OwnerTransactionView>(
+        `/api/owner-transactions/${id}/void`,
+        { method: "POST" },
+      );
+      await refresh();
+      return row;
+    },
+    [refresh],
+  );
+
+  return { transactions, loading, error, refresh, create, correct, voidTxn };
 }
 
 // ── Financial summary (profit picture + KPI tiles) ────────────────────

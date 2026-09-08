@@ -61,6 +61,17 @@ export const recordOwnerTransactionSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+/**
+ * `POST /api/owner-transactions/:id/correct` — append-only correction
+ * (Admin, ADR-72). `type` + `amount` are the corrected FINAL values; the
+ * domain writes a linked delta row + paired cash MoneyMovement.
+ */
+export const correctOwnerTransactionSchema = z.object({
+  type: z.enum(["draw", "return"]),
+  amount: decimalString,
+  note: z.string().trim().max(500).optional(),
+});
+
 /** `GET /api/owner-transactions?from=&to=` — Admin list. */
 export const listOwnerTransactionsQuerySchema = z.object({
   from: businessDate.optional(),
@@ -101,4 +112,7 @@ export type CorrectExpenseBody = z.infer<typeof correctExpenseSchema>;
 export type SetOpeningBalanceBody = z.infer<typeof setOpeningBalanceSchema>;
 export type RecordOwnerTransactionBody = z.infer<
   typeof recordOwnerTransactionSchema
+>;
+export type CorrectOwnerTransactionBody = z.infer<
+  typeof correctOwnerTransactionSchema
 >;

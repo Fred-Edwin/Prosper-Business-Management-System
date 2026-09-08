@@ -16,6 +16,45 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature — Correct / Void for Owner Draws & Returns (2026-09-08) — DONE
+
+Second ADR-72 follow-up: `OwnerTransaction` now has its correction path,
+matching the shipped purchase-payment template.
+
+- **Domain** — `lib/domain/financials/correct-owner-transaction.ts`:
+  `correctOwnerTransaction` / `voidOwnerTransaction`. Admin-only, not
+  day-close gated. A row's signed cash effect is `draw → −amount`,
+  `return → +amount`; the correction row stores its signed *delta* the
+  same way (a `type` flip is just a larger delta), computed against
+  `original + Σ prior deltas`; zero delta → `VALIDATION_ERROR`;
+  correcting a correction → `VALIDATION_ERROR`. One linked
+  `OwnerTransaction` + one paired `MoneyMovement` on `cash` per call.
+  `AuditLog` `action: "correct"` / `"soft_delete"` with `oldValue` +
+  `newValue` sharing `type` / `amount` keys (real Was/Now table).
+- **List fold** — `listOwnerTransactions` now excludes correction rows
+  (`correctsOwnerTransactionId: null`) and folds each original's signed
+  deltas into a derived `type` / `amount` (+ `corrected` flag).
+  `getOwnerDrawsForPeriod` folds the same way (net draw magnitude only),
+  so the Dashboard figure stays right after a correction.
+- **Routes** — `app/api/owner-transactions/[id]/correct` + `/void`, thin
+  `requireApiRole("admin")` handlers.
+- **Zod** — `correctOwnerTransactionSchema` in `lib/validation/financials.ts`.
+- **Frontend** — per-row **Correct** action on the Owner Draws tab
+  (desktop table + mobile cards); `owner-draw-drawer.tsx` gains a
+  `transaction` prop → "correct" mode (prefilled) with a Void-behind-
+  confirm section, following `purchase-payment-correction-drawer.tsx`.
+  Wired through `useOwnerTransactions` (`correct`, `voidTxn`).
+- **Tests** — `correct-owner-transaction.test.ts` (10 cases: delta math,
+  cash sign on `type`-flip, list fold, void-to-zero + owed-to-business,
+  idempotent re-submit, no-chaining, non-admin `FORBIDDEN`, audit
+  payload); 2 screen cases in `financials.screen.test.tsx` (Correct
+  drawer prefill/submit, Void confirm step). Test-helper cleanup nulls
+  the new self-FK before the batch delete.
+- **ADR touched** — ADR-72 (deferred list: owner draws now done).
+- **Gates** — `pnpm test` 1232 pass · `typecheck` clean · `build` clean.
+
+---
+
 ## Fix + Feature — Correct / Void a supplier purchase payment; audit of every "no undo" ledger path (2026-09-07) — DONE
 
 Client recorded a supplier purchase payment (biscuits, "Chieni Wholesale")

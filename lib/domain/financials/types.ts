@@ -166,16 +166,37 @@ export type RecordOwnerTransactionInput = {
 export type OwnerTransactionView = {
   id: string;
   type: OwnerTransactionType;
+  /** Current derived amount / type (original + Σ correction deltas). */
   amount: string;
   date: string;
   note: string | null;
   occurredAt: string;
+  /** True when at least one correction row points at this one (ADR-72). */
+  corrected?: boolean;
 };
 
 export type ListOwnerTransactionsFilter = {
   from?: string;
   to?: string;
 };
+
+/**
+ * Input to `correctOwnerTransaction` — append-only (ADR-15 / ADR-72).
+ * Admin-only. **Not** day-close gated. `type` + `amount` are the corrected
+ * FINAL values; the domain writes one new `OwnerTransaction` row linked via
+ * `correctsOwnerTransactionId` carrying the signed delta (and possibly a
+ * flipped `type`), plus the paired delta `MoneyMovement` on `cash`.
+ */
+export type CorrectOwnerTransactionInput = {
+  ownerTransactionId: string;
+  /** The corrected final type — `draw` (money out) or `return` (money in). */
+  type: OwnerTransactionType;
+  /** The corrected final amount (decimal string > 0). */
+  amount: string;
+  /** Optional corrected note (carried from the original when omitted). */
+  note?: string;
+};
+
 
 // ── Opening balances (ADR-70) ──────────────────────────────────────────
 
