@@ -47,6 +47,7 @@ Pay/attendance profile, distinct from login credentials.
 | name | not unique — a roster-only staff member has no login to collide with |
 | role | same enum as User.role; **nullable** — `NULL` for a roster-only staff member (a cook / casual with no app login) |
 | job_title | nullable free-text — set instead of `role` for a roster-only staff member; a display label only, nothing branches on it |
+| pay_model | `StaffPayModel` enum, default `fixed_daily_rate` (ADR-76). `fixed_daily_rate` → gross = `daily_rate × days present`; `daily_entry` → gross = Σ `StaffDailyPay` rows for the month, `daily_rate` is reference-only |
 | location_id | FK → `Location` |
 | daily_rate | NUMERIC |
 | active | |
@@ -454,10 +455,36 @@ Unique on (`staff_id`, `date`).
 | date | |
 | note | text, nullable |
 
-Monthly pay is derived, not stored: `daily_rate × days_present −
-advances/deductions for the month`, computed on demand. This derived
-`net_pay` is **not floored** — it may be negative when advances +
-deductions exceed gross (ADR-60).
+Monthly gross is derived, not stored — computed on demand from
+`Staff.pay_model`:
+- `fixed_daily_rate` → `daily_rate × days_present`.
+- `daily_entry` (ADR-76) → Σ `StaffDailyPay` rows for the month
+  (originals + signed correction deltas).
+
+`net_pay = gross − advances/deductions for the month`, **not floored** —
+it may be negative when advances + deductions exceed gross (ADR-60).
+
+### `StaffDailyPay` (staff-pay rework PR 2, ADR-76)
+One hand-typed daily pay amount for a `daily_entry` staff member.
+Append-only, same shape as `Advance` / `Deduction` + the ADR-72
+correction self-link.
+
+| Column | Notes |
+|---|---|
+| staff_id | FK → `Staff` |
+| amount | `NUMERIC(12,2)` — an original is > 0; a correction row carries a signed delta (may be negative) |
+| date | `@db.Date` — the business day the pay is for |
+| note | text, nullable |
+| recorded_by | FK → `User` |
+| corrects_daily_pay_id | nullable self-FK (`ON DELETE SET NULL`). A correction is a new row carrying the signed delta, pointing at the original; corrections never chain. `correctDailyPay` / `voidDailyPay` |
+
+Plain index on (`staff_id`, `date`); a **partial unique index** `WHERE
+corrects_daily_pay_id IS NULL` enforces at most one ORIGINAL entry per
+staff-day (same trick as `staff_payout`'s partial unique). Writes **no
+`MoneyMovement`** — a pay entry is not a cash event until a payout
+(ADR-76, the ADR-72 exception `Advance`/`Deduction` already carry).
+Recording is day-close gated (`assertDayOpen`); an Admin correction /
+void row is not.
 
 ### `StaffPayout` (M4 S9A, ADR-60)
 | Column | Notes |

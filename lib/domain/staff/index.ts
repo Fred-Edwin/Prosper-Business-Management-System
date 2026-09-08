@@ -48,3 +48,12 @@ export {
   voidPayAdjustment,
   type CorrectPayAdjustmentInput,
 } from "./correct-pay-adjustment";
+
+export {
+  recordDailyPay,
+  correctDailyPay,
+  voidDailyPay,
+  type DailyPayView,
+  type RecordDailyPayInput,
+  type CorrectDailyPayInput,
+} from "./daily-pay";

@@ -220,11 +220,21 @@ cylinders, tables, POS phones) — distinct from stock; never sold or consumed.
 
 ### 4.8 Staff & Pay
 - As the Admin, I can mark staff attendance daily (default present, flag absences).
-- As the Admin, monthly pay is calculated as daily rate × days present.
-- As the Admin, I can record salary advances and deductions against a staff member, netted off monthly pay.
+- As the Admin, each staff member is on one of two **pay models** (ADR-76),
+  chosen per staff member:
+  - **Fixed daily rate** (default) — monthly gross = daily rate × days
+    present, computed from attendance. The salaried manager / cashier stay
+    on this.
+  - **Daily entry** — I type the day's pay per staff member ("today this
+    person gets KES X"); the amount genuinely varies day to day (hours,
+    rate). Monthly gross = the sum of those daily entries. Attendance is
+    still recorded and shown for these staff, but does not feed gross.
+    Each entry is append-only — a mistake is Corrected or Voided, never
+    overwritten.
+- As the Admin, I can record salary advances and deductions against a staff member, netted off monthly pay (either pay model).
 - As the Admin, I can **pay** a staff member for a month — recording the
   payout. The net amount is recomputed from the ledger at that moment
-  (daily rate × days present − advances − deductions); it is never
+  (monthly gross per the pay model − advances − deductions); it is never
   entered by hand. Recording a payout creates one Salaries `Expense` for
   the net amount, which is what moves Cash and reduces Net Profit — there
   is exactly one expense per payout, through the same path as any other

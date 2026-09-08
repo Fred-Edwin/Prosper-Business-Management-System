@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type StaffPayModel } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { DomainError } from "./errors";
 import { STAFF_ROLES, type StaffRole, type StaffView } from "./types";
@@ -79,6 +79,7 @@ type StaffRow = {
   name: string;
   role: string | null;
   jobTitle: string | null;
+  payModel: StaffPayModel;
   locationId: string;
   location: { name: string };
   dailyRate: Prisma.Decimal;
@@ -96,6 +97,7 @@ export function toStaffView(row: StaffRow): StaffView {
     role: (row.role as StaffRole | null) ?? null,
     jobTitle: row.jobTitle,
     appAccess: row.user !== null,
+    payModel: row.payModel,
     locationId: row.locationId,
     locationName: row.location.name,
     dailyRate: row.dailyRate.toFixed(2),

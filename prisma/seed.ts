@@ -86,6 +86,7 @@ async function wipe() {
     prisma.expense.deleteMany(),
     prisma.ownerTransaction.deleteMany(),
     prisma.attendance.deleteMany(),
+    prisma.staffDailyPay.deleteMany(),
     prisma.staffPayAdjustment.deleteMany(),
     prisma.dayClose.deleteMany(),
     prisma.asset.deleteMany(),
@@ -158,13 +159,16 @@ async function main() {
   }
 
   // One roster-only staff member (ADR-75): a cook who never uses the app
-  // but is tracked for attendance + pay. No `role`, no linked `User`.
-  await prisma.staff.upsert({
+  // but is tracked for attendance + pay. No `role`, no linked `User`. On
+  // the DAILY-ENTRY pay model (ADR-76) — the Admin types the day's pay
+  // per shift rather than rate × days present.
+  const cook = await prisma.staff.upsert({
     where: { id: "seed-staff-cook" },
     update: {
       name: "Cook",
       role: null,
       jobTitle: "Cook",
+      payModel: "daily_entry",
       locationId: restaurant.id,
       dailyRate: "800.00",
       active: true,
@@ -174,11 +178,37 @@ async function main() {
       name: "Cook",
       role: null,
       jobTitle: "Cook",
+      payModel: "daily_entry",
       locationId: restaurant.id,
       dailyRate: "800.00",
       active: true,
     },
   });
+
+  // A couple of daily pay entries so the daily-entry feature is visible in
+  // dev — the only ledger rows this baseline seed carries, kept tiny and
+  // deliberately (ADR-76). Dated to the 1st/2nd of the current month
+  // (always an open, past-or-today day).
+  const now = new Date();
+  const ym = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const dayDate = (d: number) => new Date(`${ym}-${String(d).padStart(2, "0")}T00:00:00.000Z`);
+  for (const [d, amount, note] of [
+    [1, "900.00", "long shift"],
+    [2, "800.00", null],
+  ] as const) {
+    await prisma.staffDailyPay.upsert({
+      where: { id: `seed-daily-pay-cook-${d}` },
+      update: { staffId: cook.id, amount, date: dayDate(d), note, recordedById: admin.id },
+      create: {
+        id: `seed-daily-pay-cook-${d}`,
+        staffId: cook.id,
+        amount,
+        date: dayDate(d),
+        note,
+        recordedById: admin.id,
+      },
+    });
+  }
 
   // Any other login left over from an earlier seed or a manual test is
   // deactivated rather than deleted (AuditLog RESTRICT), so the PIN

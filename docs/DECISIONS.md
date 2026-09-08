@@ -4118,3 +4118,78 @@ deferred to their own PRs).
 - No `TODO(mock)`. The pay side is untouched — a roster-only staff
   member is paid by exactly the same `rate × days present` path today;
   the daily-entry model is a later PR.
+
+---
+
+## ADR-76: A per-staff `pay_model` flag — `fixed_daily_rate` or `daily_entry` — with an append-only `StaffDailyPay` ledger for the hand-typed amounts (Owner + Developer, 2026-09-08)
+
+**Context.** The client pays some staff (cooks, casuals) a hand-typed
+amount **per day** — the amount genuinely varies day to day (hours
+differ, rate differs). Today every staff member is paid `Staff.dailyRate
+× days present`, derived from `Attendance`. She wants, per staff member,
+to just enter "today this person gets KES X."
+
+This is PR 2 of the three-part staff-pay rework (PR 1 = roster-only
+staff, ADR-75; PR 3 = multiple partial payouts per staff-month).
+
+**Decision.**
+
+1. **Keep both models, chosen per staff member.** New
+   `Staff.pay_model` enum (`StaffPayModel`):
+   - `fixed_daily_rate` (default — today's behaviour, unchanged; the
+     salaried manager / cashier stay on it): gross = `dailyRate ×
+     daysPresent`.
+   - `daily_entry` (new): gross = Σ the month's `StaffDailyPay` rows.
+   `createStaff` / `updateStaff` accept `payModel` (optional on create,
+   defaults `fixed_daily_rate`); `updateStaff` switches it either way —
+   existing rows of the now-inactive kind simply stop feeding gross.
+
+2. **New append-only `StaffDailyPay` ledger.** One row per (staff,
+   business date): `amount Decimal(12,2)`, `date @db.Date`, `note?`,
+   `recordedById`, `correctsDailyPayId?` (self-relation, signed delta).
+   A **partial unique index** `WHERE corrects_daily_pay_id IS NULL`
+   enforces "one original entry per staff-day" (same trick as migration
+   `20260908130000`). Recording is **day-close gated** (`assertDayOpen`),
+   exactly like `recordPayAdjustment`.
+
+3. **ADR-72 in full.** The create path ships `correctDailyPay` +
+   `voidDailyPay` in the same PR — domain + route + per-row screen
+   action — copied almost verbatim from `correctPayAdjustment` /
+   `voidPayAdjustment` (signed-delta row, keep the original's key fields,
+   fold into the derived value, drop correction rows from list reads,
+   reject a zero delta / a correction-of-a-correction). **No
+   `MoneyMovement`** — a pay entry is not a cash event until a payout is
+   recorded, the same exception ADR-72 already carries for
+   `StaffPayAdjustment`.
+
+4. **`getStaffPay` / `getPayrollSummary` branch on `payModel`.**
+   `daily_entry` → `grossPay` = Σ `StaffDailyPay` (originals + correction
+   deltas). `StaffPay` gains `payModel` and `dailyPay: DailyPayView[]`.
+   Attendance is **still recorded and shown** for `daily_entry` staff
+   (the client wants the cook attendance record) but does **not** feed
+   gross; the Days / Daily rate columns render muted for these staff.
+   Advances / deductions net off unchanged.
+
+5. **Payout mechanism unchanged in this PR.** `payStaff` still recomputes
+   net from the ledger and posts one Salaries `Expense`; it just sums a
+   different source for gross. Multiple partial payouts is PR 3.
+
+**Consequences.**
+
+- Migration `20260908150000_add_daily_entry_pay_model` — `CREATE TYPE
+  StaffPayModel`, `ADD COLUMN staff.pay_model` (default
+  `fixed_daily_rate`, widening only), `CREATE TABLE staff_daily_pay` with
+  the plain `(staff_id, date)` index + the partial unique. No backfill.
+- New API: `POST /api/pay/daily-pay`, `PATCH /api/pay/daily-pay/:id`,
+  `POST /api/pay/daily-pay/:id/void` (thin handlers, mirror the payout
+  routes).
+- Screens: a "Pay model" `<Select>` in the roster add/edit drawer; a
+  "Log daily pay" drawer + a "Daily pay" review drawer (per-row
+  Correct/Void) on the Pay tab for `daily_entry` staff, mirroring
+  `staff-adjustments-drawer.tsx` / `advance-drawer.tsx`.
+- The seed's roster-only "Cook" is switched to `daily_entry` with two
+  `StaffDailyPay` rows so the feature is visible in dev — a deliberate,
+  tiny exception to the "no ledger data" baseline (ADR — QA baseline
+  seed).
+- No `TODO(mock)`. PR 3 (multiple partial payouts) is unblocked but not
+  started.
