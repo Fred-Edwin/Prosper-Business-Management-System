@@ -34,6 +34,8 @@ const api = vi.hoisted(() => ({
   listProducts: vi.fn(),
   listLocations: vi.fn(),
   recordPurchasePayment: vi.fn().mockResolvedValue(undefined),
+  correctPurchasePayment: vi.fn().mockResolvedValue(undefined),
+  voidPurchasePayment: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/app/admin/stock/use-stock", async () => {
@@ -398,6 +400,100 @@ describe("/admin/financials — Stock Purchases tab", () => {
     renderScreen();
     const table = await screen.findByRole("table");
     expect(within(table).getByText("Delivered")).toBeInTheDocument();
+  });
+
+  it("a payment row has a Correct action that opens a drawer prefilled with the current values and submits the corrected values", async () => {
+    api.listMovements.mockImplementation(
+      ({ movementType }: { movementType: string }) =>
+        Promise.resolve(
+          movementType === "purchase_payment"
+            ? [
+                movement({
+                  id: "pp1",
+                  purchaseSupplier: "Chieni Wholesale",
+                  purchaseOrderedQty: "1.0000",
+                  purchaseTotalCost: "2085.00",
+                  purchasePaidFrom: "mpesa_bank",
+                }),
+              ]
+            : [],
+        ),
+    );
+    api.listProducts.mockResolvedValue([PROD_1]);
+    api.listLocations.mockResolvedValue([LOC_1]);
+    const user = userEvent.setup();
+    renderScreen();
+
+    const table = await screen.findByRole("table");
+    await user.click(
+      within(table).getByRole("button", { name: "Correct" }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /Correct Purchase Payment/,
+    });
+    // Prefilled from the current values.
+    expect(within(dialog).getByDisplayValue("Chieni Wholesale")).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue("2085")).toBeInTheDocument();
+
+    const qty = within(dialog).getByLabelText(/^Quantity/);
+    await user.clear(qty);
+    await user.type(qty, "120");
+    const cost = within(dialog).getByLabelText(/^Total Cost/);
+    await user.clear(cost);
+    await user.type(cost, "528");
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save Correction" }),
+    );
+
+    await waitFor(() =>
+      expect(api.correctPurchasePayment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          movementId: "pp1",
+          orderedQty: "120",
+          cost: "528",
+          paidFromAccount: "mpesa_bank",
+        }),
+      ),
+    );
+  });
+
+  it("the Void action needs a confirm step before it calls the API", async () => {
+    api.listMovements.mockImplementation(
+      ({ movementType }: { movementType: string }) =>
+        Promise.resolve(
+          movementType === "purchase_payment"
+            ? [
+                movement({
+                  id: "pp1",
+                  purchaseSupplier: "Chieni Wholesale",
+                  purchaseOrderedQty: "1.0000",
+                  purchaseTotalCost: "2085.00",
+                  purchasePaidFrom: "mpesa_bank",
+                }),
+              ]
+            : [],
+        ),
+    );
+    api.listProducts.mockResolvedValue([PROD_1]);
+    api.listLocations.mockResolvedValue([LOC_1]);
+    const user = userEvent.setup();
+    renderScreen();
+
+    const table = await screen.findByRole("table");
+    await user.click(within(table).getByRole("button", { name: "Correct" }));
+    const dialog = await screen.findByRole("dialog");
+
+    await user.click(within(dialog).getByRole("button", { name: /Void payment/ }));
+    expect(api.voidPurchasePayment).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Confirm void" }),
+    );
+    await waitFor(() =>
+      expect(api.voidPurchasePayment).toHaveBeenCalledWith("pp1"),
+    );
   });
 });
 

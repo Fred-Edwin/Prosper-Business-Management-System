@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { businessDateEndUtc, businessDateStartUtc } from "@/lib/time";
 import type {
@@ -111,7 +111,78 @@ export async function listMovements(
     include: { product: { select: { name: true, unitLabel: true } } },
   });
 
-  const views = rows.map(toMovementView);
+  let views = rows.map(toMovementView);
+
+  // Purchase-payment corrections (ADR-15): a `purchase_payment` correction
+  // is a delta row (`correctsMovementId` set) carrying the signed
+  // `purchaseTotalCost` / new supplier / qty / account. The Stock
+  // Purchases screen shows one line per payment with the CURRENT values —
+  // so fold each original's correction deltas into it and drop the
+  // correction rows from the list. (Only `purchase_payment` is folded
+  // here; every other type's correction rows still pass through, because
+  // the ledger grid derives balances by summing all rows including deltas
+  // — `app/admin/stock/derive-ledger.ts`.)
+  const paymentOriginalRows = rows.filter(
+    (r) => r.movementType === "purchase_payment" && r.correctsMovementId === null,
+  );
+  if (paymentOriginalRows.length > 0) {
+    const originalById = new Map(paymentOriginalRows.map((r) => [r.id, r]));
+    const corrections = await prisma.stockMovement.findMany({
+      where: {
+        movementType: "purchase_payment",
+        correctsMovementId: { in: [...originalById.keys()] },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const correctionIds = new Set(corrections.map((c) => c.id));
+    // Latest correction per original (supplier / qty / account are
+    // last-write-wins); cost is the original + Σ every correction delta.
+    const latestByOriginal = new Map<string, (typeof corrections)[number]>();
+    const costByOriginal = new Map<string, Prisma.Decimal>();
+    for (const [oid, orig] of originalById) {
+      costByOriginal.set(oid, orig.purchaseTotalCost ?? new Prisma.Decimal(0));
+    }
+    for (const c of corrections) {
+      const oid = c.correctsMovementId as string;
+      latestByOriginal.set(oid, c);
+      costByOriginal.set(
+        oid,
+        (costByOriginal.get(oid) ?? new Prisma.Decimal(0)).add(
+          c.purchaseTotalCost ?? 0,
+        ),
+      );
+    }
+
+    views = views
+      .filter(
+        (v) =>
+          !(v.movementType === "purchase_payment" && correctionIds.has(v.id)),
+      )
+      .map((v) => {
+        const latest =
+          v.movementType === "purchase_payment"
+            ? latestByOriginal.get(v.id)
+            : undefined;
+        if (!latest) return v;
+        const derivedCost = costByOriginal.get(v.id);
+        return {
+          ...v,
+          purchaseSupplier: latest.purchaseSupplier,
+          purchaseOrderedQty:
+            latest.purchaseOrderedQty == null
+              ? null
+              : latest.purchaseOrderedQty.toFixed(4),
+          purchaseTotalCost:
+            derivedCost == null ? v.purchaseTotalCost : derivedCost.toFixed(2),
+          purchasePaidFrom:
+            latest.purchasePaidFrom === "cash" ||
+            latest.purchasePaidFrom === "mpesa_bank"
+              ? latest.purchasePaidFrom
+              : v.purchasePaidFrom,
+        };
+      });
+  }
 
   // F7-7: join each canteen derived `sale` row (a `sale` with a
   // `stockCountId`) to its `canteen_sale` MoneyMovement so the Canteen

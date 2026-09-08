@@ -298,6 +298,12 @@ model StockMovement {
   purchaseTotalCost  Decimal? @map("purchase_total_cost") @db.Decimal(14, 2)
   purchasePaidFrom   String?  @map("purchase_paid_from") // "cash" | "mpesa_bank"
 
+  // The product's catalog `buyingPrice` immediately before this payment
+  // overwrote it (`recordPurchasePayment` sets the price to cost / qty).
+  // `voidPurchasePayment` rolls the price back to this. `purchase_payment`
+  // rows only; null on a payment recorded before this column existed.
+  purchasePriorBuyingPrice Decimal? @map("purchase_prior_buying_price") @db.Decimal(14, 2)
+
   correctsMovementId String?         @map("corrects_movement_id")
   correctsMovement   StockMovement?  @relation("StockMovementCorrection", fields: [correctsMovementId], references: [id])
   corrections        StockMovement[] @relation("StockMovementCorrection")
@@ -526,6 +532,13 @@ model Repayment {
 
   occurredAt DateTime @map("occurred_at")
 
+  // Append-only correction link (ADR-15). A correction is a new signed
+  // `Repayment` row carrying the delta, pointing at the original; the
+  // original is never mutated. `correctRepayment` / `voidRepayment`.
+  correctsRepaymentId String?     @map("corrects_repayment_id")
+  correctsRepayment   Repayment?  @relation("RepaymentCorrection", fields: [correctsRepaymentId], references: [id])
+  corrections         Repayment[] @relation("RepaymentCorrection")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -563,6 +576,14 @@ model OwnerTransaction {
   amount Decimal              @db.Decimal(12, 2)
   date   DateTime
   note   String?
+
+  // Append-only correction link (ADR-15). A correction is a new
+  // `OwnerTransaction` row carrying the signed delta (and possibly a
+  // flipped `type`), pointing at the original; the original is never
+  // mutated. `correctOwnerTransaction` / `voidOwnerTransaction`.
+  correctsOwnerTransactionId String?            @map("corrects_owner_transaction_id")
+  correctsOwnerTransaction   OwnerTransaction?  @relation("OwnerTransactionCorrection", fields: [correctsOwnerTransactionId], references: [id])
+  corrections                OwnerTransaction[] @relation("OwnerTransactionCorrection")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

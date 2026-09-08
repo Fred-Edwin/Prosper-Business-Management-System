@@ -90,7 +90,10 @@ Same as Loop A, with a short planning step first. No milestone doc.
 
 - What the client asked for, in your words.
 - The domain change: new table? new columns? new domain functions? Does it
-  touch a ledger (then corrections + derivation rules apply)?
+  touch a ledger (then corrections + derivation rules apply)? **A new
+  create path for a ledger row ships its correction path in the same PR**
+  (ADR-72) — `correctX` + optional `voidX`, domain + route + a per-row
+  screen action, following `correctExpense` / `correctPurchasePayment`.
 - The API surface: new routes, or new methods on existing ones. Match
   `docs/API.md` conventions.
 - The screen: a new route, or a tab on an existing screen? Which roles see

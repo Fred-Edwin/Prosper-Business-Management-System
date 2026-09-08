@@ -108,13 +108,14 @@ const NUMERIC_KEYS = new Set([
   "mpesa_declared", "purchaseCost", "purchase_cost", "sellingPrice",
   "buyingPrice", "deliveryFee", "cashDeclaredTo", "mpesaDeclaredTo",
   "cashDelta", "mpesaDelta", "amountDelta", "sold", "revenue",
-  "countedQuantity",
+  "countedQuantity", "purchaseTotalCost", "purchaseOrderedQty",
 ]);
 
 // Keys that are ids / plumbing, never shown as a field.
 const HIDDEN_KEYS = new Set([
   "correlationId", "correctsOrderId", "correctsMovementId", "correctionId",
-  "correctsExpenseId", "correctsHandoverId", "id", "closedBy", "staffId",
+  "correctsExpenseId", "correctsHandoverId", "correctsOwnerTransactionId",
+  "correctsRepaymentId", "reversalId", "id", "closedBy", "staffId",
   "expenseId", "productId", "locationId", "orderId",
 ]);
 
