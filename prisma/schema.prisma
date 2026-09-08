@@ -110,6 +110,19 @@ enum StaffPayAdjustmentType {
   deduction
 }
 
+/// How a staff member's monthly gross pay is computed (staff-pay rework
+/// PR 2, ADR-76).
+///   - `fixed_daily_rate` — the original model: gross = `dailyRate` ×
+///     days present (from `Attendance`). The salaried manager / cashier
+///     stay on this.
+///   - `daily_entry` — the Admin types the day's amount per staff member
+///     (`StaffDailyPay` rows). Attendance is still recorded and shown but
+///     does NOT feed gross.
+enum StaffPayModel {
+  fixed_daily_rate
+  daily_entry
+}
+
 enum AuditAction {
   create
   correct
@@ -143,6 +156,7 @@ model User {
   repaymentsRecorded     Repayment[]          @relation("RepaymentRecordedBy")
   expensesRecorded       Expense[]            @relation("ExpenseRecordedBy")
   staffPayoutsRecorded   StaffPayout[]        @relation("StaffPayoutRecordedBy")
+  staffDailyPayRecorded  StaffDailyPay[]      @relation("StaffDailyPayRecordedBy")
   auditLogs              AuditLog[]           @relation("AuditLogUser")
 
   @@map("user")
@@ -164,6 +178,11 @@ model Staff {
   locationId String   @map("location_id")
   location   Location @relation(fields: [locationId], references: [id])
   dailyRate  Decimal  @map("daily_rate") @db.Decimal(12, 2)
+  /// Which pay model this staff member is on (ADR-76). `fixed_daily_rate`
+  /// (the default, today's behaviour) → gross = `dailyRate` × days
+  /// present. `daily_entry` → gross = Σ `StaffDailyPay` rows for the
+  /// month; `dailyRate` is unused for gross (kept for reference).
+  payModel   StaffPayModel @default(fixed_daily_rate) @map("pay_model")
   active     Boolean  @default(true)
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
@@ -171,6 +190,7 @@ model Staff {
   user                User?
   attendance          Attendance[]
   payAdjustments      StaffPayAdjustment[]
+  dailyPay            StaffDailyPay[]
   payouts             StaffPayout[]
   handovers           Handover[]
   handoverShortfalls  HandoverShortfall[]
@@ -645,6 +665,53 @@ model StaffPayAdjustment {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("staff_pay_adjustment")
+}
+
+/// One hand-typed daily pay amount for a `daily_entry` staff member
+/// (staff-pay rework PR 2, ADR-76). Append-only, like `StaffPayAdjustment`:
+///
+///   - an ORIGINAL row (`correctsDailyPayId` null) is one (staff, business
+///     date) entry — "today this person gets KES X". At most one original
+///     per staff-day, enforced by a PARTIAL unique index
+///     `WHERE corrects_daily_pay_id IS NULL` (Prisma has no partial-index
+///     syntax — plain `@@index` here, the unique lives in raw SQL, same
+///     trick as migration 20260908130000).
+///   - a CORRECTION row (`correctsDailyPayId` set) carries the signed
+///     DELTA (may be negative) and points at the original; `getStaffPay`
+///     sums originals + deltas so a corrected / voided entry folds in.
+///
+/// Day-close gated on write (`assertDayOpen(date)`), exactly like
+/// `recordPayAdjustment`. Writes NO `MoneyMovement` — a pay entry is not a
+/// cash event until a payout is recorded (`payStaff`).
+model StaffDailyPay {
+  id      String   @id @default(uuid())
+  staffId String   @map("staff_id")
+  staff   Staff    @relation(fields: [staffId], references: [id])
+  /// The day's pay. An original is > 0; a correction row's signed delta
+  /// may be negative. Decimal(12,2).
+  amount  Decimal  @db.Decimal(12, 2)
+  /// The business date this pay is for (`@db.Date`, Africa/Nairobi).
+  date    DateTime @db.Date
+  note    String?
+
+  recordedById String @map("recorded_by")
+  recordedBy   User   @relation("StaffDailyPayRecordedBy", fields: [recordedById], references: [id])
+
+  // Append-only correction link (ADR-15 / ADR-72). A correction is a new
+  // `StaffDailyPay` row carrying the signed delta, pointing at the
+  // original; the original is never mutated. `correctDailyPay` /
+  // `voidDailyPay`. Corrections never chain.
+  correctsDailyPayId String?         @map("corrects_daily_pay_id")
+  correctsDailyPay   StaffDailyPay?  @relation("StaffDailyPayCorrection", fields: [correctsDailyPayId], references: [id])
+  corrections        StaffDailyPay[] @relation("StaffDailyPayCorrection")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // At most one ORIGINAL entry per staff-day — a PARTIAL unique index
+  // (`WHERE corrects_daily_pay_id IS NULL`) created in the migration.
+  @@index([staffId, date])
+  @@map("staff_daily_pay")
 }
 
 /// A staff member's monthly pay actually disbursed (M4 S9A). Recording one

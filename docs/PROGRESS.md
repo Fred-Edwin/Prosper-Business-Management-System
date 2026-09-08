@@ -16,6 +16,62 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Staff — daily-entry pay model (2026-09-08) — DONE
+
+PR 2 of 3 of the staff-pay rework. The client pays some staff (cooks,
+casuals) a hand-typed amount per day — the amount genuinely varies day to
+day. She wants to just enter "today this person gets KES X" per staff
+member instead of `rate × days present`.
+
+- **`prisma/schema.prisma`** — new `StaffPayModel` enum
+  (`fixed_daily_rate` | `daily_entry`); `Staff.payModel` column (default
+  `fixed_daily_rate`). New append-only `StaffDailyPay` model: one row per
+  (staff, business date), `amount Decimal(12,2)`, `date @db.Date`,
+  `note?`, `recordedById`, `correctsDailyPayId?` self-FK. Migration
+  `20260908150000_add_daily_entry_pay_model` — widening only + a partial
+  unique index `WHERE corrects_daily_pay_id IS NULL` (one original per
+  staff-day, same trick as `20260908130000`).
+- **`lib/domain/staff/daily-pay.ts`** (new) — `recordDailyPay` (Admin,
+  day-close gated, rejects a `fixed_daily_rate` staff member, `CONFLICT`
+  on a second original for a staff-day) + `correctDailyPay` /
+  `voidDailyPay` (ADR-72, signed-delta rows, **no `MoneyMovement`** —
+  copied almost verbatim from `correct-pay-adjustment.ts`).
+- **`lib/domain/staff/pay.ts`** — `getStaffPay` / `getPayrollSummary`
+  branch on `payModel`: `daily_entry` → `grossPay` = Σ `StaffDailyPay`
+  rows (originals + correction deltas). `StaffPay` gains `payModel` +
+  `dailyPay: DailyPayView[]`. Attendance still recorded/shown for
+  `daily_entry` staff but does not feed gross. Payout path unchanged —
+  `payStaff` still recomputes net from the ledger, just sums a different
+  source.
+- **`lib/domain/staff/{types,internal,index}.ts`**, **`create-staff.ts`**,
+  **`update-staff.ts`**, **`lib/validation/staff.ts`** — `payModel`
+  threaded through create/update/`StaffView`; `updateStaff` allows
+  switching either way. New `recordDailyPaySchema` / `correctDailyPaySchema`.
+- **API** — `POST /api/pay/daily-pay`, `PATCH /api/pay/daily-pay/[id]`,
+  `POST /api/pay/daily-pay/[id]/void` (thin handlers, mirror the payout
+  routes).
+- **Screens** — `app/admin/staff/staff-drawer.tsx`: a "Pay model"
+  `<Select>` (create + edit). `app/admin/staff/pay-tab.tsx`: for
+  `daily_entry` rows the Gross-pay cell opens a "Daily pay" review drawer
+  (`daily-pay-drawer.tsx` + `daily-pay-correction-drawer.tsx`, per-row
+  Correct/Void) and a header "Log daily pay" drawer
+  (`log-daily-pay-drawer.tsx`); Days / Daily rate columns muted for these
+  staff. `use-staff.ts` gains `recordDailyPay` / `correctDailyPay` /
+  `voidDailyPay`.
+- **Seed** — the roster-only "Cook" set to `payModel: daily_entry` with
+  two `StaffDailyPay` rows so the feature is visible in dev.
+- **Docs** — ADR-76; `API.md`, `SCHEMA.md`, PRD §4.8 updated.
+- **Tests** — `lib/domain/staff/daily-pay.test.ts` (10; record / correct
+  nets / void→0 / day-close gate / wrong-model / CONFLICT / no-chain /
+  precision), `pay.test.ts` +2 (`daily_entry` staff-month gross +
+  `getPayrollSummary` agreement, empty month), `admin-staff.screen.test.tsx`
+  +5 (log-daily-pay flow, review + correct + void, CONFLICT inline,
+  fixed-rate shows nothing).
+- **Gates:** `pnpm test` ✅ (1294) · `pnpm typecheck` ✅ · `pnpm build` ✅.
+  No `TODO(mock)`.
+
+---
+
 ## Staff — roster-only (non-login) staff members (2026-09-08) — DONE
 
 PR 1 of the staff-pay rework the client asked for (she runs cooks /

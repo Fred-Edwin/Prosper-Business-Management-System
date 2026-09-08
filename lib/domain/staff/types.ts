@@ -1,6 +1,6 @@
-import type { Role } from "@prisma/client";
+import type { Role, StaffPayModel } from "@prisma/client";
 
-export type { Role } from "@prisma/client";
+export type { Role, StaffPayModel } from "@prisma/client";
 
 /**
  * Staff & Pay domain shapes (M4, PRD §4.8).
@@ -44,6 +44,8 @@ export type CreateStaffInput =
       dailyRate: string;
       /** Exactly 4 digits. Set by the Admin. */
       pin: string;
+      /** Pay model (ADR-76). Defaults to `fixed_daily_rate` when omitted. */
+      payModel?: StaffPayModel;
     }
   | {
       appAccess: false;
@@ -53,10 +55,20 @@ export type CreateStaffInput =
       locationId: string;
       /** Decimal string, e.g. "550.00"; must be ≥ 0. */
       dailyRate: string;
+      /** Pay model (ADR-76). Defaults to `fixed_daily_rate` when omitted. */
+      payModel?: StaffPayModel;
     };
 
 export type UpdateStaffInput = {
   name?: string;
+  /**
+   * Which pay model this staff member is on (ADR-76). `fixed_daily_rate`
+   * → gross = `dailyRate × days present`; `daily_entry` → gross = Σ
+   * hand-typed `StaffDailyPay` rows for the month. Switching is allowed
+   * either way — existing rows of the other kind simply stop feeding
+   * gross while the model is off.
+   */
+  payModel?: StaffPayModel;
   /**
    * Only meaningful for a staff member who HAS app access (a linked
    * `User`). Ignored for a roster-only staff member — `updateStaff`
@@ -85,6 +97,11 @@ export type StaffView = {
   jobTitle: string | null;
   /** `true` when this staff member has a login `User` (i.e. `role` is set). */
   appAccess: boolean;
+  /**
+   * Which pay model this staff member is on (ADR-76). `fixed_daily_rate`
+   * (rate × days present) or `daily_entry` (hand-typed per-day amounts).
+   */
+  payModel: StaffPayModel;
   locationId: string;
   locationName: string;
   dailyRate: string;

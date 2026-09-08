@@ -120,6 +120,13 @@ export async function cleanupStaffTestData(scope: string): Promise<void> {
       });
     }
     await prisma.attendance.deleteMany({ where: { staffId: { in: staffIds } } });
+    // Daily pay: correction rows (self-FK) before their originals.
+    await prisma.staffDailyPay.deleteMany({
+      where: { staffId: { in: staffIds }, correctsDailyPayId: { not: null } },
+    });
+    await prisma.staffDailyPay.deleteMany({
+      where: { staffId: { in: staffIds } },
+    });
     await prisma.staffPayAdjustment.deleteMany({
       where: { staffId: { in: staffIds } },
     });

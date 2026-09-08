@@ -1,4 +1,4 @@
-import { Prisma, type MoneyAccount } from "@prisma/client";
+import { Prisma, type MoneyAccount, type StaffPayModel } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { assertDayOpen } from "@/lib/domain/audit";
 import { recordExpense, recordMoneyMovement } from "@/lib/domain/financials";
@@ -8,6 +8,7 @@ import {
   nairobiToday,
   toBusinessDate,
 } from "@/lib/time";
+import { type DailyPayView, toDailyPayViews } from "./daily-pay";
 import { DomainError } from "./errors";
 import type { StaffActor } from "./types";
 
@@ -245,6 +246,15 @@ export type StaffPay = {
   staffId: string;
   staffName: string;
   month: string;
+  /**
+   * Which pay model this staff member is on (ADR-76).
+   *   - `fixed_daily_rate` → `grossPay` = `dailyRate × daysPresent`; the
+   *     `dailyRate` / `daysPresent` / `payableDays` columns are meaningful.
+   *   - `daily_entry` → `grossPay` = Σ `dailyPay` rows for the month;
+   *     `dailyRate` is carried for reference only and the days columns
+   *     still reflect attendance (recorded + shown) but do NOT feed gross.
+   */
+  payModel: StaffPayModel;
   dailyRate: string;
   /**
    * Business dates in the month that count toward pay: every calendar day
@@ -255,8 +265,18 @@ export type StaffPay = {
   /** `payableDays` minus the days with an explicit `present: false` row. */
   daysPresent: number;
   daysAbsent: number;
-  /** `dailyRate × daysPresent`, decimal string. */
+  /**
+   * `fixed_daily_rate` → `dailyRate × daysPresent`.
+   * `daily_entry` → Σ the month's `StaffDailyPay` rows (originals +
+   * correction deltas). Decimal string.
+   */
   grossPay: string;
+  /**
+   * The `daily_entry` staff member's per-day pay entries for the month
+   * (one view per original, corrections folded in; a voided entry reads
+   * `"0.00"`). Empty for a `fixed_daily_rate` staff member.
+   */
+  dailyPay: DailyPayView[];
   advances: string;
   deductions: string;
   /**
@@ -317,7 +337,7 @@ export async function getStaffPay(
 
   const staff = await prisma.staff.findUnique({
     where: { id: staffId },
-    select: { id: true, name: true, dailyRate: true },
+    select: { id: true, name: true, dailyRate: true, payModel: true },
   });
   if (!staff) {
     throw new DomainError("NOT_FOUND", "Staff member not found.", "staffId");
@@ -329,7 +349,7 @@ export async function getStaffPay(
   // A month entirely in the future has no payable days yet.
   const payableDays = payableTo < from ? 0 : daysInRange(from, payableTo);
 
-  const [absentRows, adjRows, payoutRow] = await Promise.all([
+  const [absentRows, adjRows, dailyPayRows, payoutRow] = await Promise.all([
     prisma.attendance.findMany({
       where: {
         staffId,
@@ -345,6 +365,17 @@ export async function getStaffPay(
       },
       orderBy: { date: "asc" },
     }),
+    // Daily-entry pay rows for the month (originals + correction deltas).
+    // Empty / ignored for a `fixed_daily_rate` staff member.
+    staff.payModel === "daily_entry"
+      ? prisma.staffDailyPay.findMany({
+          where: {
+            staffId,
+            date: { gte: businessDateOnly(from), lte: businessDateOnly(to) },
+          },
+          orderBy: { date: "asc" },
+        })
+      : Promise.resolve([]),
     // Only a LIVE payout counts — a reversed one (ADR-73) leaves the
     // staff-month payable again. The partial unique index guarantees at
     // most one row matches.
@@ -357,7 +388,15 @@ export async function getStaffPay(
   const daysPresent = payableDays - daysAbsent;
 
   const dailyRate = staff.dailyRate;
-  const grossPay = dailyRate.times(daysPresent);
+  // `daily_entry` → gross is the sum of every daily pay row (originals +
+  // signed correction deltas) so a corrected / voided entry nets in.
+  // `fixed_daily_rate` → the original `rate × days present`.
+  const grossPay =
+    staff.payModel === "daily_entry"
+      ? dailyPayRows.reduce((acc, r) => acc.plus(r.amount), ZERO)
+      : dailyRate.times(daysPresent);
+  const dailyPayViews =
+    staff.payModel === "daily_entry" ? toDailyPayViews(dailyPayRows) : [];
 
   // Sum EVERY row (originals + ADR-72 correction deltas, which carry a
   // signed `amount` and keep the original's `type`) so a corrected /
@@ -376,11 +415,13 @@ export async function getStaffPay(
     staffId: staff.id,
     staffName: staff.name,
     month,
+    payModel: staff.payModel,
     dailyRate: dailyRate.toFixed(2),
     payableDays,
     daysPresent,
     daysAbsent,
     grossPay: grossPay.toFixed(2),
+    dailyPay: dailyPayViews,
     advances: advances.toFixed(2),
     deductions: deductions.toFixed(2),
     netPay: netPay.toFixed(2),
@@ -419,7 +460,7 @@ export async function getPayrollSummary(month: string): Promise<PayrollSummary> 
 
   const staff = await prisma.staff.findMany({
     where: { active: true },
-    select: { id: true, name: true, dailyRate: true },
+    select: { id: true, name: true, dailyRate: true, payModel: true },
     orderBy: { name: "asc" },
   });
 
@@ -446,7 +487,10 @@ export async function getPayrollSummary(month: string): Promise<PayrollSummary> 
   }
 
   const ids = staff.map((s) => s.id);
-  const [absentRows, adjRows, payoutRows] = await Promise.all([
+  const dailyEntryIds = staff
+    .filter((s) => s.payModel === "daily_entry")
+    .map((s) => s.id);
+  const [absentRows, adjRows, dailyPayRows, payoutRows] = await Promise.all([
     prisma.attendance.groupBy({
       by: ["staffId"],
       where: {
@@ -463,6 +507,15 @@ export async function getPayrollSummary(month: string): Promise<PayrollSummary> 
       },
       orderBy: { date: "asc" },
     }),
+    dailyEntryIds.length > 0
+      ? prisma.staffDailyPay.findMany({
+          where: {
+            staffId: { in: dailyEntryIds },
+            date: { gte: businessDateOnly(from), lte: businessDateOnly(to) },
+          },
+          orderBy: { date: "asc" },
+        })
+      : Promise.resolve([]),
     prisma.staffPayout.findMany({
       // LIVE payouts only — a reversed one (ADR-73) makes the staff-month
       // unpaid again.
@@ -481,6 +534,12 @@ export async function getPayrollSummary(month: string): Promise<PayrollSummary> 
     list.push(a);
     adjByStaff.set(a.staffId, list);
   }
+  const dailyPayByStaff = new Map<string, typeof dailyPayRows>();
+  for (const d of dailyPayRows) {
+    const list = dailyPayByStaff.get(d.staffId) ?? [];
+    list.push(d);
+    dailyPayByStaff.set(d.staffId, list);
+  }
 
   let tGross = ZERO;
   let tAdv = ZERO;
@@ -493,7 +552,13 @@ export async function getPayrollSummary(month: string): Promise<PayrollSummary> 
   const rows: StaffPay[] = staff.map((s) => {
     const daysAbsent = payableDays === 0 ? 0 : absentByStaff.get(s.id) ?? 0;
     const daysPresent = payableDays - daysAbsent;
-    const grossPay = s.dailyRate.times(daysPresent);
+    const dpList = dailyPayByStaff.get(s.id) ?? [];
+    const grossPay =
+      s.payModel === "daily_entry"
+        ? dpList.reduce((acc, r) => acc.plus(r.amount), ZERO)
+        : s.dailyRate.times(daysPresent);
+    const dailyPayViews =
+      s.payModel === "daily_entry" ? toDailyPayViews(dpList) : [];
 
     let advances = ZERO;
     let deductions = ZERO;
@@ -520,11 +585,13 @@ export async function getPayrollSummary(month: string): Promise<PayrollSummary> 
       staffId: s.id,
       staffName: s.name,
       month,
+      payModel: s.payModel,
       dailyRate: s.dailyRate.toFixed(2),
       payableDays,
       daysPresent,
       daysAbsent,
       grossPay: grossPay.toFixed(2),
+      dailyPay: dailyPayViews,
       advances: advances.toFixed(2),
       deductions: deductions.toFixed(2),
       netPay: netPay.toFixed(2),

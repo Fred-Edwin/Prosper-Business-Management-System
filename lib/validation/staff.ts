@@ -16,6 +16,7 @@ const decimalString = z
   .regex(/^\d+(\.\d{1,2})?$/, "Must be a number with up to 2 decimal places");
 
 const staffRole = z.enum(["store_manager", "cashier", "canteen_attendant"]);
+const payModel = z.enum(["fixed_daily_rate", "daily_entry"]);
 const pin = z.string().regex(/^\d{4}$/, "PIN must be exactly 4 digits");
 const businessDate = z
   .string()
@@ -38,6 +39,7 @@ export const createStaffSchema = z.discriminatedUnion("appAccess", [
     locationId: z.string().min(1, "Location is required"),
     dailyRate: decimalString,
     pin,
+    payModel: payModel.optional(),
   }),
   z.object({
     appAccess: z.literal(false),
@@ -45,6 +47,7 @@ export const createStaffSchema = z.discriminatedUnion("appAccess", [
     jobTitle: z.string().trim().min(1, "Job title is required"),
     locationId: z.string().min(1, "Location is required"),
     dailyRate: decimalString,
+    payModel: payModel.optional(),
   }),
 ]);
 
@@ -53,6 +56,7 @@ export const updateStaffSchema = z
     name: z.string().trim().min(1, "Name is required").optional(),
     role: staffRole.optional(),
     jobTitle: z.string().trim().min(1, "Job title is required").optional(),
+    payModel: payModel.optional(),
     locationId: z.string().min(1).optional(),
     dailyRate: decimalString.optional(),
     pin: pin.optional(),
@@ -110,6 +114,28 @@ export const correctPayAdjustmentSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+/**
+ * `POST /api/pay/daily-pay` (ADR-76). Admin-only, day-close gated. Records
+ * one hand-typed daily pay amount for a `daily_entry` staff member. At
+ * most one ORIGINAL entry per (staff, date).
+ */
+export const recordDailyPaySchema = z.object({
+  staffId: z.string().min(1),
+  amount: decimalString,
+  date: businessDate,
+  note: z.string().trim().max(500).optional(),
+});
+
+/**
+ * `PATCH /api/pay/daily-pay/:id` (ADR-72). Admin-only, append-only: the
+ * domain writes ONE linked signed-delta `StaffDailyPay` row (NO
+ * `MoneyMovement`). `amount` is the corrected FINAL amount.
+ */
+export const correctDailyPaySchema = z.object({
+  amount: decimalString,
+  note: z.string().trim().max(500).optional(),
+});
+
 export const payQuerySchema = z.object({
   month,
   staffId: z.string().min(1).optional(),
@@ -143,5 +169,7 @@ export type RecordPayAdjustmentBody = z.infer<typeof recordPayAdjustmentSchema>;
 export type CorrectPayAdjustmentBody = z.infer<
   typeof correctPayAdjustmentSchema
 >;
+export type RecordDailyPayBody = z.infer<typeof recordDailyPaySchema>;
+export type CorrectDailyPayBody = z.infer<typeof correctDailyPaySchema>;
 export type PayStaffBody = z.infer<typeof payStaffSchema>;
 export type PayAllUnpaidBody = z.infer<typeof payAllUnpaidSchema>;

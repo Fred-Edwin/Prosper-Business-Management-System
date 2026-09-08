@@ -28,7 +28,7 @@ import { Select } from "@/components/kit/select";
 import { TextInput } from "@/components/kit/text-input";
 import { ToggleSwitch } from "@/components/kit/toggle-switch";
 import { useToast } from "@/components/kit/toast";
-import type { StaffView } from "@/lib/domain/staff";
+import type { StaffPayModel, StaffView } from "@/lib/domain/staff";
 import type { CreateStaffBody, UpdateStaffBody } from "@/lib/validation/staff";
 import { ROLE_LABEL } from "./format";
 import type { LocationOption } from "./use-staff";
@@ -39,6 +39,11 @@ type CreateWithAccess = Extract<CreateStaffBody, { appAccess: true }>;
 const ROLE_OPTIONS = (
   ["store_manager", "cashier", "canteen_attendant"] as const
 ).map((r) => ({ value: r, label: ROLE_LABEL[r] }));
+
+const PAY_MODEL_OPTIONS = [
+  { value: "fixed_daily_rate", label: "Fixed daily rate × days present" },
+  { value: "daily_entry", label: "Daily entry — type the day's amount" },
+];
 
 const CODE_MESSAGE: Record<string, string> = {
   VALIDATION_ERROR: "Check the fields and try again.",
@@ -93,6 +98,9 @@ export function StaffDrawer({
   const [dailyRate, setDailyRate] = React.useState<string>(
     target ? target.dailyRate : "",
   );
+  const [payModel, setPayModel] = React.useState<StaffPayModel>(
+    target?.payModel ?? "fixed_daily_rate",
+  );
   const [pin, setPin] = React.useState("");
   const [active, setActive] = React.useState<boolean>(target?.active ?? true);
   const [submitting, setSubmitting] = React.useState(false);
@@ -140,6 +148,7 @@ export function StaffDrawer({
           name: name.trim(),
           locationId,
           dailyRate: dailyRate.trim(),
+          payModel,
           ...(target.appAccess
             ? {
                 role: role as CreateWithAccess["role"],
@@ -157,6 +166,7 @@ export function StaffDrawer({
           locationId,
           dailyRate: dailyRate.trim(),
           pin: pin.trim(),
+          payModel,
         });
         toast("Staff member added", { tone: "success" });
       } else {
@@ -166,6 +176,7 @@ export function StaffDrawer({
           jobTitle: jobTitle.trim(),
           locationId,
           dailyRate: dailyRate.trim(),
+          payModel,
         });
         toast("Staff member added", { tone: "success" });
       }
@@ -301,10 +312,23 @@ export function StaffDrawer({
         options={locationOptions}
       />
 
+      <Select
+        label="Pay model"
+        required
+        className="w-full"
+        value={payModel}
+        onChange={(v) => setPayModel(v as StaffPayModel)}
+        options={PAY_MODEL_OPTIONS}
+      />
+
       <FormField
         label="Daily rate"
         required
-        hint="Used to compute gross pay as rate × days present."
+        hint={
+          payModel === "daily_entry"
+            ? "Reference only — gross pay is the sum of the day-by-day amounts you log on the Pay tab."
+            : "Used to compute gross pay as rate × days present."
+        }
         error={fieldErrors.dailyRate}
       >
         {({ id, "aria-describedby": describedBy, "aria-invalid": invalid }) => (

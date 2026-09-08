@@ -207,6 +207,13 @@ export type PayAdjustmentBody = {
   note?: string;
 };
 
+export type DailyPayBody = {
+  staffId: string;
+  amount: string;
+  date: string;
+  note?: string;
+};
+
 export function usePayroll(month: string) {
   const [payroll, setPayroll] = React.useState<PayrollSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -267,6 +274,51 @@ export function usePayroll(month: string) {
     async (adjustmentId: string): Promise<void> => {
       await request(
         `/api/pay/adjustments/${encodeURIComponent(adjustmentId)}/void`,
+        { method: "POST", body: JSON.stringify({}) },
+      );
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /**
+   * Record one hand-typed daily pay amount for a `daily_entry` staff
+   * member (ADR-76). Day-close gated server-side; no MoneyMovement.
+   */
+  const recordDailyPay = React.useCallback(
+    async (body: DailyPayBody): Promise<void> => {
+      await request(`/api/pay/daily-pay`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /**
+   * Correct a daily pay entry (ADR-72). `amount` is the corrected FINAL
+   * amount; the server writes ONE signed-delta row (no MoneyMovement).
+   */
+  const correctDailyPay = React.useCallback(
+    async (
+      dailyPayId: string,
+      body: { amount: string; note?: string },
+    ): Promise<void> => {
+      await request(`/api/pay/daily-pay/${encodeURIComponent(dailyPayId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /** Void a daily pay entry (ADR-72) — a correction to zero. */
+  const voidDailyPay = React.useCallback(
+    async (dailyPayId: string): Promise<void> => {
+      await request(
+        `/api/pay/daily-pay/${encodeURIComponent(dailyPayId)}/void`,
         { method: "POST", body: JSON.stringify({}) },
       );
       await refresh();
@@ -341,6 +393,9 @@ export function usePayroll(month: string) {
     recordAdjustment,
     correctAdjustment,
     voidAdjustment,
+    recordDailyPay,
+    correctDailyPay,
+    voidDailyPay,
     payOne,
     reversePayout,
     payAll,

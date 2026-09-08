@@ -68,6 +68,8 @@ export async function createStaff(
     );
   }
 
+  const payModel = input.payModel ?? "fixed_daily_rate";
+
   // ── Roster-only: a bare Staff row, no login ──────────────────────────
   if (input.appAccess === false) {
     const jobTitle = normaliseJobTitle(input.jobTitle);
@@ -78,6 +80,7 @@ export async function createStaff(
           name,
           role: null,
           jobTitle,
+          payModel,
           locationId: input.locationId,
           dailyRate,
           active: true,
@@ -92,6 +95,7 @@ export async function createStaff(
           newValue: {
             name: staff.name,
             jobTitle,
+            payModel,
             locationId: staff.locationId,
             dailyRate: dailyRate.toFixed(2),
             appAccess: false,
@@ -130,6 +134,7 @@ export async function createStaff(
         name,
         role: input.role,
         jobTitle: null,
+        payModel,
         locationId: input.locationId,
         dailyRate,
         active: true,
@@ -153,6 +158,7 @@ export async function createStaff(
         newValue: {
           name: staff.name,
           role: staff.role,
+          payModel,
           locationId: staff.locationId,
           dailyRate: dailyRate.toFixed(2),
           appAccess: true,

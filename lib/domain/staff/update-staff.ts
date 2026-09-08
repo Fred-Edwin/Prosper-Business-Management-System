@@ -62,6 +62,19 @@ export async function updateStaff(
   if (input.jobTitle !== undefined) {
     staffData.jobTitle = normaliseJobTitle(input.jobTitle);
   }
+  if (input.payModel !== undefined) {
+    if (
+      input.payModel !== "fixed_daily_rate" &&
+      input.payModel !== "daily_entry"
+    ) {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "Pay model must be fixed_daily_rate or daily_entry.",
+        "payModel",
+      );
+    }
+    staffData.payModel = input.payModel;
+  }
   if (input.dailyRate !== undefined) {
     staffData.dailyRate = parseDailyRate(input.dailyRate);
   }
@@ -160,6 +173,9 @@ export async function updateStaff(
           ...(input.role !== undefined ? { role: input.role } : {}),
           ...(input.jobTitle !== undefined
             ? { jobTitle: input.jobTitle.trim() }
+            : {}),
+          ...(input.payModel !== undefined
+            ? { payModel: input.payModel }
             : {}),
           ...(input.locationId !== undefined
             ? { locationId: input.locationId }

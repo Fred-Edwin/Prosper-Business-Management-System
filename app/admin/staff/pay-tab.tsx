@@ -29,6 +29,8 @@ import type { StaffPay } from "@/lib/domain/staff";
 import { money, negMoney, shortDate, staffLabel } from "./format";
 import { monthLabel } from "./month-picker";
 import { AdvanceDrawer } from "./advance-drawer";
+import { LogDailyPayDrawer } from "./log-daily-pay-drawer";
+import { DailyPayDrawer } from "./daily-pay-drawer";
 import { PayoutDrawer } from "./payout-drawer";
 import { PayoutReversalDrawer } from "./payout-reversal-drawer";
 import { StaffAdjustmentsDrawer } from "./staff-adjustments-drawer";
@@ -147,6 +149,9 @@ export function PayTab({
     recordAdjustment,
     correctAdjustment,
     voidAdjustment,
+    recordDailyPay,
+    correctDailyPay,
+    voidDailyPay,
     payOne,
     reversePayout,
     payAll,
@@ -156,6 +161,20 @@ export function PayTab({
   React.useEffect(() => {
     registerRecordAdjustment(() => setAdvanceOpen(true));
   }, [registerRecordAdjustment]);
+
+  // Daily-entry pay (ADR-76). `logDailyPay` is a staffId preselect or null
+  // for the generic "Log daily pay" action; `dailyPayDrawer` is the review
+  // list opened from a `daily_entry` row's Gross pay cell.
+  const [logDailyPayFor, setLogDailyPayFor] = React.useState<
+    string | null | undefined
+  >(undefined);
+  const [dailyPayDrawer, setDailyPayDrawer] = React.useState<StaffPay | null>(
+    null,
+  );
+  const hasDailyEntry = React.useMemo(
+    () => (payroll?.rows ?? []).some((r) => r.payModel === "daily_entry"),
+    [payroll],
+  );
   const { shortfalls, loading: sfLoading } = useMonthlyShortfalls(month);
   // The full roster: joins the role + location the design's row caption
   // needs (StaffPay carries neither), and drives the location filter.
@@ -196,6 +215,16 @@ export function PayTab({
           adjDrawer)
         : null,
     [adjDrawer, payroll],
+  );
+
+  // Same for the daily-pay review drawer.
+  const dailyPayRow = React.useMemo(
+    () =>
+      dailyPayDrawer
+        ? (payroll?.rows.find((r) => r.staffId === dailyPayDrawer.staffId) ??
+          dailyPayDrawer)
+        : null,
+    [dailyPayDrawer, payroll],
   );
 
   const totals = payroll?.totals;
@@ -251,7 +280,16 @@ export function PayTab({
       width: "w-[64px] shrink-0",
       align: "right",
       cell: "mono",
-      render: (r) => String(r.daysPresent),
+      // Attendance is still recorded for daily-entry staff, but does not
+      // feed gross — show it in a muted tone so the row reads right.
+      render: (r) =>
+        r.payModel === "daily_entry" ? (
+          <span className="[color:var(--text-tertiary)]">
+            {r.daysPresent}
+          </span>
+        ) : (
+          String(r.daysPresent)
+        ),
     },
     {
       key: "rate",
@@ -259,7 +297,12 @@ export function PayTab({
       width: "w-[92px] shrink-0",
       align: "right",
       cell: "mono",
-      render: (r) => money(r.dailyRate),
+      render: (r) =>
+        r.payModel === "daily_entry" ? (
+          <span className="[color:var(--text-tertiary)]">daily entry</span>
+        ) : (
+          money(r.dailyRate)
+        ),
     },
     {
       key: "gross",
@@ -267,9 +310,19 @@ export function PayTab({
       width: "w-[108px] shrink-0",
       align: "right",
       cell: "mono",
-      render: (r) => (
-        <span className="[color:var(--text-primary)]">{money(r.grossPay)}</span>
-      ),
+      render: (r) =>
+        r.payModel === "daily_entry" ? (
+          <button
+            type="button"
+            onClick={() => setDailyPayDrawer(r)}
+            className="font-mono [color:var(--text-primary)] underline decoration-dotted underline-offset-2 hover:[color:var(--text-secondary)] outline-none focus-visible:[outline:2px_solid_var(--focus-ring)]"
+            aria-label={`Review daily pay for ${r.staffName}`}
+          >
+            {money(r.grossPay)}
+          </button>
+        ) : (
+          <span className="[color:var(--text-primary)]">{money(r.grossPay)}</span>
+        ),
     },
     {
       key: "advances",
@@ -329,6 +382,15 @@ export function PayTab({
               } paid · KES ${money(totals.netUnpaid)} to pay`}
         </div>
         <div className="flex items-center gap-(--sp-4)">
+          {hasDailyEntry && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setLogDailyPayFor(null)}
+            >
+              Log daily pay
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
@@ -439,8 +501,11 @@ export function PayTab({
                     {rowCaption(r)}
                   </div>
                   <div className="font-ui [color:var(--text-secondary)] text-caption/micro">
-                    {r.daysPresent} days × {money(r.dailyRate)} = gross{" "}
-                    {money(r.grossPay)}
+                    {r.payModel === "daily_entry"
+                      ? `daily entry · gross ${money(r.grossPay)}`
+                      : `${r.daysPresent} days × ${money(
+                          r.dailyRate,
+                        )} = gross ${money(r.grossPay)}`}
                     {Number(r.advances) > 0
                       ? ` · advances ${negMoney(r.advances)}`
                       : ""}
@@ -448,6 +513,17 @@ export function PayTab({
                       ? ` · deductions ${negMoney(r.deductions)}`
                       : ""}
                   </div>
+                  {r.payModel === "daily_entry" && (
+                    <div className="pt-(--sp-1)">
+                      <Button
+                        variant="tertiary"
+                        size="sm"
+                        onClick={() => setDailyPayDrawer(r)}
+                      >
+                        Review daily pay
+                      </Button>
+                    </div>
+                  )}
                   {r.adjustments.length > 0 && (
                     <div className="pt-(--sp-1)">
                       <Button
@@ -497,6 +573,30 @@ export function PayTab({
           today={today}
           onRecord={recordAdjustment}
           onClose={() => setAdvanceOpen(false)}
+        />
+      )}
+
+      {logDailyPayFor !== undefined && (
+        <LogDailyPayDrawer
+          month={month}
+          today={today}
+          presetStaffId={logDailyPayFor ?? undefined}
+          onRecord={recordDailyPay}
+          onClose={() => setLogDailyPayFor(undefined)}
+        />
+      )}
+
+      {dailyPayRow && (
+        <DailyPayDrawer
+          pay={dailyPayRow}
+          month={month}
+          onLog={() => {
+            setLogDailyPayFor(dailyPayRow.staffId);
+            setDailyPayDrawer(null);
+          }}
+          onCorrect={correctDailyPay}
+          onVoid={voidDailyPay}
+          onClose={() => setDailyPayDrawer(null)}
         />
       )}
 
