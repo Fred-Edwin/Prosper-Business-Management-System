@@ -665,10 +665,20 @@ model StaffPayout {
   expenseId String  @unique @map("expense_id")
   expense   Expense @relation("StaffPayoutExpense", fields: [expenseId], references: [id])
 
+  /// Set by `reversePayout` (ADR-73) when a payout is undone: the offsetting
+  /// Expense delta row + paired MoneyMovement are written elsewhere, this
+  /// row is stamped and thereafter ignored by `getStaffPay` /
+  /// `getPayrollSummary` / `payStaff`, so the staff-month is payable again.
+  reversedAt DateTime? @map("reversed_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@unique([staffId, month])
+  // At most one LIVE (non-reversed) payout per staff-month. Enforced by a
+  // PARTIAL unique index (`WHERE reversed_at IS NULL`) created in migration
+  // 20260908130000 — Prisma has no partial-index syntax, so this is a
+  // plain index here and the partial unique lives in raw SQL.
+  @@index([staffId, month])
   @@map("staff_payout")
 }
 

@@ -23,6 +23,7 @@ const updateStaff = vi.fn();
 const deactivateStaff = vi.fn();
 const saveBulk = vi.fn();
 const payOne = vi.fn();
+const reversePayout = vi.fn();
 const payAll = vi.fn();
 const recordAdjustment = vi.fn();
 const correctAdjustment = vi.fn();
@@ -78,6 +79,7 @@ vi.mock("@/app/admin/staff/use-staff", async (importOriginal) => {
       correctAdjustment,
       voidAdjustment,
       payOne,
+      reversePayout,
       payAll,
     }),
     useMonthlyShortfalls: () => ({
@@ -164,6 +166,7 @@ beforeEach(() => {
   createStaff.mockResolvedValue(staff());
   saveBulk.mockResolvedValue([]);
   payOne.mockResolvedValue(pay({ paid: true }));
+  reversePayout.mockResolvedValue(undefined);
   payAll.mockResolvedValue({ month: "2026-09", paid: [{}], skipped: [] });
   recordAdjustment.mockResolvedValue(undefined);
   correctAdjustment.mockResolvedValue(undefined);
@@ -521,6 +524,96 @@ describe("Pay — payout drawer", () => {
 
     expect(
       await within(dialog).findByText(/Net pay is zero or less/i),
+    ).toBeInTheDocument();
+  });
+});
+
+// ── Payout reversal drawer ──────────────────────────────────────────
+
+describe("Pay — reverse a payout", () => {
+  const paidRow = () =>
+    pay({
+      paid: true,
+      payout: {
+        id: "po-1",
+        staffId: "s1",
+        month: "2026-09",
+        netPaid: "15300.00",
+        date: "2026-09-28",
+        paidFromAccount: "cash",
+        expenseId: "exp-1",
+        reversedAt: null,
+      },
+    });
+
+  function renderPaid() {
+    payrollState = {
+      payroll: payroll([paidRow()]),
+      loading: false,
+      error: null,
+    };
+    render(
+      <ToastProvider placement="top-right">
+        <PayTab
+          month="2026-09"
+          today="2026-09-30"
+          registerRecordAdjustment={() => {}}
+        />
+      </ToastProvider>,
+    );
+  }
+
+  it("opens the reversal drawer from the Paid cell and reverses behind a confirm step", async () => {
+    const user = userEvent.setup();
+    renderPaid();
+
+    await user.click(
+      screen.getAllByRole("button", { name: /Paid · /i })[0],
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/Amount to reverse/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("KES 15,300.00")).toBeInTheDocument();
+
+    // First click reveals the confirm; nothing sent yet.
+    await user.click(
+      within(dialog).getByRole("button", { name: /Reverse payout…/i }),
+    );
+    expect(reversePayout).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Confirm reversal" }),
+    );
+    await waitFor(() => expect(reversePayout).toHaveBeenCalledOnce());
+    expect(reversePayout).toHaveBeenCalledWith("po-1");
+  });
+
+  it("surfaces an already-reversed CONFLICT inline", async () => {
+    const user = userEvent.setup();
+    const { StaffRequestError } = await import("@/app/admin/staff/use-staff");
+    reversePayout.mockRejectedValueOnce(
+      new StaffRequestError(409, {
+        code: "CONFLICT",
+        message: "Already reversed.",
+        field: "payoutId",
+      }),
+    );
+    renderPaid();
+
+    await user.click(
+      screen.getAllByRole("button", { name: /Paid · /i })[0],
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", { name: /Reverse payout…/i }),
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Confirm reversal" }),
+    );
+
+    expect(
+      await within(dialog).findByText(/already been reversed/i),
     ).toBeInTheDocument();
   });
 });

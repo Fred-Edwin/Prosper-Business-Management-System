@@ -2786,6 +2786,15 @@ self-relation was considered and rejected as scope creep for 9A. Until
 then: correct the linked expense to zero, and (if the month must be
 re-paid) an Admin deletes the `StaffPayout` row out of band.
 
+> **Addendum (2026-09-08, ADR-73):** payout reversal shipped as
+> `reversePayout`. It follows the "thin wrapper" this paragraph
+> anticipated — no `corrects_staff_payout_id` lineage — but does the
+> Expense zero-out itself (`correctExpense` rejects `"0.00"` via
+> `toPositiveAmount`) rather than calling it. `@@unique([staffId,
+> month])` becomes a **partial** unique index (`WHERE reversed_at IS
+> NULL`) and a new `staff_payout.reversed_at` column makes "payable
+> again" a real yes/no. See ADR-73.
+
 **This SUPERSEDES** the PRD §4.7 / §4.8 statement that "payroll
 disbursement happens outside the system" and calculated pay never counts
 as an expense. PRD §4.7, §4.8 and §6 are updated in this session. A future
@@ -3905,7 +3914,88 @@ each new `recordX` shipped without its `correctX`.
   a payout is recorded — so the correction writes ONLY the linked
   signed-delta `StaffPayAdjustment` row, keeping the original's `type`;
   a plain per-type sum folds it in, and `getStaffPay` collapses the
-  list to one view per original), staff payout reversal, closed-day
-  canteen count correction.
+  list to one view per original), ~~staff payout reversal~~ (done
+  2026-09-08 — ADR-73; `reversePayout` in `lib/domain/staff/pay.ts`,
+  migration `20260908130000_add_staff_payout_reversal` adds
+  `staff_payout.reversed_at` and swaps `@@unique([staffId, month])` for
+  a PARTIAL unique index `WHERE reversed_at IS NULL`, route
+  `POST /api/pay/payout/:id/reverse`, "Reverse payout" action behind a
+  confirm step on the Pay tab via `payout-reversal-drawer.tsx`. **No
+  `corrects_staff_payout_id` lineage** — a payout's money/profit effect
+  lives entirely on its linked Salaries `Expense`, so the reversal
+  writes the offsetting `Expense` correction row (to zero) + its paired
+  `MoneyMovement` there, and stamps `reversed_at`; `getStaffPay` /
+  `getPayrollSummary` / `payStaff` then ignore the row, so the
+  staff-month is payable again), closed-day canteen count correction.
 - The rule is added to the Loop B checklist in `docs/maintenance.md` and
   `CLAUDE.md`.
+
+---
+
+## ADR-73: A staff payout reversal is a thin wrapper over the linked Salaries `Expense` + a `reversed_at` column — no `corrects_staff_payout_id` lineage (Owner + Developer, 2026-09-08)
+
+**Context.** ADR-72 listed "staff payout reversal" as a deferred
+correction path. ADR-60 already documented how a reversal *could* work —
+a payout's whole money/profit effect lives in the one Salaries `Expense`
+it creates, so zeroing that expense restores Cash and Net Profit — but
+the UI never exposed it, and nothing freed the `@@unique([staffId,
+month])` slot so a corrected month could be re-paid. The out-of-band
+fix was "correct the expense to zero, then an Admin deletes the
+`StaffPayout` row in the Neon console".
+
+**Owner decision.** Two questions were put to the owner:
+
+1. *Own lineage or thin wrapper?* → **thin wrapper.** No
+   `corrects_staff_payout_id` self-relation. The payout record does not
+   carry its own correction chain; its financial history stays on the
+   `Expense`.
+2. *Payable again after a reversal, or permanently "paid then reversed"?*
+   → **payable again.** A reversed staff-month reads as unpaid and can be
+   paid afresh (a new payout + a new Salaries `Expense`).
+
+**Decision.**
+
+1. **New column `staff_payout.reversed_at` (`DateTime?`).** Additive.
+   "Is this month payable again?" is now a real column, not inferred
+   from the linked expense's derived amount being zero.
+2. **`@@unique([staffId, month])` → a PARTIAL unique index**
+   `staff_payout_staff_id_month_live_key ... WHERE reversed_at IS NULL`.
+   At most one *live* payout per staff-month; any number of reversed
+   ones. Prisma has no partial-index syntax, so the schema carries a
+   plain `@@index([staffId, month])` and the partial unique lives in the
+   migration's raw SQL. `getStaffPay` / `getPayrollSummary` / `payStaff`
+   also filter `reversedAt: null` in code — the DB partial index is the
+   race backstop (a `P2002` still maps to `CONFLICT`, as before).
+3. **`reversePayout(payoutId, actor)`** — Admin-only, **not** day-close
+   gated (ADR-72 rule §1: an Admin delta row is always allowed, even on
+   a sealed day). In ONE transaction: load the payout (reject if
+   `reversedAt` already set → `CONFLICT`; unknown id → `NOT_FOUND`);
+   compute the linked expense's *current* derived amount (original + Σ
+   any correction deltas an Admin already applied via Financials →
+   Expenses); if non-zero, write ONE offsetting `Expense` correction row
+   (`correctsExpenseId` = the expense, `amount` = −currentDerived) + its
+   paired positive `MoneyMovement`, plus an `AuditLog` `correct` row;
+   then stamp `reversed_at`. **`correctExpense` is not reused** — it
+   rejects `"0.00"` through `toPositiveAmount` — but the transaction body
+   mirrors it exactly.
+4. **Route** `POST /api/pay/payout/:id/reverse` (no body, Admin-only,
+   thin handler). `201` with `{ data: StaffPayoutView }` (`reversedAt`
+   set). `StaffPayoutView` gains `reversedAt: string | null`.
+5. **Frontend.** The Pay tab's "Paid · <date>" cell becomes a button
+   that opens `payout-reversal-drawer.tsx` — a Void-only drawer (a
+   payout has no amount to restate): an explanation, the amount/date/
+   account, then a destructive "Reverse payout" behind a confirm step,
+   following `pay-adjustment-correction-drawer.tsx`. Wired through
+   `usePayroll().reversePayout`.
+
+**Consequences.**
+
+- Migration `20260908130000_add_staff_payout_reversal`: adds
+  `reversed_at`, drops `staff_payout_staff_id_month_key`, adds
+  `staff_payout_staff_id_month_idx` (plain) and
+  `staff_payout_staff_id_month_live_key` (partial unique).
+- The existing ADR-60 double-pay test (a direct duplicate insert with
+  `reversed_at` NULL) still raises `P2002` against the partial index —
+  unchanged.
+- No `TODO(mock)`. ADR-72's deferred list: payout reversal struck
+  through; only "closed-day canteen count correction" remains.
