@@ -16,6 +16,27 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Handovers worksheet — action buttons STILL clipped after the last fix; real cause found (2026-09-09) — DONE
+
+The previous entry's `min-w-[1202px]` fix was itself wrong — it summed
+only the column widths, missing that every `role="row"` also carries
+`px-(--sp-7)` (20px each side = 40px) horizontal padding. Owner caught it
+still clipped on the deployed app. Real total: **1242px** = columns-sum
+(1202) + row padding (40). Fixed, and the code comment now spells out
+the padding term explicitly (it was silently dropped twice running:
+980px, then 1072px, then 1202px — each missing a different piece of the
+box model).
+
+- **File:** `app/admin/financials/handovers-tab.tsx` — `min-w-[1202px]`
+  → `min-w-[1242px]`.
+- **Gates:** `pnpm test:unit` 534/534 (verified single-forked — the
+  first `--maxForks=2` run hit 6 pre-existing, unrelated
+  `store-manager-flows.screen.test.tsx` flakes, confirmed unrelated by
+  re-running clean on `main` before this change) · `pnpm typecheck`
+  clean · `pnpm build` clean.
+
+---
+
 ## Handovers worksheet — drop redundant day-header rows, fix clipped action buttons (2026-09-09) — DONE
 
 Owner caught this live on the deployed app right after ADR-79 shipped:

@@ -32,10 +32,13 @@
 //     The Date column carries each row's own reconciled business day —
 //     the only thing that tells a multi-day worksheet's rows apart.
 //     Table `min-w` MUST be kept in sync with this column list's sum
-//     (currently 1202px = 92+150+130+90×6+160+130) — a stale value clips
-//     the action column instead of scrolling to it (ADR-79 follow-up:
-//     it was 130px short for a while and "Correct"/"Record receipt" read
-//     as "Corre"/clipped).
+//     PLUS each row's own horizontal padding (`px-(--sp-7)` = 20px each
+//     side = 40px) — every `role="row"` div carries that padding, so the
+//     table needs columns-sum + 40, not just the columns-sum. Currently
+//     1242px = (92+150+130+90×6+160+130) + 40. Missing the padding term
+//     was the exact mistake TWICE running (980px/1072px, then 1202px) —
+//     each stale value clipped the action column instead of scrolling to
+//     it, "Correct"/"Record receipt" reading as "Corre…"/cut off.
 //   • The kit <SimpleTable> has no grouped-header or footer support, so
 //     this table is hand-built from token markup (the totals strip
 //     already was). It is NOT a kit change — no kit file is touched.
@@ -458,7 +461,7 @@ export function HandoversView({
             <div
               role="table"
               aria-label="Handover reconciliation"
-              className="flex flex-col min-w-[1202px] rounded-sm overflow-clip bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]"
+              className="flex flex-col min-w-[1242px] rounded-sm overflow-clip bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]"
             >
               <ReconTableHeader />
               {loading && rows.length === 0 ? (
