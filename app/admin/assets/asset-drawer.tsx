@@ -2,10 +2,15 @@
 // <FormField> + <Select> + <DatePicker> + <Button> + <Toast>.
 //
 // ADR-44 applies to the artboard (8JO-0 — pre-kit: --surface-panel-tint
-// panel, a bespoke segmented "condition" control, a "+ Add Category"
-// affordance for a field the schema has no column for). The proven kit is
+// panel, a bespoke segmented "condition" control). The proven kit is
 // the visual target; the per-screen visual gate diffs against the kit
 // Drawer / FormField / Select / DatePicker Storybook stories. See ADR-45.
+//
+// 2026-09-09: the artboard's "+ Add Category" affordance now has a real
+// column behind it — `Asset.category` (free-text, optional) plus
+// `Asset.quantity` (int, >= 1). Client feedback; partially reverses ADR-44's
+// no-category call (DECISIONS.md). Category = free-text <input> + a
+// <datalist> of existing names; Quantity = kit <QuantityStepper>.
 //
 // Design/UX note (carried from Session 12): the submit button stays enabled
 // while the form is incomplete — the domain + Zod own validation and surface
@@ -19,6 +24,7 @@ import { Drawer } from "@/components/kit/drawer";
 import { FormField } from "@/components/kit/form-field";
 import { Select } from "@/components/kit/select";
 import { DatePicker } from "@/components/kit/date-picker";
+import { QuantityStepper } from "@/components/kit/quantity-stepper";
 import { useToast } from "@/components/kit/toast";
 import type {
   AssetCondition,
@@ -55,6 +61,8 @@ export type AssetDrawerProps = {
   open: boolean;
   onClose: () => void;
   locations: Location[];
+  /** Existing category names, offered as a datalist while typing (free-text still allowed). */
+  categoryOptions?: string[];
   /** `null` = create mode; an asset = edit mode. */
   asset: AssetView | null;
   onCreate: (input: CreateAssetInput) => Promise<void>;
@@ -67,6 +75,7 @@ export function AssetDrawer({
   open,
   onClose,
   locations,
+  categoryOptions = [],
   asset,
   onCreate,
   onUpdate,
@@ -84,6 +93,8 @@ export function AssetDrawer({
   const [purchaseDate, setPurchaseDate] = React.useState<Date>(new Date());
   const [purchaseCost, setPurchaseCost] = React.useState("");
   const [condition, setCondition] = React.useState<AssetCondition>("Good");
+  const [quantity, setQuantity] = React.useState(1);
+  const [category, setCategory] = React.useState("");
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>(
     {},
   );
@@ -102,12 +113,16 @@ export function AssetDrawer({
       setPurchaseDate(fromIso(asset.purchaseDate));
       setPurchaseCost(asset.purchaseCost);
       setCondition(asset.condition);
+      setQuantity(asset.quantity);
+      setCategory(asset.category ?? "");
     } else {
       setName("");
       setLocationId(locations[0]?.id ?? "");
       setPurchaseDate(new Date());
       setPurchaseCost("");
       setCondition("Good");
+      setQuantity(1);
+      setCategory("");
     }
   }, [open, asset, locations]);
 
@@ -122,6 +137,8 @@ export function AssetDrawer({
       purchaseDate: toIso(purchaseDate),
       purchaseCost: purchaseCost.trim(),
       condition,
+      quantity,
+      category: category.trim() === "" ? null : category.trim(),
     };
 
     try {
@@ -237,6 +254,48 @@ export function AssetDrawer({
           error={Boolean(fieldErrors.condition)}
           helperText={fieldErrors.condition}
           className="w-full"
+        />
+
+        <FormField
+          label="Category (optional)"
+          error={fieldErrors.category}
+          hint="e.g. Kitchen Equipment, Furniture, Electronics"
+          className="w-full"
+        >
+          {({ id, "aria-describedby": describedBy, "aria-invalid": invalid }) => (
+            <div
+              className={`${fieldBox} ${
+                invalid ? "border-danger" : "[border-color:var(--border-strong)]"
+              }`}
+              data-invalid={invalid || undefined}
+            >
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
+                list="asset-category-options"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder="Uncategorised"
+                className="font-ui [color:var(--text-primary)] text-sm/micro w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
+              />
+              <datalist id="asset-category-options">
+                {categoryOptions.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            </div>
+          )}
+        </FormField>
+
+        <QuantityStepper
+          label="Quantity"
+          value={quantity}
+          min={1}
+          step={1}
+          onChange={(n) => setQuantity(Math.max(1, Math.round(n)))}
+          error={Boolean(fieldErrors.quantity)}
+          helperText={fieldErrors.quantity ?? "How many identical units this line covers"}
         />
 
         <div className="flex items-start gap-(--sp-5)">

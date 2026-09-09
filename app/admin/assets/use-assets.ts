@@ -58,6 +58,8 @@ export type AssetsListFilter = {
   search?: string;
   locationId?: string;
   condition?: AssetCondition;
+  /** Exact category; the `UNCATEGORISED` sentinel selects rows with none. */
+  category?: string;
   includeDeleted?: boolean;
 };
 
@@ -70,6 +72,7 @@ export const assetApi = {
       params.set("search", filter.search.trim());
     if (filter.locationId) params.set("locationId", filter.locationId);
     if (filter.condition) params.set("condition", filter.condition);
+    if (filter.category) params.set("category", filter.category);
     if (filter.includeDeleted) params.set("includeDeleted", "true");
     return request<AssetView[]>(`/api/assets?${params.toString()}`);
   },
@@ -127,14 +130,20 @@ export function useAssets(filter: AssetsListFilter) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  const { search, locationId, condition, includeDeleted } = filter;
+  const { search, locationId, condition, category, includeDeleted } = filter;
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [rows, locs] = await Promise.all([
-        assetApi.listAssets({ search, locationId, condition, includeDeleted }),
+        assetApi.listAssets({
+          search,
+          locationId,
+          condition,
+          category,
+          includeDeleted,
+        }),
         assetApi.listLocations(),
       ]);
       setAssets(rows);
@@ -146,7 +155,7 @@ export function useAssets(filter: AssetsListFilter) {
     } finally {
       setLoading(false);
     }
-  }, [search, locationId, condition, includeDeleted]);
+  }, [search, locationId, condition, category, includeDeleted]);
 
   React.useEffect(() => {
     void refresh();

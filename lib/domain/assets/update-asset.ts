@@ -51,6 +51,8 @@ export async function updateAsset(
       purchaseDate: core.purchaseDate,
       purchaseCost: core.purchaseCost,
       conditionStatus: core.condition,
+      quantity: core.quantity,
+      category: core.category,
     },
     include: assetInclude,
   });

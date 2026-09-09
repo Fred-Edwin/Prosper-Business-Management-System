@@ -140,6 +140,17 @@ export interface DenseLedgerProps {
    * `[width:100%]`. The Admin Stock ledger screens set this.
    */
   horizontalScroll?: boolean;
+  /**
+   * When true, the header row is `position: sticky; top: 0` (at `--z-sticky`) so it
+   * stays visible while the caller's vertical scroll container scrolls the rows
+   * past it — the column labels never leave the viewport on a long ledger
+   * (client feedback, 2026-09-09). The header gets an opaque fill so scrolling
+   * rows don't show through. Opt-in; the caller owns the scroll container (the
+   * Admin Stock screen already scrolls an ancestor). Composes with
+   * `horizontalScroll` — the sticky-left Location/Product cells then pin on both
+   * axes.
+   */
+  stickyHeader?: boolean;
   /** Called with (rowId, columnKey) when a data cell is clicked (correction target). */
   onCellClick?: (rowId: string, columnKey: string) => void;
   className?: string;
@@ -195,6 +206,19 @@ const STICKY_HEADER_BG: React.CSSProperties = {
   backgroundImage:
     "linear-gradient(var(--color-info-bg), var(--color-info-bg))",
 };
+
+/**
+ * `stickyHeader` z-order. The body rows' sticky-LEFT cells sit at
+ * `--z-sticky` (1100, design-system/tokens.css) and, because a
+ * `position: sticky` element with a z-index makes its own stacking context
+ * and they come later in the DOM, they'd paint OVER an equal-z-index header.
+ * So the pinned header container sits ONE step above the whole body sticky
+ * layer — every header cell rides the container's context, so the entire
+ * row of column titles is above every scrolling row on both axes. (Tailwind
+ * `calc()` arbitrary values can't carry the spaces CSS `calc` needs, so
+ * these are inline literals on the same 1100 scale.)
+ */
+const STICKY_HEADER_Z = "[z-index:1101]";
 
 function toneClass(cell: LedgerCell): string {
   if (cell.dash) return "[color:var(--text-tertiary)]";
@@ -252,6 +276,7 @@ export function DenseLedger({
   emptyMessage = "No movements recorded for this filter.",
   showLocation = false,
   horizontalScroll = false,
+  stickyHeader = false,
   loading = false,
   loadingRows = 3,
   onCellClick,
@@ -271,8 +296,13 @@ export function DenseLedger({
     >
       {/* Ledger Header */}
       <div
+        style={stickyHeader ? STICKY_HEADER_BG : undefined}
         className={cn(
-          "flex items-center h-[32px] px-(--sp-6) gap-(--sp-5) shrink-0 bg-info-bg border-b border-b-solid border-b-gray-600",
+          "flex items-center h-[32px] px-(--sp-6) gap-(--sp-5) shrink-0 border-b border-b-solid border-b-gray-600",
+          // Pinned: an opaque fill (STICKY_HEADER_BG above) + one z-index step
+          // above the body's sticky layer, so every column title stays above
+          // every scrolling row. Base (non-pinned) keeps the translucent tint.
+          stickyHeader ? `sticky top-0 ${STICKY_HEADER_Z}` : "bg-info-bg",
           lineWidth,
         )}
       >
@@ -281,7 +311,13 @@ export function DenseLedger({
             style={horizontalScroll ? STICKY_HEADER_BG : undefined}
             className={cn(
               "w-[100px] shrink-0 font-ui font-(--weight-semibold) [letter-spacing:var(--tracking-caps)] uppercase inline-block text-info text-caption/micro",
-              horizontalScroll ? "sticky left-0 [z-index:var(--z-sticky)]" : "bg-info-bg",
+              // `left-0` pins it against horizontal scroll; the z-index is only
+              // for intra-header ordering (it must cover the scrolling header
+              // cells to its right). The header CONTAINER already sits above
+              // every body row (STICKY_HEADER_Z).
+              horizontalScroll
+                ? "sticky left-0 [z-index:var(--z-sticky)]"
+                : "bg-info-bg",
             )}
           >
             Location

@@ -32,6 +32,8 @@ export async function createAsset(
       purchaseDate: core.purchaseDate,
       purchaseCost: core.purchaseCost,
       conditionStatus: core.condition,
+      quantity: core.quantity,
+      category: core.category,
     },
     include: assetInclude,
   });

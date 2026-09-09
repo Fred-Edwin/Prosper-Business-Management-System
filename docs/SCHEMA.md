@@ -530,6 +530,8 @@ Does not auto-deduct pay or block day-close (PRD §4.8).
 | purchase_date | `@db.Date` (calendar date, no time) — not in the future |
 | purchase_cost | `NUMERIC(12,2)` — `Decimal` in code, never a float (ADR-30) |
 | condition_status | text; the app enforces `Good` \| `Needs Repair` \| `Decommissioned` (matches the `<ConditionChip>` kit component + `component-states.md` C14). Stored as the display string. |
+| quantity | `INTEGER NOT NULL DEFAULT 1` — whole units this register line stands for (6 identical chairs on one row). Domain requires an integer `>= 1`. Added 2026-09-09 (client feedback); widening-only, no backfill. |
+| category | nullable text — free-text Admin grouping (Kitchen Equipment / Furniture / …), mirrors `product.category`. Blank normalises to `NULL` ("Uncategorised"). Added 2026-09-09; **reverses ADR-44's no-category call** (see DECISIONS.md). Filter via `?category=`; the `__uncategorised__` sentinel selects `category IS NULL`. |
 | deleted_at | nullable — soft-delete (ADR-23); hidden from the default `listAssets` read |
 | created_at / updated_at | standard |
 
@@ -545,7 +547,9 @@ the only history an asset can accrue is `AuditLog` rows
 table yet. The guard (`hardDeleteAsset`) counts those; when such a table
 is added, its count joins the guard, mirroring `hardDeleteProduct`. No
 schema change was needed for F3 — the table above already carried every
-field.
+field. **2026-09-09:** `quantity` + `category` added on client feedback
+(migration `20260909120000_add_asset_quantity_category`); both additive
+and widening-only.
 
 ---
 

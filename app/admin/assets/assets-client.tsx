@@ -1,13 +1,17 @@
 // Session 13 — M1-F3 Assets Register, COMPOSED from the proven kit.
 //
 // ADR-44 applies to the artboard (8DL-0): it is a pre-kit Session 3-4
-// transcription — bespoke 240px sidenav, bespoke table, a "Category" tab
-// filter for a field the schema does not have (Asset = name / location /
-// purchaseDate / purchaseCost / condition / deletedAt), an inline
+// transcription — bespoke 240px sidenav, bespoke table, an inline
 // bg-gray-900 summary strip. Per ADR-44 the proven kit is the visual
 // acceptance target and the per-screen visual gate diffs against the kit
 // Storybook stories (<PageShell>, <SimpleTable>, <SearchInput>,
 // <EmptyState>/<ErrorState>), not the stale artboard. See ADR-45 / PROGRESS.
+//
+// 2026-09-09: `Asset` now HAS `quantity` (int, >= 1) and `category`
+// (free-text, optional) — client feedback. This partially reverses ADR-44's
+// "no category field" call (see DECISIONS.md). The Category control is a
+// plain filter <Select> in the shared <FilterToolbar> (not the artboard's
+// bespoke tab strip); the drawer offers a free-text field + datalist.
 //
 // Structure mirrors app/admin/catalog/catalog-client.tsx: <PageShell> +
 // the shared kit <FilterToolbar> (search slot + Location + Condition selects
@@ -40,7 +44,7 @@ import { useToast } from "@/components/kit/toast";
 // is erased so the other screens are fine importing types from the barrel;
 // this one needs the ASSET_CONDITIONS value at runtime.
 import type { AssetCondition, AssetView } from "@/lib/domain/assets/types";
-import { ASSET_CONDITIONS } from "@/lib/domain/assets/types";
+import { ASSET_CONDITIONS, UNCATEGORISED } from "@/lib/domain/assets/types";
 import { useAssets, type AssetsListFilter } from "./use-assets";
 import { AssetDrawer } from "./asset-drawer";
 import { AssetDeleteDialog } from "./asset-delete-dialog";
@@ -94,6 +98,7 @@ export function AssetsClient({
   const [search, setSearch] = React.useState("");
   const [conditionKey, setConditionKey] = React.useState("all");
   const [locationId, setLocationId] = React.useState<string>(ALL);
+  const [categoryKey, setCategoryKey] = React.useState<string>(ALL);
   const [tabKey, setTabKey] = React.useState<string>(
     initialTab === "archived" ? "archived" : "active",
   );
@@ -106,6 +111,7 @@ export function AssetsClient({
     search,
     locationId: locationId === ALL ? undefined : locationId,
     condition: activeConditionFilter.value,
+    category: categoryKey === ALL ? undefined : categoryKey,
     includeDeleted: activeTab.archived,
   };
 
@@ -159,7 +165,8 @@ export function AssetsClient({
   const filtered =
     search.trim() !== "" ||
     activeConditionFilter.value != null ||
-    locationId !== ALL;
+    locationId !== ALL ||
+    categoryKey !== ALL;
 
   // Dark total-register strip on mobile (artboard J6D-0) — a derived summary
   // over the currently-visible rows: condition breakdown + total cost basis.
@@ -184,10 +191,21 @@ export function AssetsClient({
     };
   }, [visibleAssets]);
 
+  // Distinct category names seen on the loaded rows — powers both the filter
+  // <Select> and the drawer's datalist. A category-filtered fetch narrows this
+  // set, so union in the active filter value to keep it selectable.
+  const knownCategories = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const a of assets) if (a.category) set.add(a.category);
+    if (categoryKey !== ALL && categoryKey !== UNCATEGORISED) set.add(categoryKey);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [assets, categoryKey]);
+
   function clearFilters() {
     setSearch("");
     setConditionKey("all");
     setLocationId(ALL);
+    setCategoryKey(ALL);
   }
 
   const filterControls: FilterControl[] = [
@@ -213,12 +231,26 @@ export function AssetsClient({
       value: conditionKey,
       default: "all",
     },
+    {
+      id: "category",
+      kind: "select",
+      label: "Category",
+      options: [
+        { value: ALL, label: "All" },
+        { value: UNCATEGORISED, label: "Uncategorised" },
+        ...knownCategories.map((c) => ({ value: c, label: c })),
+      ],
+      value: categoryKey,
+      default: ALL,
+    },
   ];
 
   function onFilterChange(id: string, value: string | boolean | null) {
     if (id === "location") setLocationId(value == null ? ALL : String(value));
     else if (id === "condition")
       setConditionKey(value == null ? "all" : String(value));
+    else if (id === "category")
+      setCategoryKey(value == null ? ALL : String(value));
   }
 
   const columns: SimpleTableColumn<AssetView>[] = [
@@ -230,6 +262,11 @@ export function AssetsClient({
       render: (r) => (
         <span className="flex items-center gap-(--sp-4)">
           {r.name}
+          {r.quantity > 1 && (
+            <span className="font-mono font-(--weight-medium) [color:var(--text-secondary)] text-caption/micro">
+              ×{r.quantity}
+            </span>
+          )}
           {r.deletedAt && <StatusChip variant="neutral">Archived</StatusChip>}
         </span>
       ),
@@ -237,8 +274,25 @@ export function AssetsClient({
     {
       key: "location",
       header: "Location",
-      width: "w-[150px]",
+      width: "w-[130px]",
       render: (r) => r.locationName,
+    },
+    {
+      key: "category",
+      header: "Category",
+      width: "w-[140px]",
+      render: (r) =>
+        r.category ?? (
+          <span className="[color:var(--text-tertiary)]">Uncategorised</span>
+        ),
+    },
+    {
+      key: "quantity",
+      header: "Qty",
+      width: "w-[70px]",
+      align: "right",
+      cell: "mono",
+      render: (r) => String(r.quantity),
     },
     {
       key: "purchaseDate",
@@ -440,7 +494,9 @@ export function AssetsClient({
                         </div>
                       </div>
                       <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
-                        {card.locationName} · {displayDate(card.purchaseDate)}
+                        {card.locationName} · {card.category ?? "Uncategorised"}
+                        {card.quantity > 1 ? ` · ×${card.quantity}` : ""} ·{" "}
+                        {displayDate(card.purchaseDate)}
                         {card.deletedAt ? " · Archived" : ""}
                       </div>
                       <div className="flex items-center gap-(--sp-4)">
@@ -508,6 +564,7 @@ export function AssetsClient({
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         locations={locations}
+        categoryOptions={knownCategories}
         asset={selected}
         onCreate={create}
         onUpdate={update}

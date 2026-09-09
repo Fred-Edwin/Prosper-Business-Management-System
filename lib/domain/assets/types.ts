@@ -32,6 +32,10 @@ export type CreateAssetInput = {
   /** Money, decimal string (e.g. "45000.00"). */
   purchaseCost: string;
   condition: AssetCondition;
+  /** Whole units this register line stands for; >= 1. Defaults to 1 when omitted. */
+  quantity?: number;
+  /** Free-text Admin grouping. Trimmed; blank / omitted → `null`. */
+  category?: string | null;
 };
 
 export type UpdateAssetInput = CreateAssetInput;
@@ -52,6 +56,10 @@ export type AssetView = {
   /** Decimal string, always 2dp. */
   purchaseCost: string;
   condition: AssetCondition;
+  /** Whole units this register line stands for; >= 1. */
+  quantity: number;
+  /** Free-text Admin grouping, or `null`. */
+  category: string | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -62,9 +70,14 @@ export type ListAssetsFilter = {
   search?: string;
   locationId?: string;
   condition?: AssetCondition;
+  /** Exact category match. `"__uncategorised__"` selects rows with no category. */
+  category?: string;
   /** Include soft-deleted rows (default: hidden). */
   includeDeleted?: boolean;
 };
+
+/** Filter sentinel: `listAssets({ category: UNCATEGORISED })` → rows with `category = null`. */
+export const UNCATEGORISED = "__uncategorised__";
 
 export type ActorContext = {
   role: Role;

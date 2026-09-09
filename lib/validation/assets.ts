@@ -36,6 +36,16 @@ export const createAssetSchema = z.object({
   purchaseDate: isoDateString,
   purchaseCost: decimalString,
   condition: assetCondition,
+  // Whole units, >= 1. Optional — the domain defaults it to 1 (the column
+  // default). `.coerce` so a form string ("6") is accepted.
+  quantity: z.coerce
+    .number()
+    .int("Quantity must be a whole number")
+    .min(1, "Quantity must be 1 or more")
+    .optional(),
+  // Free-text Admin grouping. Blank string is allowed and normalised to
+  // `null` by the domain; `.nullish()` so the field may be omitted entirely.
+  category: z.string().trim().max(60, "Category is too long").nullish(),
 });
 
 export const updateAssetSchema = createAssetSchema;
@@ -52,6 +62,7 @@ export const listAssetsQuerySchema = z.object({
   search: z.string().trim().optional(),
   locationId: z.string().min(1).optional(),
   condition: assetCondition.optional(),
+  category: z.string().min(1).optional(),
   includeDeleted: z
     .union([z.literal("true"), z.literal("false")])
     .optional()

@@ -42,6 +42,62 @@ describe("createAsset", () => {
     expect(row.purchaseCost.toFixed(2)).toBe("45000.00");
   });
 
+  it("defaults quantity to 1 and category to null when omitted", async () => {
+    const asset = await createAsset({
+      name: `${P} Single Chair`,
+      locationId: ctx.locationIds.restaurant,
+      purchaseDate: "2025-01-15",
+      purchaseCost: "3500",
+      condition: "Good",
+    });
+
+    expect(asset.quantity).toBe(1);
+    expect(asset.category).toBeNull();
+  });
+
+  it("stores a whole quantity and a trimmed category", async () => {
+    const asset = await createAsset({
+      name: `${P} Dining Chairs`,
+      locationId: ctx.locationIds.restaurant,
+      purchaseDate: "2025-01-15",
+      purchaseCost: "21000",
+      condition: "Good",
+      quantity: 6,
+      category: "  Furniture  ",
+    });
+
+    expect(asset.quantity).toBe(6);
+    expect(asset.category).toBe("Furniture");
+  });
+
+  it("normalises a blank category to null", async () => {
+    const asset = await createAsset({
+      name: `${P} Blank Cat`,
+      locationId: ctx.locationIds.store,
+      purchaseDate: "2025-01-15",
+      purchaseCost: "100",
+      condition: "Good",
+      category: "   ",
+    });
+
+    expect(asset.category).toBeNull();
+  });
+
+  it("rejects a fractional or < 1 quantity (VALIDATION_ERROR on quantity)", async () => {
+    for (const bad of [0, -2, 2.5]) {
+      await expect(
+        createAsset({
+          name: `${P} Bad Qty ${bad}`,
+          locationId: ctx.locationIds.store,
+          purchaseDate: "2025-01-15",
+          purchaseCost: "100",
+          condition: "Good",
+          quantity: bad,
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "quantity" });
+    }
+  });
+
   it("rejects a blank name (VALIDATION_ERROR on name)", async () => {
     await expect(
       createAsset({

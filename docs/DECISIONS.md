@@ -4284,3 +4284,86 @@ staff, ADR-75; PR 2 = daily-entry pay model, ADR-76).
   an inline button on the row.
 - No `TODO(mock)`. The staff-pay rework (ADR-75 / ADR-76 / ADR-77) is
   complete.
+
+---
+
+## ADR-78: Assets gain `quantity` + `category` (reversing ADR-45 §3), and `<DenseLedger>` gains an opt-in `stickyHeader` (Client feedback, 2026-09-09)
+
+**Status:** DECIDED (maintenance — client feedback batch, 2026-09-09).
+Owner-facing change; the owner asked for all three items directly.
+
+**Context.** The client, now running the business on the system, sent
+three requests. Two are covered here; the third (Packaging + Service
+product kinds) is a feature that touches ADR-67's location/stock rules and
+is being planned separately.
+
+1. **"Add a quantity for each asset."** The `Asset` register held one row
+   per physical thing. The client has lines that are genuinely *N
+   identical units* (dining chairs, cutlery sets) and wants one row with a
+   count, not N rows.
+2. **"Let me categorise assets."** ADR-45 §3 explicitly declined an
+   `Asset.category` field in M1 ("that is a Design Sprint + a migration,
+   not a Development Sprint's call"). The client is now asking for it in
+   as many words, so the call is theirs to reverse.
+3. **"Freeze the ledger heading row when I scroll."** On a long stock
+   ledger the column headers scrolled out of view; the client loses track
+   of which column is which. The first two columns (Location / Product)
+   are already sticky-left and that part is fine.
+
+**Decision.**
+
+- **`Asset.quantity`** — `INTEGER NOT NULL DEFAULT 1`. The domain
+  (`normaliseAssetCore`) requires an integer `>= 1`; omitted → 1. Purely a
+  count on the line. **`purchase_cost` is unchanged** — it stays the value
+  the Admin typed for that line (we did **not** redefine it as
+  per-unit × quantity), and the mobile register's *total cost basis* still
+  sums `purchase_cost` as-is. If the client later wants cost-per-unit
+  semantics that is a follow-up with its own decision.
+- **`Asset.category`** — nullable `TEXT`, free-text, mirrors
+  `Product.category` exactly (blank → `null` → groups under
+  "Uncategorised"). No enum, no fixed list — the client named no buckets.
+  Filter via `?category=`, with the literal `__uncategorised__` selecting
+  `category IS NULL`. The drawer offers a free-text `<input>` + a
+  `<datalist>` of categories already in use; the register gets a Category
+  filter `<Select>` in the shared `<FilterToolbar>` (not the stale
+  artboard's bespoke category-tab strip) and a Category column + a `Qty`
+  column / `×N` name badge. **This reverses ADR-45 §3** and retires the
+  matching "no category" notes in the two asset screen files.
+- Both columns are **additive and widening-only** (migration
+  `20260909120000_add_asset_quantity_category`) — every existing row keeps
+  its meaning with no backfill. Assets remain a mutable register (ADR-22),
+  so this is a plain `ALTER TABLE`, no correction/ledger machinery, and
+  ADR-72 does not apply.
+- **`<DenseLedger stickyHeader>`** — a new opt-in boolean prop, same shape
+  as the existing `horizontalScroll` opt-in. When set, the header row is
+  `position: sticky; top: 0` with an **opaque** fill (`STICKY_HEADER_BG`,
+  the same opaque-composite trick the sticky-left cells already use) and a
+  z-index **one step above the body's sticky layer** (`[z-index:1101]` vs
+  the body's `--z-sticky` = 1100). The z-bump is load-bearing: a body
+  row's sticky-left cell also sits at `--z-sticky` and, being later in the
+  DOM, would paint *over* an equal-z-index header — so the whole header
+  container must outrank every row for rows to scroll *under* the column
+  titles on both axes. The caller owns the scroll container: the Admin
+  Stock screen's three desktop `<DenseLedger>` wrappers change from
+  `overflow-x-auto` to `max-h-[70vh] overflow-auto` so a single element
+  scrolls both axes and the header pins to its top. The base catalog /
+  reconciliation usages don't pass the prop and are byte-identical.
+  **This is not a kit fork** — it is a new state on the frozen component
+  reached by a new prop, which ADR-44/45's "compose the kit" rule allows;
+  no new kit component, no Paper artboard.
+
+**Alternatives considered.**
+- *A fixed category enum* — rejected; the client gave no list and
+  `Product.category` set the free-text precedent. An enum can come later
+  if they ask for report groupings.
+- *`quantity` redefines `purchase_cost` as unit price* — rejected without
+  the client confirming; silently changing what a stored money figure
+  means across the existing register is exactly the kind of change that
+  needs its own decision.
+- *Sticky header via a global page-scroll `position: sticky`* — rejected;
+  the intermediate `overflow-x-auto` wrapper already creates a scroll
+  container, so `top: 0` would resolve against an element that never
+  scrolls vertically and the header would not pin. Bounding the
+  component's own scroll area is the reliable fix.
+- *Make the totals footer sticky-bottom too* — out of scope; the client
+  asked only about the header.

@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { ActorContext, AssetView, ListAssetsFilter } from "./types";
 import { assertCondition, assetInclude, toAssetView } from "./internal";
+import { UNCATEGORISED } from "./types";
 
 /**
  * List assets from the register.
@@ -28,6 +29,10 @@ export async function listAssets(
   }
   if (filter.condition) {
     where.conditionStatus = assertCondition(filter.condition);
+  }
+  if (filter.category) {
+    where.category =
+      filter.category === UNCATEGORISED ? null : filter.category;
   }
   if (filter.search && filter.search.trim() !== "") {
     where.name = { contains: filter.search.trim(), mode: "insensitive" };

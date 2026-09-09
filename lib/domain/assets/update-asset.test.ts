@@ -4,7 +4,7 @@ import { createAsset } from "./create-asset";
 import { transitionCondition, updateAsset } from "./update-asset";
 import { softDeleteAsset } from "./delete-asset";
 import { listAssets } from "./list-assets";
-import { ASSET_CONDITIONS } from "./types";
+import { ASSET_CONDITIONS, UNCATEGORISED } from "./types";
 import {
   cleanupAssetsTestData,
   setupAssetsTestData,
@@ -54,6 +54,52 @@ describe("updateAsset / transitionCondition", () => {
       where: { name: { startsWith: `${P} Chiller` } },
     });
     expect(count).toBe(1);
+  });
+
+  it("edits quantity and category in place, and filters by category", async () => {
+    const asset = await createAsset({
+      name: `${P} Stools`,
+      locationId: ctx.locationIds.restaurant,
+      purchaseDate: "2024-11-10",
+      purchaseCost: "12000",
+      condition: "Good",
+      quantity: 4,
+      category: "Furniture",
+    });
+
+    const updated = await updateAsset(asset.id, {
+      name: `${P} Stools`,
+      locationId: ctx.locationIds.restaurant,
+      purchaseDate: "2024-11-10",
+      purchaseCost: "12000",
+      condition: "Good",
+      quantity: 3,
+      category: "  Seating  ",
+    });
+    expect(updated.quantity).toBe(3);
+    expect(updated.category).toBe("Seating");
+
+    const seating = await listAssets(
+      { search: `${P} Stools`, category: "Seating" },
+      { role: "admin" },
+    );
+    expect(seating.map((a) => a.id)).toContain(asset.id);
+
+    // Clearing the category back to null, then the UNCATEGORISED filter finds it.
+    await updateAsset(asset.id, {
+      name: `${P} Stools`,
+      locationId: ctx.locationIds.restaurant,
+      purchaseDate: "2024-11-10",
+      purchaseCost: "12000",
+      condition: "Good",
+      category: "",
+    });
+    const none = await listAssets(
+      { search: `${P} Stools`, category: UNCATEGORISED },
+      { role: "admin" },
+    );
+    expect(none.map((a) => a.id)).toContain(asset.id);
+    expect(none[0].quantity).toBe(1); // category-only edit still defaulted quantity
   });
 
   it("updateAsset throws NOT_FOUND for a missing / soft-deleted asset", async () => {
