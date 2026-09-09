@@ -13,10 +13,13 @@
 //   • A two-row header: group labels (Declared / Received / Variance) over
 //     Cash | M-Pesa sub-columns. ONE line per row — Cash and M-Pesa each
 //     get their own narrow right-aligned column, nothing stacked.
-//   • Columns: Staff (150) · Status pip (130) · Declared·Cash /
+//   • Columns: Date (92) · Staff (150) · Status pip (130) · Declared·Cash /
 //     Declared·M-Pesa / Received·Cash / Received·M-Pesa / Variance·Cash /
 //     Variance·M-Pesa (90 each) · Note (grow) · action (130). A hairline
 //     `border-l` opens each of the three money groups + the Note column.
+//     The Date column carries each row's own reconciled business day, so
+//     the worksheet still reads right once it holds rows from more than
+//     one day (an Admin back-entry for an earlier day next to today's).
 //   • The kit <SimpleTable> has no grouped-header or footer support, so
 //     this table is hand-built from token markup (the totals strip
 //     already was). It is NOT a kit change — no kit file is touched.
@@ -62,6 +65,32 @@ function nairobiTime(iso: string): string {
   }).format(new Date(iso));
 }
 
+/**
+ * ISO → the Africa/Nairobi business date a handover reconciles: `"6 Sep"`,
+ * or `"6 Sep 2025"` when the row's year differs from the current one. Each
+ * row carries its own day so the worksheet still reads correctly once it
+ * holds rows from more than one day (a back-entered handover for an
+ * earlier day shown next to today's).
+ */
+function nairobiDate(iso: string): string {
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Nairobi",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const thisYear = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Nairobi",
+    year: "numeric",
+  }).format(new Date());
+  const year = get("year");
+  return year === thisYear
+    ? `${get("day")} ${get("month")}`
+    : `${get("day")} ${get("month")} ${year}`;
+}
+
 type VarianceTone = "neutral" | "short" | "over";
 
 function varianceTone(dec: string | null): VarianceTone {
@@ -87,10 +116,12 @@ function fmtVariance(dec: string | null): string {
 }
 
 // ── Desktop grouped table (v2) — column geometry ──────────────────────
-// Staff 150 · Status 130 · 6 money cols 90 each · Note grow · action 130.
-// A hairline `border-l` opens each money group and the Note column.
+// Date 92 · Staff 150 · Status 130 · 6 money cols 90 each · Note grow ·
+// action 130. A hairline `border-l` opens each money group and the Note
+// column.
 
 const COL = {
+  date: "w-[92px] shrink-0",
   staff: "w-[150px] shrink-0",
   status: "w-[130px] shrink-0",
   money: "w-[90px] shrink-0",
@@ -161,6 +192,7 @@ function ReconTableHeader() {
     <div className="flex flex-col bg-info-bg border-b border-b-solid [border-bottom-color:var(--border-strong)]">
       {/* Row 1 — group labels */}
       <div role="row" className="flex px-(--sp-7) pt-(--sp-4) pb-(--sp-2)">
+        <div className={COL.date} />
         <div className={COL.staff} />
         <div className={COL.status} />
         {(["Declared", "Received", "Variance"] as const).map((g) => (
@@ -177,6 +209,9 @@ function ReconTableHeader() {
       </div>
       {/* Row 2 — Staff / Status + Cash | M-Pesa per group */}
       <div role="row" className="flex items-end px-(--sp-7) pb-(--sp-3)">
+        <div role="columnheader" className={`${COL.date} ${groupLabel}`}>
+          Date
+        </div>
         <div role="columnheader" className={`${COL.staff} ${groupLabel}`}>
           Staff
         </div>
@@ -226,6 +261,12 @@ function ReconRow({
       role="row"
       className="flex items-center min-h-[48px] px-(--sp-7) py-(--sp-3) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
     >
+      <div
+        role="cell"
+        className={`${COL.date} font-ui [color:var(--text-secondary)] text-sm/sm`}
+      >
+        {nairobiDate(r.occurredAt)}
+      </div>
       <div
         role="cell"
         className={`${COL.staff} font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm`}
@@ -380,7 +421,7 @@ export function HandoversView({
             <div
               role="table"
               aria-label="Handover reconciliation"
-              className="flex flex-col min-w-[980px] rounded-sm overflow-clip bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]"
+              className="flex flex-col min-w-[1072px] rounded-sm overflow-clip bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]"
             >
               <ReconTableHeader />
               {loading && rows.length === 0 ? (
@@ -482,6 +523,7 @@ function TotalsRow({ totals }: { totals: Totals }) {
       role="row"
       className="flex items-center min-h-[48px] px-(--sp-7) py-(--sp-3) [background-color:var(--surface-subtle)] border-t border-t-solid [border-top-color:var(--border-strong)]"
     >
+      <div role="cell" className={COL.date} />
       <div
         role="cell"
         className={`${COL.staff} font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm`}
@@ -568,7 +610,8 @@ function MobileHandoverCard({
             {row.staffName}
           </span>
           <span className="font-ui [color:var(--text-tertiary)] text-caption/micro">
-            {row.locationName} · {nairobiTime(row.occurredAt)}
+            {row.locationName} · {nairobiDate(row.occurredAt)} ·{" "}
+            {nairobiTime(row.occurredAt)}
           </span>
         </div>
         {row.received ? (

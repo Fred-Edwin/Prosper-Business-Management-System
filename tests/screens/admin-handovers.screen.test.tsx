@@ -151,6 +151,36 @@ describe("Admin Handovers — receipt drawer", () => {
   });
 });
 
+// ── per-row date column ────────────────────────────────────────────────
+
+describe("Admin Handovers — date column", () => {
+  it("shows each row's own reconciled business day", async () => {
+    // Two rows on different Nairobi days (a back-entered handover for an
+    // earlier day shown next to a current one).
+    reconState = {
+      data: view([
+        row({ handoverId: "h-old", occurredAt: "2026-09-06T09:00:00.000Z" }),
+        row({
+          handoverId: "h-new",
+          staffName: "Anne Attendant",
+          occurredAt: "2026-09-09T09:00:00.000Z",
+        }),
+      ]),
+      loading: false,
+      error: null,
+    };
+    renderTab();
+
+    // "Date" column header (table branch) is present.
+    expect(
+      screen.getAllByRole("columnheader", { name: "Date" }).length,
+    ).toBeGreaterThan(0);
+    // Each row's day renders (both table + mobile card branches → getAllBy).
+    expect(screen.getAllByText("6 Sep").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("9 Sep").length).toBeGreaterThan(0);
+  });
+});
+
 // ── correction drawer ──────────────────────────────────────────────────
 
 describe("Admin Handovers — correction drawer", () => {
