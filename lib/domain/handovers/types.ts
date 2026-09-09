@@ -38,6 +38,19 @@ export type EditOwnHandoverInput = {
   mpesaDeclared: string;
 };
 
+/** Admin back-entry of a handover a staff member never declared (ADR-79). */
+export type RecordHandoverForDateInput = {
+  staffId: string;
+  /** Must match the staff member's own `Staff.locationId`. */
+  locationId: string;
+  /** Decimal string ≥ 0. */
+  cashDeclared: string;
+  /** Decimal string ≥ 0. */
+  mpesaDeclared: string;
+  /** `YYYY-MM-DD`, Africa/Nairobi — the day this handover belongs to. */
+  businessDate: string;
+};
+
 // ── Record receipt ──────────────────────────────────────────────────────
 
 export type RecordReceiptInput = {
@@ -149,8 +162,14 @@ export type ReconciliationRow = {
 };
 
 export type ReconciliationView = {
-  date: string;
+  /** Inclusive `YYYY-MM-DD` range this view covers. A single-date read
+   * comes back with `from === to`. */
+  from: string;
+  to: string;
   rows: ReconciliationRow[];
+  /** Business dates within `[from, to]` that are day-closed (ADR-79) —
+   * a row on one of these dates cannot take a fresh receipt. */
+  closedDates: string[];
   totals: {
     cashDeclared: string;
     mpesaDeclared: string;

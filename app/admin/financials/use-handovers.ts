@@ -6,6 +6,7 @@ import type {
   EditOwnHandoverInput,
   HandoverView,
   ReconciliationView,
+  RecordHandoverForDateInput,
 } from "@/lib/domain/handovers";
 
 /**
@@ -13,8 +14,8 @@ import type {
  * `request<T>` helper, a typed `HandoversRequestError` carrying the API
  * `code` + `field`, domain-typed shapes, `refresh()`.
  *
- *   • useReconciliation(date)  — Admin reconciliation tab
- *       (GET /api/handovers/reconciliation?date=)
+ *   • useReconciliation({from, to}) — Admin reconciliation tab
+ *       (GET /api/handovers/reconciliation?from=&to=)
  *   • useMyHandover()          — a staff member's own declarations
  *       (GET /api/handovers) + declare / edit
  *
@@ -87,7 +88,7 @@ export type CorrectionArgs =
       shortfallNote?: string;
     };
 
-export function useReconciliation(date: string) {
+export function useReconciliation(range: { from: string; to: string }) {
   const [data, setData] = React.useState<ReconciliationView | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -97,7 +98,7 @@ export function useReconciliation(date: string) {
     setError(null);
     try {
       const view = await request<ReconciliationView>(
-        `/api/handovers/reconciliation?date=${encodeURIComponent(date)}`,
+        `/api/handovers/reconciliation?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`,
       );
       setData(view);
     } catch (e) {
@@ -107,7 +108,7 @@ export function useReconciliation(date: string) {
     } finally {
       setLoading(false);
     }
-  }, [date]);
+  }, [range.from, range.to]);
 
   React.useEffect(() => {
     void refresh();
@@ -137,7 +138,27 @@ export function useReconciliation(date: string) {
     [refresh],
   );
 
-  return { data, loading, error, refresh, recordReceipt, correct };
+  const recordBackdated = React.useCallback(
+    async (args: RecordHandoverForDateInput): Promise<HandoverView> => {
+      const view = await request<HandoverView>(`/api/handovers/backdated`, {
+        method: "POST",
+        body: JSON.stringify(args),
+      });
+      await refresh();
+      return view;
+    },
+    [refresh],
+  );
+
+  return {
+    data,
+    loading,
+    error,
+    refresh,
+    recordReceipt,
+    correct,
+    recordBackdated,
+  };
 }
 
 // ── Staff: my own declarations ─────────────────────────────────────────
