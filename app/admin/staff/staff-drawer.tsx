@@ -9,10 +9,11 @@
 //                   POSTs /api/staff (createStaff — also creates the login
 //                   User with the bcrypt-hashed PIN).
 //   mode "edit"   → same fields; PIN is OPTIONAL (blank = leave unchanged);
-//                   PATCH /api/staff/:id. The Active toggle turning OFF
-//                   calls PATCH ?mode=deactivate (soft — also disables the
-//                   login). There is no reactivate path in S8A, so the
-//                   toggle is disabled once off (documented below).
+//                   PATCH /api/staff/:id. The Active toggle is two-way:
+//                   OFF calls PATCH ?mode=deactivate (soft — also disables
+//                   the login), ON calls PATCH ?mode=reactivate (re-enables
+//                   both). Either flip is its own call and short-circuits
+//                   the field save.
 //
 // The Admin sets a STAFF member's PIN here (no current PIN required).
 // Self-service PIN change for the signed-in Admin's own account is a
@@ -66,6 +67,7 @@ export function StaffDrawer({
   onCreate,
   onUpdate,
   onDeactivate,
+  onReactivate,
   onClose,
 }: {
   mode: "create" | "edit";
@@ -75,6 +77,7 @@ export function StaffDrawer({
   onCreate: (body: CreateStaffBody) => Promise<unknown>;
   onUpdate: (id: string, body: UpdateStaffBody) => Promise<unknown>;
   onDeactivate: (id: string) => Promise<unknown>;
+  onReactivate: (id: string) => Promise<unknown>;
   onClose: () => void;
 }) {
   const { toast } = useToast();
@@ -114,20 +117,26 @@ export function StaffDrawer({
     [locations],
   );
 
-  // Was-active-now-off in the edit drawer = a deactivation (a separate API
-  // mode). Once a staff member is inactive there is no reactivate endpoint
-  // in S8A, so the toggle can only be turned OFF, never back on here.
+  // The Active toggle is two-way in the edit drawer, each direction its
+  // own API call: was-active-now-off → deactivate (also disables the
+  // login); was-inactive-now-on → reactivate (re-enables both).
   const wasActive = target?.active ?? true;
 
+  // A pure active-flag flip (deactivate / re-activate) is its own call and
+  // never touches the other fields — it may submit even if a prefilled
+  // field would otherwise fail validation.
+  const activeFlagFlip = isEdit && wasActive !== active;
+
   const canSubmit =
-    name.trim().length > 0 &&
-    locationId !== "" &&
-    validRate(dailyRate) &&
-    (appAccess
-      ? role !== "" &&
-        (isEdit ? pin === "" || validPin(pin) : validPin(pin))
-      : jobTitle.trim().length > 0) &&
-    !submitting;
+    !submitting &&
+    (activeFlagFlip ||
+      (name.trim().length > 0 &&
+        locationId !== "" &&
+        validRate(dailyRate) &&
+        (appAccess
+          ? role !== "" &&
+            (isEdit ? pin === "" || validPin(pin) : validPin(pin))
+          : jobTitle.trim().length > 0)));
 
   async function submit() {
     if (!canSubmit) return;
@@ -136,11 +145,17 @@ export function StaffDrawer({
     setFieldErrors({});
     try {
       if (isEdit && target) {
-        // A deactivation is its own call and must go first (it also
-        // disables the login).
+        // An active-flag flip is its own call (it also toggles the
+        // login) and short-circuits the field save.
         if (wasActive && !active) {
           await onDeactivate(target.id);
           toast("Staff member deactivated", { tone: "success" });
+          onClose();
+          return;
+        }
+        if (!wasActive && active) {
+          await onReactivate(target.id);
+          toast("Staff member re-activated", { tone: "success" });
           onClose();
           return;
         }
@@ -388,7 +403,7 @@ export function StaffDrawer({
       <div className="flex items-start gap-(--sp-5) pt-(--sp-2)">
         <ToggleSwitch
           checked={active}
-          disabled={!isEdit || !wasActive}
+          disabled={!isEdit}
           onChange={setActive}
           aria-label="Active"
         />
@@ -399,8 +414,8 @@ export function StaffDrawer({
           <span className="font-ui [color:var(--text-tertiary)] text-caption/micro">
             {isEdit
               ? wasActive
-                ? "Turning this off hides the staff member from attendance and pay and disables their login. This can't be undone here."
-                : "This staff member is inactive — hidden from attendance and pay, login disabled."
+                ? "Turning this off hides the staff member from attendance and pay and disables their login. You can turn it back on later."
+                : "Turning this on restores the staff member to attendance and pay and re-enables their login with the same role and location."
               : "Inactive staff are hidden from attendance and pay."}
           </span>
         </div>

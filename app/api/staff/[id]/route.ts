@@ -6,6 +6,7 @@ import {
   DomainError,
   deactivateStaff,
   getStaff,
+  reactivateStaff,
   updateStaff,
 } from "@/lib/domain/staff";
 
@@ -27,6 +28,9 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
  *
  * `PATCH /api/staff/:id?mode=deactivate` — soft-deactivate and disable the
  * linked login. Body ignored.
+ *
+ * `PATCH /api/staff/:id?mode=reactivate` — undo a deactivation: re-enable
+ * the staff member and the linked login. Body ignored.
  */
 export async function PATCH(req: NextRequest, ctx: Ctx) {
   const auth = await requireApiRole("admin");
@@ -34,9 +38,18 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const actor = { actorId: auth.user.id, role: auth.user.role };
 
-  if (req.nextUrl.searchParams.get("mode") === "deactivate") {
+  const mode = req.nextUrl.searchParams.get("mode");
+  if (mode === "deactivate") {
     try {
       return ok(await deactivateStaff(id, actor));
+    } catch (e) {
+      if (e instanceof DomainError) return fail(e.code, e.message, e.field);
+      throw e;
+    }
+  }
+  if (mode === "reactivate") {
+    try {
+      return ok(await reactivateStaff(id, actor));
     } catch (e) {
       if (e instanceof DomainError) return fail(e.code, e.message, e.field);
       throw e;

@@ -21,6 +21,7 @@ import type {
 const createStaff = vi.fn();
 const updateStaff = vi.fn();
 const deactivateStaff = vi.fn();
+const reactivateStaff = vi.fn();
 const saveBulk = vi.fn();
 const payOne = vi.fn();
 const reversePayout = vi.fn();
@@ -65,6 +66,7 @@ vi.mock("@/app/admin/staff/use-staff", async (importOriginal) => {
       create: createStaff,
       update: updateStaff,
       deactivate: deactivateStaff,
+      reactivate: reactivateStaff,
     }),
     useAttendance: () => ({
       rows: attState.rows,
@@ -186,6 +188,9 @@ beforeEach(() => {
   attState = { rows: [], loading: false, error: null };
   payrollState = { payroll: payroll([pay()]), loading: false, error: null };
   createStaff.mockResolvedValue(staff());
+  deactivateStaff.mockResolvedValue(staff({ active: false, userActive: false }));
+  reactivateStaff.mockResolvedValue(staff({ active: true, userActive: true }));
+  updateStaff.mockResolvedValue(staff());
   saveBulk.mockResolvedValue([]);
   payOne.mockResolvedValue(
     pay({
@@ -370,6 +375,71 @@ describe("Roster — add staff drawer", () => {
     const pinInput = within(dialog).getByLabelText(/login PIN/i);
     await user.type(pinInput, "12ab34567");
     expect((pinInput as HTMLInputElement).value).toBe("1234");
+  });
+});
+
+// ── Edit drawer — Active toggle (deactivate / re-activate) ───────────
+
+describe("Roster — Active toggle", () => {
+  function openEditDrawer() {
+    return screen.getAllByRole("button", { name: "Edit Grace Wanjiru" })[0];
+  }
+
+  it("turning the toggle OFF for an active staff member calls deactivate", async () => {
+    const user = userEvent.setup();
+    render(
+      <ToastProvider placement="top-right">
+        <RosterTab registerAddStaff={() => {}} />
+      </ToastProvider>,
+    );
+
+    await user.click(openEditDrawer());
+    const dialog = await screen.findByRole("dialog");
+    const toggle = within(dialog).getByRole("switch", { name: "Active" });
+    expect(toggle).toBeChecked();
+
+    await user.click(toggle);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+
+    await waitFor(() => expect(deactivateStaff).toHaveBeenCalledWith("s1"));
+    expect(reactivateStaff).not.toHaveBeenCalled();
+    expect(updateStaff).not.toHaveBeenCalled();
+    expect(await screen.findByText("Staff member deactivated")).toBeInTheDocument();
+  });
+
+  it("an INACTIVE staff member's toggle is enabled and turning it ON calls reactivate (the reported bug)", async () => {
+    const user = userEvent.setup();
+    rosterState = {
+      staff: [staff({ role: "store_manager", active: false, userActive: false })],
+      loading: false,
+      error: null,
+    };
+    render(
+      <ToastProvider placement="top-right">
+        <RosterTab registerAddStaff={() => {}} />
+      </ToastProvider>,
+    );
+
+    await user.click(openEditDrawer());
+    const dialog = await screen.findByRole("dialog");
+    const toggle = within(dialog).getByRole("switch", { name: "Active" });
+    // Previously hard-disabled once inactive — now a working two-way toggle.
+    expect(toggle).toBeEnabled();
+    expect(toggle).not.toBeChecked();
+
+    await user.click(toggle);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+
+    await waitFor(() => expect(reactivateStaff).toHaveBeenCalledWith("s1"));
+    expect(deactivateStaff).not.toHaveBeenCalled();
+    expect(updateStaff).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText("Staff member re-activated"),
+    ).toBeInTheDocument();
   });
 });
 

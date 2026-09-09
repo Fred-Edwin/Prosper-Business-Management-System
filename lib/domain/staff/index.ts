@@ -9,6 +9,7 @@ export { PIN_BCRYPT_ROUNDS } from "./internal";
 export { createStaff } from "./create-staff";
 export { updateStaff } from "./update-staff";
 export { deactivateStaff } from "./deactivate-staff";
+export { reactivateStaff } from "./reactivate-staff";
 export { listStaff, getStaff, type ListStaffFilter } from "./list-staff";
 
 export {

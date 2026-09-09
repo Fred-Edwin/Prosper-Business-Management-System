@@ -142,7 +142,28 @@ export function useRoster(locationId: string | null) {
     [refresh],
   );
 
-  return { staff, loading, error, refresh, create, update, deactivate };
+  const reactivate = React.useCallback(
+    async (id: string): Promise<StaffView> => {
+      const row = await request<StaffView>(`/api/staff/${id}?mode=reactivate`, {
+        method: "PATCH",
+        body: JSON.stringify({}),
+      });
+      await refresh();
+      return row;
+    },
+    [refresh],
+  );
+
+  return {
+    staff,
+    loading,
+    error,
+    refresh,
+    create,
+    update,
+    deactivate,
+    reactivate,
+  };
 }
 
 // ── Attendance ───────────────────────────────────────────────────────
