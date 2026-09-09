@@ -5,16 +5,20 @@
 // third inner tab of /admin/financials.
 //
 // ADR-79 (2026-09-09) widened this from a single-day worksheet to a real
-// range: rows are grouped by their own Nairobi business day (a day
-// sub-header + that day's rows + a per-day sub-total), so "This week" /
-// "This month" show every handover in range instead of only the range's
-// end day. "Record receipt" is gated per row on whether THAT row's day
-// is closed (`data.closedDates`), not on whether the worksheet's overall
-// range includes today — staff can only declare/receive on their own
-// today, but an Admin may receive a still-open past day (the domain/API
-// already allowed this; only the UI was blocking it). A "Record a
-// handover" action lets the Admin back-enter a declaration a staff
-// member missed (`recordHandoverForDate` — `RecordHandoverDrawer`).
+// range: rows span the whole `[from, to]` (sorted oldest-day-first, each
+// row carrying its own Date column), so "This week" / "This month" show
+// every handover in range instead of only the range's end day. An
+// earlier version of this change grouped rows under a per-day
+// sub-header, but that repeated the date with nothing else on the line —
+// dropped as pure duplication (owner call, 2026-09-09): one row per
+// handover, its own Date cell says which day, no separate header row.
+// "Record receipt" is gated per row on whether THAT row's day is closed
+// (`data.closedDates`), not on whether the worksheet's overall range
+// includes today — staff can only declare/receive on their own today,
+// but an Admin may receive a still-open past day (the domain/API already
+// allowed this; only the UI was blocking it). A "Record a handover"
+// action lets the Admin back-enter a declaration a staff member missed
+// (`recordHandoverForDate` — `RecordHandoverDrawer`).
 //
 // DESKTOP TABLE — bespoke, grouped (M3 S7 redesign, owner-approved v2:
 // Paper "Prosper Hotel" · page "M3 S7 — Handovers table redesign").
@@ -26,14 +30,18 @@
 //     Variance·M-Pesa (90 each) · Note (grow) · action (130). A hairline
 //     `border-l` opens each of the three money groups + the Note column.
 //     The Date column carries each row's own reconciled business day —
-//     redundant within one day-group's rows, but keeps a row legible if
-//     scrolled away from its group header.
+//     the only thing that tells a multi-day worksheet's rows apart.
+//     Table `min-w` MUST be kept in sync with this column list's sum
+//     (currently 1202px = 92+150+130+90×6+160+130) — a stale value clips
+//     the action column instead of scrolling to it (ADR-79 follow-up:
+//     it was 130px short for a while and "Correct"/"Record receipt" read
+//     as "Corre"/clipped).
 //   • The kit <SimpleTable> has no grouped-header or footer support, so
 //     this table is hand-built from token markup (the totals strip
 //     already was). It is NOT a kit change — no kit file is touched.
-//   • Mobile keeps the stacked cards, also day-grouped; <EmptyState> /
-//     <ErrorState> and the <ReceiptDrawer> / <HandoverCorrectionDrawer>
-//     are unchanged.
+//   • Mobile keeps the stacked cards, same flat day-sorted order;
+//     <EmptyState> / <ErrorState> and the <ReceiptDrawer> /
+//     <HandoverCorrectionDrawer> are unchanged.
 //
 // Value styling: a real figure = --text-primary, an exact zero =
 // --text-tertiary (so real numbers pop); a variance reuses the
@@ -357,59 +365,19 @@ function ReconRow({
   );
 }
 
-/** Sub-header opening one day's group of rows in the day-grouped
- * worksheet: the day label + how many handovers + how many still await
- * receipt. Sits inside the table as its own `role="row"` so it scrolls
- * with the body but reads distinct from a data row. */
-function DayGroupHeader({
-  dayKey,
-  count,
-  awaitingCount,
-}: {
-  dayKey: string;
-  count: number;
-  awaitingCount: number;
-}) {
-  const label = nairobiDate(`${dayKey}T12:00:00.000Z`);
-  return (
-    <div
-      role="row"
-      className="flex items-center gap-(--sp-3) min-h-[36px] px-(--sp-7) [background-color:var(--surface-subtle)] border-b border-b-solid [border-bottom-color:var(--border-subtle)]"
-    >
-      <span className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-caption/micro">
-        {label}
-      </span>
-      <span className="font-ui [color:var(--text-tertiary)] text-caption/micro">
-        {count} {count === 1 ? "handover" : "handovers"}
-        {awaitingCount > 0 && (
-          <>
-            {" · "}
-            <span className="text-warning">{awaitingCount} awaiting</span>
-          </>
-        )}
-      </span>
-    </div>
+/**
+ * Sort rows oldest-day-first (their own Nairobi business day), stable
+ * within a day (`getReconciliation`'s query order is already
+ * chronological). No sub-header groups the days — the Date column on
+ * each row is what tells a multi-day worksheet apart (owner call,
+ * 2026-09-09: a group header repeating the date with no other row
+ * content was pure duplication, one line per handover with everything
+ * on it is preferred).
+ */
+function sortByDay(rows: ReconciliationRow[]): ReconciliationRow[] {
+  return [...rows].sort((a, b) =>
+    nairobiDayKey(a.occurredAt).localeCompare(nairobiDayKey(b.occurredAt)),
   );
-}
-
-// ── Day grouping ───────────────────────────────────────────────────────
-
-type DayGroup = { dayKey: string; rows: ReconciliationRow[] };
-
-/** Bucket rows by their own Nairobi business day, in day order. Handovers
- * within a day are already chronological (`getReconciliation`'s query
- * order), which this preserves. */
-function groupByDay(rows: ReconciliationRow[]): DayGroup[] {
-  const byDay = new Map<string, ReconciliationRow[]>();
-  for (const r of rows) {
-    const key = nairobiDayKey(r.occurredAt);
-    const bucket = byDay.get(key);
-    if (bucket) bucket.push(r);
-    else byDay.set(key, [r]);
-  }
-  return [...byDay.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([dayKey, dayRows]) => ({ dayKey, rows: dayRows }));
 }
 
 // ── View ───────────────────────────────────────────────────────────────
@@ -441,7 +409,7 @@ export function HandoversView({
     [data?.closedDates],
   );
   const awaitingCount = rows.filter((r) => !r.received).length;
-  const groups = React.useMemo(() => groupByDay(rows), [rows]);
+  const sortedRows = React.useMemo(() => sortByDay(rows), [rows]);
 
   return (
     <div className="flex flex-col grow gap-(--sp-5) pt-(--sp-6) pb-(--sp-12)">
@@ -482,13 +450,15 @@ export function HandoversView({
               The header is ALWAYS visible; an empty range renders the
               EmptyState in the body and the PAGE scrolls to it (no trapped
               inner strip). `overflow-x-auto` for horizontal scroll only,
-              no `min-h-0` ancestor to clip height. Rows are bucketed into
-              one DayGroupHeader + its rows per Nairobi business day. */}
+              no `min-h-0` ancestor to clip height. Rows are flat, sorted
+              oldest-day-first — the Date column on each row is what a
+              multi-day worksheet needs; a day sub-header with nothing but
+              the date repeated was dropped as pure duplication. */}
           <div className="hidden md:flex flex-col overflow-x-auto">
             <div
               role="table"
               aria-label="Handover reconciliation"
-              className="flex flex-col min-w-[1072px] rounded-sm overflow-clip bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]"
+              className="flex flex-col min-w-[1202px] rounded-sm overflow-clip bg-(--surface-page) border border-solid [border-color:var(--border-subtle)]"
             >
               <ReconTableHeader />
               {loading && rows.length === 0 ? (
@@ -509,30 +479,21 @@ export function HandoversView({
                   />
                 </div>
               ) : (
-                groups.map((g) => (
-                  <React.Fragment key={g.dayKey}>
-                    <DayGroupHeader
-                      dayKey={g.dayKey}
-                      count={g.rows.length}
-                      awaitingCount={g.rows.filter((r) => !r.received).length}
-                    />
-                    {g.rows.map((r) => (
-                      <ReconRow
-                        key={r.handoverId}
-                        row={r}
-                        dayClosed={closedDates.has(g.dayKey)}
-                        onCorrect={() => setCorrectRow(r)}
-                        onRecordReceipt={() => setReceiptRow(r)}
-                      />
-                    ))}
-                  </React.Fragment>
+                sortedRows.map((r) => (
+                  <ReconRow
+                    key={r.handoverId}
+                    row={r}
+                    dayClosed={closedDates.has(nairobiDayKey(r.occurredAt))}
+                    onCorrect={() => setCorrectRow(r)}
+                    onRecordReceipt={() => setReceiptRow(r)}
+                  />
                 ))
               )}
               {totals && rows.length > 0 && <TotalsRow totals={totals} />}
             </div>
           </div>
 
-          {/* Mobile: stacked cards, same day grouping. */}
+          {/* Mobile: stacked cards, same flat day-sorted order. */}
           <div className="flex md:hidden flex-col">
             {loading && rows.length === 0 ? (
               <div className="flex flex-col">
@@ -554,23 +515,14 @@ export function HandoversView({
                 />
               </div>
             ) : (
-              groups.map((g) => (
-                <React.Fragment key={g.dayKey}>
-                  <DayGroupHeader
-                    dayKey={g.dayKey}
-                    count={g.rows.length}
-                    awaitingCount={g.rows.filter((r) => !r.received).length}
-                  />
-                  {g.rows.map((r) => (
-                    <MobileHandoverCard
-                      key={r.handoverId}
-                      row={r}
-                      canReceive={!closedDates.has(g.dayKey)}
-                      onRecordReceipt={() => setReceiptRow(r)}
-                      onCorrect={() => setCorrectRow(r)}
-                    />
-                  ))}
-                </React.Fragment>
+              sortedRows.map((r) => (
+                <MobileHandoverCard
+                  key={r.handoverId}
+                  row={r}
+                  canReceive={!closedDates.has(nairobiDayKey(r.occurredAt))}
+                  onRecordReceipt={() => setReceiptRow(r)}
+                  onCorrect={() => setCorrectRow(r)}
+                />
               ))
             )}
             {totals && rows.length > 0 && <MobileTotals totals={totals} />}
