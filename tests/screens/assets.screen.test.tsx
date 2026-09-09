@@ -27,6 +27,8 @@ const ASSET: AssetView = {
   purchaseDate: "2025-01-15",
   purchaseCost: "45000.00",
   condition: "Good",
+  quantity: 1,
+  category: null,
   deletedAt: null,
   createdAt: NOW.toISOString(),
   updatedAt: NOW.toISOString(),
@@ -167,6 +169,73 @@ describe("/admin/assets — kit composition", () => {
 
     expect(state.create).toHaveBeenCalledOnce();
     expect(await screen.findByText("Asset registered")).toBeInTheDocument();
+  });
+
+  it("shows Category + Qty columns; a quantity > 1 renders a ×N badge next to the name", () => {
+    state.assets = [
+      { ...ASSET, quantity: 6, category: "Furniture" },
+    ];
+    renderScreen();
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Category")).toBeInTheDocument();
+    expect(within(table).getByText("Furniture")).toBeInTheDocument();
+    expect(within(table).getByText("×6")).toBeInTheDocument();
+  });
+
+  it("uncategorised rows read 'Uncategorised' in the Category column", () => {
+    renderScreen(); // ASSET.category is null
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByText("Uncategorised").length).toBeGreaterThan(0);
+  });
+
+  it("the Category filter select is present and offers Uncategorised + known category names", async () => {
+    state.assets = [
+      { ...ASSET, category: "Electronics" },
+      { ...ARCHIVED_ASSET, category: "Furniture", deletedAt: null, id: "a2" },
+    ];
+    renderScreen();
+    const user = userEvent.setup();
+    const toolbar = within(
+      screen.getAllByRole("search", { name: "Filter assets" })[0],
+    );
+    await user.click(toolbar.getByRole("combobox", { name: "Category" }));
+    expect(
+      screen.getByRole("option", { name: "Category: Uncategorised" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Category: Electronics" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Category: Furniture" }),
+    ).toBeInTheDocument();
+  });
+
+  it("the create drawer sends quantity + category to create()", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getAllByRole("button", { name: "Register New Asset" })[0],
+    );
+    const dialog = await screen.findByRole("dialog");
+
+    await user.type(within(dialog).getByLabelText("Asset Name"), "Dining Chairs");
+    await user.type(within(dialog).getByLabelText("Cost Basis (KES)"), "21000");
+    await user.type(
+      within(dialog).getByLabelText("Category (optional)"),
+      "Furniture",
+    );
+    // QuantityStepper: type into the spinbutton
+    const qty = within(dialog).getByRole("spinbutton", { name: "Quantity" });
+    await user.clear(qty);
+    await user.type(qty, "6");
+    await user.tab();
+
+    await user.click(within(dialog).getByRole("button", { name: "Save Asset" }));
+
+    expect(state.create).toHaveBeenCalledOnce();
+    expect(state.create).toHaveBeenCalledWith(
+      expect.objectContaining({ quantity: 6, category: "Furniture" }),
+    );
   });
 
   it("the row has a single 'Edit' affordance and NO Delete button (A1/A2)", () => {

@@ -982,25 +982,32 @@ Roles: Admin. Body: `{ staff_id, note }` (note required).
 Success envelope is `{ "data": ... }`; errors use the standard shape.
 An `AssetView` is
 `{ id, name, locationId, locationName, locationType, purchaseDate,
-purchaseCost, condition, deletedAt, createdAt, updatedAt }`.
+purchaseCost, condition, quantity, category, deletedAt, createdAt,
+updatedAt }`.
 `condition` is one of `"Good" | "Needs Repair" | "Decommissioned"`.
+`quantity` is an integer `>= 1`; `category` is a string or `null`.
+(`quantity` + `category` added 2026-09-09 on client feedback — see
+DECISIONS.md; `category` reverses ADR-44.)
 
 ### `GET /api/assets`
 Roles: Admin (M1 is Admin-only per ADR-22).
 Query: `?search=` (case-insensitive `name` contains), `?locationId=`,
-`?condition=Good|Needs Repair|Decommissioned`, `?includeDeleted=true`
-(default hides soft-deleted rows). Returns `{ data: AssetView[] }`,
-sorted by `name`.
+`?condition=Good|Needs Repair|Decommissioned`, `?category=` (exact match;
+the literal `__uncategorised__` selects rows with `category = null`),
+`?includeDeleted=true` (default hides soft-deleted rows). Returns
+`{ data: AssetView[] }`, sorted by `name`.
 
 ### `POST /api/assets`
 Roles: Admin. Body:
 ```json
 { "name": "...", "locationId": "...", "purchaseDate": "2025-01-15",
-  "purchaseCost": "45000.00", "condition": "Good" }
+  "purchaseCost": "45000.00", "condition": "Good",
+  "quantity": 6, "category": "Furniture" }
 ```
 `purchaseCost` must be `>= 0`; `purchaseDate` must not be in the future;
-`locationId` must resolve to a real `Location`. Returns
-`{ data: AssetView }`, `201`.
+`locationId` must resolve to a real `Location`. `quantity` is optional
+(integer `>= 1`, defaults to `1`); `category` is optional free text
+(blank → `null`). Returns `{ data: AssetView }`, `201`.
 
 ### `PATCH /api/assets/:id`
 Roles: Admin. Two shapes on the same route:

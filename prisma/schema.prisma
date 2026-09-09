@@ -136,34 +136,34 @@ enum AuditAction {
 // ── Identity & Access ───────────────────────────────────────────────────
 
 model User {
-  id                 String    @id @default(uuid())
-  name               String    @unique
-  pinHash            String    @map("pin_hash")
-  role               Role
-  staffId            String?   @unique @map("staff_id")
-  staff              Staff?    @relation(fields: [staffId], references: [id])
-  active             Boolean   @default(true)
-  failedPinAttempts  Int       @default(0) @map("failed_pin_attempts")
-  lockedUntil        DateTime? @map("locked_until")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  id                String    @id @default(uuid())
+  name              String    @unique
+  pinHash           String    @map("pin_hash")
+  role              Role
+  staffId           String?   @unique @map("staff_id")
+  staff             Staff?    @relation(fields: [staffId], references: [id])
+  active            Boolean   @default(true)
+  failedPinAttempts Int       @default(0) @map("failed_pin_attempts")
+  lockedUntil       DateTime? @map("locked_until")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  stockMovementsRecorded StockMovement[]      @relation("StockMovementRecordedBy")
-  ordersAsCashier        Order[]              @relation("OrderCashier")
-  stockCountsCounted     StockCount[]         @relation("StockCountCountedBy")
-  moneyMovementsRecorded MoneyMovement[]      @relation("MoneyMovementRecordedBy")
-  receiptsOfHandover     ReceiptOfHandover[]  @relation("ReceiptRecordedBy")
-  repaymentsRecorded     Repayment[]          @relation("RepaymentRecordedBy")
-  expensesRecorded       Expense[]            @relation("ExpenseRecordedBy")
-  staffPayoutsRecorded   StaffPayout[]        @relation("StaffPayoutRecordedBy")
-  staffDailyPayRecorded  StaffDailyPay[]      @relation("StaffDailyPayRecordedBy")
-  auditLogs              AuditLog[]           @relation("AuditLogUser")
+  stockMovementsRecorded StockMovement[]     @relation("StockMovementRecordedBy")
+  ordersAsCashier        Order[]             @relation("OrderCashier")
+  stockCountsCounted     StockCount[]        @relation("StockCountCountedBy")
+  moneyMovementsRecorded MoneyMovement[]     @relation("MoneyMovementRecordedBy")
+  receiptsOfHandover     ReceiptOfHandover[] @relation("ReceiptRecordedBy")
+  repaymentsRecorded     Repayment[]         @relation("RepaymentRecordedBy")
+  expensesRecorded       Expense[]           @relation("ExpenseRecordedBy")
+  staffPayoutsRecorded   StaffPayout[]       @relation("StaffPayoutRecordedBy")
+  staffDailyPayRecorded  StaffDailyPay[]     @relation("StaffDailyPayRecordedBy")
+  auditLogs              AuditLog[]          @relation("AuditLogUser")
 
   @@map("user")
 }
 
 model Staff {
-  id         String   @id @default(uuid())
+  id         String        @id @default(uuid())
   name       String
   /// The app role this staff member signs in as. NULL for a roster-only
   /// staff member (a cook / casual who never uses the app) — such a row
@@ -174,26 +174,26 @@ model Staff {
   /// Free-text job description for a roster-only staff member ("Cook",
   /// "Casual"). NULL when `role` is set. Purely a display label — nothing
   /// branches on it.
-  jobTitle   String?  @map("job_title")
-  locationId String   @map("location_id")
-  location   Location @relation(fields: [locationId], references: [id])
-  dailyRate  Decimal  @map("daily_rate") @db.Decimal(12, 2)
+  jobTitle   String?       @map("job_title")
+  locationId String        @map("location_id")
+  location   Location      @relation(fields: [locationId], references: [id])
+  dailyRate  Decimal       @map("daily_rate") @db.Decimal(12, 2)
   /// Which pay model this staff member is on (ADR-76). `fixed_daily_rate`
   /// (the default, today's behaviour) → gross = `dailyRate` × days
   /// present. `daily_entry` → gross = Σ `StaffDailyPay` rows for the
   /// month; `dailyRate` is unused for gross (kept for reference).
   payModel   StaffPayModel @default(fixed_daily_rate) @map("pay_model")
-  active     Boolean  @default(true)
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  active     Boolean       @default(true)
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
 
-  user                User?
-  attendance          Attendance[]
-  payAdjustments      StaffPayAdjustment[]
-  dailyPay            StaffDailyPay[]
-  payouts             StaffPayout[]
-  handovers           Handover[]
-  handoverShortfalls  HandoverShortfall[]
+  user               User?
+  attendance         Attendance[]
+  payAdjustments     StaffPayAdjustment[]
+  dailyPay           StaffDailyPay[]
+  payouts            StaffPayout[]
+  handovers          Handover[]
+  handoverShortfalls HandoverShortfall[]
 
   @@map("staff")
 }
@@ -208,32 +208,32 @@ model Location {
   createdAt DateTime     @default(now()) @map("created_at")
   updatedAt DateTime     @updatedAt @map("updated_at")
 
-  staff                    Staff[]
-  productLocations         ProductLocation[]
-  stockMovements           StockMovement[]          @relation("StockMovementLocation")
-  stockMovementsCounterpart StockMovement[]         @relation("StockMovementTransferCounterpart")
-  orders                   Order[]
-  stockCounts              StockCount[]
-  handovers                Handover[]
-  assets                   Asset[]
+  staff                     Staff[]
+  productLocations          ProductLocation[]
+  stockMovements            StockMovement[]   @relation("StockMovementLocation")
+  stockMovementsCounterpart StockMovement[]   @relation("StockMovementTransferCounterpart")
+  orders                    Order[]
+  stockCounts               StockCount[]
+  handovers                 Handover[]
+  assets                    Asset[]
 
   @@map("location")
 }
 
 model Product {
-  id           String      @id @default(uuid())
-  name         String
-  kind         ProductKind
+  id          String      @id @default(uuid())
+  name        String
+  kind        ProductKind
   // Admin-set menu category (Mains / Sides / Drinks / Snacks …). Powers
   // the C2 New-Order product grid + K1 Stock-Count picker category tab
   // rows (M2-01 §6/§10; owner-approved into M2 Session 6). Free-text,
   // optional — a product with none groups under an "Uncategorised" tab.
-  category     String?
-  buyingPrice  Decimal?    @map("buying_price") @db.Decimal(12, 2)
-  unitLabel    String      @map("unit_label")
-  deletedAt    DateTime?   @map("deleted_at")
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
+  category    String?
+  buyingPrice Decimal?    @map("buying_price") @db.Decimal(12, 2)
+  unitLabel   String      @map("unit_label")
+  deletedAt   DateTime?   @map("deleted_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
 
   productLocations   ProductLocation[]
   stockMovements     StockMovement[]
@@ -246,15 +246,15 @@ model Product {
 }
 
 model ProductLocation {
-  id            String   @id @default(uuid())
-  productId     String   @map("product_id")
-  product       Product  @relation(fields: [productId], references: [id])
-  locationId    String   @map("location_id")
-  location      Location @relation(fields: [locationId], references: [id])
-  sellingPrice  Decimal? @map("selling_price") @db.Decimal(12, 2)
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(uuid())
+  productId    String   @map("product_id")
+  product      Product  @relation(fields: [productId], references: [id])
+  locationId   String   @map("location_id")
+  location     Location @relation(fields: [locationId], references: [id])
+  sellingPrice Decimal? @map("selling_price") @db.Decimal(12, 2)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@unique([productId, locationId])
   @@map("product_location")
@@ -263,12 +263,12 @@ model ProductLocation {
 // ── Recipes (informational only — ADR-33) ──────────────────────────────
 
 model Recipe {
-  id             String   @id @default(uuid())
-  dishProductId  String   @unique @map("dish_product_id")
-  dishProduct    Product  @relation(fields: [dishProductId], references: [id])
-  active         Boolean  @default(true)
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(uuid())
+  dishProductId String   @unique @map("dish_product_id")
+  dishProduct   Product  @relation(fields: [dishProductId], references: [id])
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   ingredients RecipeIngredient[]
 
@@ -276,14 +276,14 @@ model Recipe {
 }
 
 model RecipeIngredient {
-  id                   String   @id @default(uuid())
-  recipeId             String   @map("recipe_id")
-  recipe               Recipe   @relation(fields: [recipeId], references: [id])
-  ingredientProductId  String   @map("ingredient_product_id")
-  ingredientProduct    Product  @relation(fields: [ingredientProductId], references: [id])
-  quantityPerUnit      Decimal  @map("quantity_per_unit") @db.Decimal(12, 4)
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
+  id                  String   @id @default(uuid())
+  recipeId            String   @map("recipe_id")
+  recipe              Recipe   @relation(fields: [recipeId], references: [id])
+  ingredientProductId String   @map("ingredient_product_id")
+  ingredientProduct   Product  @relation(fields: [ingredientProductId], references: [id])
+  quantityPerUnit     Decimal  @map("quantity_per_unit") @db.Decimal(12, 4)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@map("recipe_ingredient")
 }
@@ -291,17 +291,17 @@ model RecipeIngredient {
 // ── Stock Ledger ─────────────────────────────────────────────────────────
 
 model StockMovement {
-  id         String        @id @default(uuid())
-  productId  String        @map("product_id")
-  product    Product       @relation(fields: [productId], references: [id])
-  locationId String        @map("location_id")
-  location   Location      @relation("StockMovementLocation", fields: [locationId], references: [id])
+  id         String   @id @default(uuid())
+  productId  String   @map("product_id")
+  product    Product  @relation(fields: [productId], references: [id])
+  locationId String   @map("location_id")
+  location   Location @relation("StockMovementLocation", fields: [locationId], references: [id])
 
   movementType MovementType @map("movement_type")
   quantity     Decimal      @db.Decimal(14, 4)
 
-  recordedById String   @map("recorded_by")
-  recordedBy   User     @relation("StockMovementRecordedBy", fields: [recordedById], references: [id])
+  recordedById String @map("recorded_by")
+  recordedBy   User   @relation("StockMovementRecordedBy", fields: [recordedById], references: [id])
 
   occurredAt DateTime @map("occurred_at")
 
@@ -451,9 +451,9 @@ model MoneyMovement {
 
   occurredAt DateTime @map("occurred_at")
 
-  correctsMovementId String?          @map("corrects_movement_id")
-  correctsMovement   MoneyMovement?   @relation("MoneyMovementCorrection", fields: [correctsMovementId], references: [id])
-  corrections        MoneyMovement[]  @relation("MoneyMovementCorrection")
+  correctsMovementId String?         @map("corrects_movement_id")
+  correctsMovement   MoneyMovement?  @relation("MoneyMovementCorrection", fields: [correctsMovementId], references: [id])
+  corrections        MoneyMovement[] @relation("MoneyMovementCorrection")
 
   note String?
 
@@ -520,9 +520,9 @@ model Customer {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  orders      Order[]
-  debts       Debt[]
-  repayments  Repayment[]
+  orders     Order[]
+  debts      Debt[]
+  repayments Repayment[]
 
   @@map("customer")
 }
@@ -637,9 +637,9 @@ model Attendance {
 }
 
 model StaffPayAdjustment {
-  id      String                  @id @default(uuid())
-  staffId String                  @map("staff_id")
-  staff   Staff                   @relation(fields: [staffId], references: [id])
+  id      String                 @id @default(uuid())
+  staffId String                 @map("staff_id")
+  staff   Staff                  @relation(fields: [staffId], references: [id])
   type    StaffPayAdjustmentType
   /// Signed magnitude. A recorded advance/deduction is stored positive
   /// (the sign is implied by `type` and applied at read time). A
@@ -649,8 +649,8 @@ model StaffPayAdjustment {
   /// every other ADR-72 correction, this writes NO `MoneyMovement`: an
   /// advance/deduction only nets the derived pay figure at read time, it
   /// is not a cash-ledger event until a payout is recorded.
-  amount  Decimal                 @db.Decimal(12, 2)
-  date    DateTime                @db.Date
+  amount  Decimal                @db.Decimal(12, 2)
+  date    DateTime               @db.Date
   note    String?
 
   // Append-only correction link (ADR-15 / ADR-72). A correction is a new
@@ -722,15 +722,15 @@ model StaffDailyPay {
 /// at record time (never client-supplied). One payout per (staff, month) —
 /// enforced by the DB unique below, not just in code (ADR-60).
 model StaffPayout {
-  id    String   @id @default(uuid())
-  staffId String @map("staff_id")
-  staff Staff    @relation(fields: [staffId], references: [id])
+  id              String       @id @default(uuid())
+  staffId         String       @map("staff_id")
+  staff           Staff        @relation(fields: [staffId], references: [id])
   /// The calendar month covered, stored as the 1st of that month (`@db.Date`).
-  month DateTime @db.Date
+  month           DateTime     @db.Date
   /// Net pay disbursed — recomputed from the ledger, always > 0.
-  netPaid Decimal @map("net_paid") @db.Decimal(12, 2)
+  netPaid         Decimal      @map("net_paid") @db.Decimal(12, 2)
   /// The business date the disbursement is dated to (day-close gated).
-  date  DateTime @db.Date
+  date            DateTime     @db.Date
   paidFromAccount MoneyAccount @map("paid_from_account")
 
   recordedById String @map("recorded_by")
@@ -777,14 +777,23 @@ model HandoverShortfall {
 // ── Assets ────────────────────────────────────────────────────────────────
 
 model Asset {
-  id               String    @id @default(uuid())
-  name             String
-  locationId       String    @map("location_id")
-  location         Location  @relation(fields: [locationId], references: [id])
-  purchaseDate     DateTime  @map("purchase_date") @db.Date
-  purchaseCost     Decimal   @map("purchase_cost") @db.Decimal(12, 2)
-  conditionStatus  String    @map("condition_status")
-  deletedAt        DateTime? @map("deleted_at")
+  id              String    @id @default(uuid())
+  name            String
+  locationId      String    @map("location_id")
+  location        Location  @relation(fields: [locationId], references: [id])
+  purchaseDate    DateTime  @map("purchase_date") @db.Date
+  purchaseCost    Decimal   @map("purchase_cost") @db.Decimal(12, 2)
+  conditionStatus String    @map("condition_status")
+  // How many of this asset the register row stands for (e.g. 6 identical
+  // dining chairs on one line). Whole units, >= 1. Defaults to 1 so every
+  // pre-existing row keeps its meaning with no backfill.
+  quantity        Int       @default(1)
+  // Free-text grouping the Admin sets (Kitchen Equipment / Furniture /
+  // Electronics …). Optional — a row with none groups under "Uncategorised".
+  // Mirrors `Product.category`; reverses ADR-44's no-category call at the
+  // client's request (see DECISIONS.md).
+  category        String?
+  deletedAt       DateTime? @map("deleted_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

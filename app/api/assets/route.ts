@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     search: sp.get("search") ?? undefined,
     locationId: sp.get("locationId") ?? undefined,
     condition: sp.get("condition") ?? undefined,
+    category: sp.get("category") ?? undefined,
     includeDeleted: sp.get("includeDeleted") ?? undefined,
   });
   if (!parsed.success) {

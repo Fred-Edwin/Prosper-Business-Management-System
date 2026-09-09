@@ -33,6 +33,8 @@ export function toAssetView(row: AssetRow): AssetView {
     locationType: row.location.type,
     purchaseDate: isoDate(row.purchaseDate),
     purchaseCost: money(row.purchaseCost),
+    quantity: row.quantity,
+    category: row.category,
     // `Asset.conditionStatus` is a free-text `String` column, so the DB will
     // accept anything. Validate at this boundary rather than blind-casting —
     // an unrecognised value must never reach the UI (it crashed ConditionChip).
@@ -69,6 +71,8 @@ export function normaliseAssetCore(input: CreateAssetInput): {
   purchaseDate: Date;
   purchaseCost: Prisma.Decimal;
   condition: AssetCondition;
+  quantity: number;
+  category: string | null;
 } {
   const name = input.name.trim();
   if (name.length === 0) {
@@ -76,6 +80,24 @@ export function normaliseAssetCore(input: CreateAssetInput): {
   }
 
   const condition = assertCondition(input.condition);
+
+  // Quantity: whole units, >= 1. Omitted → 1 (the column default; keeps the
+  // pre-quantity meaning). A fractional or < 1 value is a client error.
+  const quantity = input.quantity ?? 1;
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "Quantity must be a whole number of 1 or more.",
+      "quantity",
+    );
+  }
+
+  // Category: free-text, trimmed; blank / omitted → null (mirrors
+  // `Product.category` — a row with none groups under "Uncategorised").
+  const category =
+    input.category != null && input.category.trim() !== ""
+      ? input.category.trim()
+      : null;
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.purchaseDate)) {
     throw new DomainError(
@@ -128,5 +150,5 @@ export function normaliseAssetCore(input: CreateAssetInput): {
     );
   }
 
-  return { name, purchaseDate, purchaseCost, condition };
+  return { name, purchaseDate, purchaseCost, condition, quantity, category };
 }

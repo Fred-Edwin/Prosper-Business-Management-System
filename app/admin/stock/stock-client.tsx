@@ -665,12 +665,15 @@ export function StockClient() {
               onAction={resetFilters}
             />
           ) : (
-            <div className="[width:100%] max-w-full overflow-x-auto">
+            // Both-axis scroll container, bounded height → the sticky ledger
+            // header pins to its top (client feedback 2026-09-09).
+            <div className="[width:100%] max-w-full max-h-[70vh] overflow-auto">
               <DenseLedger
                 rows={rows}
                 totals={rows.length > 0 ? singleDayTotals : undefined}
                 showLocation
                 horizontalScroll
+                stickyHeader
                 loading={loading && rows.length === 0}
                 emptyMessage="No stock movements for this day."
                 onCellClick={onCellClick}
@@ -701,12 +704,13 @@ export function StockClient() {
             onAction={resetFilters}
           />
         ) : (
-          <div className="[width:100%] max-w-full overflow-x-auto">
+          <div className="[width:100%] max-w-full max-h-[70vh] overflow-auto">
             <DenseLedger
               rows={periodRowsForGrid}
               totals={rows.length > 0 ? periodTotals : undefined}
               showLocation
               horizontalScroll
+              stickyHeader
               loading={loading && rows.length === 0}
               emptyMessage="No stock movements for this range."
               onCellClick={onPeriodRowClick}
@@ -954,11 +958,12 @@ function DrillInView({
           onRetry={onRetry}
         />
       ) : (
-        <div className="[width:100%] max-w-full overflow-x-auto">
+        <div className="[width:100%] max-w-full max-h-[70vh] overflow-auto">
           <DenseLedger
             rows={gridRows}
             showLocation={false}
             horizontalScroll
+            stickyHeader
             loading={loading && gridRows.length === 0}
             emptyMessage="No stock movements for this product in this range."
           />

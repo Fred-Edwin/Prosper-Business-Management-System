@@ -16,6 +16,63 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Assets quantity + category, and a frozen ledger header (2026-09-09) — DONE
+
+Client feedback batch (two of three items — the third, Packaging + Service
+product kinds, is a feature being planned separately because it touches
+ADR-67's location/stock rules).
+
+**1. Assets — `quantity` + `category` (ADR-78; reverses ADR-45 §3).**
+
+- **Migration `20260909120000_add_asset_quantity_category`** — `asset`
+  gains `quantity INTEGER NOT NULL DEFAULT 1` and `category TEXT` (nullable).
+  Both additive / widening-only; no backfill. Assets stay a mutable
+  register (ADR-22) — plain `ALTER TABLE`, no correction machinery.
+- **`lib/domain/assets`** — `normaliseAssetCore` validates `quantity` as an
+  integer `>= 1` (omitted → 1) and trims `category` (blank → `null`);
+  `create-asset` / `update-asset` persist both; `toAssetView` returns them;
+  `list-assets` filters `?category=` with a `UNCATEGORISED` sentinel for
+  `category IS NULL`. `purchase_cost` semantics unchanged — still the
+  value typed for the line, not unit × qty.
+- **`lib/validation/assets.ts`** — `createAssetSchema` gains
+  `quantity` (coerced int `>= 1`, optional) + `category` (trimmed, ≤60,
+  nullish); `listAssetsQuerySchema` gains `category`.
+- **`app/api/assets/route.ts`** — GET threads `category` through.
+- **Screens** — `asset-drawer.tsx`: kit `<QuantityStepper>` + a free-text
+  Category `<input>` with a `<datalist>` of in-use names. `assets-client.tsx`:
+  Category filter `<Select>` in the shared `<FilterToolbar>`, a Category
+  column + `Qty` column + `×N` badge on the name, category/qty on the
+  mobile card. `use-assets.ts` sends `category` + re-fetches on it.
+  Stale "no category field" comments in both files retired.
+
+**2. Frozen ledger header (ADR-78).**
+
+- **`components/kit/dense-ledger.tsx`** — new opt-in `stickyHeader` prop
+  (same shape as `horizontalScroll`). Sets the header row
+  `sticky top-0` with an opaque fill and `[z-index:1101]` — one above the
+  body's `--z-sticky` (1100) layer, so the whole row of column titles
+  outranks the body rows' own sticky-left cells and rows scroll *under*
+  it on both axes. Base (catalog / reconciliation) usages unchanged.
+- **`app/admin/stock/stock-client.tsx`** — the three desktop
+  `<DenseLedger>` wrappers change `overflow-x-auto` → `max-h-[70vh]
+  overflow-auto` (one element scrolls both axes) and pass `stickyHeader`.
+  Mobile path is unaffected (it doesn't render `<DenseLedger>`).
+
+**Tests.** `lib/domain/assets/{create,update}-asset.test.ts` — quantity
+default/validation, category trim/null, category + `UNCATEGORISED` filter.
+`tests/screens/assets.screen.test.tsx` — Category/Qty columns, `×N` badge,
+"Uncategorised" cell, Category filter options, drawer sends quantity +
+category. `tests/screens/dense-ledger-sticky-header.screen.test.tsx` (new)
+— header is `sticky top-0` + opaque with the prop, translucent/non-sticky
+without it.
+
+**Docs.** `SCHEMA.md §11`, `API.md` Assets, `DECISIONS.md` ADR-78.
+
+**Gates.** `pnpm typecheck` ✅ · `pnpm build` ✅ · `pnpm test` ✅ (full
+suite — see run below).
+
+---
+
 ## Staff — re-activate a deactivated staff member (2026-09-09) — DONE
 
 Client feedback: while testing, she set a staff member (a store manager) to
