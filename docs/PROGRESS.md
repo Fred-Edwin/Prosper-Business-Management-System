@@ -16,6 +16,39 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Handovers worksheet — per-row Date column (2026-09-09) — DONE
+
+Client feedback: the Restaurant COGS-with-no-sales question was
+investigated and explained (an internal transfer nets to zero
+company-wide — no code change, ADR-55 working as designed); a missing
+2026-09-08 Canteen handover (Anne Gitonga) was back-entered via a
+one-off reviewed SQL script (not committed — handovers write no
+money-ledger row, ADR-53, so the insert was safe). That surfaced a real
+gap: the Handovers worksheet had no per-row date, and no way for Admin to
+back-enter a handover or receive one on a non-today day, and the "This
+week"/"This month" presets silently showed an empty table (the worksheet
+only ever reconciled the range's *end* day). Scoped the full fix in
+`docs/design/flows/admin-record-handover.md`; shipping the first,
+self-contained piece now.
+
+- **`app/admin/financials/handovers-tab.tsx`** — added a `Date` column
+  (first data column) to the desktop grouped table and the mobile card's
+  sub-line, rendering each `ReconciliationRow.occurredAt` as its
+  Africa/Nairobi business day (`nairobiDate()` — `"6 Sep"`, or with year
+  when it differs from the current one). `COL.date` (92px); table
+  `min-w` 980 → 1072; Totals row gets a blank date cell. No domain / API
+  / type change — the data was already on the row.
+- Groundwork for the rest of the scoped feature (back-entry, receipt on
+  any open day, multi-day grouping) — a worksheet spanning more than one
+  day needs each row to say which day it's for.
+- **Tests:** `tests/screens/admin-handovers.screen.test.tsx` — new case
+  asserting two rows on different days render their own date, in both
+  the table and card branches.
+- **Gates:** `pnpm test:unit` 526/526 · `pnpm typecheck` clean ·
+  `pnpm build` clean.
+
+---
+
 ## Assets quantity + category, and a frozen ledger header (2026-09-09) — DONE
 
 Client feedback batch (two of three items — the third, Packaging + Service
