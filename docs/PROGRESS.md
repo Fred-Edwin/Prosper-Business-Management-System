@@ -16,6 +16,39 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Staff — re-activate a deactivated staff member (2026-09-09) — DONE
+
+Client feedback: while testing, she set a staff member (a store manager) to
+inactive and then couldn't turn them back on — the `Active` toggle in the
+Edit drawer was hard-disabled once off, and there was no reactivate
+endpoint (a deliberate S8A omission, but ADR-59 anticipated the follow-up:
+"a future re-activate must flip both flags too"). It was never
+role-specific — any staff member whose deactivation actually saved got
+stuck the same way.
+
+- **`lib/domain/staff/reactivate-staff.ts`** (new) — mirror of
+  `deactivateStaff`: flips `Staff.active` **and** `User.active` back to
+  `true` in one transaction so the login works again; idempotent;
+  `NOT_FOUND` on an unknown id; audit `correct` row (`{ active: true }`) —
+  no `restore` AuditAction, staff is an edit not a ledger. Exported from
+  `index.ts`.
+- **`app/api/staff/[id]/route.ts`** — new `PATCH ?mode=reactivate` branch
+  (body ignored), symmetric with `?mode=deactivate`.
+- **`app/admin/staff/use-staff.ts`** — `reactivate()` on `useRoster`.
+- **`app/admin/staff/staff-drawer.tsx`** — the `Active` toggle is now
+  two-way: `disabled={!isEdit}` only; turning it back ON short-circuits to
+  `onReactivate` (mirror of the deactivate branch); `canSubmit` allows a
+  pure active-flag flip regardless of the other fields; copy updated.
+  `roster-tab.tsx` passes `onReactivate` through.
+- **Tests** — `staff.test.ts`: reactivate flips both flags, survives
+  role/location, idempotent, roster-only, `NOT_FOUND`.
+  `admin-staff.screen.test.tsx`: an inactive staff member's toggle is
+  enabled and turning it on calls `reactivate` (the reported bug);
+  deactivate path still calls `deactivate`.
+- **`docs/API.md`** — documented `?mode=reactivate`.
+
+Gates: `pnpm test` 1306 pass · `pnpm typecheck` clean · `pnpm build` clean.
+
 ## Staff — multiple partial payouts per staff-month (2026-09-08) — DONE
 
 PR 3 of 3 of the staff-pay rework (ADR-77). The client pays staff in

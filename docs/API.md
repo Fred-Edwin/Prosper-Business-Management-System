@@ -1109,6 +1109,11 @@ Two modes:
   (ADR-59), so the staff member can no longer sign in and any live
   session drops on its next request. Idempotent. `200` with
   `{ data: StaffView }`.
+- **Re-activate** (`?mode=reactivate`, body ignored): the mirror of
+  Deactivate — sets `Staff.active = true` **and `User.active = true`** in
+  one transaction, so the staff member signs in again with their prior
+  role, location, pay model and rate intact (deactivation only flips the
+  flags). Idempotent. `200` with `{ data: StaffView }`.
 
 ### `POST /api/attendance`
 Body: `{ staffId, date, present }` (`date` = `YYYY-MM-DD` business date).

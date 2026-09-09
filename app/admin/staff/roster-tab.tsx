@@ -64,8 +64,16 @@ export function RosterTab({
 }) {
   const { locations } = useLocations();
   const [locFilter, setLocFilter] = React.useState("all");
-  const { staff, loading, error, refresh, create, update, deactivate } =
-    useRoster(locFilter === "all" ? null : locFilter);
+  const {
+    staff,
+    loading,
+    error,
+    refresh,
+    create,
+    update,
+    deactivate,
+    reactivate,
+  } = useRoster(locFilter === "all" ? null : locFilter);
   const { changePin } = useChangeOwnPin();
 
   const [drawer, setDrawer] = React.useState<
@@ -247,6 +255,7 @@ export function RosterTab({
           onCreate={create}
           onUpdate={update}
           onDeactivate={deactivate}
+          onReactivate={reactivate}
           onClose={() => setDrawer(null)}
         />
       )}

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { createStaff } from "./create-staff";
 import { updateStaff } from "./update-staff";
 import { deactivateStaff } from "./deactivate-staff";
+import { reactivateStaff } from "./reactivate-staff";
 import { getStaff, listStaff } from "./list-staff";
 import {
   cleanupStaffTestData,
@@ -206,6 +207,45 @@ describe("staff CRUD + login account", () => {
     // idempotent
     const again = await deactivateStaff(created.id, admin());
     expect(again.active).toBe(false);
+  });
+
+  it("reactivateStaff undoes a deactivation — flips BOTH flags so the login works again", async () => {
+    const created = await createStaff(
+      { appAccess: true as const, name: `${ctx.prefix} Returner`, role: "store_manager", locationId: ctx.locationAId, dailyRate: "600.00", pin: "8888" },
+      admin(),
+    );
+    await deactivateStaff(created.id, admin());
+
+    const out = await reactivateStaff(created.id, admin());
+    expect(out.active).toBe(true);
+    expect(out.userActive).toBe(true);
+    // role / location survive the round-trip
+    expect(out.role).toBe("store_manager");
+    expect(out.locationId).toBe(ctx.locationAId);
+
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: created.userId! },
+    });
+    expect(user.active).toBe(true);
+
+    // idempotent on an already-active staff member
+    const again = await reactivateStaff(created.id, admin());
+    expect(again.active).toBe(true);
+  });
+
+  it("reactivateStaff works for a roster-only staff member and NOT_FOUND on a missing id", async () => {
+    const cook = await createStaff(
+      { appAccess: false, name: `${ctx.prefix} Cook Returner`, jobTitle: "Cook", locationId: ctx.locationAId, dailyRate: "800.00" },
+      admin(),
+    );
+    await deactivateStaff(cook.id, admin());
+    const out = await reactivateStaff(cook.id, admin());
+    expect(out.active).toBe(true);
+    expect(out.userId).toBeNull();
+
+    await expect(
+      reactivateStaff("does-not-exist", admin()),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("listStaff / getStaff are read-only and never expose a PIN or hash", async () => {
