@@ -16,6 +16,39 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Handovers worksheet — drop redundant day-header rows, fix clipped action buttons (2026-09-09) — DONE
+
+Owner caught this live on the deployed app right after ADR-79 shipped:
+the day-group headers added by that change repeated the date with
+nothing else on the line (every row already carries its own Date cell),
+reading as duplicate rows; and the desktop table's action column
+("Correct" / "Record receipt") was clipped to a sliver ("Corre…") because
+`min-w` on the table container was short of what the column list
+actually needs.
+
+- **Row duplication.** Removed `DayGroupHeader` / `groupByDay` entirely.
+  Rows are now a flat list sorted oldest-day-first (`sortByDay`) — one
+  row per handover, its own Date cell says which day, no separate header
+  row. `dayClosed` (for the receipt gate) is now derived per row
+  directly from `closedDates` instead of via a group.
+- **Clipped buttons.** The table's `min-w` was `1072px`; the column list
+  (Date 92 + Staff 150 + Status 130 + 6×Money 90 + Note min 160 + Action
+  130) actually needs **1202px** — 130px short, almost exactly the
+  clipped action column's width. This was a pre-existing bug from before
+  the Date column even existed (the original `min-w-[980px]` was already
+  110px short of that column list's 1110px) — it only became visible once
+  the range genuinely holds several rows side by side. Fixed to
+  `min-w-[1202px]`, with a comment tying the number to the column sum so
+  the next column change updates both together.
+- **File:** `app/admin/financials/handovers-tab.tsx`.
+- **Tests:** `admin-handovers.screen.test.tsx` — the multi-day test now
+  asserts the flat one-row-per-handover shape and that no orphan
+  date-only "N handover(s)" text remains.
+- **Gates:** `pnpm test:unit` 534/534 · `pnpm typecheck` clean ·
+  `pnpm build` clean.
+
+---
+
 ## Admin handover back-entry, per-row receipt gate, multi-day worksheet (2026-09-09) — DONE — ADR-79
 
 Follow-up to the Date-column entry below: the remaining three connected

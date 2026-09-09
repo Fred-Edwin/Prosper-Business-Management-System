@@ -243,10 +243,16 @@ describe("Admin Handovers — receipt gate is per-row, not per-worksheet", () =>
   });
 });
 
-// ── multi-day grouping (ADR-79) ─────────────────────────────────────────
+// ── multi-day worksheet (ADR-79) ────────────────────────────────────────
+//
+// A day sub-header repeating just the date (with nothing else on the
+// line) was tried and dropped as pure duplication (owner call,
+// 2026-09-09) — every handover is ONE row with its own Date cell, no
+// separate header row. These tests assert that: no orphan date-only
+// rows, and every row's own date shows on that same row.
 
-describe("Admin Handovers — multi-day worksheet groups rows by day", () => {
-  it("renders a day group header per distinct business day, each with its own count", async () => {
+describe("Admin Handovers — multi-day worksheet is a flat, day-sorted row list", () => {
+  it("shows each handover as one row (own date, staff, status) — no separate day-header rows", async () => {
     reconState = {
       data: view(
         [
@@ -269,9 +275,18 @@ describe("Admin Handovers — multi-day worksheet groups rows by day", () => {
     };
     renderTab();
 
-    // 6 Sep group: 1 handover; 9 Sep group: 2 handovers.
-    expect(screen.getAllByText(/^1 handover/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/^2 handovers/).length).toBeGreaterThan(0);
+    // Every row's own date renders alongside its own staff name on ONE row.
+    expect(screen.getAllByText("6 Sep").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Grace Cashier").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("9 Sep").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Anne Attendant").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Other Cashier").length).toBeGreaterThan(0);
+
+    // No leftover day-group summary text ("N handovers" as a standalone
+    // line other than the top summary strip, which reads the full
+    // "3 handovers · ...").
+    expect(screen.queryByText(/^1 handover$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^2 handovers$/)).not.toBeInTheDocument();
   });
 });
 
