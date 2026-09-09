@@ -66,6 +66,25 @@ vi.mock("@/app/admin/financials/use-handovers", async (importOriginal) => {
       refresh: reconRefresh,
       recordReceipt: vi.fn(),
       correct: vi.fn(),
+      recordBackdated: vi.fn(),
+    }),
+  };
+});
+
+// The Handovers tab's "Record a handover" drawer fetches the roster via
+// useRoster(null) — stub it so it doesn't hit the network unmocked.
+vi.mock("@/app/admin/staff/use-staff", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/app/admin/staff/use-staff")>();
+  return {
+    ...actual,
+    useRoster: () => ({
+      staff: [],
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
     }),
   };
 });
@@ -749,7 +768,9 @@ describe("/admin/financials — Handovers tab", () => {
   it("shows the reconciliation table for the toolbar date", async () => {
     reconState = {
       data: {
-        date: "2026-09-02",
+        from: "2026-09-02",
+        to: "2026-09-02",
+        closedDates: [],
         rows: [
           {
             handoverId: "h1",
@@ -798,7 +819,9 @@ describe("/admin/financials — Handovers tab", () => {
   it("keeps the table headers + an empty-state message when the day has no handovers", async () => {
     reconState = {
       data: {
-        date: "2026-09-03",
+        from: "2026-09-03",
+        to: "2026-09-03",
+        closedDates: [],
         rows: [],
         totals: {
           cashDeclared: "0.00",
@@ -824,7 +847,7 @@ describe("/admin/financials — Handovers tab", () => {
     ).toBeInTheDocument();
     // …and an explicit "no handovers" message renders in the body.
     expect(
-      screen.getAllByText(/No handovers for this day/).length,
+      screen.getAllByText(/No handovers in this range/).length,
     ).toBeGreaterThan(0);
   });
 });

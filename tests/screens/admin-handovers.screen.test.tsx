@@ -20,6 +20,7 @@ import { HandoversRequestError } from "@/app/admin/financials/use-handovers";
 // ── mock use-handovers ─────────────────────────────────────────────────
 const recordReceipt = vi.fn();
 const correct = vi.fn();
+const recordBackdated = vi.fn();
 const refresh = vi.fn();
 let reconState: {
   data: ReconciliationView | null;
@@ -41,6 +42,26 @@ vi.mock("@/app/admin/financials/use-handovers", async (importOriginal) => {
       refresh,
       recordReceipt,
       correct,
+      recordBackdated,
+    }),
+  };
+});
+
+// The "Record a handover" drawer fetches the roster via useRoster(null) —
+// stub it out to an empty list; that drawer's own behaviour is covered by
+// record-handover-drawer.screen.test.tsx.
+vi.mock("@/app/admin/staff/use-staff", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/app/admin/staff/use-staff")>();
+  return {
+    ...actual,
+    useRoster: () => ({
+      staff: [],
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
     }),
   };
 });
@@ -70,10 +91,15 @@ function row(over: Partial<ReconciliationRow> = {}): ReconciliationRow {
   };
 }
 
-function view(rows: ReconciliationRow[]): ReconciliationView {
+function view(
+  rows: ReconciliationRow[],
+  over: Partial<ReconciliationView> = {},
+): ReconciliationView {
   return {
-    date: "2026-09-02",
+    from: "2026-09-02",
+    to: "2026-09-02",
     rows,
+    closedDates: [],
     totals: {
       cashDeclared: "5000.00",
       mpesaDeclared: "3000.00",
@@ -82,13 +108,14 @@ function view(rows: ReconciliationRow[]): ReconciliationView {
       cashVariance: "0.00",
       mpesaVariance: "0.00",
     },
+    ...over,
   };
 }
 
-function renderTab({ isToday = true }: { isToday?: boolean } = {}) {
+function renderTab() {
   return render(
     <ToastProvider placement="top-right">
-      <HandoversView date="2026-09-02" isToday={isToday} />
+      <HandoversView from="2026-09-02" to="2026-09-02" />
     </ToastProvider>,
   );
 }
@@ -178,6 +205,94 @@ describe("Admin Handovers — date column", () => {
     // Each row's day renders (both table + mobile card branches → getAllBy).
     expect(screen.getAllByText("6 Sep").length).toBeGreaterThan(0);
     expect(screen.getAllByText("9 Sep").length).toBeGreaterThan(0);
+  });
+});
+
+// ── closed-day receipt gate (ADR-79) ────────────────────────────────────
+
+describe("Admin Handovers — receipt gate is per-row, not per-worksheet", () => {
+  it("shows 'Record receipt' for a row on an OPEN past day", async () => {
+    reconState = {
+      data: view(
+        [row({ occurredAt: "2026-09-06T09:00:00.000Z" })],
+        { from: "2026-09-06", to: "2026-09-09", closedDates: [] },
+      ),
+      loading: false,
+      error: null,
+    };
+    renderTab();
+    expect(
+      screen.getAllByRole("button", { name: "Record receipt" }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("shows 'Day closed' (no receipt action) for a row on a CLOSED day", async () => {
+    reconState = {
+      data: view(
+        [row({ occurredAt: "2026-09-06T09:00:00.000Z" })],
+        { from: "2026-09-06", to: "2026-09-09", closedDates: ["2026-09-06"] },
+      ),
+      loading: false,
+      error: null,
+    };
+    renderTab();
+    expect(
+      screen.queryByRole("button", { name: "Record receipt" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByText("Day closed").length).toBeGreaterThan(0);
+  });
+});
+
+// ── multi-day grouping (ADR-79) ─────────────────────────────────────────
+
+describe("Admin Handovers — multi-day worksheet groups rows by day", () => {
+  it("renders a day group header per distinct business day, each with its own count", async () => {
+    reconState = {
+      data: view(
+        [
+          row({ handoverId: "h-a", occurredAt: "2026-09-06T09:00:00.000Z" }),
+          row({
+            handoverId: "h-b",
+            staffName: "Anne Attendant",
+            occurredAt: "2026-09-09T09:00:00.000Z",
+          }),
+          row({
+            handoverId: "h-c",
+            staffName: "Other Cashier",
+            occurredAt: "2026-09-09T10:00:00.000Z",
+          }),
+        ],
+        { from: "2026-09-06", to: "2026-09-09" },
+      ),
+      loading: false,
+      error: null,
+    };
+    renderTab();
+
+    // 6 Sep group: 1 handover; 9 Sep group: 2 handovers.
+    expect(screen.getAllByText(/^1 handover/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^2 handovers/).length).toBeGreaterThan(0);
+  });
+});
+
+// ── record-a-handover entry (ADR-79) ────────────────────────────────────
+
+describe("Admin Handovers — 'Record a handover' back-entry", () => {
+  it("opens the drawer and submits a back-entered handover", async () => {
+    const user = userEvent.setup();
+    renderTab();
+
+    await user.click(
+      screen.getByRole("button", { name: "Record a handover" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText("Record a handover"),
+    ).toBeInTheDocument();
+    // No staff in the stubbed roster — the primary action stays disabled.
+    expect(
+      within(dialog).getByRole("button", { name: "Record handover" }),
+    ).toBeDisabled();
   });
 });
 

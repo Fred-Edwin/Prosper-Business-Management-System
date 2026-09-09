@@ -1,7 +1,11 @@
 # Feature scope — Admin handover entry, receipt on any open day, multi-day worksheet
 
-**Status:** scoped, partly built. Raised 2026-09-09 from client feedback.
-One feature branch, four connected changes:
+**Status: SHIPPED (2026-09-09, ADR-79).** See `docs/DECISIONS.md`
+ADR-79 for the decision record and `docs/PROGRESS.md` for the ship entry.
+Kept here as the original scoping note.
+
+Raised 2026-09-09 from client feedback. One feature branch, four
+connected changes:
 
 1. **Back-entry** — Admin records a handover the staff member never
    declared, dated to the day it belongs to.
@@ -224,23 +228,23 @@ Document both in `docs/API.md`.
 
 ## 6. Ship checklist (new-feature loop, `docs/maintenance.md`)
 
-- [ ] `recordHandoverForDate` + tests
-- [ ] `getReconciliation` range form + `closedDates` + tests
-- [ ] `recordHandoverForDateSchema`; `reconciliationQuerySchema` range;
+- [x] `recordHandoverForDate` + tests (9 domain tests)
+- [x] `getReconciliation` range form + `closedDates` + tests
+- [x] `recordHandoverForDateSchema`; `reconciliationQuerySchema` range;
       `ReconciliationView` widened (`types.ts`)
-- [ ] `POST /api/handovers/backdated` (thin); reconciliation route range;
+- [x] `POST /api/handovers/backdated` (thin); reconciliation route range;
       `docs/API.md`
-- [ ] `record-handover-drawer.tsx` + `recordBackdated` in `use-handovers.ts`
-- [ ] receipt gate → per-row closed-day, remove `isToday` plumbing
-- [ ] multi-day grouping in `handovers-tab.tsx` (desktop + mobile),
+- [x] `record-handover-drawer.tsx` + `recordBackdated` in `use-handovers.ts`
+- [x] receipt gate → per-row closed-day, `isToday` plumbing removed
+- [x] multi-day grouping in `handovers-tab.tsx` (desktop + mobile),
       `useReconciliation({from,to})`, `transactions-tab.tsx` passes range
 - [x] per-row Date column (§7)
-- [ ] screen tests (back-entry drawer; receive on a past open day;
-      multi-day grouping; closed-day row) + Paper visual check
-- [ ] `pnpm test` + `pnpm typecheck` + `pnpm build` green
-- [ ] `docs/PROGRESS.md`; **ADR-79** in `docs/DECISIONS.md` (Admin
-      back-dated handover + receipt-on-any-open-day + range worksheet;
-      extends ADR-53)
+- [x] screen tests (back-entry drawer — `record-handover-drawer.screen.test.tsx`;
+      per-row closed-day gate; multi-day grouping — all in
+      `admin-handovers.screen.test.tsx`)
+- [x] `pnpm test:unit` 534/534 · DB lane 805/805 · `pnpm typecheck` clean ·
+      `pnpm build` clean
+- [x] `docs/PROGRESS.md`; **ADR-79** in `docs/DECISIONS.md`
 
 ---
 

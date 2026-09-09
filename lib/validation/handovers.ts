@@ -32,6 +32,18 @@ export const editOwnHandoverSchema = z.object({
   mpesaDeclared: decimalString,
 });
 
+/**
+ * `POST /api/handovers/backdated` — Admin back-enters a handover a staff
+ * member never declared (ADR-79).
+ */
+export const recordHandoverForDateSchema = z.object({
+  staffId: z.string().min(1),
+  locationId: z.string().min(1),
+  cashDeclared: decimalString,
+  mpesaDeclared: decimalString,
+  businessDate,
+});
+
 /** `POST /api/handovers/:id/receive` — Admin records receipt. */
 export const recordReceiptSchema = z.object({
   cashReceived: decimalString,
@@ -66,12 +78,24 @@ export const listHandoversQuerySchema = z.object({
   locationId: z.string().min(1).optional(),
 });
 
-/** `GET /api/handovers/reconciliation?date=` — Admin reconciliation read. */
-export const reconciliationQuerySchema = z.object({
-  date: businessDate,
-});
+/**
+ * `GET /api/handovers/reconciliation` — Admin reconciliation read.
+ * Either a single `date`, or an inclusive `from`/`to` range — never both.
+ */
+export const reconciliationQuerySchema = z
+  .union([
+    z.object({ date: businessDate, from: z.undefined(), to: z.undefined() }),
+    z.object({ date: z.undefined(), from: businessDate, to: businessDate }),
+  ])
+  .refine(
+    (v) => ("date" in v && v.date ? true : v.from! <= v.to!),
+    { message: "`from` must be on or before `to`.", path: ["to"] },
+  );
 
 export type DeclareHandoverBody = z.infer<typeof declareHandoverSchema>;
 export type EditOwnHandoverBody = z.infer<typeof editOwnHandoverSchema>;
+export type RecordHandoverForDateBody = z.infer<
+  typeof recordHandoverForDateSchema
+>;
 export type RecordReceiptBody = z.infer<typeof recordReceiptSchema>;
 export type CorrectHandoverBody = z.infer<typeof correctHandoverSchema>;

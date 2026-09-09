@@ -4367,3 +4367,122 @@ is being planned separately.
   component's own scroll area is the reliable fix.
 - *Make the totals footer sticky-bottom too* — out of scope; the client
   asked only about the header.
+
+---
+
+## ADR-79: Admin can back-enter a missed handover on any day, receive a handover on any OPEN day (not only today), and the Handovers worksheet spans a real date range (Client feedback, 2026-09-09)
+
+**Status:** DECIDED (maintenance — client feedback investigation,
+2026-09-09).
+
+**Context.** The client reported yesterday's Canteen handover (Anne
+Gitonga, cash 3,428.00 / M-Pesa 8,362.00) was never declared, and asked
+for it to be entered manually. Investigating that surfaced three related
+gaps in the Handovers worksheet (Financials → Handovers), all stemming
+from the same root cause: the worksheet was built as a single-business-day
+tool and every affordance assumed "today" or "the one day shown":
+
+1. **No back-entry path.** `declareHandover` is staff-only
+   (`assertStaffDateIsToday`) — there was no in-app way for the Admin to
+   enter a declaration a staff member missed. The immediate fix that day
+   was a one-off reviewed raw-SQL insert (safe because a `Handover` writes
+   no `MoneyMovement`, ADR-53/54 — a custody record, not revenue).
+2. **"Record receipt" was gated on `isToday`, not on the row's own
+   day-closed state.** The domain (`recordReceipt`) and route already
+   permitted a receipt on *any open day* — only the screen's `isToday`
+   prop hid the button on a non-today row, so a handover on an open past
+   day was stuck at "Not received" with no way to fix it in the app.
+3. **The worksheet only ever reconciled the range's END day.**
+   `getReconciliation` took one `date`; `transactions-tab.tsx` passed
+   `to`. Picking "This week" or "This month" silently showed an empty
+   table, because `to` for those presets is in the future — no handovers
+   exist there yet — while the days that DO have handovers were never
+   queried.
+4. Fixing 1–3 requires each row to say which day it belongs to, since a
+   worksheet can now hold rows from more than one day at once — the
+   Handovers table had no per-row date. (Shipped first, standalone: see
+   the "Handovers worksheet — per-row Date column" PROGRESS entry.)
+
+**Decision.**
+
+- **`recordHandoverForDate`** (new, `lib/domain/handovers`) — Admin-only
+  back-entry. Input: `staffId`, `locationId` (must equal that staff
+  member's own `Staff.locationId`), `cashDeclared`, `mpesaDeclared`,
+  `businessDate`. `occurredAt` is pinned to **noon Nairobi** on
+  `businessDate` (not "now"), so the row lands unambiguously in that
+  business day regardless of when the drawer is submitted. **Neither**
+  `assertStaffDateIsToday` **nor** `assertDayOpen` applies — this is
+  deliberately Admin-only (asserted in the domain, not just the route),
+  and Admin is exactly the role `assertActorMayCorrectOnDate`'s
+  closed-day branch already lets touch a sealed day, so both an open and
+  a closed day are fine here once the role check has run. `CONFLICT` if
+  an original (non-correction) handover already exists for this staff
+  member on this business day — `correctHandover` is the way to adjust
+  it, not a second back-entry. Writes an `AuditLog` "create" row marked
+  `backEntry: true` so the trail distinguishes it from a staff
+  declaration. `POST /api/handovers/backdated` — a distinct path from the
+  staff `POST /api/handovers`, so the two role guards never tangle.
+  Frontend: `RecordHandoverDrawer`, triggered by a "Record a handover"
+  button on the Handovers tab; the staff picker is the existing roster
+  (`useRoster(null)`) filtered to `cashier` / `canteen_attendant`, active.
+- **Receipt gate becomes per-row, not per-worksheet.**
+  `getReconciliation` now also returns `closedDates: string[]` — the
+  business dates within the queried range that are day-closed (one
+  `dayClose.findMany` alongside the handover query). The screen derives
+  `dayClosed` for each row from its own Nairobi business day against that
+  set and shows "Record receipt" whenever the row's day is NOT closed
+  (Admin may receive on any open day, past or present) or "Day closed"
+  otherwise. The `isToday` prop is removed from `HandoversView` /
+  `ReconRow` / `MobileHandoverCard` entirely — no domain or route change
+  was needed here, `recordReceipt` already allowed this; the block was
+  100% a UI gate.
+- **`getReconciliation` takes a range.** Signature widens from
+  `(date: string)` to `(dateOrRange: string | {from, to})` — a bare
+  string is sugar for `{from: date, to: date}`, so every existing
+  single-date caller keeps working unchanged. `ReconciliationView.date`
+  is replaced by `from` / `to` (a single-date read comes back with
+  `from === to`); `totals` sums across the whole range.
+  `GET /api/handovers/reconciliation` accepts **either** `date` **or**
+  `from`+`to` (never both — a Zod union + refine). `transactions-tab.tsx`
+  now passes the header control's real `from`/`to` straight through
+  instead of clamping to `to`; the "handover reconciled per day, showing
+  the range's end day" caption is removed because it's no longer true.
+  `use-financials-kpis.ts`'s reconciliation fetch (used for the KPI strip's
+  handover count) is widened the same way — it was silently scoped to
+  `to` before, which undercounted for any range wider than one day.
+- **The worksheet groups rows by their own Nairobi business day** — a
+  `DayGroupHeader` (day label + count + awaiting count) followed by that
+  day's rows, both on desktop and mobile. The per-row Date column (shipped
+  ahead of this ADR) stays even within a group — cheap, and keeps a row
+  legible if scrolled away from its header. An empty range shows
+  "No handovers in this range" (was "No handovers for this day").
+
+**Consequences.**
+- A `Handover` can now be created three ways: staff declares (today,
+  open day only), Admin back-enters (any day, open or closed), Admin
+  corrects an existing one (any day). All three funnel through the same
+  `Handover` row shape and the same `correctHandover` / `recordReceipt`
+  paths downstream — nothing about receiving, correcting, or reconciling
+  a handover cares which path created it.
+- `ReconciliationView` is a breaking wire-shape change (`date` → `from`/
+  `to`, new `closedDates`) — every caller in this codebase was updated in
+  the same change; an external consumer (none exist today) would need to
+  follow.
+- Still **no `MoneyMovement`** on any handover path (ADR-53/54 unchanged)
+  — a back-entry, like a declaration, is a custody record only.
+
+**Alternatives considered.**
+- *Let Admin receive on a CLOSED day too* — rejected for this change; the
+  intended path for a closed day is reopen-then-receive, matching every
+  other closed-day mutation in the app. Back-entry needed the
+  closed-day allowance because the missed declaration predates the close
+  by definition; receipt does not have that same forcing constraint.
+- *Keep `getReconciliation(date)` and add a second `getReconciliationRange`
+  function* — rejected; a single function taking either shape keeps one
+  code path (day-grouping, `closedDates`, totals) instead of two nearly
+  identical ones, and every call site becomes a one-line change rather
+  than a rename.
+- *A generic "any admin can create any ledger row on any day" escape
+  hatch* — rejected as too broad; this ADR is scoped specifically to
+  handovers, which are uniquely safe to back-date because they carry no
+  money-ledger effect. Other create paths keep their existing gates.

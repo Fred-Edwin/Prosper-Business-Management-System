@@ -615,15 +615,16 @@ Stock Count product picker and inventory overview.
 
 ## Handovers
 
-> **Implemented M3 Session 2 (2026-09-03).** The contract below reflects
-> what shipped. `camelCase` JSON; money fields are decimal **strings**
-> (`"5000.00"`). Variance is **stored** on the receipt row at receipt
-> time, never recomputed on read (PRD §4.5). A handover receipt writes
-> **NO `MoneyMovement`** — it is a custody transfer of takings already
-> booked to the money ledger at point of sale, not new revenue (ADR-54).
-> Staff create/edit paths are gated by **both** `assertDayOpen` (ADR-52)
-> and the staff "today only" rule (ADR-53); Admin correction paths are
-> gated by neither.
+> **Implemented M3 Session 2 (2026-09-03); widened by ADR-79
+> (2026-09-09).** The contract below reflects what shipped. `camelCase`
+> JSON; money fields are decimal **strings** (`"5000.00"`). Variance is
+> **stored** on the receipt row at receipt time, never recomputed on read
+> (PRD §4.5). A handover (and its receipt) writes **NO `MoneyMovement`**
+> — it is a custody transfer of takings already booked to the money
+> ledger at point of sale, not new revenue (ADR-54). Staff create/edit
+> paths are gated by **both** `assertDayOpen` (ADR-52) and the staff
+> "today only" rule (ADR-53); Admin correction and back-entry paths are
+> gated by neither (ADR-79 — an Admin may act on any day, open or closed).
 
 ### `POST /api/handovers`
 Roles: **Cashier, Canteen Attendant** only. Body:
@@ -677,12 +678,29 @@ within role scope). Correction rows are excluded; each row's declared
 figures are the current derived values (original + Σ deltas). Newest
 first. → `200` with `HandoverView[]`.
 
+### `POST /api/handovers/backdated`
+Roles: **Admin** only (ADR-79). Body:
+`{ staffId, locationId, cashDeclared, mpesaDeclared, businessDate }`
+(`businessDate` a `YYYY-MM-DD` Nairobi business date). Back-enters a
+handover a staff member never declared — the Admin picks the staff
+member; `locationId` must equal that staff member's own
+`Staff.locationId` → `VALIDATION_ERROR` field `locationId` otherwise.
+`occurredAt` is pinned to noon Nairobi on `businessDate`. **Not**
+`assertStaffDateIsToday`- or `assertDayOpen`-gated — an Admin may
+back-enter on any day, open or closed (a sealed day can still be amended
+by the one role allowed to touch it). `CONFLICT` if an original
+(non-correction) handover already exists for this staff member on this
+day — correct it instead. Same "no `MoneyMovement`" guarantee as
+`POST /api/handovers`. → `201` with the `HandoverView`.
+
 ### `GET /api/handovers/reconciliation`
-Roles: **Admin** only. Query: `date` (`YYYY-MM-DD`, required). The
-Admin reconciliation view's read. → `200` with:
+Roles: **Admin** only. Query: **either** `date` (`YYYY-MM-DD`) **or**
+`from` + `to` (inclusive `YYYY-MM-DD` range) — never both; a single
+`date` is exactly `from === to === date`. The Admin reconciliation
+view's read, across the whole range. → `200` with:
 ```
 {
-  date,
+  from, to,                                 // the resolved inclusive range
   rows: [{
     handoverId, staffId, staffName, locationId, locationName, occurredAt,
     cashDeclared, mpesaDeclared,            // current derived (incl. corrections)
@@ -692,10 +710,15 @@ Admin reconciliation view's read. → `200` with:
     shortfallNotes: string[],              // notes on the latest receipt
     receiptId                               // null if no receipt
   }],
+  closedDates: string[],                    // business dates in [from,to] that are day-closed
   totals: { cashDeclared, mpesaDeclared, cashReceived, mpesaReceived,
-            cashVariance, mpesaVariance }   // received/variance sum only rows with a receipt
+            cashVariance, mpesaVariance }   // received/variance sum only rows with a receipt, across the WHOLE range
 }
 ```
+The Handovers screen groups `rows` by each row's own Nairobi business
+day and uses `closedDates` to gate "Record receipt" **per row** — not on
+whether the range as a whole includes today; an Admin may still receive
+a still-open past day.
 
 ---
 

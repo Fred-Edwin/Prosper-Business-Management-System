@@ -173,19 +173,11 @@ export function TransactionsTab({
   );
 
   // ── Handovers tab: delegate ─────────────────────────────────────────
-  // Handover reconciliation is a single-DAY worksheet (declared vs
-  // received vs variance, with day totals) — a multi-day span has no
-  // meaning for it. When a range is picked it reconciles the range's end
-  // day (`to`); <HandoversView> captions that.
+  // Handover reconciliation spans the full selected range (ADR-79) — the
+  // worksheet groups by each row's own business day and gates "Record
+  // receipt" per row on that day's own closed state, not on `isRangeToday`.
   if (tab === "handovers") {
-    return (
-      <HandoversView
-        date={to}
-        isToday={isRangeToday}
-        rangeFrom={from}
-        rangeTo={to}
-      />
-    );
+    return <HandoversView from={from} to={to} />;
   }
 
   // ── Purchases / Deliveries columns ─────────────────────────────────

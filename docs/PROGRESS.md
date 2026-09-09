@@ -16,6 +16,57 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Admin handover back-entry, per-row receipt gate, multi-day worksheet (2026-09-09) — DONE — ADR-79
+
+Follow-up to the Date-column entry below: the remaining three connected
+pieces scoped in `docs/design/flows/admin-record-handover.md`, shipped
+together. Decision record: `docs/DECISIONS.md` ADR-79.
+
+- **Back-entry.** New `recordHandoverForDate`
+  (`lib/domain/handovers/record-handover-for-date.ts`) — Admin-only,
+  `staffId`/`locationId` (must match the staff member's own location) +
+  figures + `businessDate`; `occurredAt` pinned to noon Nairobi.
+  Neither `assertStaffDateIsToday` nor `assertDayOpen` applies — Admin
+  may act on any day, open or closed (mirrors
+  `assertActorMayCorrectOnDate`'s closed-day branch); `CONFLICT` if an
+  original handover already exists for that staff+day.
+  `POST /api/handovers/backdated` (new route, distinct from the staff
+  declare path). `RecordHandoverDrawer` — new "Record a handover" button
+  on the Handovers tab; staff picker from the existing roster
+  (`useRoster(null)`) filtered to cashier/canteen_attendant, active.
+- **Receipt gate fixed.** `getReconciliation` now also returns
+  `closedDates: string[]` (dates in range that are day-closed). The
+  worksheet gates "Record receipt" per row on **that row's own** closed
+  state, not on `isToday` — the domain/route already allowed receiving on
+  any open day; the block was 100% a UI gate on the wrong signal. `isToday`
+  removed from `HandoversView` / `ReconRow` / `MobileHandoverCard`.
+- **Multi-day worksheet.** `getReconciliation(dateOrRange)` — a bare
+  `string` still means one day; `{from, to}` covers a range.
+  `ReconciliationView.date` → `from`/`to`. `GET
+  /api/handovers/reconciliation` accepts `date` OR `from`+`to`.
+  `transactions-tab.tsx` now passes the header control's real range
+  (dropped the "reconciles the range's end day" clamp + caption).
+  `handovers-tab.tsx` groups rows into a `DayGroupHeader` + that day's
+  rows, both desktop and mobile. `use-financials-kpis.ts`'s handover-count
+  fetch widened the same way (was silently `to`-only — undercounted any
+  range wider than a day).
+- **Files:** `lib/domain/handovers/{record-handover-for-date,
+  get-reconciliation,types,index}.ts`, `lib/validation/handovers.ts`,
+  `app/api/handovers/{backdated/route,reconciliation/route}.ts`,
+  `app/admin/financials/{handovers-tab,transactions-tab,use-handovers,
+  use-financials-kpis,record-handover-drawer(new)}.tsx`.
+- **Tests:** `lib/domain/handovers/record-handover-for-date.test.ts` (9,
+  incl. a regression asserting no `MoneyMovement` is written);
+  `app/api/handovers/backdated/route.test.ts` (role gate, 4);
+  `tests/screens/record-handover-drawer.screen.test.tsx` (4, new);
+  `tests/screens/admin-handovers.screen.test.tsx` +6 (closed-day gate ×2,
+  day-grouping, record-a-handover trigger); `financials.screen.test.tsx`
+  fixtures updated to the new `ReconciliationView` shape.
+- **Gates:** `pnpm test:unit` 534/534 · DB lane (`vitest.db.config.ts`,
+  full suite) 805/805 · `pnpm typecheck` clean · `pnpm build` clean.
+
+---
+
 ## Handovers worksheet — per-row Date column (2026-09-09) — DONE
 
 Client feedback: the Restaurant COGS-with-no-sales question was

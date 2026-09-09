@@ -85,7 +85,7 @@ export function useFinancialsKpis(from: string, to: string) {
           json<ExpenseView[]>(`/api/expenses?${q}`),
           json<OwnerTransactionView[]>(`/api/owner-transactions?${q}`),
           json<ReconciliationView>(
-            `/api/handovers/reconciliation?date=${encodeURIComponent(to)}`,
+            `/api/handovers/reconciliation?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
           ),
           stockApi.listMovements({
             movementType: "non_sale_consumption",

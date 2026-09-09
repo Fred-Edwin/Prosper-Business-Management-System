@@ -6,6 +6,7 @@ export { DomainError } from "./errors";
 export * from "./types";
 
 export { declareHandover } from "./declare-handover";
+export { recordHandoverForDate } from "./record-handover-for-date";
 export { editOwnHandover } from "./edit-own-handover";
 export { recordReceipt } from "./record-receipt";
 export { correctHandover } from "./correct-handover";
