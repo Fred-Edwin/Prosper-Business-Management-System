@@ -16,6 +16,48 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Category filters on the staff item pickers (2026-09-10) — DONE
+
+Client feedback: the Cashier / Canteen / Store-Manager screens where staff
+scroll a long list to add items take too long to scroll now that the
+catalog has grown. She wants each ingredient / dish / good to carry a
+category, and a category filter row on those pickers.
+
+`Product.category` (free-text, optional, all kinds) has existed since M2
+and already powered the Cashier New-Order + Canteen Stock-Count tabs. This
+change extends the same pattern everywhere else and makes the tab sets
+dynamic (built from the products' real categories, not a hardcoded list).
+
+- **New:** `lib/catalog-categories.ts` (+ test) — `buildCategoryTabs`,
+  `matchesCategory`, `categoryKey`, `usedCategoryNames`. One
+  `Uncategorised` bucket for items with no category; the row hides itself
+  when nothing is categorised (`<= 1` tab).
+- **`MovementPickerFlow`** — `categoryTabs` now `true` on every
+  item-picking flow (was `transfer`/`dispatch` only); the hardcoded
+  `CATEGORY_TABS` (`All · Beverages & Soda · Shop Goods`) is gone,
+  replaced by tabs from the in-scope products' `category`.
+- **`StockLevelsView`** — new `categoryPills` mode: the Canteen stock
+  screen now filters by real `category` instead of the hand-maintained
+  `BEVERAGE_RE` regex pill. SM keeps its kind-based pills (unchanged).
+  `CANTEEN_STOCK_PILLS` export removed.
+- **Catalog drawer** — the Category field gets a `<datalist>` of
+  categories already in use, so tabs don't fragment (`Drinks` vs
+  `drinks`). Still free-text.
+- No schema / domain / API / ledger change — pure read-path UI.
+- **Rollout:** the Admin sets categories on the existing catalog in
+  Catalog; until then everything sits under "Uncategorised".
+
+- **Files:** `lib/catalog-categories.ts` (+ `.test.ts`),
+  `app/store-manager/flows/movement-picker-flow.tsx`,
+  `app/store-manager/stock/stock-levels-view.tsx`,
+  `app/canteen/stock/page.tsx`, `app/admin/catalog/product-drawer.tsx`,
+  `app/admin/catalog/products-tab.tsx`,
+  `tests/screens/stock-levels.screen.test.tsx`,
+  `tests/screens/store-manager-flows.screen.test.tsx`. ADR-80.
+- **Gates:** `pnpm test` ✅ · `pnpm typecheck` ✅ · `pnpm build` ✅
+
+---
+
 ## Handovers worksheet — action buttons STILL clipped after the last fix; real cause found (2026-09-09) — DONE
 
 The previous entry's `min-w-[1202px]` fix was itself wrong — it summed

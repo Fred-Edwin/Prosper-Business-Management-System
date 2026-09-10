@@ -18,6 +18,7 @@ import { StatusChip } from "@/components/kit/status-chip";
 import { Select } from "@/components/kit/select";
 import { useToast } from "@/components/kit/toast";
 import type { ProductWithLocations } from "@/lib/domain/catalog";
+import { usedCategoryNames } from "@/lib/catalog-categories";
 import { useCatalog, type CatalogListFilter } from "./use-catalog";
 import { ProductDrawer } from "./product-drawer";
 import { ProductDeleteDialog } from "./product-delete-dialog";
@@ -170,6 +171,15 @@ export function ProductsTab({
   const visibleProducts = tab.archived
     ? products.filter((p) => p.deletedAt != null)
     : products;
+
+  // Category names already in use — feeds the drawer's autocomplete so a
+  // new item's category stays consistent with the pickers (client
+  // feedback 2026-09-10). Sourced from the currently loaded set; a
+  // convenience, never a constraint (the field is still free-text).
+  const categorySuggestions = React.useMemo(
+    () => usedCategoryNames(products),
+    [products],
+  );
 
   // Kept as just the number (not "N products") — the header badge sits
   // right next to the "Product Catalog" title in a single-row mobile
@@ -478,6 +488,7 @@ export function ProductsTab({
         onClose={() => setDrawerOpen(false)}
         locations={locations}
         product={selected}
+        categorySuggestions={categorySuggestions}
         onCreate={create}
         onUpdate={update}
         onRequestDelete={

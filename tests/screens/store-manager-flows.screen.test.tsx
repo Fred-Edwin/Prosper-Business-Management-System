@@ -432,6 +432,7 @@ describe("SM — Issue Ingredients", () => {
     expect(screen.queryByRole("group", { name: /^Rice Basmati,/ })).not.toBeInTheDocument();
   });
 
+
   it("empty / loading / error states render", () => {
     staff.data = { movements: [], products: [], locations: LOCATIONS };
     const r1 = renderFlow(<MovementPickerFlow mode="issue" />);
@@ -460,6 +461,13 @@ describe("SM — Record Batch Production", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("group", { name: /^Grilled Chicken,/ })).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: /^Beef Fillet,/ })).not.toBeInTheDocument();
+  });
+
+  it("no category tab row when nothing in scope is categorised", () => {
+    // Production lists dishes only; both fixture dishes have category:
+    // null, so the tab row self-hides (leaving search as the only filter).
+    renderFlow(<MovementPickerFlow mode="production" />);
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   });
 
   it("populated: 2 dishes → +total → one productionBatch POST to the Restaurant", async () => {
@@ -861,8 +869,29 @@ describe("SM — Log Non-Sale", () => {
     );
   });
 
-  it("has no category tab row (search only)", () => {
+  it("shows the category tab row built from the in-scope products' categories", async () => {
     renderFlow(<MovementPickerFlow mode="non-sale" />);
-    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    const tablist = await screen.findByRole("tablist");
+    // Fixture: only soda/water carry "Beverages & Soda"; the rest are null.
+    expect(
+      within(tablist).getByRole("tab", { name: "All" }),
+    ).toBeInTheDocument();
+    expect(
+      within(tablist).getByRole("tab", { name: "Beverages & Soda" }),
+    ).toBeInTheDocument();
+    expect(
+      within(tablist).getByRole("tab", { name: "Uncategorised" }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(tablist).getByRole("tab", { name: "Beverages & Soda" }),
+    );
+    expect(
+      screen.getByRole("group", { name: /^Soda 300ml,/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: /^Beef Fillet,/ }),
+    ).not.toBeInTheDocument();
   });
 });
