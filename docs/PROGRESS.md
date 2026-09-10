@@ -43,6 +43,13 @@ dynamic (built from the products' real categories, not a hardcoded list).
 - **Catalog drawer** — the Category field gets a `<datalist>` of
   categories already in use, so tabs don't fragment (`Drinks` vs
   `drinks`). Still free-text.
+- **Catalog table** — the column that read "Category" but actually showed
+  the product *kind* (Ingredient / Dish / Goods) is renamed **Kind**; a
+  real **Category** column is added next to it (`r.category` verbatim,
+  blank when unassigned). Mirrored on the mobile card. Internal
+  `CATEGORY_LABEL`/`CATEGORY_TONE` → `KIND_LABEL`/`KIND_TONE`; desktop
+  table `min-w` 994 → 1106 for the extra column. The kind-filter tab row
+  is unchanged (it does filter kind).
 - No schema / domain / API / ledger change — pure read-path UI.
 - **Rollout:** the Admin sets categories on the existing catalog in
   Catalog; until then everything sits under "Uncategorised".
@@ -53,8 +60,12 @@ dynamic (built from the products' real categories, not a hardcoded list).
   `app/canteen/stock/page.tsx`, `app/admin/catalog/product-drawer.tsx`,
   `app/admin/catalog/products-tab.tsx`,
   `tests/screens/stock-levels.screen.test.tsx`,
-  `tests/screens/store-manager-flows.screen.test.tsx`. ADR-80.
-- **Gates:** `pnpm test` ✅ · `pnpm typecheck` ✅ · `pnpm build` ✅
+  `tests/screens/store-manager-flows.screen.test.tsx`,
+  `tests/screens/catalog.screen.test.tsx`. ADR-80.
+- **Gates:** `pnpm typecheck` ✅ · `pnpm build` ✅ · affected test files
+  pass directly; full `pnpm test` on this WSL2 box is slow and its
+  parallel-worker DB timeouts are pre-existing infra flake (unrelated
+  suites: `lib/domain/sales/*`), CI is the source of truth.
 
 ---
 

@@ -40,17 +40,25 @@ Seed logins are all **PIN 1234**: `Admin`, `Store Manager`, `Cashier`,
 ## 1. Admin — set a category (Catalog)
 
 1. Sign in as **Admin** → **Catalog** → **Products**.
-2. Click **Edit** on **Rice**.
-3. In the **Category** field, start typing `D`. A dropdown suggests
+2. Look at the table columns first. What used to be one column labelled
+   "Category" (but actually showing *Ingredient / Dish / Goods*) is now
+   **Kind**, and there is a separate **Category** column beside it —
+   blank for the three ingredients, "Drinks" / "Mains" / "Sides" /
+   "Bakery" for the seeded dishes and goods. Same split on the mobile
+   card (`Kind · Category · per unit · locations`).
+4. Click **Edit** on **Rice**.
+5. In the **Category** field, start typing `D`. A dropdown suggests
    **Drinks**, **Sides**, **Mains**, **Bakery** — the categories already
    in use. This is the new `<datalist>` autocomplete: it keeps names
    consistent so you don't end up with both "Drinks" and "drinks".
-4. Type a new one — `Grains` — and **Save**. (Free text is still allowed;
-   the suggestions are just a convenience.)
-5. Edit **Cooking oil** and **Chicken Breast** the same way, both
+6. Type a new one — `Grains` — and **Save**. (Free text is still allowed;
+   the suggestions are just a convenience.) Back in the table, Rice's
+   **Category** cell now reads `Grains` while its **Kind** stays
+   `Ingredient`.
+7. Edit **Cooking oil** and **Chicken Breast** the same way, both
    `Grains`, and save.
 
-You now have four categories in use: Drinks, Sides, Mains, Bakery, Grains.
+You now have five categories in use: Drinks, Sides, Mains, Bakery, Grains.
 
 ---
 

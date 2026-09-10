@@ -4530,6 +4530,15 @@ category text (`/bever|soda|drink|juice|water/i`).
   `<datalist>` of categories already in use (from `usedCategoryNames`
   over the loaded catalog), so a new item's category does not fragment
   the tabs (`Drinks` vs `drinks` vs `Beverages`).
+- **Catalog table:** the column headed "Category" that in fact rendered
+  the product *kind* (`KIND_LABEL[r.kind]` — Ingredient / Dish / Goods)
+  is renamed **Kind**, and a genuine **Category** column is added beside
+  it showing `r.category` verbatim, blank when unassigned. Mirrored on
+  the mobile card. This corrects a mislabel that predates the feature and
+  became actively confusing once "category" meant a specific thing on
+  every picker. The kind-based *filter tab row* on the Catalog page is
+  unchanged — it does filter kind, and is not renamed here to avoid
+  scope-creep (a follow-up may reconcile that wording).
 
 **Consequences.**
 - No schema / domain / API / ledger change. This is entirely read-path UI
