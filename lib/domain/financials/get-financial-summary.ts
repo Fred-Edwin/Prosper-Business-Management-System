@@ -269,9 +269,20 @@ const COST_VALUE_ZERO_KINDS = new Set(["dish"]);
  * `costValue` = `buyingPrice` for ingredient / goods, `0` for dish. A dish
  * therefore contributes nothing to opening/closing, and production (which
  * only adds dishes) contributes nothing — but we also scope "purchases"
- * to `purchase_receipt` explicitly rather than leaning on that. Transfers
- * are never in the purchases term, so an internal Store→Canteen move
- * nets to zero across the opening/closing deltas and doesn't touch COGS.
+ * to `purchase_receipt` explicitly rather than leaning on that.
+ *
+ * **Transfers are cost-neutral per location.** An internal move (e.g.
+ * Restaurant→Canteen) is two `transfer` rows — a `-q` at the source, a
+ * `+q` at the destination — and neither is a purchase. Business-wide the
+ * two rows cancel, so consolidated COGS is untouched. But per location
+ * they do NOT cancel: a row dated *inside* the period lands only in the
+ * closing term, so the source shows phantom "consumption" of what it
+ * shipped out and the destination shows negative COGS for what it
+ * received. We cancel that by adding back the in-period `transfer` rows'
+ * value per location (a row dated before `start` already nets to zero —
+ * it is in both the opening and the closing term). The cost then follows
+ * the stock and only becomes COGS at the location that finally sells or
+ * consumes the item (ADR-81).
  *
  * **Why `opening` rows are not dated like other movements.** The formula
  * assumes every non-purchase change in the ledger is *consumption* —
@@ -325,7 +336,7 @@ async function cogsByLocationSweep(
     ]),
   );
 
-  const [openingRows, closingRows, purchaseRows] = await Promise.all([
+  const [openingRows, closingRows, purchaseRows, transferRows] = await Promise.all([
     prisma.stockMovement.groupBy({
       by: ["productId", "locationId"],
       _sum: { quantity: true },
@@ -356,6 +367,18 @@ async function cogsByLocationSweep(
         occurredAt: { gte: start, lt: end },
       },
     }),
+    // In-period internal transfers. A row before `start` is already in both
+    // the opening and the closing term and nets to zero; one inside the
+    // period is in the closing term only, so we add its value back to
+    // cancel that per-location effect (see the doc comment).
+    prisma.stockMovement.groupBy({
+      by: ["productId", "locationId"],
+      _sum: { quantity: true },
+      where: {
+        movementType: "transfer",
+        occurredAt: { gte: start, lt: end },
+      },
+    }),
   ]);
 
   // location -> signed value contribution.
@@ -371,6 +394,7 @@ async function cogsByLocationSweep(
   for (const r of openingRows) add(r.locationId, valueOf(r)); // + opening
   for (const r of purchaseRows) add(r.locationId, valueOf(r)); // + purchases
   for (const r of closingRows) add(r.locationId, valueOf(r).negated()); // − closing
+  for (const r of transferRows) add(r.locationId, valueOf(r)); // + in-period transfers (cancel closing effect)
 
   return byLocation;
 }

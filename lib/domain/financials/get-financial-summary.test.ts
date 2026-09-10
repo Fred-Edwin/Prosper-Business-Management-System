@@ -372,6 +372,93 @@ describe("getFinancialSummary — the PRD §4.7 / ADR-55 profit chain", () => {
     await prisma.stockMovement.delete({ where: { id: wasteRow.id } });
   });
 
+  it("a goods transfer is cost-neutral per location; the cost follows the stock to where it sells (ADR-81)", async () => {
+    // Canteen goods @ buyingPrice 40. Baseline per-location COGS.
+    const base = await getFinancialSummary(FROM, TO);
+    const canteenBase = base.perLocation.find(
+      (l) => l.locationId === ctx.locationIds.canteen,
+    )!.cogs;
+    const restaurantBase = base.perLocation.find(
+      (l) => l.locationId === ctx.locationIds.restaurant,
+    )!.cogs;
+    const consolidatedBase = base.consolidated.cogs;
+
+    // Move 10 units Canteen → Restaurant, inside the window (paired rows).
+    await prisma.stockMovement.createMany({
+      data: [
+        {
+          productId: ctx.goodsId,
+          locationId: ctx.locationIds.canteen,
+          movementType: "transfer",
+          quantity: new Prisma.Decimal(-10),
+          recordedById: ctx.actorId,
+          occurredAt: d("2026-05-05T14:00:00Z"),
+          transferCounterpartLocationId: ctx.locationIds.restaurant,
+        },
+        {
+          productId: ctx.goodsId,
+          locationId: ctx.locationIds.restaurant,
+          movementType: "transfer",
+          quantity: new Prisma.Decimal(10),
+          recordedById: ctx.actorId,
+          occurredAt: d("2026-05-05T14:30:00Z"),
+          transferCounterpartLocationId: ctx.locationIds.canteen,
+        },
+      ],
+    });
+
+    // The transfer alone moves no per-location COGS and no consolidated COGS.
+    const afterTransfer = await getFinancialSummary(FROM, TO);
+    expect(
+      afterTransfer.perLocation.find(
+        (l) => l.locationId === ctx.locationIds.canteen,
+      )!.cogs,
+    ).toBe(canteenBase);
+    expect(
+      afterTransfer.perLocation.find(
+        (l) => l.locationId === ctx.locationIds.restaurant,
+      )!.cogs,
+    ).toBe(restaurantBase);
+    expect(afterTransfer.consolidated.cogs).toBe(consolidatedBase);
+
+    // Now sell 4 of the transferred units AT THE RESTAURANT. The cost
+    // (4 × 40 = 160) lands at the Restaurant, not the Canteen.
+    const sale = await prisma.stockMovement.create({
+      data: {
+        productId: ctx.goodsId,
+        locationId: ctx.locationIds.restaurant,
+        movementType: "sale",
+        quantity: new Prisma.Decimal(-4),
+        recordedById: ctx.actorId,
+        occurredAt: d("2026-05-05T15:00:00Z"),
+      },
+    });
+
+    const afterSale = await getFinancialSummary(FROM, TO);
+    expect(
+      afterSale.perLocation.find(
+        (l) => l.locationId === ctx.locationIds.restaurant,
+      )!.cogs,
+    ).toBe(new Prisma.Decimal(restaurantBase).add(160).toFixed(2));
+    expect(
+      afterSale.perLocation.find(
+        (l) => l.locationId === ctx.locationIds.canteen,
+      )!.cogs,
+    ).toBe(canteenBase);
+    expect(afterSale.consolidated.cogs).toBe(
+      new Prisma.Decimal(consolidatedBase).add(160).toFixed(2),
+    );
+
+    await prisma.stockMovement.delete({ where: { id: sale.id } });
+    await prisma.stockMovement.deleteMany({
+      where: {
+        productId: ctx.goodsId,
+        movementType: "transfer",
+        occurredAt: { gte: d("2026-05-05T13:00:00Z"), lt: d("2026-05-05T15:00:00Z") },
+      },
+    });
+  });
+
   it("per-location carries revenue + COGS + gross; a superseded order is not double-counted", async () => {
     const s = await getFinancialSummary(FROM, TO);
 

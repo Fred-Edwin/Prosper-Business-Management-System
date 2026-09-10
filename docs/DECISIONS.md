@@ -4566,3 +4566,65 @@ category text (`/bever|soda|drink|juice|water/i`).
   non-sale flow instead of category tabs* — deferred. Category tabs are
   consistent with every other picker; if the write-off screen proves
   crowded in practice, a kind split can be added on top later.
+
+---
+
+## ADR-81: Internal transfers are cost-neutral for **each** location, not just the business (Client feedback, 2026-09-10)
+
+**Status:** DECIDED (maintenance — client feedback, 2026-09-10).
+
+**Context.** COGS is `opening stock value + purchase-receipt value −
+closing stock value`, valued by kind (ADR-55). ADR-55 established that a
+transfer between the business's own locations "never moves COGS" — and
+that is true **consolidated**: the dispatch (`-q`) row at the source and
+the accept (`+q`) row at the destination are equal and opposite, so they
+cancel in the business-wide total.
+
+But `getFinancialSummary` also reports COGS **per location**, running the
+same formula scoped to one location's rows. There a transfer does **not**
+cancel: a `transfer` row dated inside the period lands in that location's
+closing term only (there is no opening-side or purchases-side term for
+it). The source's closing stock drops, so the formula reads the shipped
+goods as *consumption* — phantom COGS with no matching sale. The
+destination's closing stock rises with no purchase, so its COGS goes
+**negative**, inflating its gross profit.
+
+The client hit this exactly: on a day the Restaurant only transferred 44
+Smokies (a `goods` item, buying price 25.50) to the Canteen and recorded
+no Restaurant sales, the Restaurant showed COGS 1,122.00 against zero
+revenue and the Canteen showed COGS −102.00 with gross profit above its
+own revenue. (Dishes are valued at 0, so dish transfers never showed this
+— only goods-with-a-buying-price transfers did, which is why it surfaced
+only now.)
+
+**Decision.** Internal transfers are cost-neutral for **each** location.
+`cogsByLocationSweep` gains a fourth term: `+ Σ (in-period transfer rows)
+quantity × costValue`, per location. This exactly cancels the closing-term
+contribution of an in-period transfer row (a row dated before the period
+start is already in both the opening and the closing term and nets to
+zero on its own, so only in-period rows need the correction). The cost
+then stays with the stock and becomes COGS only at the location that
+finally **sells or consumes** the item.
+
+Consolidated COGS is unchanged — the new per-location terms sum to zero
+across locations, exactly as the dispatch/accept pair already did.
+
+**Consequences.**
+- No schema / API / ledger change. One read-path term added to the
+  financial-summary domain function; screens unchanged.
+- Per-location COGS and gross profit now reflect what each location
+  actually sold, not what passed through it. The Store is unaffected
+  (ADR-67: transfers never touch the Store).
+- `cogs-model-guards-regression.test.ts` previously asserted the buggy
+  behaviour (Restaurant +1,200 / Canteen −1,200 from a pure transfer);
+  updated to assert both sides are 0.
+
+**Alternatives considered.**
+- *Literal reading of the client's words — "keep the cost in the
+  Restaurant"* (leave the source's phantom COGS, only fix the Canteen).
+  Rejected: it just moves the odd-looking number from one location to the
+  other. The Restaurant would still show a cost on a no-sale day, and the
+  Canteen's eventual sale of those goods would show as pure profit — cost
+  and revenue on different books.
+- *A UI caveat on the per-location table when transfers occurred.*
+  Rejected — leaves misleading numbers on screen.

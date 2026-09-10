@@ -16,6 +16,35 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Per-location COGS: internal transfers no longer distort it (2026-09-10) — DONE
+
+Client feedback: on a day the Restaurant only transferred ~44 Smokies to
+the Canteen and made no Restaurant sales, the Financials per-location
+table showed Restaurant COGS 1,122.00 against zero revenue, and Canteen
+COGS −102.00 with gross profit above its own revenue.
+
+Cause: `cogsByLocationSweep` (`lib/domain/financials/get-financial-summary.ts`)
+runs the ADR-55 COGS formula (`opening + purchase-receipts − closing`)
+**per location**. A `transfer` row inside the period lands only in that
+location's closing term — no offsetting term — so the source reads the
+shipped goods as consumption (phantom COGS) and the destination's closing
+stock rises with no purchase (negative COGS). Consolidated COGS was always
+correct (the dispatch/accept pair cancels); only the per-location split
+was wrong. Dishes value at 0, so only goods-with-a-buying-price transfers
+showed it.
+
+Fix (ADR-81): added a fourth per-location term — `+ Σ (in-period transfer
+rows) qty × costValue` — that cancels the closing-term contribution of an
+in-period transfer. Transfers are now cost-neutral for **each** location;
+the cost stays with the stock and becomes COGS only where the item is
+finally sold or consumed. Consolidated COGS unchanged.
+
+- Files: `lib/domain/financials/get-financial-summary.ts` (domain),
+  `lib/domain/financials/get-financial-summary.test.ts` (+1 test),
+  `lib/domain/financials/cogs-model-guards-regression.test.ts` (updated —
+  it had asserted the buggy +1,200 / −1,200), `docs/DECISIONS.md` (ADR-81).
+- Gates: `pnpm typecheck` ✅ · `pnpm build` ✅ · `pnpm test` ✅.
+
 ## Category filters on the staff item pickers (2026-09-10) — DONE
 
 Client feedback: the Cashier / Canteen / Store-Manager screens where staff
