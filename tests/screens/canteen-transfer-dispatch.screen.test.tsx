@@ -177,6 +177,11 @@ describe("Canteen — Transfer Dispatch flow (Option-A picker)", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText(/Canteen → Restaurant/)).toBeInTheDocument();
 
+    // Wait for the canteen-sellable set to load — the category tab row is
+    // built from those products' `category`, so it appears only once they
+    // are in.
+    await screen.findByRole("group", { name: /^Soda 300ml,/ });
+
     // category tab narrows to the two beverages
     await user.click(screen.getByRole("tab", { name: "Beverages & Soda" }));
     expect(
