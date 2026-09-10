@@ -18,6 +18,7 @@ import { StatusChip } from "@/components/kit/status-chip";
 import { Select } from "@/components/kit/select";
 import { useToast } from "@/components/kit/toast";
 import type { ProductWithLocations } from "@/lib/domain/catalog";
+import { usedCategoryNames } from "@/lib/catalog-categories";
 import { useCatalog, type CatalogListFilter } from "./use-catalog";
 import { ProductDrawer } from "./product-drawer";
 import { ProductDeleteDialog } from "./product-delete-dialog";
@@ -30,12 +31,16 @@ const TABS = [
   { key: "archived", label: "Archived", kind: undefined, archived: true },
 ];
 
-const CATEGORY_LABEL: Record<string, string> = {
+// The product's *kind* (ingredient / dish / goods) — a fixed enum, always
+// set. Shown in the "Kind" column. NOT the same as `Product.category` (the
+// free-text menu grouping — "Drinks", "Mains", … — shown in its own
+// "Category" column, blank when unassigned).
+const KIND_LABEL: Record<string, string> = {
   ingredient: "Ingredient",
   dish: "Dish",
   goods: "Goods",
 };
-const CATEGORY_TONE: Record<string, string> = {
+const KIND_TONE: Record<string, string> = {
   ingredient: "text-info",
   dish: "text-warning",
   goods: "text-success",
@@ -171,6 +176,15 @@ export function ProductsTab({
     ? products.filter((p) => p.deletedAt != null)
     : products;
 
+  // Category names already in use — feeds the drawer's autocomplete so a
+  // new item's category stays consistent with the pickers (client
+  // feedback 2026-09-10). Sourced from the currently loaded set; a
+  // convenience, never a constraint (the field is still free-text).
+  const categorySuggestions = React.useMemo(
+    () => usedCategoryNames(products),
+    [products],
+  );
+
   // Kept as just the number (not "N products") — the header badge sits
   // right next to the "Product Catalog" title in a single-row mobile
   // header (ADR-56); a two-word badge wrapped onto its own line and
@@ -217,14 +231,25 @@ export function ProductsTab({
       ),
     },
     {
-      key: "category",
-      header: "Category",
+      key: "kind",
+      header: "Kind",
       width: "w-[76px]",
       render: (r) => (
-        <span className={`font-ui font-(--weight-medium) ${CATEGORY_TONE[r.kind]}`}>
-          {CATEGORY_LABEL[r.kind]}
+        <span className={`font-ui font-(--weight-medium) ${KIND_TONE[r.kind]}`}>
+          {KIND_LABEL[r.kind]}
         </span>
       ),
+    },
+    {
+      key: "category",
+      header: "Category",
+      width: "w-[88px]",
+      render: (r) =>
+        r.category ? (
+          <span className="font-ui [color:var(--text-secondary)]">
+            {r.category}
+          </span>
+        ) : null,
     },
     {
       key: "locations",
@@ -346,13 +371,16 @@ export function ProductsTab({
 
       {/* Desktop table — scrolls horizontally instead of overflowing the
           page if the content area is ever narrower than the column set
-          (a smaller laptop window, the sidebar expanded, etc). */}
+          (a smaller laptop window, the sidebar expanded, etc). min-w is
+          the summed column widths + row gaps: bumped from 994 to 1106
+          when the Category column (w-[88px] + one --sp-6 gap) was split
+          out from Kind. */}
       <div className="hidden md:block overflow-x-auto">
         <SimpleTable
           columns={columns}
           rows={visibleProducts}
           rowKey={(r) => r.id}
-          className="min-w-[994px]"
+          className="min-w-[1106px]"
           loading={loading && visibleProducts.length === 0}
           emptyState={{
             variant: filtered ? "filtered" : "default",
@@ -403,9 +431,14 @@ export function ProductsTab({
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-[4px]">
-                      <div className={`font-ui text-sm/micro ${CATEGORY_TONE[card.kind]}`}>
-                        {CATEGORY_LABEL[card.kind]}
+                      <div className={`font-ui text-sm/micro ${KIND_TONE[card.kind]}`}>
+                        {KIND_LABEL[card.kind]}
                       </div>
+                      {card.category && (
+                        <div className="font-ui [color:var(--text-secondary)] text-sm/micro">
+                          · {card.category}
+                        </div>
+                      )}
                       <div className="font-ui [color:var(--text-secondary)] text-sm/micro">
                         · per {card.unitLabel} ·
                       </div>
@@ -478,6 +511,7 @@ export function ProductsTab({
         onClose={() => setDrawerOpen(false)}
         locations={locations}
         product={selected}
+        categorySuggestions={categorySuggestions}
         onCreate={create}
         onUpdate={update}
         onRequestDelete={

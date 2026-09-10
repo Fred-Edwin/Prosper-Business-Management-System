@@ -35,6 +35,7 @@ export const DB_FREE_INCLUDE = [
   "app/admin/stock/use-stock.test.ts",
   "app/design-system/tokens.test.ts",
   "lib/auth/roles.test.ts",
+  "lib/catalog-categories.test.ts",
   "lib/time/index.test.ts",
 ];
 

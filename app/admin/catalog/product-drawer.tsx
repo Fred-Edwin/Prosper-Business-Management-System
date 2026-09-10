@@ -56,6 +56,9 @@ export type ProductDrawerProps = {
   locations: Location[];
   /** `null` = create mode; a product = edit mode. */
   product: ProductWithLocations | null;
+  /** Category names already in use — autocomplete for the Category field
+   *  so it stays consistent with the staff pickers (feedback 2026-09-10). */
+  categorySuggestions?: string[];
   onCreate: (input: CreateProductInput) => Promise<void>;
   onUpdate: (id: string, input: CreateProductInput) => Promise<void>;
   /** Opens the friction delete dialog for the product being edited (A2). */
@@ -67,6 +70,7 @@ export function ProductDrawer({
   onClose,
   locations,
   product,
+  categorySuggestions = [],
   onCreate,
   onUpdate,
   onRequestDelete,
@@ -361,10 +365,12 @@ export function ProductDrawer({
         </FormField>
 
         {/* M2 6b: menu category — free-text, optional. Groups the C2 / K1
-            product grids into category tabs ("" → the "Uncategorised" tab). */}
+            product grids into category tabs ("" → the "Uncategorised" tab).
+            2026-09-10: a <datalist> of categories already in use, so a
+            staff picker's tabs don't fragment ("Drinks" vs "drinks"). */}
         <FormField
           label="Category"
-          hint="Optional. Groups this item on the Cashier order grid (e.g. Mains, Drinks)."
+          hint="Optional. Groups this item on the staff order / stock screens (e.g. Mains, Drinks)."
           error={fieldErrors.category}
           className="w-full"
         >
@@ -377,6 +383,7 @@ export function ProductDrawer({
             >
               <input
                 id={id}
+                list="product-category-suggestions"
                 aria-describedby={describedBy}
                 aria-invalid={invalid}
                 value={category}
@@ -384,6 +391,11 @@ export function ProductDrawer({
                 placeholder="e.g. Mains, Drinks, Sides"
                 className="font-ui [color:var(--text-primary)] text-sm/micro w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
               />
+              <datalist id="product-category-suggestions">
+                {categorySuggestions.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
             </div>
           )}
         </FormField>

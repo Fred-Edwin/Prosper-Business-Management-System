@@ -9,10 +9,11 @@
 // movement → closing — instead of a bare current balance, so a product
 // that didn't move today still reads "Open 40 · — · Close 40".
 //
-// M2-3d: the filter pill set is a prop. SM keeps the kind-based
-// `All · Ingredients · Goods · Dishes`; the Canteen passes
-// `All · Beverages · Goods` (no dead "Dishes" pill) with category-based
-// matchers. Location scoping is server-side — the mocked
+// M2-3d: the SM filter pill set is a kind-based prop
+// (`All · Ingredients · Goods · Dishes`). 2026-09-10 (client feedback):
+// the Canteen now passes `categoryPills` and the pill row is built from
+// each stocked product's Admin-set `category` — `All` + one pill per
+// distinct category. Location scoping is server-side — the mocked
 // `useStockCard` only ever returns the rows for the resolved location.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
@@ -56,7 +57,6 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
 
 import {
   StockLevelsView,
-  CANTEEN_STOCK_PILLS,
   SM_STOCK_PILLS,
 } from "@/app/store-manager/stock/stock-levels-view";
 
@@ -68,7 +68,7 @@ function renderCanteen() {
     <StockLevelsView
       locationLabel="Canteen"
       locationType="canteen"
-      pillSet={CANTEEN_STOCK_PILLS}
+      categoryPills
     />,
   );
 }
@@ -218,43 +218,59 @@ describe("Stock Levels — the pill set is a prop (M2-3d)", () => {
     expect(screen.getByText("Soda 300ml")).toBeInTheDocument();
   });
 
-  it("Canteen gets All · Beverages · Goods — and NO 'Dishes' pill", () => {
-    renderCanteen();
-    const group = screen.getByRole("radiogroup", {
-      name: "Filter by product kind",
-    });
-    for (const label of ["All", "Beverages", "Goods"]) {
-      expect(within(group).getByRole("radio", { name: label })).toBeInTheDocument();
-    }
-    expect(
-      within(group).queryByRole("radio", { name: "Dishes" }),
-    ).not.toBeInTheDocument();
-    expect(CANTEEN_STOCK_PILLS.map((p) => p.label)).toEqual([
-      "All",
-      "Beverages",
-      "Goods",
-    ]);
-  });
-
-  it("Canteen 'Beverages' filters by category (soda/drink), 'Goods' is the rest", async () => {
+  it("Canteen builds the pill row from the stocked products' categories", async () => {
     levels.rows = [
       { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", opening: "144", movements: "0", closing: "144", resting: true },
       { productId: "p-mandazi", name: "Mandazi", unitLabel: "pcs", opening: "60", movements: "0", closing: "60", resting: true },
+      { productId: "p-water", name: "Water 500ml", unitLabel: "pcs", opening: "96", movements: "0", closing: "96", resting: true },
+    ];
+    renderCanteen();
+    const group = await screen.findByRole("radiogroup", {
+      name: "Filter by category",
+    });
+    // p-soda → "Drinks", p-mandazi → "Bakery", p-water → null → Uncategorised.
+    for (const label of ["All", "Drinks", "Bakery", "Uncategorised"]) {
+      expect(within(group).getByRole("radio", { name: label })).toBeInTheDocument();
+    }
+    // No category the stocked set doesn't carry.
+    expect(
+      within(group).queryByRole("radio", { name: "Mains" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("Canteen pill narrows the list to that category; Uncategorised catches the rest", async () => {
+    levels.rows = [
+      { productId: "p-soda", name: "Soda 300ml", unitLabel: "pcs", opening: "144", movements: "0", closing: "144", resting: true },
+      { productId: "p-mandazi", name: "Mandazi", unitLabel: "pcs", opening: "60", movements: "0", closing: "60", resting: true },
+      { productId: "p-water", name: "Water 500ml", unitLabel: "pcs", opening: "96", movements: "0", closing: "96", resting: true },
     ];
     renderCanteen();
     const user = userEvent.setup();
     await screen.findByText("Soda 300ml");
     const group = screen.getByRole("radiogroup", {
-      name: "Filter by product kind",
+      name: "Filter by category",
     });
 
-    await user.click(within(group).getByRole("radio", { name: "Beverages" }));
+    await user.click(within(group).getByRole("radio", { name: "Drinks" }));
     expect(screen.getByText("Soda 300ml")).toBeInTheDocument();
     expect(screen.queryByText("Mandazi")).not.toBeInTheDocument();
+    expect(screen.queryByText("Water 500ml")).not.toBeInTheDocument();
 
-    await user.click(within(group).getByRole("radio", { name: "Goods" }));
-    expect(screen.getByText("Mandazi")).toBeInTheDocument();
+    await user.click(within(group).getByRole("radio", { name: "Uncategorised" }));
+    expect(screen.getByText("Water 500ml")).toBeInTheDocument();
     expect(screen.queryByText("Soda 300ml")).not.toBeInTheDocument();
+  });
+
+  it("Canteen hides the pill row entirely when nothing is categorised", async () => {
+    levels.rows = [
+      { productId: "p-beef", name: "Beef Fillet", unitLabel: "kg", opening: "46.5", movements: "0", closing: "46.5", resting: true },
+      { productId: "p-water", name: "Water 500ml", unitLabel: "pcs", opening: "96", movements: "0", closing: "96", resting: true },
+    ];
+    renderCanteen();
+    await screen.findByText("Beef Fillet");
+    expect(
+      screen.queryByRole("radiogroup", { name: "Filter by category" }),
+    ).not.toBeInTheDocument();
   });
 
   it("Canteen empty state uses the L4Y-0 copy", () => {

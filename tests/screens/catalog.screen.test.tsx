@@ -140,6 +140,42 @@ describe("/admin/catalog — kit composition", () => {
     ).toBeInTheDocument();
   });
 
+  it("has separate Kind and Category columns; Category is blank when unassigned, its value when set", () => {
+    state.products = [
+      PRODUCT, // Chicken Breast — ingredient, category: null
+      {
+        ...PRODUCT,
+        id: "p2",
+        name: "Fanta 300ml",
+        kind: "goods",
+        category: "Drinks",
+      },
+    ];
+    renderScreen();
+    const table = screen.getByRole("table");
+
+    // The kind column was renamed from "Category" to "Kind".
+    expect(
+      within(table).getByRole("columnheader", { name: "Kind" }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("columnheader", { name: "Category" }),
+    ).toBeInTheDocument();
+
+    const catRow = within(table)
+      .getByText("Fanta 300ml")
+      .closest('[role="row"]') as HTMLElement;
+    expect(within(catRow).getByText("Goods")).toBeInTheDocument(); // Kind
+    expect(within(catRow).getByText("Drinks")).toBeInTheDocument(); // Category
+
+    // The uncategorised product shows its kind but no category text.
+    const plainRow = within(table)
+      .getByText("Chicken Breast")
+      .closest('[role="row"]') as HTMLElement;
+    expect(within(plainRow).getByText("Ingredient")).toBeInTheDocument();
+    expect(within(plainRow).queryByText("Drinks")).not.toBeInTheDocument();
+  });
+
   it("renders a Locations column with a chip per active assignment", () => {
     renderScreen();
     const table = screen.getByRole("table");

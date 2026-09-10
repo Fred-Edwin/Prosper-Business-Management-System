@@ -10,7 +10,9 @@
 //   1. Receive only — a "Deliveries awaiting receipt" <MatchCard> list;
 //      "Match this delivery" pre-fills a selected row + links the line.
 //   2. <SearchInput> over the location's product set (per-flow copy).
-//   3. Category <Tabs> — Transfer only in practice.
+//   3. Category <Tabs> — built from the in-scope products' own `category`
+//      values; hidden when nothing is categorised (client feedback
+//      2026-09-10: cut the scrolling on long picker lists).
 //   4. <SelectableProductRow> list — `available` from the derived balance
 //      at the SM's location; a blocked row raises `onBlockedChange`,
 //      which disables the sticky submit.
@@ -50,6 +52,11 @@ import {
 } from "../use-staff-stock";
 import { trimQty } from "../staff-stock-format";
 import { useCanteenProducts } from "@/app/canteen/use-canteen-products";
+import {
+  ALL_CATEGORIES_KEY,
+  buildCategoryTabs,
+  matchesCategory,
+} from "@/lib/catalog-categories";
 import { FlowScaffold } from "./flow-scaffold";
 
 export type MovementMode =
@@ -150,7 +157,10 @@ type FlowConfig = {
    * over-available quantity BLOCKS. `false` ⇒ additive: unbounded, only a
    * blank/zero quantity blocks. */
   spend: boolean;
-  /** Show the `All · Beverages & Soda · Shop Goods` category tab row. */
+  /** Show a category <Tabs> row above the picker, built from the in-scope
+   *  products' own `category` values (client feedback 2026-09-10 — cut the
+   *  scrolling on long lists). The row hides itself when fewer than two
+   *  tabs would result (nothing is categorised). */
   categoryTabs: boolean;
   /** `EmptyState` copy when the location has no products for this flow. */
   emptyTitle: string;
@@ -172,7 +182,7 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     sectionLabel: "Products delivered",
     availPrefix: "On hand:",
     spend: false,
-    categoryTabs: false,
+    categoryTabs: true,
     emptyTitle: "No products set up",
     emptyDescription:
       "Add ingredients or goods in the Catalog before recording a delivery.",
@@ -187,7 +197,7 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     sectionLabel: "Select ingredients to issue",
     availPrefix: "Avail:",
     spend: true,
-    categoryTabs: false,
+    categoryTabs: true,
     emptyTitle: "No ingredients at Store",
     emptyDescription:
       "Nothing is stocked at the Store yet — record a delivery first.",
@@ -202,7 +212,7 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     sectionLabel: "Select dishes produced",
     availPrefix: "Available:",
     spend: false,
-    categoryTabs: false,
+    categoryTabs: true,
     emptyTitle: "No dishes set up",
     emptyDescription: "Add dishes in the Catalog before logging production.",
     errorTitle: "Couldn't load dishes",
@@ -237,7 +247,7 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     sectionLabel: "Select items to log",
     availPrefix: "Avail:",
     spend: true,
-    categoryTabs: false,
+    categoryTabs: true,
     emptyTitle: "Nothing to log",
     emptyDescription: "The Store has no stock on hand to write off.",
     errorTitle: "Couldn't load Store stock",
@@ -271,7 +281,7 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     sectionLabel: "Select items to log",
     availPrefix: "Avail:",
     spend: true,
-    categoryTabs: false,
+    categoryTabs: true,
     emptyTitle: "Nothing to log",
     emptyDescription: "The Canteen has no stock on hand to write off.",
     errorTitle: "Couldn't load Canteen stock",
@@ -291,7 +301,7 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     sectionLabel: "Products delivered",
     availPrefix: "On hand:",
     spend: false,
-    categoryTabs: false,
+    categoryTabs: true,
     emptyTitle: "No products set up",
     emptyDescription:
       "Nothing is sold at the Canteen yet — add it in the Catalog before recording a delivery.",
@@ -309,19 +319,12 @@ export const FLOW_CONFIG: Record<MovementMode, FlowConfig> = {
     sectionLabel: "Select items to log",
     availPrefix: "Avail:",
     spend: true,
-    categoryTabs: false,
+    categoryTabs: true,
     emptyTitle: "Nothing to log",
     emptyDescription: "The Restaurant has no stock on hand to write off.",
     errorTitle: "Couldn't load Restaurant stock",
   },
 };
-
-// The Transfer category tab row (flow doc §"Body composition" item 3).
-const CATEGORY_TABS = [
-  { key: "all", label: "All" },
-  { key: "Beverages & Soda", label: "Beverages & Soda" },
-  { key: "Shop Goods", label: "Shop Goods" },
-];
 
 // ── Additive-flow row (screen-local, no kit change) ───────────────────
 //
@@ -739,7 +742,7 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
   const outstanding = useOutstandingDeliveries();
 
   const [query, setQuery] = React.useState("");
-  const [category, setCategory] = React.useState("all");
+  const [category, setCategory] = React.useState(ALL_CATEGORIES_KEY);
   const [lines, setLines] = React.useState<Line[]>([]);
   const [blockedIds, setBlockedIds] = React.useState<Set<string>>(new Set());
   const [destId, setDestId] = React.useState("");
@@ -799,16 +802,35 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
     [data.products, cfg.productKinds, canteenProductIds],
   );
 
+  // Category tab row — built from the in-scope products' own `category`
+  // values (client feedback 2026-09-10). Hidden when fewer than two tabs
+  // would result (nothing categorised): `showCategoryTabs` gates render.
+  const categoryTabs = React.useMemo(
+    () => (cfg.categoryTabs ? buildCategoryTabs(flowProducts) : []),
+    [cfg.categoryTabs, flowProducts],
+  );
+  const showCategoryTabs = categoryTabs.length > 1;
+
+  // If the active category vanished (products reloaded, tab row shrank),
+  // fall back to "All" so the list never silently shows nothing.
+  React.useEffect(() => {
+    if (
+      category !== ALL_CATEGORIES_KEY &&
+      !categoryTabs.some((t) => t.key === category)
+    ) {
+      setCategory(ALL_CATEGORIES_KEY);
+    }
+  }, [categoryTabs, category]);
+
   // Filtered / searched set that the row list renders.
   const visibleProducts = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     return flowProducts.filter((p) => {
       if (q && !p.name.toLowerCase().includes(q)) return false;
-      if (cfg.categoryTabs && category !== "all" && p.category !== category)
-        return false;
+      if (showCategoryTabs && !matchesCategory(p, category)) return false;
       return true;
     });
-  }, [flowProducts, query, category, cfg.categoryTabs]);
+  }, [flowProducts, query, category, showCategoryTabs]);
 
   const lineByProduct = React.useMemo(() => {
     const m = new Map<string, Line>();
@@ -1148,9 +1170,10 @@ export function MovementPickerFlow({ mode }: { mode: MovementMode }) {
             className="w-full"
           />
 
-          {cfg.categoryTabs && (
+          {showCategoryTabs && (
             <Tabs
-              tabs={CATEGORY_TABS}
+              idBase="movement-category"
+              tabs={categoryTabs}
               activeKey={category}
               onChange={setCategory}
             />

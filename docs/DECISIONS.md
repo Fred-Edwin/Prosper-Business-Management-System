@@ -4486,3 +4486,83 @@ tool and every affordance assumed "today" or "the one day shown":
   hatch* — rejected as too broad; this ADR is scoped specifically to
   handovers, which are uniquely safe to back-date because they carry no
   money-ledger effect. Other create paths keep their existing gates.
+
+## ADR-80: Staff item pickers filter by `Product.category`, with dynamic tab sets and a `<datalist>` for consistency (Client feedback, 2026-09-10)
+
+**Status:** DECIDED (maintenance — client feedback, 2026-09-10).
+
+**Context.** The client runs a growing catalog. On every screen where
+staff scroll a flat product list to add items — the Cashier New-Order
+grid, the Canteen dispatch / receive / non-sale flows, the Store-Manager
+issue / receive / production / transfer / non-sale flows, and the
+SM/Canteen Stock-Levels views — the list is now long enough that finding
+an item is slow. She asked for a category on every ingredient / dish /
+good and a category filter row on those screens.
+
+`Product.category` (free-text, optional, all kinds) has existed since M2
+(schema §Product) and already drove category tabs on two screens (Cashier
+New-Order, Canteen Stock-Count). Those tab sets were built dynamically
+from the products' own categories; the shared `MovementPickerFlow` had
+the same tab mechanism but wired to a **hardcoded** 3-item list
+(`All · Beverages & Soda · Shop Goods`) on only 2 of its 9 flows, and the
+Canteen Stock-Levels view filtered by a hand-maintained regex on the
+category text (`/bever|soda|drink|juice|water/i`).
+
+**Decision.**
+- **One shared helper — `lib/catalog-categories.ts`.** `buildCategoryTabs`
+  (→ `All` + one tab per distinct category, first-seen order,
+  `Uncategorised` last **only** when some — not all — products lack a
+  category), `matchesCategory`, `categoryKey` (trim; blank/null →
+  `Uncategorised`), `usedCategoryNames` (for the drawer datalist).
+  Frontend+backend-safe, no Prisma import.
+- **The tab/pill row is dynamic everywhere** — built from the *in-scope*
+  products for that screen, never a fixed list. It **hides itself** when
+  fewer than two tabs would result (nothing categorised), so a flow with
+  an all-uncategorised product set is visually unchanged.
+- **`MovementPickerFlow`:** `categoryTabs: true` on every item-picking
+  flow. The hardcoded `CATEGORY_TABS` is deleted.
+- **`StockLevelsView`:** a new `categoryPills` boolean. The Canteen passes
+  it and filters by real `category`; the SM keeps its **kind**-based
+  pills (`Ingredients / Goods / Dishes` — those describe `ProductKind`,
+  not category, and the client did not ask to change them). The
+  `CANTEEN_STOCK_PILLS` export and `BEVERAGE_RE` are removed.
+- **Catalog drawer:** the Category field stays free-text but gains a
+  `<datalist>` of categories already in use (from `usedCategoryNames`
+  over the loaded catalog), so a new item's category does not fragment
+  the tabs (`Drinks` vs `drinks` vs `Beverages`).
+- **Catalog table:** the column headed "Category" that in fact rendered
+  the product *kind* (`KIND_LABEL[r.kind]` — Ingredient / Dish / Goods)
+  is renamed **Kind**, and a genuine **Category** column is added beside
+  it showing `r.category` verbatim, blank when unassigned. Mirrored on
+  the mobile card. This corrects a mislabel that predates the feature and
+  became actively confusing once "category" meant a specific thing on
+  every picker. The kind-based *filter tab row* on the Catalog page is
+  unchanged — it does filter kind, and is not renamed here to avoid
+  scope-creep (a follow-up may reconcile that wording).
+
+**Consequences.**
+- No schema / domain / API / ledger change. This is entirely read-path UI
+  filtering on a column that already existed.
+- Nothing can disappear: an uncategorised item always shows under `All`
+  and under `Uncategorised`. Empty tabs never render.
+- Rollout is data entry: the Admin sets categories on the current catalog
+  in Catalog. Until then every picker behaves exactly as before (one
+  `All` tab, row hidden).
+- The Canteen Stock-Levels filter is now consistent with the Admin's
+  chosen category names rather than a fixed regex — a category like
+  "Bakery" or "Snacks" now appears as its own pill instead of collapsing
+  into "Goods".
+
+**Alternatives considered.**
+- *A `Category` table + admin CRUD screen* — rejected as overkill for a
+  food business with ~5–10 categories; it is a new stored entity with its
+  own correction concerns (ADR-72 territory) for no benefit over a
+  free-text column plus autocomplete.
+- *Keep the hardcoded `Beverages & Soda / Shop Goods` list on the
+  transfer flows* — rejected; it only ever matched two seeded categories
+  and silently hid every other one. Dynamic tabs are the same mechanism
+  the Cashier screen already proved.
+- *Kind tabs (Ingredients / Dishes / Goods) on the SM "all-kinds"
+  non-sale flow instead of category tabs* — deferred. Category tabs are
+  consistent with every other picker; if the write-off screen proves
+  crowded in practice, a kind split can be added on top later.

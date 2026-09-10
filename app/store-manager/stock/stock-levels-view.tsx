@@ -35,6 +35,11 @@ import { Spinner } from "@/components/kit/spinner";
 import { useStockCard, stockApi } from "@/app/store-manager/use-staff-stock";
 import { toBusinessDate } from "@/lib/time";
 import { trimQty } from "@/app/store-manager/staff-stock-format";
+import {
+  ALL_CATEGORIES_KEY,
+  buildCategoryTabs,
+  matchesCategory,
+} from "@/lib/catalog-categories";
 
 /** One filter pill. `match` omitted ⇒ the "All" pill (matches every row). */
 export type StockLevelsPill = {
@@ -61,39 +66,33 @@ export const SM_STOCK_PILLS: StockLevelsPill[] = [
 ];
 
 /**
- * The Canteen pill set. "Beverages" ~ the product's `category` reads as a
- * drink (soda / beverage / drink); "Goods" is everything else the Canteen
- * carries. No "Dishes" pill — a Canteen holds no dishes.
+ * The Canteen filters by the product's Admin-set `category` (client
+ * feedback 2026-09-10). The pill set is built at render from whatever
+ * categories the Canteen's stocked products actually carry — pass
+ * `categoryPills` to `StockLevelsView` rather than a static `pillSet`.
+ * (Superseded the old hand-maintained `Beverages` regex pill.)
  */
-const BEVERAGE_RE = /bever|soda|drink|juice|water/i;
-export const CANTEEN_STOCK_PILLS: StockLevelsPill[] = [
-  { key: "all", label: "All" },
-  {
-    key: "beverages",
-    label: "Beverages",
-    match: (p) => !!p.category && BEVERAGE_RE.test(p.category),
-  },
-  {
-    key: "goods",
-    label: "Goods",
-    match: (p) => !(p.category && BEVERAGE_RE.test(p.category)),
-  },
-];
-
 export function StockLevelsView({
   locationLabel,
   locationType,
   pillSet = SM_STOCK_PILLS,
+  categoryPills = false,
 }: {
   locationLabel: string;
   locationType: "store" | "canteen";
-  /** Filter pills for this view. Defaults to the SM (kind-based) set. */
+  /** Static filter pills. Defaults to the SM (kind-based) set. Ignored
+   *  when `categoryPills` is set. */
   pillSet?: StockLevelsPill[];
+  /** Build the pill row from each stocked product's Admin-set `category`
+   *  instead of `pillSet` (the Canteen — client feedback 2026-09-10). */
+  categoryPills?: boolean;
 }) {
   const [locationId, setLocationId] = React.useState<string | undefined>(
     undefined,
   );
-  const [pillKey, setPillKey] = React.useState<string>(pillSet[0]?.key ?? "all");
+  const [pillKey, setPillKey] = React.useState<string>(
+    categoryPills ? ALL_CATEGORIES_KEY : (pillSet[0]?.key ?? "all"),
+  );
 
   // Resolve this staff member's own locationId once (the list read is
   // scoped server-side; balances needs the id explicitly).
@@ -130,14 +129,48 @@ export function StockLevelsView({
     };
   }, []);
 
-  const activePill = pillSet.find((p) => p.key === pillKey) ?? pillSet[0];
-  const filtered =
-    !activePill?.match
-      ? rows
-      : rows.filter((r) => {
-          const product = productById.get(r.productId);
-          return product ? activePill.match!(product) : false;
-        });
+  // The pill row + its filter. Category mode derives the pills from the
+  // products that actually have a stock row here; static mode uses the
+  // passed `pillSet` and its per-pill `match` predicate.
+  const rowProducts = React.useMemo(
+    () =>
+      rows
+        .map((r) => productById.get(r.productId))
+        .filter((p): p is ProductWithLocations => p != null),
+    [rows, productById],
+  );
+
+  const pillOptions = React.useMemo(
+    () =>
+      categoryPills
+        ? buildCategoryTabs(rowProducts)
+        : pillSet.map((p) => ({ key: p.key, label: p.label })),
+    [categoryPills, rowProducts, pillSet],
+  );
+
+  // Category pill row can shrink as stock moves — snap back to "All" if
+  // the active pill is gone.
+  React.useEffect(() => {
+    if (!pillOptions.some((o) => o.key === pillKey)) {
+      setPillKey(categoryPills ? ALL_CATEGORIES_KEY : (pillSet[0]?.key ?? "all"));
+    }
+  }, [pillOptions, pillKey, categoryPills, pillSet]);
+
+  const filtered = React.useMemo(() => {
+    if (categoryPills) {
+      if (pillKey === ALL_CATEGORIES_KEY) return rows;
+      return rows.filter((r) => {
+        const product = productById.get(r.productId);
+        return product ? matchesCategory(product, pillKey) : false;
+      });
+    }
+    const activePill = pillSet.find((p) => p.key === pillKey) ?? pillSet[0];
+    if (!activePill?.match) return rows;
+    return rows.filter((r) => {
+      const product = productById.get(r.productId);
+      return product ? activePill.match!(product) : false;
+    });
+  }, [categoryPills, pillKey, rows, productById, pillSet]);
 
   // Totals read the day's CLOSING — what is on hand at the end of the
   // day being shown, which for today is "as of now".
@@ -184,12 +217,16 @@ export function StockLevelsView({
         className="w-full"
       />
 
-      <PillFilter
-        aria-label="Filter by product kind"
-        options={pillSet.map((p) => ({ key: p.key, label: p.label }))}
-        activeKey={pillKey}
-        onChange={setPillKey}
-      />
+      {pillOptions.length > 1 && (
+        <PillFilter
+          aria-label={
+            categoryPills ? "Filter by category" : "Filter by product kind"
+          }
+          options={pillOptions}
+          activeKey={pillKey}
+          onChange={setPillKey}
+        />
+      )}
 
       {loading ? (
         <div className="flex justify-center py-(--sp-10)">
@@ -201,7 +238,11 @@ export function StockLevelsView({
           title="Nothing in this category"
           description="No products of this kind have stock at this location right now."
           actionLabel="Clear filter"
-          onAction={() => setPillKey(pillSet[0]?.key ?? "all")}
+          onAction={() =>
+            setPillKey(
+              categoryPills ? ALL_CATEGORIES_KEY : (pillSet[0]?.key ?? "all"),
+            )
+          }
         />
       ) : filtered.length === 0 ? (
         <EmptyState
