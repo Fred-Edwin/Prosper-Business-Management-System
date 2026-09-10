@@ -165,16 +165,19 @@ describe("ADR-67 §2d — new guards do not move COGS for model-compliant data",
     expect(cogsAfter - cogsBefore).toBeCloseTo(2500, 2);
   });
 
-  it("the Restaurant→Canteen transfer nets to zero across COGS (ADR-55)", async () => {
+  it("the Restaurant→Canteen transfer is cost-neutral for BOTH locations (ADR-55 / ADR-81)", async () => {
     const s = await getFinancialSummary(FROM, TO);
     const byName = new Map(s.perLocation.map((l) => [l.locationName, l]));
     const rest = byName.get(`${ctx.prefix} Restaurant`);
     const cant = byName.get(`${ctx.prefix} Canteen`);
     expect(rest).toBeDefined();
     expect(cant).toBeDefined();
-    // Restaurant Goods COGS delta +1,200; Canteen COGS delta −1,200.
-    // (Both locations start at 0 COGS for this scope's products.)
-    expect(Number(rest!.cogs)).toBeCloseTo(1200, 2);
-    expect(Number(cant!.cogs)).toBeCloseTo(-1200, 2);
+    // Nothing was sold or consumed at either location in this scope — the
+    // 20 goods the Restaurant received are all still on its shelf, and the
+    // 30-unit transfer moves no cost. So COGS is 0 on both sides. Before
+    // ADR-81 this same transfer wrongly showed Restaurant +1,200 /
+    // Canteen −1,200 (the client-reported bug).
+    expect(Number(rest!.cogs)).toBeCloseTo(0, 2);
+    expect(Number(cant!.cogs)).toBeCloseTo(0, 2);
   });
 });
