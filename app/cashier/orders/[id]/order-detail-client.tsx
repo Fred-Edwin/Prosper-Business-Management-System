@@ -24,6 +24,8 @@ import { useRouter } from "next/navigation";
 import { FlowHeader } from "@/components/kit/flow-header";
 import { QuantityStepper } from "@/components/kit/quantity-stepper";
 import { SegmentedControl } from "@/components/kit/segmented-control";
+import { SearchInput } from "@/components/kit/search-input";
+import { Tabs } from "@/components/kit/tabs";
 import { TextInput } from "@/components/kit/text-input";
 import { Button } from "@/components/kit/button";
 import { StatusChip } from "@/components/kit/status-chip";
@@ -41,6 +43,11 @@ import {
   useRestaurantProducts,
   type RestaurantProduct,
 } from "@/app/cashier/use-restaurant-products";
+import {
+  ALL_CATEGORIES_KEY,
+  buildCategoryTabs,
+  matchesCategory,
+} from "@/lib/catalog-categories";
 
 const ORDER_TYPES: { value: OrderType; label: string }[] = [
   { value: "dine_in", label: "Dine-in" },
@@ -342,7 +349,20 @@ function EditableOrder({
   );
   const [deliveryFee, setDeliveryFee] = React.useState(order.deliveryFee ?? "");
   const [addOpen, setAddOpen] = React.useState(false);
+  const [addSearch, setAddSearch] = React.useState("");
+  const [addCat, setAddCat] = React.useState(ALL_CATEGORIES_KEY);
   const [submitting, setSubmitting] = React.useState(false);
+
+  const categoryTabs = React.useMemo(() => buildCategoryTabs(products), [products]);
+
+  const addableProducts = React.useMemo(() => {
+    const q = addSearch.trim().toLowerCase();
+    return products.filter((p) => {
+      if (!matchesCategory(p, addCat)) return false;
+      if (q && !p.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [products, addSearch, addCat]);
 
   // Fill in names once products load (in case a line's product wasn't known).
   React.useEffect(() => {
@@ -459,7 +479,11 @@ function EditableOrder({
           </span>
           <button
             type="button"
-            onClick={() => setAddOpen((v) => !v)}
+            onClick={() => {
+              setAddOpen((v) => !v);
+              setAddSearch("");
+              setAddCat(ALL_CATEGORIES_KEY);
+            }}
             className="font-ui font-(--weight-medium) text-accent text-sm/sm kit-focus-ring"
           >
             + Add item
@@ -467,22 +491,48 @@ function EditableOrder({
         </div>
 
         {addOpen && (
-          <div className="flex flex-wrap content-start p-(--sp-5) gap-(--sp-4) [background-color:var(--surface-subtle)] border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
-            {products.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => addProduct(p)}
-                className="flex flex-col w-[calc(50%-4px)] p-(--sp-4) rounded-sm gap-(--sp-1) text-left bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-focus-ring"
-              >
-                <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
-                  {p.name}
-                </span>
-                <span className="font-mono [color:var(--text-secondary)] text-caption/micro">
-                  {kes(p.sellingPrice)} · {p.unitLabel}
-                </span>
-              </button>
-            ))}
+          <div className="flex flex-col gap-(--sp-4) [background-color:var(--surface-subtle)] border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
+            <div className="flex flex-col gap-(--sp-4) pt-(--sp-5) px-(--sp-5)">
+              <SearchInput
+                value={addSearch}
+                onChange={setAddSearch}
+                placeholder="Search products…"
+                aria-label="Search products to add"
+              />
+            </div>
+            {categoryTabs.length > 1 && (
+              <div className="px-(--sp-5)">
+                <Tabs
+                  tabs={categoryTabs}
+                  activeKey={addCat}
+                  onChange={setAddCat}
+                  idBase="c4-add-category"
+                />
+              </div>
+            )}
+            <div className="flex flex-wrap content-start p-(--sp-5) pt-0 gap-(--sp-4)">
+              {addableProducts.length === 0 ? (
+                <p className="w-full py-(--sp-4) text-center font-ui [color:var(--text-tertiary)] text-caption/micro">
+                  No products match.
+                </p>
+              ) : (
+                addableProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => addProduct(p)}
+                    className="flex flex-col w-[calc(50%-4px)] p-(--sp-4) rounded-sm gap-(--sp-1) text-left bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-focus-ring"
+                  >
+                    <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-sm/sm">
+                      {p.name}
+                    </span>
+                    <span className="font-mono [color:var(--text-secondary)] text-caption/micro">
+                      {kes(p.sellingPrice)} · {p.unitLabel}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         )}
 

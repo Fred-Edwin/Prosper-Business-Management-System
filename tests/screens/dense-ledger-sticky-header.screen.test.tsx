@@ -48,9 +48,9 @@ describe("<DenseLedger> stickyHeader", () => {
 
     expect(header.className).toContain("sticky");
     expect(header.className).toContain("top-0");
-    // One step above the body's sticky layer (--z-sticky = 1100), so the whole
+    // One step above the body's sticky layer (--z-sticky), so the whole
     // row of column titles stays above every scrolling row on both axes.
-    expect(header.className).toContain("[z-index:1101]");
+    expect(header.className).toContain("[z-index:calc(var(--z-sticky)_+_1)]");
     // Opaque fill (STICKY_HEADER_BG) — not the translucent `bg-info-bg` class,
     // which would let scrolled rows bleed through a pinned header.
     expect(header.className).not.toContain("bg-info-bg");

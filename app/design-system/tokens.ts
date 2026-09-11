@@ -174,8 +174,8 @@ export const tokens = {
 
   // --- Z-index -------------------------------------------------
   "--z-base": "0",
-  "--z-dropdown": "1000",
-  "--z-sticky": "1100",
+  "--z-sticky": "1000",
+  "--z-dropdown": "1100",
   "--z-overlay": "1200",
   "--z-drawer": "1300",
   "--z-dialog": "1400",

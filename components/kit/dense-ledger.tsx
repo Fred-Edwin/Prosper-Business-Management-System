@@ -220,16 +220,16 @@ const STICKY_HEADER_BG: React.CSSProperties = {
 
 /**
  * `stickyHeader` z-order. The body rows' sticky-LEFT cells sit at
- * `--z-sticky` (1100, design-system/tokens.css) and, because a
- * `position: sticky` element with a z-index makes its own stacking context
- * and they come later in the DOM, they'd paint OVER an equal-z-index header.
- * So the pinned header container sits ONE step above the whole body sticky
- * layer — every header cell rides the container's context, so the entire
- * row of column titles is above every scrolling row on both axes. (Tailwind
- * `calc()` arbitrary values can't carry the spaces CSS `calc` needs, so
- * these are inline literals on the same 1100 scale.)
+ * `--z-sticky` (design-system/tokens.css) and, because a `position: sticky`
+ * element with a z-index makes its own stacking context and they come later
+ * in the DOM, they'd paint OVER an equal-z-index header. So the pinned
+ * header container sits ONE step above the whole body sticky layer — every
+ * header cell rides the container's context, so the entire row of column
+ * titles is above every scrolling row on both axes. Computed off the token
+ * (never a bare literal) so it can never drift into — or over — the
+ * `--z-dropdown` band a Select/date popover opens at just above it.
  */
-const STICKY_HEADER_Z = "[z-index:1101]";
+const STICKY_HEADER_Z = "[z-index:calc(var(--z-sticky)_+_1)]";
 
 function toneClass(cell: LedgerCell): string {
   if (cell.dash) return "[color:var(--text-tertiary)]";
