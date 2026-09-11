@@ -720,7 +720,7 @@ export function StockClient() {
               stickyHeader
               loading={loading && rows.length === 0}
               emptyMessage="No stock movements for this range."
-              onCellClick={onPeriodRowClick}
+              onRowClick={onPeriodRowClick}
             />
             {rows.length > 0 && (
               <p className="mt-(--sp-3) font-ui [color:var(--text-tertiary)] text-caption/micro">

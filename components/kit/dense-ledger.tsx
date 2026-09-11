@@ -153,6 +153,17 @@ export interface DenseLedgerProps {
   stickyHeader?: boolean;
   /** Called with (rowId, columnKey) when a data cell is clicked (correction target). */
   onCellClick?: (rowId: string, columnKey: string) => void;
+  /**
+   * Called with (rowId) when the ROW is clicked anywhere — Location,
+   * Product, or a data cell — for a whole-row navigation target (e.g. the
+   * Stock ledger's period-summary "View days" drill-in, 2026-09-11 fix).
+   * Mutually exclusive with `onCellClick`: the two callers of this
+   * component use one or the other, never both, since a cell can't be a
+   * correction target AND a row-opener at once. When set, the whole row is
+   * one keyboard-operable button; `onCellClick`'s per-cell buttons are not
+   * rendered.
+   */
+  onRowClick?: (rowId: string) => void;
   className?: string;
 }
 
@@ -280,6 +291,7 @@ export function DenseLedger({
   loading = false,
   loadingRows = 3,
   onCellClick,
+  onRowClick,
   className,
 }: DenseLedgerProps) {
   // Row/header/footer width behaviour: `[width:100%]` (base) or `w-max min-w-full`
@@ -368,61 +380,84 @@ export function DenseLedger({
           </div>
         </div>
       ) : (
-        rows.map((row) => (
-          <div
-            key={row.id}
-            className={cn(
-              "flex items-center h-[38px] px-(--sp-6) gap-(--sp-5) shrink-0 border-b border-b-solid [border-bottom-color:var(--border-subtle)]",
-              // §9.3: the hover tint signals "this row does something" — only when
-              // cells are actually clickable.
-              onCellClick && "kit-row",
-              lineWidth,
-            )}
-          >
-            {showLocation && (
+        rows.map((row) => {
+          const rowContent = (
+            <>
+              {showLocation && (
+                <div
+                  className={cn(
+                    "w-[100px] shrink-0 font-ui inline-block [color:var(--text-secondary)] text-sm/sm",
+                    horizontalScroll &&
+                      "kit-ledger-sticky sticky left-0 [z-index:var(--z-sticky)]",
+                  )}
+                >
+                  {row.location}
+                </div>
+              )}
               <div
+                title={row.product}
+                style={
+                  horizontalScroll
+                    ? { left: productStickyLeft(showLocation) }
+                    : undefined
+                }
                 className={cn(
-                  "w-[100px] shrink-0 font-ui inline-block [color:var(--text-secondary)] text-sm/sm",
+                  "font-ui font-(--weight-medium) w-[220px] shrink-0 truncate [color:var(--text-primary)] text-sm/micro",
                   horizontalScroll &&
-                    "kit-ledger-sticky sticky left-0 [z-index:var(--z-sticky)]",
+                    "kit-ledger-sticky sticky [z-index:var(--z-sticky)] border-r border-r-solid [border-right-color:var(--border-subtle)]",
                 )}
               >
-                {row.location}
+                {row.product}
               </div>
-            )}
-            <div
-              title={row.product}
-              style={
-                horizontalScroll
-                  ? { left: productStickyLeft(showLocation) }
-                  : undefined
-              }
-              className={cn(
-                "font-ui font-(--weight-medium) w-[220px] shrink-0 truncate [color:var(--text-primary)] text-sm/micro",
-                horizontalScroll &&
-                  "kit-ledger-sticky sticky [z-index:var(--z-sticky)] border-r border-r-solid [border-right-color:var(--border-subtle)]",
-              )}
+              {COLUMNS.slice(1).map(([key, colHeader, widthCls, numeric]) => (
+                <DataCell
+                  key={key}
+                  cell={row[key] as LedgerCell}
+                  colKey={key}
+                  widthCls={widthCls}
+                  numeric={numeric}
+                  label={
+                    onRowClick ? undefined : `Correct ${colHeader} for ${row.product}`
+                  }
+                  onClick={
+                    onRowClick
+                      ? undefined
+                      : onCellClick
+                        ? () => onCellClick(row.id, key)
+                        : undefined
+                  }
+                />
+              ))}
+              <div className="w-[50px] font-ui font-(--weight-medium) shrink-0 justify-start text-accent text-sm/micro">
+                {onRowClick ? "View →" : "Edit"}
+              </div>
+            </>
+          );
+
+          const rowCls = cn(
+            "flex items-center h-[38px] px-(--sp-6) gap-(--sp-5) shrink-0 border-b border-b-solid [border-bottom-color:var(--border-subtle)]",
+            // §9.3: the hover tint signals "this row does something" — only when
+            // cells/row are actually clickable.
+            (onCellClick || onRowClick) && "kit-row",
+            lineWidth,
+          );
+
+          return onRowClick ? (
+            <button
+              key={row.id}
+              type="button"
+              onClick={() => onRowClick(row.id)}
+              aria-label={`View day-by-day for ${row.product}`}
+              className={cn(rowCls, "kit-focus-ring cursor-pointer bg-transparent text-left")}
             >
-              {row.product}
+              {rowContent}
+            </button>
+          ) : (
+            <div key={row.id} className={rowCls}>
+              {rowContent}
             </div>
-            {COLUMNS.slice(1).map(([key, colHeader, widthCls, numeric]) => (
-              <DataCell
-                key={key}
-                cell={row[key] as LedgerCell}
-                colKey={key}
-                widthCls={widthCls}
-                numeric={numeric}
-                label={`Correct ${colHeader} for ${row.product}`}
-                onClick={
-                  onCellClick ? () => onCellClick(row.id, key) : undefined
-                }
-              />
-            ))}
-            <div className="w-[50px] font-ui font-(--weight-medium) shrink-0 justify-start text-accent text-sm/micro">
-              Edit
-            </div>
-          </div>
-        ))
+          );
+        })
       )}
 
       {/* Ledger Footer */}
