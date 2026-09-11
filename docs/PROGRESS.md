@@ -16,6 +16,49 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Category filter gap-fill: Cashier +Add item, Opening Plan grid + a z-index bug (2026-09-11) — DONE
+
+Client spreadsheet feedback tracked two item pickers still missing a
+category filter after an earlier sweep (Cashier New Order, Canteen Stock
+Count, Store-Manager Stock Levels, and the Movement Picker flow already
+had one): the Cashier Order Detail "+Add item" panel had no filtering at
+all (not even search), and the Admin Stock Opening Plan grid had only
+kind tabs (Ingredient/Dish/Goods), no category axis.
+
+Both now use the shared `buildCategoryTabs`/`matchesCategory` helper
+(`lib/catalog-categories.ts`) — the canonical pattern, already used by
+Store-Manager Stock Levels and the Movement Picker. The +Add item panel
+gained a `<SearchInput>` + `<Tabs>` category row above the product grid.
+The Opening Plan grid gained a `<PillFilter>` category row alongside
+(not replacing) its existing kind `<Tabs>`, on both the desktop grid and
+mobile card branches.
+
+While manually testing in the browser, found and fixed an unrelated
+z-index bug: `--z-dropdown` (1000) was below `--z-sticky` (1100), so any
+`Select`/`PillFilter` popover opened near a `stickyHeader` table (e.g.
+the Admin Catalog location filter) rendered underneath the frozen header
+row instead of over it. Swapped the two token values — a dropdown is a
+transient overlay and should always float above sticky content — and
+changed `DenseLedger`'s `STICKY_HEADER_Z` from a hardcoded `1101` literal
+to `calc(var(--z-sticky) + 1)` so it can't drift back into the dropdown
+band if the base token ever changes again. Verified live against the
+running dev server (Playwright) before and after.
+
+Known inconsistency, flagged but not fixed: Cashier New Order and
+Canteen Stock Count build their category tabs locally instead of via
+`buildCategoryTabs` — works fine, just drifted from the documented
+pattern. Worth a follow-up cleanup pass.
+
+- Files: `app/cashier/orders/[id]/order-detail-client.tsx`,
+  `app/admin/stock/opening/opening-client.tsx`,
+  `app/design-system/tokens.css`, `app/design-system/tokens.ts`,
+  `components/kit/dense-ledger.tsx`,
+  `tests/screens/cashier-orders.screen.test.tsx`,
+  `tests/screens/opening.screen.test.tsx`,
+  `tests/screens/dense-ledger-sticky-header.screen.test.tsx`.
+- Gates: `pnpm typecheck` ✅ · `pnpm build` ✅ · `pnpm test` ✅
+  (1361/1361).
+
 ## Stock ledger day-by-day rollforward: turned out to be a click-target bug (2026-09-11) — DONE
 
 Client feedback part 2: wanted to select a range and see, per item, the
