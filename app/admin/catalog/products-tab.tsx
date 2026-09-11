@@ -13,7 +13,11 @@
 import * as React from "react";
 import { Tabs } from "@/components/kit/tabs";
 import { SearchInput } from "@/components/kit/search-input";
-import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
+import {
+  SimpleTable,
+  type SimpleTableColumn,
+  type StickyLeftColumn,
+} from "@/components/kit/simple-table";
 import { StatusChip } from "@/components/kit/status-chip";
 import { Select } from "@/components/kit/select";
 import { useToast } from "@/components/kit/toast";
@@ -53,6 +57,13 @@ function fmt(value: string | null): string {
 // "All locations" sentinel for the location filter <Select>.
 const ALL_LOCATIONS = "__all__";
 
+// Pinned during horizontal scroll (client feedback 2026-09-11) — px widths
+// must match the "row" and "name" columns' fixed w-[…] classes below.
+const ROW_STICKY_COLUMNS: StickyLeftColumn[] = [
+  { key: "row", stickyPx: 24 },
+  { key: "name", stickyPx: 180 },
+];
+
 /** The location names a product is actively assigned to, sorted. */
 function assignedLocationNames(product: ProductWithLocations): string[] {
   return product.locations
@@ -80,7 +91,7 @@ function LocationChips({ product }: { product: ProductWithLocations }) {
 /** Selling price for a named location type, "—" when not sold there. */
 function priceAt(
   product: ProductWithLocations,
-  type: "restaurant" | "canteen" | "store",
+  type: "restaurant" | "canteen",
 ): string {
   const row = product.locations.find(
     (l) => l.locationType === type && l.active,
@@ -221,11 +232,16 @@ export function ProductsTab({
     {
       key: "name",
       header: "Name",
-      width: "grow min-w-[120px]",
+      // Fixed (was "grow min-w-[120px]") — a sticky-left column needs a
+      // stable px width so SimpleTable can compute the `left` offset of the
+      // columns after it (ROW_STICKY_PX below). Client feedback 2026-09-11:
+      // freeze # + Name so the product stays identifiable while scrolling
+      // right to the price columns on a narrow screen.
+      width: "w-[180px]",
       cell: "strong",
       render: (r) => (
-        <span className="flex items-center gap-(--sp-4)">
-          {r.name}
+        <span className="flex items-center gap-(--sp-4) min-w-0">
+          <span className="truncate">{r.name}</span>
           {r.deletedAt && <StatusChip variant="neutral">Archived</StatusChip>}
         </span>
       ),
@@ -291,14 +307,6 @@ export function ProductsTab({
       render: (r) => <Money value={priceAt(r, "canteen")} />,
     },
     {
-      key: "store",
-      header: "Store",
-      width: "w-[76px]",
-      align: "right",
-      cell: "mono",
-      render: (r) => <Money value={priceAt(r, "store")} />,
-    },
-    {
       key: "edit",
       header: tab.archived ? "Action" : "Edit",
       width: "w-[64px]",
@@ -340,10 +348,21 @@ export function ProductsTab({
       />
 
       {/* Search + location filter, own row: search leftmost, filter
-          rightmost. Both keep their natural width — the row scrolls
-          horizontally on a narrow viewport instead of squeezing either
-          control (or, per the earlier bug, the whole page) sideways. */}
-      <div className="flex items-center gap-(--sp-4) overflow-x-auto">
+          rightmost. Wraps to a second line on a narrow viewport instead of
+          scrolling — `overflow-x-auto` was tried first (so each control
+          keeps its natural width instead of squeezing, or per the earlier
+          bug, squeezing the whole page sideways), but per the CSS Overflow
+          spec an element can't have `overflow-x: auto` with
+          `overflow-y: visible` — the UA silently forces the y-axis to
+          `auto` too (verified live, even against an inline
+          `!important`-equivalent override), which clips anything a child's
+          popover renders below this row's own bottom edge. That's why the
+          "Filter by location" dropdown appeared to render *behind* the
+          table below it (client feedback 2026-09-11). `flex-wrap` avoids
+          the illegal overflow combination entirely: two controls of this
+          width essentially never need to scroll on a real device anyway,
+          they just stack. Client feedback 2026-09-11/12. */}
+      <div className="flex flex-wrap items-center gap-(--sp-4)">
         <SearchInput
           value={search}
           onChange={setSearch}
@@ -369,18 +388,36 @@ export function ProductsTab({
         </div>
       )}
 
-      {/* Desktop table — scrolls horizontally instead of overflowing the
-          page if the content area is ever narrower than the column set
-          (a smaller laptop window, the sidebar expanded, etc). min-w is
-          the summed column widths + row gaps: bumped from 994 to 1106
-          when the Category column (w-[88px] + one --sp-6 gap) was split
-          out from Kind. */}
-      <div className="hidden md:block overflow-x-auto">
+      {/* Desktop table. min-w is the summed column widths + row gaps: 1066
+          (Store column removed, Name widened from 120 to a fixed 180 for
+          sticky-left — client feedback 2026-09-11).
+
+          Both-axis scroll container, bounded height → the sticky header
+          pins to ITS top (same proven pattern as DenseLedger's callers,
+          e.g. app/admin/stock/stock-client.tsx — "Both-axis scroll
+          container, bounded height → the sticky ledger header pins to its
+          top", client feedback 2026-09-09). `overflow-x-auto` alone was
+          tried first here and doesn't work for a sticky header: per the
+          CSS Overflow spec, when one axis is `auto` the OTHER axis cannot
+          stay `visible` — the UA silently forces it to `auto` too, even
+          past an `!important` inline style (verified live). So a plain
+          `overflow-x-auto` wrapper is unavoidably a two-axis scroll
+          container already; the fix isn't fighting that, it's giving that
+          container a bounded height so it actually has its own scrollport
+          for `stickyHeader` to pin against. Without max-h it never
+          scrolls internally and `top-0` has nothing to visibly stick to,
+          which is the "header just scrolls away" bug (client feedback
+          2026-09-11/12). # and Name are pinned during horizontal scroll
+          (stickyLeftColumns) so the product stays identifiable while
+          scrolling right to the price columns. */}
+      <div className="hidden md:block max-h-[70vh] overflow-auto">
         <SimpleTable
           columns={columns}
           rows={visibleProducts}
           rowKey={(r) => r.id}
-          className="min-w-[1106px]"
+          stickyHeader
+          stickyLeftColumns={ROW_STICKY_COLUMNS}
+          className="min-w-[1066px]"
           loading={loading && visibleProducts.length === 0}
           emptyState={{
             variant: filtered ? "filtered" : "default",
@@ -413,7 +450,6 @@ export function ProductsTab({
               { label: "Buying", value: fmt(card.buyingPrice) },
               { label: "Restaurant", value: priceAt(card, "restaurant") },
               { label: "Canteen", value: priceAt(card, "canteen") },
-              { label: "Store", value: priceAt(card, "store") },
             ];
             return (
               <div
