@@ -23,6 +23,32 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { EmptyState, type EmptyStateProps } from "./empty-state";
 
+/**
+ * The header's `bg-info-bg` is `--color-info-bg` at 10% alpha — correct for a
+ * normal (non-sticky) cell painted once over the page background, but a
+ * STICKY header repaints on top of the scrolling rows behind it, so a
+ * translucent fill lets their text show through. Same fix as DenseLedger's
+ * `STICKY_HEADER_BG`: stack the translucent token as a `background-image`
+ * over an opaque `--surface-page` color-stop so it composites solid with the
+ * same visual tint. Sticky-only; the non-sticky header keeps plain `bg-info-bg`.
+ */
+const STICKY_HEADER_BG: React.CSSProperties = {
+  backgroundColor: "var(--surface-page)",
+  backgroundImage:
+    "linear-gradient(var(--color-info-bg), var(--color-info-bg))",
+};
+
+/**
+ * A sticky-left header CELL (pinned on both axes — top AND left, in the
+ * corner) needs its z-index one step above `--z-sticky` (1100). Its row
+ * container is already `sticky top-0` at `--z-sticky`; a sticky-left BODY
+ * cell in a later row sits in that same row's own stacking context at
+ * `--z-sticky` too, and later DOM order would let it paint over an
+ * equal-z-index header corner cell as the page scrolls. Same fix, same
+ * reasoning, as DenseLedger's `STICKY_HEADER_Z` (1101 there; matched here).
+ */
+const STICKY_HEADER_LEFT_Z = "[z-index:1101]";
+
 // Trailing row affordance — matches the A1 artboard (16×16, ChevronRight,
 // --text-tertiary, 1.5 stroke) in a w-[24px] right-aligned slot.
 const ROW_CHEVRON = (
@@ -50,6 +76,18 @@ export interface SimpleTableColumn<Row> {
   render: (row: Row) => React.ReactNode;
 }
 
+/**
+ * A leading column pinned during horizontal scroll (`position: sticky; left`).
+ * `stickyPx` is the column's actual rendered width in px — needed to compute
+ * the `left` offset of any sticky column after the first, since `width` on
+ * `SimpleTableColumn` is an arbitrary Tailwind class (e.g. `"grow
+ * min-w-[120px]"`) with no numeric value to sum.
+ */
+export interface StickyLeftColumn {
+  key: string;
+  stickyPx: number;
+}
+
 export interface SimpleTableProps<Row> {
   columns: SimpleTableColumn<Row>[];
   rows: Row[];
@@ -68,6 +106,27 @@ export interface SimpleTableProps<Row> {
    * spacer). Opt-in — off by default and only active when `onRowClick` is set.
    */
   rowChevron?: boolean;
+  /**
+   * Pin the header row to the top of the table's nearest scrolling
+   * ancestor (`position: sticky; top: 0`) instead of scrolling away with
+   * the body. Opt-in — off by default, byte-identical when unset. For a
+   * table whose wrapper scrolls vertically (a `max-h` + `overflow-y:auto`
+   * container), pair this with that wrapper so the column titles stay
+   * visible while long lists scroll (client feedback 2026-09-11). The header
+   * background switches to an opaque composite (STICKY_HEADER_BG) so
+   * scrolling rows don't show through the normally-translucent info-bg tint.
+   */
+  stickyHeader?: boolean;
+  /**
+   * Pin one or more LEADING columns during horizontal scroll
+   * (`position: sticky; left`), so identifying columns (e.g. row # + Name)
+   * stay visible while the user scrolls to reach columns further right on a
+   * narrow viewport. Opt-in — off by default, byte-identical when unset.
+   * Pass every sticky column in left-to-right order with its rendered px
+   * width; each column's `left` offset is the running sum of the ones
+   * before it. Client feedback 2026-09-11 (catalog table, narrow screens).
+   */
+  stickyLeftColumns?: StickyLeftColumn[];
   className?: string;
 }
 
@@ -90,9 +149,27 @@ export function SimpleTable<Row>({
   sort,
   onSort,
   rowChevron = false,
+  stickyHeader = false,
+  stickyLeftColumns,
   className,
 }: SimpleTableProps<Row>) {
   const showChevron = rowChevron && !!onRowClick;
+  // key -> { left offset, is-last-sticky-column } for O(1) lookup per cell.
+  // The last sticky column gets the right-hand divider border so the pinned
+  // block reads as one unit against the scrolling columns past it.
+  const stickyLeftInfo = React.useMemo(() => {
+    const map = new Map<string, { left: number; isLast: boolean }>();
+    if (!stickyLeftColumns) return map;
+    let left = 0;
+    stickyLeftColumns.forEach((col, i) => {
+      map.set(col.key, {
+        left,
+        isLast: i === stickyLeftColumns.length - 1,
+      });
+      left += col.stickyPx;
+    });
+    return map;
+  }, [stickyLeftColumns]);
   return (
     <div
       role="table"
@@ -101,18 +178,42 @@ export function SimpleTable<Row>({
         className,
       )}
     >
-      {/* Header Row */}
+      {/* Header Row. When stickyHeader is on, the container sits at
+          STICKY_HEADER_LEFT_Z (1101) — one step above `--z-sticky` (1100)
+          — not `--z-sticky` itself. A body row's sticky-LEFT cell also
+          sits at `--z-sticky` in that row's own stacking context, and,
+          being later in DOM order, would otherwise paint OVER an
+          equal-z-index header as the page scrolls (visible bleed-through
+          bug, caught this session — same reasoning as DenseLedger's
+          STICKY_HEADER_Z). */}
       <div
         role="row"
-        className="flex items-center h-[32px] px-(--sp-6) gap-(--sp-6) shrink-0 bg-info-bg border-b border-b-solid border-b-gray-600"
+        style={stickyHeader ? STICKY_HEADER_BG : undefined}
+        className={cn(
+          "flex items-center h-[32px] px-(--sp-6) gap-(--sp-6) shrink-0 border-b border-b-solid border-b-gray-600",
+          stickyHeader
+            ? cn("sticky top-0", STICKY_HEADER_LEFT_Z)
+            : "bg-info-bg",
+        )}
       >
         {columns.map((col) => {
           const isSorted = sort?.key === col.key;
+          const sticky = stickyLeftInfo.get(col.key);
           const headerCls = cn(
             "font-ui font-(--weight-semibold) text-[10px] [letter-spacing:var(--tracking-caps)] uppercase leading-[12px] text-info shrink-0",
             col.width,
             col.align === "right" && "text-right flex justify-end flex-wrap",
+            sticky &&
+              cn(
+                "sticky",
+                STICKY_HEADER_LEFT_Z,
+                sticky.isLast &&
+                  "border-r border-r-solid [border-right-color:var(--border-subtle)]",
+              ),
           );
+          const headerStyle = sticky
+            ? { left: sticky.left, ...STICKY_HEADER_BG }
+            : undefined;
           // Sortable header: `role="columnheader"` stays on the wrapper (a
           // native <button> may not carry that role — aria-allowed-role);
           // the inner <button> is the activation + focus target.
@@ -127,6 +228,7 @@ export function SimpleTable<Row>({
                     : "descending"
                   : "none"
               }
+              style={headerStyle}
               className={cn(headerCls, "p-0")}
             >
               <button
@@ -141,7 +243,12 @@ export function SimpleTable<Row>({
               </button>
             </div>
           ) : (
-            <div key={col.key} role="columnheader" className={headerCls}>
+            <div
+              key={col.key}
+              role="columnheader"
+              style={headerStyle}
+              className={headerCls}
+            >
               {col.header}
             </div>
           );
@@ -186,20 +293,30 @@ export function SimpleTable<Row>({
         )
       ) : (
         rows.map((row, i) => {
-          const inner = columns.map((col) => (
-            <div
-              key={col.key}
-              role="cell"
-              className={cn(
-                "shrink-0",
-                col.width,
-                CELL_TEXT[col.cell ?? "text"],
-                col.align === "right" && "text-right flex justify-end flex-wrap",
-              )}
-            >
-              {col.render(row)}
-            </div>
-          ));
+          const inner = columns.map((col) => {
+            const sticky = stickyLeftInfo.get(col.key);
+            return (
+              <div
+                key={col.key}
+                role="cell"
+                style={sticky ? { left: sticky.left } : undefined}
+                className={cn(
+                  "shrink-0",
+                  col.width,
+                  CELL_TEXT[col.cell ?? "text"],
+                  col.align === "right" && "text-right flex justify-end flex-wrap",
+                  sticky &&
+                    cn(
+                      "kit-ledger-sticky sticky [z-index:var(--z-sticky)]",
+                      sticky.isLast &&
+                        "border-r border-r-solid [border-right-color:var(--border-subtle)]",
+                    ),
+                )}
+              >
+                {col.render(row)}
+              </div>
+            );
+          });
           const rowCls = cn(
             "flex items-center h-[44px] px-(--sp-6) gap-(--sp-6) shrink-0 [width:100%] text-left",
             i < rows.length - 1 &&
