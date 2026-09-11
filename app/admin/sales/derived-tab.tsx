@@ -14,6 +14,7 @@
 
 import * as React from "react";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
+import { SearchInput } from "@/components/kit/search-input";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
 import { useDerivedSales } from "@/app/canteen/use-stock-count";
@@ -67,11 +68,18 @@ const ALL = "__all__";
 export function DerivedTab() {
   const [productFilter, setProductFilter] = React.useState<string>(ALL);
   const [dateFilter, setDateFilter] = React.useState<string | null>(null);
+  const [search, setSearch] = React.useState("");
 
-  const { rows, loading, error, refresh } = useDerivedSales({
+  const { rows: fetchedRows, loading, error, refresh } = useDerivedSales({
     productId: productFilter === ALL ? undefined : productFilter,
     date: dateFilter ?? undefined,
   });
+
+  const rows = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return fetchedRows;
+    return fetchedRows.filter((r) => r.productName.toLowerCase().includes(q));
+  }, [fetchedRows, search]);
 
   // All rows (unfiltered) populate the Product picker options.
   const { rows: allRows } = useDerivedSales({});
@@ -89,7 +97,8 @@ export function DerivedTab() {
     [allRows],
   );
 
-  const hasFilters = productFilter !== ALL || dateFilter !== null;
+  const hasFilters =
+    productFilter !== ALL || dateFilter !== null || search.trim() !== "";
 
   const controls: FilterControl[] = [
     {
@@ -122,6 +131,7 @@ export function DerivedTab() {
   function resetFilters() {
     setProductFilter(ALL);
     setDateFilter(null);
+    setSearch("");
   }
 
   const columns: SimpleTableColumn<DerivedSaleView>[] = [
@@ -189,6 +199,14 @@ export function DerivedTab() {
     <div className="flex flex-col w-full pt-(--sp-6)">
       <FilterToolbar
         aria-label="Filter derived sales"
+        search={
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search products…"
+            aria-label="Search products"
+          />
+        }
         controls={controls}
         onChange={onControlChange}
         onReset={resetFilters}
