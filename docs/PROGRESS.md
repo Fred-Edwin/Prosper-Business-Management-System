@@ -16,6 +16,40 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Stock ledger day-by-day rollforward: turned out to be a click-target bug (2026-09-11) — DONE
+
+Client feedback part 2: wanted to select a range and see, per item, the
+opening/movements/closing rollforward day by day. Investigating found the
+report **already shipped and already tested** — the Week/Month/multi-day-
+Custom `/admin/stock` view's period-summary rows already open a "View
+days →" drill-in (`deriveProductDayRows`) showing exactly this, each
+day's closing chained into the next day's opening.
+
+But the client separately said clicking rows did nothing in production —
+reproduced that manually (Playwright against a fresh multi-day fixture)
+and found a real bug: the period-summary `<DenseLedger>` only wired its
+click handler onto the numeric data cells (`onCellClick`, `DataCell`'s
+`<button>`s) — the Location and Product name cells, the obvious place to
+click, were plain unclickable `<div>`s. So the feature existed but was
+effectively undiscoverable for anyone who clicked the row where a normal
+person would.
+
+Fixed with a new opt-in `onRowClick` prop on the frozen `DenseLedger` kit
+component (whole-row click, mutually exclusive with the existing
+`onCellClick` per-cell correction target) — backward compatible, zero
+diff for the single-day view or any other caller. ADR-83.
+
+- Files: `components/kit/dense-ledger.tsx` (new `onRowClick` prop),
+  `app/admin/stock/stock-client.tsx` (period-summary `DenseLedger` now
+  passes `onRowClick` instead of `onCellClick`),
+  `tests/screens/stock-ledger-v2.screen.test.tsx` (updated 2 tests to
+  click the new row button; +1 regression test clicking the product NAME
+  text specifically — the exact click that used to do nothing).
+- Gates: `pnpm typecheck` ✅ · `pnpm build` ✅ · `pnpm test` ✅ (1356/1356).
+- Closes both halves of the 2026-09-11 client feedback: search bars
+  (search-bar-audit entry below), date range (ADR-82), and the ledger
+  rollforward (this entry) are all shipped.
+
 ## Admin date range: Custom becomes a real from..to range (2026-09-11) — DONE
 
 Client feedback part 2: "select a range from a particular date to a

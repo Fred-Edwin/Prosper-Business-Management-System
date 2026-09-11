@@ -285,10 +285,13 @@ describe("/admin/stock — period-summary drill-in", () => {
     const user = userEvent.setup();
     await toWeekView(user);
 
-    const cell = screen.getAllByRole("button", {
-      name: /Correct Purchases .* for Beef Fillet/,
+    // The whole row is one click target (2026-09-11 fix — previously only
+    // the numeric data cells opened the drill-in; clicking the product name
+    // or location, the obvious place to click, did nothing).
+    const row = screen.getAllByRole("button", {
+      name: /View day-by-day for Beef Fillet/,
     })[0];
-    await user.click(cell);
+    await user.click(row);
 
     expect(
       (await screen.findAllByText("← Back to period summary")).length,
@@ -300,10 +303,10 @@ describe("/admin/stock — period-summary drill-in", () => {
     const user = userEvent.setup();
     await toWeekView(user);
 
-    const cell = screen.getAllByRole("button", {
-      name: /Correct Purchases .* for Beef Fillet/,
+    const row = screen.getAllByRole("button", {
+      name: /View day-by-day for Beef Fillet/,
     })[0];
-    await user.click(cell);
+    await user.click(row);
     await waitFor(() =>
       expect(screen.getAllByText("← Back to period summary").length).toBeGreaterThan(0),
     );
@@ -316,6 +319,21 @@ describe("/admin/stock — period-summary drill-in", () => {
       ).not.toBeInTheDocument();
     });
     expect(screen.getAllByText("Beef Fillet (kg)").length).toBeGreaterThan(0);
+  });
+
+  it("regression: clicking the product NAME text (not a data cell) opens the drill-in", async () => {
+    // Client-reported bug (2026-09-11): only the numeric data cells opened
+    // the drill-in — clicking the product name or location, the obvious
+    // place to click a row, did nothing. The whole row is now one button.
+    const user = userEvent.setup();
+    await toWeekView(user);
+
+    const productLabel = screen.getAllByText("Beef Fillet (kg)")[0];
+    await user.click(productLabel);
+
+    expect(
+      (await screen.findAllByText("← Back to period summary")).length,
+    ).toBeGreaterThan(0);
   });
 
   it("a flagged row renders with the amber warning marker", async () => {

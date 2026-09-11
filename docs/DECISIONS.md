@@ -4703,3 +4703,73 @@ important asymmetry:
   and Financials.* Rejected — Stock is exactly the screen where "search
   a range of ledger activity" matters most; deferring it would leave the
   client's own reported case (the Ledger) unaddressed.
+
+## ADR-83: `DenseLedger` gains `onRowClick` — the period-summary drill-in was only ever a per-cell click target (Bug fix, 2026-09-11)
+
+**Status:** DECIDED (maintenance — bug fix, 2026-09-11).
+
+**Context.** The client asked for a day-by-day stock-ledger
+opening/movements/closing rollforward over a selected range (the second
+half of the 2026-09-11 feedback, alongside ADR-82's range picker).
+Investigating turned up that this report **already existed and was
+already tested**: on the Week/Month/multi-day-Custom `/admin/stock` view,
+clicking a period-summary row opens a "View days →" drill-in
+(`deriveProductDayRows`) showing exactly this — one row per business day,
+each day's Closing chained into the next day's Opening, walked backward
+from the range-end balance (the same ADR-11 rule the single-day view
+uses).
+
+But the client also said, independently, that "in the production
+environment, nothing happens when I click the individual rows" — and
+reproducing it (manually, via Playwright, against a freshly-seeded
+multi-day fixture) confirmed a real bug, not a misunderstanding: the
+period-summary `<DenseLedger>` wired its click handler only through
+`onCellClick`, which `dense-ledger.tsx`'s `DataCell` attaches solely to
+the **numeric data cells** (Opening, Purchases, Kitchen, …) — a
+correction-drawer target on the single-day view, reused here for
+navigation. The Location cell and the Product name cell — the obvious,
+natural place to click a row — are plain `<div>`s with no click handler
+at all. A user clicking the product name (as almost anyone would) saw
+nothing happen; only clicking directly on one of the narrow numeric
+columns opened the drill-in.
+
+**Decision.** `DenseLedger` gains a new opt-in `onRowClick?: (rowId:
+string) => void` prop. When set, the entire row renders as one
+keyboard-operable `<button>` (Location + Product + every data cell,
+`aria-label="View day-by-day for <product>"`) and `onCellClick`'s
+per-cell buttons are not rendered for that table — the two props are
+mutually exclusive per call site, since a cell can't simultaneously be a
+correction target and a row-opener. The trailing "Edit" label becomes
+"View →" in this mode. `app/admin/stock/stock-client.tsx`'s period-summary
+`<DenseLedger>` now passes `onRowClick={onPeriodRowClick}` instead of
+`onCellClick={onPeriodRowClick}`; the single-day `<DenseLedger>` is
+unchanged (`onCellClick={onCellClick}`, still per-cell corrections).
+
+This is a kit change (new prop on a frozen component) but backward
+compatible and zero-diff for every existing caller that doesn't pass it —
+treated as a bug fix, not a new UI pattern, since it makes an existing,
+already-shipped affordance work the way its own on-screen caption
+("Click a row to view its day-by-day breakdown for this range.") already
+promised.
+
+**Consequences.**
+- No domain/API/schema change — this was a pure frontend click-target bug.
+  Item 2 of the 2026-09-11 client feedback (the rollforward report) turns
+  out to need no new report at all, just this fix plus ADR-82's range
+  picker (already shipped) to select the range that feeds it.
+- `tests/screens/stock-ledger-v2.screen.test.tsx` updated: the two
+  existing drill-in tests now click the row via its
+  `"View day-by-day for …"` accessible name instead of the old `"Correct
+  Purchases … for …"` cell button; a new regression test clicks the
+  product NAME text specifically (the exact click that used to do
+  nothing) and asserts the drill-in opens.
+- Verified manually end-to-end (Playwright against the dev server, with a
+  throwaway multi-day fixture, cleaned up after) before writing any test —
+  confirmed the bug, then confirmed the fix.
+
+**Alternatives considered.**
+- *Leave `DenseLedger` untouched; wrap just the Product/Location text in a
+  button in `stock-client.tsx`.* Rejected — leaves two different-looking
+  click affordances on the same row (narrow "Correct"-style data-cell
+  buttons AND a text button), doesn't fix the root cause for any future
+  `DenseLedger` period-style usage, and reads as a patch rather than a fix.
