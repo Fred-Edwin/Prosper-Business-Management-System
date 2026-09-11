@@ -1316,7 +1316,7 @@ function TodayZone({
 
 export function DashboardClient() {
   const { data, loading, error, refresh } = useDashboard();
-  const { range, setPreset, setCustomDay, today } = useAdminDateRange();
+  const { range, setPreset, setCustomDay, setCustomRange, today } = useAdminDateRange();
 
   const {
     summary,
@@ -1373,7 +1373,13 @@ export function DashboardClient() {
   }, []);
 
   const rangeControl = (
-    <AdminDateRangeControl range={range} today={today} onPreset={setPreset} onCustomDay={setCustomDay} />
+    <AdminDateRangeControl
+      range={range}
+      today={today}
+      onPreset={setPreset}
+      onCustomDay={setCustomDay}
+      onCustomRange={setCustomRange}
+    />
   );
 
   return (

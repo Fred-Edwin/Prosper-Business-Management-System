@@ -89,7 +89,10 @@ export function useAdminDateRange(): {
   setPreset: (preset: Exclude<RangePreset, "custom">) => void;
   /** Pick a single custom business day (`from === to`). */
   setCustomDay: (ymd: string) => void;
-  /** Today, Africa/Nairobi — the max selectable custom day. */
+  /** Pick a custom `from`..`to` business-date range (inclusive). `to` is
+   *  clamped to `from` when it would precede it. */
+  setCustomRange: (from: string, to: string) => void;
+  /** Today, Africa/Nairobi — the max selectable custom day/range end. */
   today: string;
 } {
   const today = React.useMemo(() => nairobiToday(), []);
@@ -109,5 +112,9 @@ export function useAdminDateRange(): {
     setRange({ preset: "custom", from: ymd, to: ymd });
   }, []);
 
-  return { range, setPreset, setCustomDay, today };
+  const setCustomRange = React.useCallback((from: string, to: string) => {
+    setRange({ preset: "custom", from, to: to < from ? from : to });
+  }, []);
+
+  return { range, setPreset, setCustomDay, setCustomRange, today };
 }

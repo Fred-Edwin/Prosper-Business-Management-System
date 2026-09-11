@@ -16,6 +16,36 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Admin date range: Custom becomes a real from..to range (2026-09-11) — DONE
+
+Client feedback part 2: "select a range from a particular date to a
+particular date" — Custom was previously one business day only (an
+explicit M3 S7 call, not an oversight). Composed two of the existing kit
+`<DatePicker>` triggers (From / To) rather than adding a new kit
+component — no owner sign-off needed for a pure composition.
+
+Investigating first showed Dashboard and Financials were already
+range-ready (their trend-bucketing/comparison-period and summary logic
+generalize to any span; a Dashboard code comment literally anticipated
+this). Stock/Ledger was the one screen with a real single-day assumption
+(`isSingleDay`) — fixed to treat a multi-day Custom range as a period
+(same `usePeriodLedger` path as Week/Month), keeping the day-level ledger
+view only for Today or a single-day Custom pick.
+
+- **New:** `useAdminDateRange().setCustomRange(from, to)` (clamps `to` to
+  `from`); `AdminDateRangeControl`'s optional `onCustomRange` prop (two
+  `<DatePicker>`s when given, the old single picker otherwise).
+- **Changed:** Dashboard, Financials, Stock all wire `onCustomRange`.
+  Stock's `isSingleDay` now also requires `from === to` for a Custom pick.
+- ADR-82.
+- Files: `app/admin/use-date-range.ts` (+
+  `use-date-range.test.ts`), `app/admin/date-range-control.tsx`,
+  `app/admin/dashboard-client.tsx`, `app/admin/financials/financials-client.tsx`,
+  `app/admin/stock/stock-client.tsx`, `docs/DECISIONS.md` (ADR-82).
+- Gates: `pnpm typecheck` ✅ · `pnpm build` ✅ · `pnpm test` ✅ (1355/1355).
+- Next: the stock-ledger day-by-day opening/closing rollforward report
+  (item 2 of the client's feedback) will consume this same range control.
+
 ## Search bar audit — unbounded admin tables (2026-09-11) — DONE
 
 Client feedback: every large table needs a search bar, not just date

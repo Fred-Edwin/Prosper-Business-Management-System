@@ -101,7 +101,7 @@ export function FinancialsClient({
     VALID.includes(initialTab) ? initialTab : "purchases",
   );
 
-  const { range, setPreset, setCustomDay, today } = useAdminDateRange();
+  const { range, setPreset, setCustomDay, setCustomRange, today } = useAdminDateRange();
   const { from, to } = range;
   const isRangeToday = from === today && to === today;
 
@@ -175,6 +175,7 @@ export function FinancialsClient({
       today={today}
       onPreset={setPreset}
       onCustomDay={setCustomDay}
+      onCustomRange={setCustomRange}
     />
   );
 
