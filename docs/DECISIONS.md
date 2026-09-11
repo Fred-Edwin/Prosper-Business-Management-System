@@ -4628,3 +4628,78 @@ across locations, exactly as the dispatch/accept pair already did.
   and revenue on different books.
 - *A UI caveat on the per-location table when transfers occurred.*
   Rejected — leaves misleading numbers on screen.
+
+## ADR-82: Admin date-range "Custom" becomes a real `from`..`to` range (Client feedback, 2026-09-11)
+
+**Status:** DECIDED (maintenance — client feedback, 2026-09-11).
+
+**Context.** `AdminDateRangeControl` / `useAdminDateRange`
+(`app/admin/date-range-control.tsx`, `app/admin/use-date-range.ts`) drive
+the Dashboard, Financials, and Stock/Ledger screens: `Today` / `This week`
+/ `This month` / `Custom`. Session M3 S7 deliberately shipped `Custom` as
+**one** business day picked via the frozen kit `<DatePicker>` — the S7
+brief explicitly declined to add a range picker to the kit at that time
+(see the removed code comment in `date-range-control.tsx`).
+
+The client asked for exactly that range picker: "select a range from a
+particular date to a particular date." Rather than add a new kit
+primitive (which per `CLAUDE.md` needs its own owner sign-off, ADR, and
+Storybook/a11y work), this composes **two** of the existing single-date
+`<DatePicker>` triggers side by side (From / To) when Custom is active —
+no kit change, same pattern the toolbar already uses to compose multiple
+kit atoms into one control.
+
+Investigating the three screens' Custom handling first surfaced an
+important asymmetry:
+- **Dashboard**'s trend-bucketing (`bucketTrendByPeriod`) and
+  prior-period comparison (`priorPeriodRange`) were *already* written to
+  handle an arbitrary Custom span — a code comment there literally
+  anticipated "if Custom ever grows a real range picker." No change
+  needed beyond wiring the new control in.
+- **Financials** already threads `range.from`/`range.to` generically into
+  `getFinancialSummary`, KPIs, and the transaction tabs (`isRangeToday`
+  only checks the exact-today case) — also range-ready as-is.
+- **Stock/Ledger** hard-branches on `isSingleDay = preset === "today" ||
+  preset === "custom"`, picking between a day-level ledger view
+  (`useLedger` + `deriveLedgerRows`) and a period-summary view
+  (`usePeriodLedger` + `derivePeriodSummaryRows`) — it assumed Custom was
+  always one day.
+
+**Decision.**
+1. `useAdminDateRange` gains `setCustomRange(from, to)` alongside the
+   existing `setCustomDay(ymd)`; `to` is clamped to never precede `from`.
+   `setCustomDay` is kept (used when a screen doesn't opt into a range).
+2. `AdminDateRangeControl` takes an optional `onCustomRange` prop. When
+   given, Custom renders two `<DatePicker>` triggers (From / To, `to`'s
+   `minDate` pinned to `from`) instead of one. Dashboard, Financials, and
+   Stock all now pass it.
+3. Stock's `isSingleDay` becomes `preset === "today" || (preset ===
+   "custom" && from === to)` — a multi-day Custom range now renders as a
+   period, exactly like Week/Month, reusing the existing `usePeriodLedger`
+   path (which already takes generic `from`/`to`, since it already served
+   Week and Month). A single-day Custom pick keeps the day-level ledger
+   view unchanged.
+
+**Consequences.**
+- No new kit component, no ADR-level kit change, no Storybook work.
+- Dashboard and Financials needed only the prop wired through — their
+  range-handling logic was already correct for an arbitrary span.
+- Stock gained one extra condition in an existing boolean; no new data
+  path (`usePeriodLedger` already generalizes).
+- This is item 1 of 2 from the same client feedback session — item 2 (a
+  day-by-day stock-ledger opening/closing rollforward report over a
+  selected range) is separate, tracked for a follow-up PR, and will
+  consume this same range control once built.
+
+**Alternatives considered.**
+- *A single new `DateRangePicker` kit component* (one trigger, a
+  two-click range-select calendar popover). More polished, closer to
+  common date-range UX, but it's new kit surface — needs its own ADR,
+  Storybook stories, every `§9` state, and keyboard/ARIA work, none of
+  which was justified for a maintenance-mode fix when composing two
+  existing triggers meets the ask. Deferred; revisit if the client finds
+  the two-picker layout awkward in practice.
+- *Leave Stock's Custom single-day-only, ship the range only on Dashboard
+  and Financials.* Rejected — Stock is exactly the screen where "search
+  a range of ledger activity" matters most; deferring it would leave the
+  client's own reported case (the Ledger) unaddressed.

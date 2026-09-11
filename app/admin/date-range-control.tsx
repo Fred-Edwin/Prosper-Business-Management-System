@@ -4,14 +4,13 @@
 // (Dashboard) — the date-range control, composed from the FROZEN kit:
 // <SegmentedControl> (Today / This week / This month / Custom) + the
 // existing single-date <DatePicker>, shown only when Custom is selected.
-// The kit <DatePicker> is single-date by design; a range picker was
-// explicitly NOT added to the kit (S7 brief). Presets cover the three
-// spans the owner asked for; Custom is one business day.
 //
-// Originally `financials-range.tsx` / `FinancialsRangeControl`, Financials-
-// only. Renamed `AdminDateRangeControl` when the Dashboard needed the
-// identical control (v2 Session B) — behaviour unchanged, both screens
-// import from here now.
+// 2026-09-11 (client feedback — "a proper from/to range, not just a
+// custom day"): Custom now shows TWO <DatePicker> triggers (From / To)
+// side by side, rather than one. The kit's <DatePicker> is still
+// single-date by design (S7 brief) — no new kit primitive was added; this
+// composes two of the existing trigger exactly as the toolbar composes
+// other kit atoms. `to` is clamped to never precede `from`.
 
 import * as React from "react";
 import { SegmentedControl } from "@/components/kit/segmented-control";
@@ -55,26 +54,32 @@ export function AdminDateRangeControl({
   today,
   onPreset,
   onCustomDay,
+  onCustomRange,
   className,
 }: {
   range: AdminDateRange;
-  /** Africa/Nairobi today — the max selectable custom day. */
+  /** Africa/Nairobi today — the max selectable custom day/range end. */
   today: string;
   onPreset: (preset: Exclude<RangePreset, "custom">) => void;
   onCustomDay: (ymd: string) => void;
+  /** Given when the screen supports a real Custom `from`..`to` range
+   *  (rather than a single custom day). When omitted, Custom shows the
+   *  single-day `<DatePicker>` as before. */
+  onCustomRange?: (from: string, to: string) => void;
   className?: string;
 }) {
   const handleSegment = React.useCallback(
     (label: string) => {
       const preset = LABEL_TO_PRESET[label];
       if (preset === "custom") {
-        // Entering Custom mode keeps the current `to` as the picked day.
-        onCustomDay(range.to);
+        // Entering Custom mode keeps the current range/day as-is.
+        if (onCustomRange) onCustomRange(range.from, range.to);
+        else onCustomDay(range.to);
       } else {
         onPreset(preset);
       }
     },
-    [onPreset, onCustomDay, range.to],
+    [onPreset, onCustomDay, onCustomRange, range.from, range.to],
   );
 
   return (
@@ -85,15 +90,37 @@ export function AdminDateRangeControl({
         value={PRESET_LABELS[range.preset]}
         onChange={handleSegment}
       />
-      {range.preset === "custom" && (
-        <DatePicker
-          value={shortBusinessDateWithYear(range.to)}
-          selected={dateOf(range.to)}
-          maxDate={dateOf(today)}
-          onSelect={(d) => onCustomDay(ymdOf(d))}
-          aria-label="Custom business date"
-        />
-      )}
+      {range.preset === "custom" &&
+        (onCustomRange ? (
+          <div className="flex items-center gap-(--sp-3)">
+            <DatePicker
+              value={shortBusinessDateWithYear(range.from)}
+              selected={dateOf(range.from)}
+              maxDate={dateOf(today)}
+              onSelect={(d) => onCustomRange(ymdOf(d), range.to)}
+              aria-label="Custom range start date"
+            />
+            <span className="font-ui [color:var(--text-tertiary)] text-sm/sm" aria-hidden>
+              –
+            </span>
+            <DatePicker
+              value={shortBusinessDateWithYear(range.to)}
+              selected={dateOf(range.to)}
+              minDate={dateOf(range.from)}
+              maxDate={dateOf(today)}
+              onSelect={(d) => onCustomRange(range.from, ymdOf(d))}
+              aria-label="Custom range end date"
+            />
+          </div>
+        ) : (
+          <DatePicker
+            value={shortBusinessDateWithYear(range.to)}
+            selected={dateOf(range.to)}
+            maxDate={dateOf(today)}
+            onSelect={(d) => onCustomDay(ymdOf(d))}
+            aria-label="Custom business date"
+          />
+        ))}
     </div>
   );
 }

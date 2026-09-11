@@ -193,8 +193,14 @@ type DrillInTarget = {
 };
 
 export function StockClient() {
-  const { range, setPreset, setCustomDay, today } = useAdminDateRange();
-  const isSingleDay = range.preset === "today" || range.preset === "custom";
+  const { range, setPreset, setCustomDay, setCustomRange, today } = useAdminDateRange();
+  // Custom used to always be a single day; it can now be a real from..to
+  // range (client feedback, 2026-09-11). A multi-day Custom reads as a
+  // period, same as Week/Month — only Today and a single-day Custom get
+  // the day-level ledger view.
+  const isSingleDay =
+    range.preset === "today" ||
+    (range.preset === "custom" && range.from === range.to);
   const date = range.from; // single-day presets: from === to
 
   // Location scope — re-fetched server-side by useLedger/usePeriodLedger.
@@ -555,6 +561,7 @@ export function StockClient() {
       today={today}
       onPreset={setPreset}
       onCustomDay={setCustomDay}
+      onCustomRange={setCustomRange}
     />
   );
 
