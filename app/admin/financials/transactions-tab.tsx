@@ -23,6 +23,7 @@ import * as React from "react";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
 import { StatusChip } from "@/components/kit/status-chip";
 import { Button } from "@/components/kit/button";
+import { SearchInput } from "@/components/kit/search-input";
 import { ErrorState } from "@/components/kit/error-state";
 import type {
   OutstandingPurchases,
@@ -112,6 +113,7 @@ export function TransactionsTab({
   >(undefined);
   const [correctTarget, setCorrectTarget] =
     React.useState<StockMovementView | null>(null);
+  const [search, setSearch] = React.useState("");
 
   const openDrawer = React.useCallback((productId?: string) => {
     setDrawerProductId(productId);
@@ -171,6 +173,33 @@ export function TransactionsTab({
     () => new Set(outstanding.unmatchedReceipts.map((m) => m.id)),
     [outstanding],
   );
+
+  // Reset search when the tab changes so a stale term doesn't silently hide
+  // rows on the newly-active tab.
+  React.useEffect(() => {
+    setSearch("");
+  }, [tab]);
+
+  const searchQuery = search.trim().toLowerCase();
+
+  const filteredPayments = React.useMemo(() => {
+    if (!searchQuery) return payments;
+    return payments.filter((m) => {
+      const product = productById.get(m.productId);
+      return (
+        (m.purchaseSupplier ?? "").toLowerCase().includes(searchQuery) ||
+        (product?.name ?? "").toLowerCase().includes(searchQuery)
+      );
+    });
+  }, [payments, productById, searchQuery]);
+
+  const filteredReceipts = React.useMemo(() => {
+    if (!searchQuery) return receipts;
+    return receipts.filter((r) => {
+      const product = productById.get(r.productId);
+      return (product?.name ?? "").toLowerCase().includes(searchQuery);
+    });
+  }, [receipts, productById, searchQuery]);
 
   // ── Handovers tab: delegate ─────────────────────────────────────────
   // Handover reconciliation spans the full selected range (ADR-79) — the
@@ -361,31 +390,48 @@ export function TransactionsTab({
           </div>
         )}
 
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={
+            tab === "purchases" ? "Search supplier or product…" : "Search product…"
+          }
+          aria-label={tab === "purchases" ? "Search purchases" : "Search deliveries"}
+        />
+
         <div className="overflow-x-auto">
           {tab === "purchases" ? (
             <SimpleTable
               columns={purchaseColumns}
-              rows={payments}
+              rows={filteredPayments}
               rowKey={(m) => m.id}
               loading={loading && payments.length === 0}
               emptyState={{
-                title: `No stock purchases on ${dateLabel}`,
-                description:
-                  "Payments to suppliers recorded over the selected range appear here.",
-                actionLabel: isRangeToday ? "Record Payment" : undefined,
-                onAction: isRangeToday ? () => openDrawer() : undefined,
+                title: searchQuery
+                  ? "No purchases match your search"
+                  : `No stock purchases on ${dateLabel}`,
+                description: searchQuery
+                  ? "Try a different search term."
+                  : "Payments to suppliers recorded over the selected range appear here.",
+                actionLabel:
+                  !searchQuery && isRangeToday ? "Record Payment" : undefined,
+                onAction:
+                  !searchQuery && isRangeToday ? () => openDrawer() : undefined,
               }}
             />
           ) : (
             <SimpleTable
               columns={deliveryColumns}
-              rows={receipts}
+              rows={filteredReceipts}
               rowKey={(r) => r.id}
               loading={loading && receipts.length === 0}
               emptyState={{
-                title: `No deliveries on ${dateLabel}`,
-                description:
-                  "Deliveries received by the Store Manager over the selected range appear here.",
+                title: searchQuery
+                  ? "No deliveries match your search"
+                  : `No deliveries on ${dateLabel}`,
+                description: searchQuery
+                  ? "Try a different search term."
+                  : "Deliveries received by the Store Manager over the selected range appear here.",
               }}
             />
           )}
@@ -405,6 +451,17 @@ export function TransactionsTab({
           </div>
         ) : (
           <div className="flex flex-col grow min-h-0 overflow-y-auto">
+            <div className="p-(--sp-5) pb-0">
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder={
+                  tab === "purchases" ? "Search supplier or product…" : "Search product…"
+                }
+                aria-label={tab === "purchases" ? "Search purchases" : "Search deliveries"}
+                className="w-full"
+              />
+            </div>
             {loading && (payments.length === 0 && receipts.length === 0) ? (
               <div className="flex flex-col">
                 {[0, 1, 2].map((i) => (
@@ -419,21 +476,21 @@ export function TransactionsTab({
               </div>
             ) : tab === "purchases" ? (
               <MobilePurchaseCards
-                rows={payments}
+                rows={filteredPayments}
                 productById={productById}
                 locationById={locationById}
                 awaitingIds={awaitingIds}
                 onCorrect={setCorrectTarget}
-                dateLabel={dateLabel}
+                dateLabel={searchQuery ? "matching your search" : dateLabel}
               />
             ) : (
               <MobileDeliveryCards
-                rows={receipts}
+                rows={filteredReceipts}
                 productById={productById}
                 locationById={locationById}
                 unmatchedReceiptIds={unmatchedReceiptIds}
                 onRecordPayment={openDrawer}
-                dateLabel={dateLabel}
+                dateLabel={searchQuery ? "matching your search" : dateLabel}
               />
             )}
           </div>

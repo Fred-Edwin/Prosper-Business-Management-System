@@ -21,6 +21,7 @@ import {
   type SimpleTableColumn,
 } from "@/components/kit/simple-table";
 import { PillFilter } from "@/components/kit/pill-filter";
+import { SearchInput } from "@/components/kit/search-input";
 import { Button } from "@/components/kit/button";
 import { StatusChip } from "@/components/kit/status-chip";
 import { ErrorState } from "@/components/kit/error-state";
@@ -184,6 +185,7 @@ export function PayTab({
   const { toast } = useToast();
   const { locations } = useLocations();
   const [locFilter, setLocFilter] = React.useState("all");
+  const [search, setSearch] = React.useState("");
 
   const {
     payroll,
@@ -229,10 +231,14 @@ export function PayTab({
   );
 
   const rows = React.useMemo(() => {
-    const all = payroll?.rows ?? [];
-    if (locFilter === "all") return all;
-    return all.filter((r) => byId.get(r.staffId)?.locationId === locFilter);
-  }, [payroll, locFilter, byId]);
+    let all = payroll?.rows ?? [];
+    if (locFilter !== "all") {
+      all = all.filter((r) => byId.get(r.staffId)?.locationId === locFilter);
+    }
+    const q = search.trim().toLowerCase();
+    if (q) all = all.filter((r) => r.staffName.toLowerCase().includes(q));
+    return all;
+  }, [payroll, locFilter, byId, search]);
 
   const rowCaption = React.useCallback(
     (r: StaffPay): string => {
@@ -453,6 +459,13 @@ export function PayTab({
           >
             Pay out all unpaid
           </Button>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search staff…"
+            aria-label="Search staff"
+            className="w-[200px]"
+          />
           <PillFilter
             options={locationFilterOptions(locations)}
             activeKey={locFilter}

@@ -23,6 +23,7 @@ import * as React from "react";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
 import { Drawer } from "@/components/kit/drawer";
 import { Button } from "@/components/kit/button";
+import { SearchInput } from "@/components/kit/search-input";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
 import { useToast } from "@/components/kit/toast";
@@ -114,6 +115,7 @@ export function OrdersTab() {
     paymentMethod: null,
     correctedOnly: false,
   });
+  const [search, setSearch] = React.useState("");
 
   const { orders, loading, error, refresh, correctOrder } = useOrders({
     cashierId: filter.cashierId ?? undefined,
@@ -156,14 +158,24 @@ export function OrdersTab() {
 
   // Client-side "corrected only": rows that are a correction OR have one.
   const visibleOrders = React.useMemo(() => {
-    if (!filter.correctedOnly) return orders;
-    const correctedIds = new Set(
-      orders.filter((o) => o.correctsOrderId).map((o) => o.correctsOrderId!),
-    );
-    return orders.filter(
-      (o) => correctedIds.has(o.id) || o.correctsOrderId !== null,
-    );
-  }, [orders, filter.correctedOnly]);
+    let rows = orders;
+    if (filter.correctedOnly) {
+      const correctedIds = new Set(
+        orders.filter((o) => o.correctsOrderId).map((o) => o.correctsOrderId!),
+      );
+      rows = rows.filter(
+        (o) => correctedIds.has(o.id) || o.correctsOrderId !== null,
+      );
+    }
+    const q = search.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((o) => {
+        const cashierName = (o.cashierName || cashierFallback(o.cashierId)).toLowerCase();
+        return cashierName.includes(q) || String(o.number).includes(q);
+      });
+    }
+    return rows;
+  }, [orders, filter.correctedOnly, search]);
 
   const { toast } = useToast();
   const [drawer, setDrawer] = React.useState<DrawerMode>(null);
@@ -269,15 +281,18 @@ export function OrdersTab() {
       paymentMethod: null,
       correctedOnly: false,
     });
+    setSearch("");
   }
 
   // Off-default = anything other than {no cashier, no payment, date=today,
-  // not corrected-only}. `date === null` (all dates) counts as off-default.
+  // not corrected-only, no search}. `date === null` (all dates) counts as
+  // off-default.
   const anyFilterActive =
     filter.cashierId !== null ||
     filter.paymentMethod !== null ||
     filter.correctedOnly ||
-    filter.date !== today;
+    filter.date !== today ||
+    search.trim() !== "";
 
   // The "Today" date is the default (flow doc §G) — but an empty Today is
   // still a filter narrowing the view, and the Admin needs a path to older
@@ -286,7 +301,8 @@ export function OrdersTab() {
     filter.cashierId === null &&
     filter.paymentMethod === null &&
     !filter.correctedOnly &&
-    filter.date === today;
+    filter.date === today &&
+    search.trim() === "";
 
   // ── Table columns ──────────────────────────────────────────────────
 
@@ -376,6 +392,14 @@ export function OrdersTab() {
     <div className="flex flex-col w-full pt-(--sp-6)">
       <FilterToolbar
         aria-label="Filter orders"
+        search={
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search cashier or order #…"
+            aria-label="Search orders"
+          />
+        }
         controls={controls}
         onChange={onControlChange}
         onReset={resetFilters}
