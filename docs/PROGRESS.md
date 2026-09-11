@@ -16,6 +16,40 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Search bar audit — unbounded admin tables (2026-09-11) — DONE
+
+Client feedback: every large table needs a search bar, not just date
+filters (part 1 of a two-part ask; part 2 is a date-range picker + stock
+ledger rollforward report, still to come).
+
+Audited every screen using `SimpleTable`/`DenseLedger`. Assets, Customers,
+Catalog Products, and Stock already had `SearchInput`. Wired it into the
+four screens with genuinely unbounded row sets it was missing from; left
+naturally small/bounded lists alone (Roster, Attendance, Locations,
+Day Close, Handovers, Owner Draws, Customer Detail — a handful of rows or
+inherently date-scoped, so search adds no value there).
+
+- `app/admin/sales/orders-tab.tsx` — search by cashier name or order
+  number, added to the existing `FilterToolbar`.
+- `app/admin/sales/derived-tab.tsx` — search by product name, alongside
+  the existing Product select.
+- `app/admin/staff/pay-tab.tsx` — search by staff name, in the custom
+  sub-toolbar next to the Location `PillFilter` (no `FilterToolbar` here).
+- `app/admin/financials/transactions-tab.tsx` — search by supplier/product
+  on both Purchases and Deliveries tabs; this screen had no toolbar row at
+  all before. Resets on tab switch so a stale term can't silently hide
+  rows on the newly active tab.
+
+No kit changes — pure composition of the existing `SearchInput` +
+`FilterToolbar` kit components, following the Assets/Customers pattern.
+No new tests added (client-side filtering over already-tested data hooks,
+covered indirectly by existing screen tests); relied on `pnpm test` +
+`typecheck` + `build` staying green.
+
+- Files: `app/admin/sales/orders-tab.tsx`, `app/admin/sales/derived-tab.tsx`,
+  `app/admin/staff/pay-tab.tsx`, `app/admin/financials/transactions-tab.tsx`.
+- Gates: `pnpm typecheck` ✅ · `pnpm build` ✅ · `pnpm test` ✅ (1352/1352).
+
 ## Per-location COGS: internal transfers no longer distort it (2026-09-10) — DONE
 
 Client feedback: on a day the Restaurant only transferred ~44 Smokies to
