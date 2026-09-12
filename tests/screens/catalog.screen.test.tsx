@@ -214,7 +214,7 @@ describe("/admin/catalog — kit composition", () => {
     );
   });
 
-  it("filters by category client-side (not part of useCatalog's server filter) and clears with Clear filters", async () => {
+  it("filters by category client-side (not part of useCatalog's server filter) and clears via the empty-state action when it matches nothing", async () => {
     state.products = [
       PRODUCT, // Chicken Breast — ingredient, category: null
       { ...PRODUCT, id: "p2", name: "Fanta 300ml", kind: "goods", category: "Drinks" },
@@ -236,11 +236,23 @@ describe("/admin/catalog — kit composition", () => {
     expect(within(table).queryByText("Mandazi")).not.toBeInTheDocument();
     expect(within(table).queryByText("Chicken Breast")).not.toBeInTheDocument();
 
+    // Combine with a search term that matches nothing in "Drinks" — the
+    // resulting empty state's own Clear-filters action (the only such
+    // control the kit exposes; SimpleTable has no separate always-visible
+    // one) resets both the category select and the search box together.
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search products" }),
+      "zzz",
+    );
+    expect(
+      within(table).getByRole("button", { name: "Clear filters" }),
+    ).toBeInTheDocument();
     await user.click(
       within(table).getByRole("button", { name: "Clear filters" }),
     );
     expect(within(table).getByText("Mandazi")).toBeInTheDocument();
     expect(within(table).getByText("Chicken Breast")).toBeInTheDocument();
+    expect(within(table).getByText("Fanta 300ml")).toBeInTheDocument();
   });
 
   it("the category filter offers Uncategorised only when it partitions the kind-scoped list", async () => {
