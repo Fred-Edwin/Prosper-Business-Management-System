@@ -40,14 +40,16 @@ const STICKY_HEADER_BG: React.CSSProperties = {
 
 /**
  * A sticky-left header CELL (pinned on both axes — top AND left, in the
- * corner) needs its z-index one step above `--z-sticky` (1100). Its row
+ * corner) needs its z-index one step above `--z-sticky` (1000). Its row
  * container is already `sticky top-0` at `--z-sticky`; a sticky-left BODY
  * cell in a later row sits in that same row's own stacking context at
  * `--z-sticky` too, and later DOM order would let it paint over an
  * equal-z-index header corner cell as the page scrolls. Same fix, same
- * reasoning, as DenseLedger's `STICKY_HEADER_Z` (1101 there; matched here).
+ * reasoning, as DenseLedger's `STICKY_HEADER_Z`. Derived from the token
+ * (not a hardcoded literal like the old `1101`) so it can never drift above
+ * `--z-dropdown` (1100) and trap a Select/date popover under the header.
  */
-const STICKY_HEADER_LEFT_Z = "[z-index:1101]";
+const STICKY_HEADER_LEFT_Z = "[z-index:calc(var(--z-sticky)_+_1)]";
 
 // Trailing row affordance — matches the A1 artboard (16×16, ChevronRight,
 // --text-tertiary, 1.5 stroke) in a w-[24px] right-aligned slot.
@@ -179,13 +181,16 @@ export function SimpleTable<Row>({
       )}
     >
       {/* Header Row. When stickyHeader is on, the container sits at
-          STICKY_HEADER_LEFT_Z (1101) — one step above `--z-sticky` (1100)
-          — not `--z-sticky` itself. A body row's sticky-LEFT cell also
-          sits at `--z-sticky` in that row's own stacking context, and,
-          being later in DOM order, would otherwise paint OVER an
-          equal-z-index header as the page scrolls (visible bleed-through
-          bug, caught this session — same reasoning as DenseLedger's
-          STICKY_HEADER_Z). */}
+          STICKY_HEADER_LEFT_Z (`--z-sticky` + 1 = 1001) — one step above
+          `--z-sticky` (1000) — not `--z-sticky` itself. A body row's
+          sticky-LEFT cell also sits at `--z-sticky` in that row's own
+          stacking context, and, being later in DOM order, would otherwise
+          paint OVER an equal-z-index header as the page scrolls (visible
+          bleed-through bug, caught this session — same reasoning as
+          DenseLedger's STICKY_HEADER_Z). Staying below `--z-dropdown`
+          (1100) keeps a Select/date popover opened from the header (e.g.
+          the catalog location filter) floating above it instead of being
+          clipped underneath. */}
       <div
         role="row"
         style={stickyHeader ? STICKY_HEADER_BG : undefined}

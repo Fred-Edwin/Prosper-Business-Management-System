@@ -247,12 +247,12 @@ describe("/admin/stock — Ledger v2 KPI band", () => {
 });
 
 describe("/admin/stock — range control switches the grid", () => {
-  it("defaults to Today — single-day view — and has a Date filter control", () => {
+  it("defaults to Today — single-day view — with no Date control in the toolbar (client feedback 2026-09-12: the header range control is the only date picker now)", () => {
     renderScreen();
     const toolbar = within(
       screen.getAllByRole("search", { name: "Filter the stock ledger" })[0],
     );
-    expect(toolbar.getByRole("button", { name: /Date:/ })).toBeInTheDocument();
+    expect(toolbar.queryByRole("button", { name: /Date:/ })).not.toBeInTheDocument();
   });
 
   it("switching to 'This week' swaps the grid to the period-summary view", async () => {
@@ -264,7 +264,7 @@ describe("/admin/stock — range control switches the grid", () => {
     await waitFor(() => {
       expect(screen.getAllByText("Beef Fillet (kg)").length).toBeGreaterThan(0);
     });
-    // The single-day Date filter control drops off in Week/Month.
+    // Still no Date control in the toolbar — same as the single-day view.
     const toolbar = within(
       screen.getAllByRole("search", { name: "Filter the stock ledger" })[0],
     );

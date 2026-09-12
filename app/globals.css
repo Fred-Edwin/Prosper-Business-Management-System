@@ -452,6 +452,39 @@ body {
   transform: scale(0.97);
 }
 
+/* --- Always-visible scrollbar (client feedback 2026-09-12) ---------------
+ * Every scrollable table/list container uses plain `overflow-auto` /
+ * `overflow-x-auto` with the browser's native scrollbar, which on desktop
+ * Chrome/Edge/Firefox only renders on hover or while scrolling — invisible
+ * at rest. A mouse user has no touchpad two-finger swipe to discover a
+ * table scrolls horizontally at all. Global, not a `.kit-*` opt-in class:
+ * applies to any current or future `overflow`/`overflow-x` container with
+ * no JSX changes. `scrollbar-gutter: stable` reserves the track space so
+ * it doesn't reflow content in/out as it appears. Firefox gets the same
+ * always-on, thin, higher-contrast look via `scrollbar-width`/`-color`;
+ * WebKit/Blink (Chrome, Edge, Safari) via `::-webkit-scrollbar`. */
+* {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  border-radius: var(--radius-full);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-tertiary);
+}
+
 /* --- Inline spinner marker (rendered by <Spinner>) ------------------------ */
 .kit-spinner {
   display: inline-block;

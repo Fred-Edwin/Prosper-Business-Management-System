@@ -214,6 +214,60 @@ describe("/admin/catalog — kit composition", () => {
     );
   });
 
+  it("filters by category client-side (not part of useCatalog's server filter) and clears via the empty-state action when it matches nothing", async () => {
+    state.products = [
+      PRODUCT, // Chicken Breast — ingredient, category: null
+      { ...PRODUCT, id: "p2", name: "Fanta 300ml", kind: "goods", category: "Drinks" },
+      { ...PRODUCT, id: "p3", name: "Mandazi", kind: "goods", category: "Bakery" },
+    ];
+    renderScreen();
+    const user = userEvent.setup();
+    const table = screen.getByRole("table");
+
+    // All three rows visible before filtering; category never reaches useCatalog.
+    expect(within(table).getByText("Fanta 300ml")).toBeInTheDocument();
+    expect(within(table).getByText("Mandazi")).toBeInTheDocument();
+    expect(state.lastFilter).not.toHaveProperty("category");
+
+    await user.click(screen.getByRole("combobox", { name: "Filter by category" }));
+    await user.click(await screen.findByRole("option", { name: "Drinks" }));
+
+    expect(within(table).getByText("Fanta 300ml")).toBeInTheDocument();
+    expect(within(table).queryByText("Mandazi")).not.toBeInTheDocument();
+    expect(within(table).queryByText("Chicken Breast")).not.toBeInTheDocument();
+
+    // Combine with a search term that matches nothing in "Drinks" — the
+    // resulting empty state's own Clear-filters action (the only such
+    // control the kit exposes; SimpleTable has no separate always-visible
+    // one) resets both the category select and the search box together.
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search products" }),
+      "zzz",
+    );
+    expect(
+      within(table).getByRole("button", { name: "Clear filters" }),
+    ).toBeInTheDocument();
+    await user.click(
+      within(table).getByRole("button", { name: "Clear filters" }),
+    );
+    expect(within(table).getByText("Mandazi")).toBeInTheDocument();
+    expect(within(table).getByText("Chicken Breast")).toBeInTheDocument();
+    expect(within(table).getByText("Fanta 300ml")).toBeInTheDocument();
+  });
+
+  it("the category filter offers Uncategorised only when it partitions the kind-scoped list", async () => {
+    state.products = [PRODUCT]; // sole product, category: null
+    renderScreen();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("combobox", { name: "Filter by category" }));
+    // All-uncategorised list = same as "All categories" — no extra tab, per
+    // buildCategoryTabs' documented behaviour (lib/catalog-categories.ts).
+    expect(
+      screen.queryByRole("option", { name: "Uncategorised" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens the create Drawer, traps focus, and restores focus to the opener on Esc", async () => {
     renderScreen();
     const user = userEvent.setup();
