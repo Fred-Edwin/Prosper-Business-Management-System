@@ -579,6 +579,58 @@ describe("C4 — Order detail", () => {
     expect(arg).not.toHaveProperty("account");
   });
 
+  it("+Add item panel — search and category tabs filter the product grid", async () => {
+    const user = userEvent.setup();
+    orderState.order = { ...ORDER_TODAY, cashierId: "me" };
+    renderC4({ userId: "me" });
+    await user.click(screen.getByRole("button", { name: "+ Add item" }));
+
+    // All three fixture products (Chapati/Mains, Samosa/Snacks,
+    // Soda/Uncategorised) are visible by default, plus category tabs.
+    expect(screen.getByRole("tab", { name: "All" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Mains" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Snacks" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Uncategorised" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Soda 300ml/ })).toBeInTheDocument();
+
+    // Search narrows the grid.
+    await user.type(
+      screen.getByLabelText("Search products to add"),
+      "Samosa",
+    );
+    expect(screen.getByRole("button", { name: /Samosa/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Soda 300ml/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("+Add item panel — category tab filters independently of search", async () => {
+    const user = userEvent.setup();
+    orderState.order = { ...ORDER_TODAY, cashierId: "me" };
+    renderC4({ userId: "me" });
+    await user.click(screen.getByRole("button", { name: "+ Add item" }));
+    await user.click(screen.getByRole("tab", { name: "Mains" }));
+    expect(screen.getByRole("button", { name: /Chapati/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Samosa/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Soda 300ml/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("+Add item panel — no match shows an empty message, not a blank grid", async () => {
+    const user = userEvent.setup();
+    orderState.order = { ...ORDER_TODAY, cashierId: "me" };
+    renderC4({ userId: "me" });
+    await user.click(screen.getByRole("button", { name: "+ Add item" }));
+    await user.type(
+      screen.getByLabelText("Search products to add"),
+      "nonexistent-product",
+    );
+    expect(screen.getByText("No products match.")).toBeInTheDocument();
+  });
+
   it("past-day order → read-only, no steppers, routes to the Admin correction path", async () => {
     const user = userEvent.setup();
     orderState.order = { ...ORDER_YESTERDAY, cashierId: "me" };

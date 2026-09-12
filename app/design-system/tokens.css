@@ -237,8 +237,8 @@
 
   /* --- Z-index scale (100-step, generous gaps for future intermediates) - */
   --z-base: 0;
-  --z-dropdown: 1000; /* select / date popover */
-  --z-sticky: 1100; /* sticky table header, sticky footer, sticky action bar */
+  --z-sticky: 1000; /* sticky table header, sticky footer, sticky action bar */
+  --z-dropdown: 1100; /* select / date popover — above sticky content it opens over */
   --z-overlay: 1200; /* .kit-scrim backdrop */
   --z-drawer: 1300; /* Drawer panel / rail — above its scrim */
   --z-dialog: 1400; /* FrictionDeleteDialog / BottomSheet panel */

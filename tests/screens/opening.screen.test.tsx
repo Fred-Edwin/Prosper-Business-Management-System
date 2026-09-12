@@ -179,6 +179,57 @@ describe("/admin/stock/opening — kit composition", () => {
     expect(screen.queryByText("Grilled Chicken")).not.toBeInTheDocument();
   });
 
+  it("filters the grid by category, alongside (not replacing) the kind tabs", async () => {
+    api.listProducts.mockResolvedValueOnce([
+      ...PRODUCTS,
+      {
+        id: "prod-tomato",
+        name: "Tomatoes",
+        kind: "ingredient",
+        unitLabel: "kg",
+        buyingPrice: "80.00",
+        category: "Produce",
+        deletedAt: null,
+        createdAt: NOW,
+        updatedAt: NOW,
+        locations: [pl("loc-store", "Store", "store")],
+      },
+    ]);
+    renderScreen();
+    const user = userEvent.setup();
+    await screen.findByRole("grid");
+
+    const categoryRows = screen.getAllByRole("radiogroup", {
+      name: "Filter by category",
+    });
+    for (const row of categoryRows) {
+      expect(
+        within(row).getByRole("radio", { name: "Produce" }),
+      ).toBeInTheDocument();
+      expect(
+        within(row).getByRole("radio", { name: "Uncategorised" }),
+      ).toBeInTheDocument();
+    }
+
+    await user.click(
+      within(categoryRows[0]).getByRole("radio", { name: "Produce" }),
+    );
+    expect(screen.getAllByText("Tomatoes").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Beef Fillet")).not.toBeInTheDocument();
+
+    // Combined with a kind tab: Produce ∩ Ingredients still shows Tomatoes.
+    await user.click(screen.getAllByRole("tab", { name: /^Kitchen Ingredients/ })[0]);
+    expect(screen.getAllByText("Tomatoes").length).toBeGreaterThan(0);
+  });
+
+  it("hides the category filter row when no product carries a category", async () => {
+    renderScreen();
+    await screen.findByRole("grid");
+    expect(
+      screen.queryByRole("radiogroup", { name: "Filter by category" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("gives a goods item stocked at two locations a row NAMED per location", async () => {
     renderScreen();
     const grid = await screen.findByRole("grid");

@@ -26,6 +26,7 @@ import { Breadcrumb } from "@/components/kit/breadcrumb";
 import { InstructionalBanner } from "@/components/kit/instructional-banner";
 import { BulkEntryGrid, type BulkGridRow } from "@/components/kit/bulk-entry-grid";
 import { Tabs } from "@/components/kit/tabs";
+import { PillFilter } from "@/components/kit/pill-filter";
 import { Button } from "@/components/kit/button";
 import { EmptyState } from "@/components/kit/empty-state";
 import { useToast } from "@/components/kit/toast";
@@ -34,6 +35,11 @@ import type { Location, ProductWithLocations } from "@/lib/domain/catalog";
 import type { ProductKind } from "@prisma/client";
 import { stockApi, StockRequestError } from "../use-stock";
 import { cellKey, openingCellsFor, planOpeningPosts } from "./opening-plan";
+import {
+  ALL_CATEGORIES_KEY,
+  buildCategoryTabs,
+  matchesCategory,
+} from "@/lib/catalog-categories";
 
 const CATEGORY_LABEL: Record<ProductKind, string> = {
   ingredient: "Ingredient",
@@ -99,8 +105,21 @@ export function OpeningClient() {
   const [loading, setLoading] = React.useState(true);
 
   const [activeTab, setActiveTab] = React.useState("all");
+  const [activeCategory, setActiveCategory] = React.useState(ALL_CATEGORIES_KEY);
   const [cellState, setCellState] = React.useState<Record<string, CellState>>({});
   const [submitting, setSubmitting] = React.useState(false);
+
+  // Category axis, alongside the kind tabs — the grid is every product ×
+  // location and can get long; category narrows it further within a kind.
+  const categoryTabs = React.useMemo(() => buildCategoryTabs(products), [products]);
+
+  // Category pill row can shrink as the catalog changes — snap back to
+  // "All" if the active category disappears.
+  React.useEffect(() => {
+    if (!categoryTabs.some((c) => c.key === activeCategory)) {
+      setActiveCategory(ALL_CATEGORIES_KEY);
+    }
+  }, [categoryTabs, activeCategory]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -130,10 +149,10 @@ export function OpeningClient() {
 
   const visibleProducts = React.useMemo(
     () =>
-      activeTab === "all"
-        ? products
-        : products.filter((p) => p.kind === activeTab),
-    [products, activeTab],
+      products
+        .filter((p) => activeTab === "all" || p.kind === activeTab)
+        .filter((p) => matchesCategory(p, activeCategory)),
+    [products, activeTab, activeCategory],
   );
 
   // Flattened list of every editable cell for the visible products — one
@@ -394,6 +413,15 @@ export function OpeningClient() {
 
         <Tabs tabs={TABS} activeKey={activeTab} onChange={setActiveTab} />
 
+        {categoryTabs.length > 1 && (
+          <PillFilter
+            aria-label="Filter by category"
+            options={categoryTabs}
+            activeKey={activeCategory}
+            onChange={setActiveCategory}
+          />
+        )}
+
         {loading ? (
           <div className="font-ui [color:var(--text-tertiary)] text-body/sm">
             Loading…
@@ -453,10 +481,10 @@ export function OpeningClient() {
           </div>
         )}
 
-        {/* Category chip strip — horizontally scrollable (8Q4-0 pattern). */}
+        {/* Kind chip strip — horizontally scrollable (8Q4-0 pattern). */}
         <div
           role="tablist"
-          aria-label="Filter by category"
+          aria-label="Filter by kind"
           className="flex items-center gap-(--sp-4) overflow-x-auto pt-(--sp-6) pb-(--sp-5)"
         >
           {TABS.map((t) => {
@@ -483,6 +511,18 @@ export function OpeningClient() {
             );
           })}
         </div>
+
+        {categoryTabs.length > 1 && (
+          <div className="pb-(--sp-5)">
+            <PillFilter
+              aria-label="Filter by category"
+              options={categoryTabs}
+              activeKey={activeCategory}
+              onChange={setActiveCategory}
+              className="overflow-x-auto"
+            />
+          </div>
+        )}
 
         {/* Card list / states — one card per (product × location) cell. */}
         {loading ? (
