@@ -2,18 +2,21 @@
 
 // Session 11 rebuild — COMPOSED from the kit, no longer a transcription of Paper
 // artboards 798-0 (desktop ledger) / 7LJ-0 (correction drawer) / 8Q4-0 (mobile).
-// Assembled from <PageShell wide> + <FilterToolbar> (Location · Category · Date
-// — 3e retrofit off the old <PillFilter> location switch, per LDZ-0) +
-// <DenseLedger showLocation horizontalScroll onCellClick loading> +
-// <EmptyState variant="filtered"> / <ErrorState> + the rail <Drawer>
-// correction flow + <Toast>.
+// Assembled from <PageShell wide> + <FilterToolbar> (Location · Kind ·
+// Category · search — 3e retrofit off the old <PillFilter> location switch,
+// per LDZ-0; the toolbar's own single-day Date chip was removed in favour of
+// the header's <AdminDateRangeControl>, client feedback 2026-09-12 — see
+// that control's own comment below) + <DenseLedger showLocation
+// horizontalScroll onCellClick loading> + <EmptyState variant="filtered"> /
+// <ErrorState> + the rail <Drawer> correction flow + <Toast>.
 //
 // The data path is unchanged: date + location state, useLedger, the derived
 // 11 columns via deriveLedgerRows, the >1-movement-per-cell FLAG, and the
-// correction-drawer orchestration are verbatim. Category is a client-side
-// filter over the derived rows (product.category), no new API. The shell
-// "Maximize" collapse is AdminShell's `collapsed` prop (admin-shell-client.tsx,
-// ADR-36b), not this file.
+// correction-drawer orchestration are verbatim. Kind and Category are both
+// client-side filters over the derived rows (Product.kind — the fixed
+// Ingredient/Dish/Goods enum — and the separate free-text Product.category),
+// no new API. The shell "Maximize" collapse is AdminShell's `collapsed` prop
+// (admin-shell-client.tsx, ADR-36b), not this file.
 //
 // LEDGER v2 (this session) — a date-RANGE control (the same
 // <AdminDateRangeControl> / useAdminDateRange the Financials/Dashboard
@@ -37,6 +40,7 @@ import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
 import { SearchInput } from "@/components/kit/search-input";
 import { useLedger, usePeriodLedger, useProductDayLedger } from "./use-stock";
+import { buildCategoryTabs, categoryKey, ALL_CATEGORIES_KEY } from "@/lib/catalog-categories";
 import { deriveLedgerRows } from "./derive-ledger";
 import { derivePeriodSummaryRows } from "./derive-period-summary";
 import { deriveProductDayRows } from "./derive-product-days";
@@ -165,12 +169,10 @@ function LedgerPositionBand({ stats }: { stats: PositionStat[] }) {
 
 const ALL = "__all__";
 
-// Product.kind is the fixed Goods/Dishes/Ingredients enum (Prisma) — the
-// Ledger's Category filter reads THIS, not the admin-set free-text
-// Product.category (which powers the Sales/New-Order menu grid; a
-// same-name-different-field mix-up, not a missing admin UI — see the
-// review this session's changes came out of). One-line swap, no schema
-// or backend change: `ProductKind` is already on `ProductWithLocations`.
+// Product.kind is the fixed Goods/Dishes/Ingredients enum (Prisma) — its
+// own "Kind" filter, separate from the free-text Product.category filter
+// below (client feedback 2026-09-12: both are useful and belong side by
+// side, not one replacing the other).
 const KIND_LABEL: Record<string, string> = {
   ingredient: "Ingredients",
   dish: "Dishes",
@@ -207,8 +209,18 @@ export function StockClient() {
   // "__all__" = every location. (Was a <PillFilter>; now a FilterToolbar
   // select, LDZ-0.)
   const [locationId, setLocationId] = React.useState<string>(ALL);
-  // Category — a client-side cut over the derived rows by Product.kind.
-  const [category, setCategory] = React.useState<string>(ALL);
+  // Kind — a client-side cut over the derived rows by Product.kind
+  // (Ingredient/Dish/Goods, a fixed enum). Was mislabeled "Category" —
+  // client feedback 2026-09-12: that label belongs to the separate,
+  // free-text `category` filter below (product.category, e.g. "Drinks",
+  // "Bakery" — the same field the Products/Cashier/Opening Plan screens
+  // filter on via lib/catalog-categories.ts).
+  const [kind, setKind] = React.useState<string>(ALL);
+  // Category — client-side, over the real free-text Product.category
+  // field, same helper + All/Uncategorised rules as every other picker.
+  const [categoryFilter, setCategoryFilter] = React.useState<string>(
+    ALL_CATEGORIES_KEY,
+  );
   // Search — client-side substring match over product + location text.
   const [search, setSearch] = React.useState("");
   const [drawerTarget, setDrawerTarget] = React.useState<CorrectionTarget | null>(
@@ -293,19 +305,42 @@ export function StockClient() {
   const error = isSingleDay ? singleDay.error : period.error;
   const refresh = isSingleDay ? singleDay.refresh : period.refresh;
 
-  // productId → kind (Goods/Dishes/Ingredients), for the client-side Category filter.
+  // productId → kind (Goods/Dishes/Ingredients), for the client-side Kind filter.
   const kindByProduct = React.useMemo(() => {
     const m = new Map<string, string>();
     for (const p of activeData.products) m.set(p.id, p.kind);
     return m;
   }, [activeData.products]);
 
+  // productId → categoryKey (free-text Product.category, normalised —
+  // lib/catalog-categories.ts), for the client-side Category filter.
+  const categoryKeyByProduct = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of activeData.products) m.set(p.id, categoryKey(p));
+    return m;
+  }, [activeData.products]);
+  const categoryOptions = React.useMemo(
+    () =>
+      buildCategoryTabs(activeData.products).map((t) => ({
+        value: t.key,
+        label: t.key === ALL_CATEGORIES_KEY ? "All" : t.label,
+      })),
+    [activeData.products],
+  );
+
   function applyClientFilters<T extends { id: string; product: string; location?: string }>(
     allRows: T[],
   ): T[] {
     const q = search.trim().toLowerCase();
     return allRows.filter((r) => {
-      if (category !== ALL && kindByProduct.get(r.id.split("@")[0]) !== category) {
+      const productId = r.id.split("@")[0];
+      if (kind !== ALL && kindByProduct.get(productId) !== kind) {
+        return false;
+      }
+      if (
+        categoryFilter !== ALL_CATEGORIES_KEY &&
+        categoryKeyByProduct.get(productId) !== categoryFilter
+      ) {
         return false;
       }
       if (q && !`${r.product} ${r.location ?? ""}`.toLowerCase().includes(q)) {
@@ -318,7 +353,16 @@ export function StockClient() {
   const rows = React.useMemo(
     () => applyClientFilters(isSingleDay ? singleDayAllRows : periodAllRows),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isSingleDay, singleDayAllRows, periodAllRows, category, kindByProduct, search],
+    [
+      isSingleDay,
+      singleDayAllRows,
+      periodAllRows,
+      kind,
+      kindByProduct,
+      categoryFilter,
+      categoryKeyByProduct,
+      search,
+    ],
   );
 
   // KPI band — STOCK-VALUE figures for the selected range (client request
@@ -403,11 +447,6 @@ export function StockClient() {
     />
   );
 
-  // Date-control display label ("Aug 24"), per LDZ-0. Single-day only — the
-  // FilterToolbar's own Date control stays single-day (Today/Custom); the
-  // header's range control is the one place Week/Month lives.
-  const dateLabel = shortDate(date);
-
   const filterControls: FilterControl[] = [
     {
       id: "location",
@@ -421,42 +460,38 @@ export function StockClient() {
       default: ALL,
     },
     {
+      id: "kind",
+      kind: "select",
+      label: "Kind",
+      options: KIND_OPTIONS,
+      value: kind,
+      default: ALL,
+    },
+    {
       id: "category",
       kind: "select",
       label: "Category",
-      options: KIND_OPTIONS,
-      value: category,
-      default: ALL,
+      options: categoryOptions,
+      value: categoryFilter,
+      default: ALL_CATEGORIES_KEY,
     },
-    // Date stays single-day (Today/Custom); Week/Month use the header range
-    // control instead — do not add a range picker to this toolbar.
-    ...(isSingleDay
-      ? ([
-          {
-            id: "date",
-            kind: "date",
-            label: "Date",
-            value: dateLabel,
-            // Default = the business day; off-default once another day is picked.
-            default: shortDate(today),
-          },
-        ] as FilterControl[])
-      : []),
   ];
 
+  // Date lives ONLY in the header's <AdminDateRangeControl> now (client
+  // feedback 2026-09-12: the toolbar's own single-day "Date" chip
+  // duplicated it — up to 3 date controls on screen at once with Custom
+  // selected). This toolbar is Location/Kind/Category/search only.
   function onFilterChange(id: string, value: string | boolean | null) {
     if (id === "location") setLocationId(value == null ? ALL : String(value));
-    else if (id === "category") setCategory(value == null ? ALL : String(value));
-    else if (id === "date" && typeof value === "string") {
-      // The kit reports a picked day as "YYYY-MM-DD"; Reset reports the
-      // default label. Anything that isn't a YYYY-MM-DD resets to today.
-      setCustomDay(/^\d{4}-\d{2}-\d{2}$/.test(value) ? value : today);
-    }
+    else if (id === "kind") setKind(value == null ? ALL : String(value));
+    else if (id === "category")
+      setCategoryFilter(value == null ? ALL_CATEGORIES_KEY : String(value));
   }
 
   function resetFilters() {
     setLocationId(ALL);
-    setCategory(ALL);
+    setKind(ALL);
+    setCategoryFilter(ALL_CATEGORIES_KEY);
     setPreset("today");
     setSearch("");
   }
@@ -552,7 +587,11 @@ export function StockClient() {
   }
 
   const filtered =
-    locationId !== ALL || category !== ALL || range.preset !== "today" || search.trim() !== "";
+    locationId !== ALL ||
+    kind !== ALL ||
+    categoryFilter !== ALL_CATEGORIES_KEY ||
+    range.preset !== "today" ||
+    search.trim() !== "";
   const noRows = !loading && !error && rows.length === 0;
 
   const rangeControl = (

@@ -22,7 +22,12 @@ import { StatusChip } from "@/components/kit/status-chip";
 import { Select } from "@/components/kit/select";
 import { useToast } from "@/components/kit/toast";
 import type { ProductWithLocations } from "@/lib/domain/catalog";
-import { usedCategoryNames } from "@/lib/catalog-categories";
+import {
+  ALL_CATEGORIES_KEY,
+  buildCategoryTabs,
+  categoryKey,
+  usedCategoryNames,
+} from "@/lib/catalog-categories";
 import { useCatalog, type CatalogListFilter } from "./use-catalog";
 import { ProductDrawer } from "./product-drawer";
 import { ProductDeleteDialog } from "./product-delete-dialog";
@@ -133,6 +138,9 @@ export function ProductsTab({
   const [activeTabKey, setActiveTabKey] = React.useState("all");
   const [search, setSearch] = React.useState("");
   const [locationId, setLocationId] = React.useState<string>(ALL_LOCATIONS);
+  const [categoryFilter, setCategoryFilter] = React.useState<string>(
+    ALL_CATEGORIES_KEY,
+  );
 
   const tab = TABS.find((t) => t.key === activeTabKey) ?? TABS[0];
   const filter: CatalogListFilter = {
@@ -183,17 +191,43 @@ export function ProductsTab({
   // `includeArchived=true` returns active + archived rows; on the Archived
   // tab show only the archived ones (ADR-47 §1 — the tab is archived-only,
   // and an unarchived row must leave it).
-  const visibleProducts = tab.archived
+  const kindScopedProducts = tab.archived
     ? products.filter((p) => p.deletedAt != null)
     : products;
 
-  // Category names already in use — feeds the drawer's autocomplete so a
-  // new item's category stays consistent with the pickers (client
-  // feedback 2026-09-10). Sourced from the currently loaded set; a
-  // convenience, never a constraint (the field is still free-text).
+  // Category isn't part of the server-side CatalogListFilter (kind/search/
+  // location only) — it's filtered client-side over the already-loaded,
+  // kind-scoped set, same helper (`lib/catalog-categories.ts`) the Cashier/
+  // Canteen/Store-Manager pickers use to filter their in-scope lists.
+  // Client feedback 2026-09-12: a dropdown here (not those screens' pill
+  // row) to match the existing "Filter by location" control beside it.
+  const visibleProducts =
+    categoryFilter === ALL_CATEGORIES_KEY
+      ? kindScopedProducts
+      : kindScopedProducts.filter(
+          (p) => categoryKey(p) === categoryFilter,
+        );
+
+  // Category names already in use — feeds the drawer's autocomplete
+  // (client feedback 2026-09-10). Sourced from the currently kind-scoped
+  // set (not `visibleProducts`, which would shrink to just the active
+  // category), so switching the kind tab doesn't leave a stale/impossible
+  // category selected.
   const categorySuggestions = React.useMemo(
-    () => usedCategoryNames(products),
-    [products],
+    () => usedCategoryNames(kindScopedProducts),
+    [kindScopedProducts],
+  );
+  // Same helper + "All"/"Uncategorised" rules as the Cashier/Canteen/SM
+  // pickers' pill row (lib/catalog-categories.ts) — an Uncategorised
+  // option only when it actually partitions the list, i.e. some but not
+  // all kind-scoped products lack a category.
+  const categoryOptions = React.useMemo(
+    () =>
+      buildCategoryTabs(kindScopedProducts).map((t) => ({
+        value: t.key,
+        label: t.key === ALL_CATEGORIES_KEY ? "All categories" : t.label,
+      })),
+    [kindScopedProducts],
   );
 
   // Kept as just the number (not "N products") — the header badge sits
@@ -204,7 +238,10 @@ export function ProductsTab({
   const count = tab.archived
     ? `${visibleProducts.length} archived`
     : `${visibleProducts.length}`;
-  const filtered = search.trim() !== "" || locationId !== ALL_LOCATIONS;
+  const filtered =
+    search.trim() !== "" ||
+    locationId !== ALL_LOCATIONS ||
+    categoryFilter !== ALL_CATEGORIES_KEY;
 
   // Publish count + create trigger up to the shared header.
   React.useEffect(() => {
@@ -214,6 +251,7 @@ export function ProductsTab({
   function clearFilters() {
     setSearch("");
     setLocationId(ALL_LOCATIONS);
+    setCategoryFilter(ALL_CATEGORIES_KEY);
   }
 
   // Row position in the currently filtered/sorted list — "how many rows
@@ -378,6 +416,13 @@ export function ProductsTab({
           ]}
           value={locationId}
           onChange={setLocationId}
+          className="shrink-0"
+        />
+        <Select
+          aria-label="Filter by category"
+          options={categoryOptions}
+          value={categoryFilter}
+          onChange={setCategoryFilter}
           className="shrink-0"
         />
       </div>
