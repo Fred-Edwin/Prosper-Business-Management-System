@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
   assertDayOpen,
@@ -9,6 +10,8 @@ import type {
   ActorContext,
   RecordStockCountInput,
   RecordStockCountResult,
+  RecordStockCountBatchInput,
+  RecordStockCountBatchResult,
   PreviewStockCountInput,
   StockCountPreview,
 } from "./types";
@@ -55,6 +58,116 @@ import {
  * `StockCount` + offsetting rows) can drop in; the schema has no
  * `corrects_stock_count_id` column today and this session does not add one.
  */
+type Tx = Prisma.TransactionClient;
+
+/**
+ * One counted product, validated + written on `tx`. Shared by
+ * `recordStockCount` (one product, its own transaction) and
+ * `recordStockCountBatch` (N products, one transaction — ADR-72
+ * companion to K1's multi-row rework). Same rule either way: the shelf
+ * holds more than the ledger accounts for → throws `overCountError`,
+ * nothing written for that line.
+ */
+async function recordStockCountLineCore(
+  tx: Tx,
+  input: RecordStockCountInput,
+  locationId: string,
+  ctx: ActorContext,
+  occurredAt: Date,
+): Promise<RecordStockCountResult> {
+  const counted = parseCountedQuantity(input.countedQuantity);
+
+  // The ONE derivation — read on `tx` so two concurrent counts can't
+  // both pass a stale balance read.
+  const d = await deriveStockCount(tx, {
+    productId: input.productId,
+    locationId,
+    countedQuantity: counted,
+    occurredAt,
+  });
+
+  // The shelf holds more than the ledger accounts for → reject, nothing
+  // written (owner decision 2026-08-30; the preview surfaces the same
+  // block without a write, `voidStockCount` is the same-day recovery).
+  if (d.exceedsExpectedBy) {
+    throw overCountError(d.exceedsExpectedBy);
+  }
+
+  const sold = d.unitsSold;
+  const revenue = d.revenue;
+
+  const count = await tx.stockCount.create({
+    data: {
+      productId: input.productId,
+      locationId,
+      countedById: ctx.userId,
+      countedQuantity: counted,
+      occurredAt,
+    },
+  });
+
+  // `sale` StockMovement — negative (stock leaves as a sale). `sold`
+  // may be 0; write the row anyway for a uniform audit trail.
+  await tx.stockMovement.create({
+    data: {
+      productId: input.productId,
+      locationId,
+      movementType: "sale",
+      quantity: sold.negated(),
+      stockCountId: count.id,
+      recordedById: ctx.userId,
+      occurredAt,
+    },
+  });
+
+  // Revenue MoneyMovement — skip the zero-value row when nothing sold.
+  if (!sold.isZero()) {
+    await recordMoneyMovement(
+      {
+        account: "cash",
+        amount: revenue,
+        sourceType: "canteen_sale",
+        sourceId: count.id,
+        occurredAt,
+      },
+      { actorId: ctx.userId, tx },
+    );
+  }
+
+  await tx.auditLog.create({
+    data: {
+      userId: ctx.userId,
+      action: "create",
+      entityType: "stock_count",
+      entityId: count.id,
+      newValue: {
+        countedQuantity: quantityString(counted),
+        sold: quantityString(sold),
+        revenue: moneyString(revenue),
+      },
+      occurredAt,
+    },
+  });
+
+  return {
+    count: {
+      id: count.id,
+      productId: count.productId,
+      locationId: count.locationId,
+      countedById: count.countedById,
+      countedQuantity: quantityString(count.countedQuantity),
+      occurredAt: count.occurredAt.toISOString(),
+      createdAt: count.createdAt.toISOString(),
+    },
+    derivedSale: {
+      unitsSold: quantityString(sold),
+      revenue: moneyString(revenue),
+      periodStart: d.periodStart ? d.periodStart.toISOString() : null,
+      periodEnd: occurredAt.toISOString(),
+    },
+  };
+}
+
 export async function recordStockCount(
   input: RecordStockCountInput,
   ctx: ActorContext,
@@ -66,110 +179,79 @@ export async function recordStockCount(
     );
   }
   const locationId = ctx.locationId;
-
-  const counted = parseCountedQuantity(input.countedQuantity);
   const occurredAt = input.occurredAt ?? new Date();
 
-  const result = await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     // Staff "today only" gate (ADR-53) — an attendant may only count for
     // today; Admin is exempt. In addition to the day-close gate.
     assertStaffDateIsToday(occurredAt, ctx);
     // Day-close gate (ADR-52) — a count is a fresh primary entry; a
     // sealed date is off-limits to staff and Admin alike.
     await assertDayOpen(occurredAt, tx);
+    return recordStockCountLineCore(tx, input, locationId, ctx, occurredAt);
+  });
+}
 
-    // The ONE derivation — read on `tx` so two concurrent counts can't
-    // both pass a stale balance read.
-    const d = await deriveStockCount(tx, {
-      productId: input.productId,
-      locationId,
-      countedQuantity: counted,
-      occurredAt,
-    });
+// ── Batch (K1 multi-row count) ──────────────────────────────────────────
 
-    // The shelf holds more than the ledger accounts for → reject, nothing
-    // written (owner decision 2026-08-30; the preview surfaces the same
-    // block without a write, `voidStockCount` is the same-day recovery).
-    if (d.exceedsExpectedBy) {
-      throw overCountError(d.exceedsExpectedBy);
-    }
+/**
+ * Record several products' counts in one atomic transaction — the K1
+ * screen builds a batch of counted rows and submits once instead of a
+ * round trip per product (client UX request, 2026-09-14). Each line runs
+ * the SAME per-product derivation and rules as `recordStockCount`
+ * (independently — one product's count never affects another's
+ * `expectedRemaining`). If ANY line's counted quantity exceeds its
+ * product's expected stock, the WHOLE batch is rejected
+ * (`VALIDATION_ERROR`, field `"lines"`) and nothing is written, matching
+ * the §3.8 batch-block parity of the sibling stock-movement batches.
+ * Empty `lines` or a duplicate `productId` also reject.
+ */
+export async function recordStockCountBatch(
+  input: RecordStockCountBatchInput,
+  ctx: ActorContext,
+): Promise<RecordStockCountBatchResult> {
+  if (!ctx.locationId) {
+    throw new DomainError(
+      "FORBIDDEN",
+      "Your account is not assigned to a canteen.",
+    );
+  }
+  const locationId = ctx.locationId;
 
-    const sold = d.unitsSold;
-    const revenue = d.revenue;
-
-    const count = await tx.stockCount.create({
-      data: {
-        productId: input.productId,
-        locationId,
-        countedById: ctx.userId,
-        countedQuantity: counted,
-        occurredAt,
-      },
-    });
-
-    // `sale` StockMovement — negative (stock leaves as a sale). `sold`
-    // may be 0; write the row anyway for a uniform audit trail.
-    await tx.stockMovement.create({
-      data: {
-        productId: input.productId,
-        locationId,
-        movementType: "sale",
-        quantity: sold.negated(),
-        stockCountId: count.id,
-        recordedById: ctx.userId,
-        occurredAt,
-      },
-    });
-
-    // Revenue MoneyMovement — skip the zero-value row when nothing sold.
-    if (!sold.isZero()) {
-      await recordMoneyMovement(
-        {
-          account: "cash",
-          amount: revenue,
-          sourceType: "canteen_sale",
-          sourceId: count.id,
-          occurredAt,
-        },
-        { actorId: ctx.userId, tx },
+  if (input.lines.length === 0) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "Add at least one counted product.",
+      "lines",
+    );
+  }
+  const seen = new Set<string>();
+  for (const line of input.lines) {
+    if (seen.has(line.productId)) {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "The same product appears more than once. Combine them into a single count.",
+        "lines",
       );
     }
+    seen.add(line.productId);
+  }
 
-    await tx.auditLog.create({
-      data: {
-        userId: ctx.userId,
-        action: "create",
-        entityType: "stock_count",
-        entityId: count.id,
-        newValue: {
-          countedQuantity: quantityString(counted),
-          sold: quantityString(sold),
-          revenue: moneyString(revenue),
-        },
-        occurredAt,
-      },
-    });
-
-    return {
-      count: {
-        id: count.id,
-        productId: count.productId,
-        locationId: count.locationId,
-        countedById: count.countedById,
-        countedQuantity: quantityString(count.countedQuantity),
-        occurredAt: count.occurredAt.toISOString(),
-        createdAt: count.createdAt.toISOString(),
-      },
-      derivedSale: {
-        unitsSold: quantityString(sold),
-        revenue: moneyString(revenue),
-        periodStart: d.periodStart ? d.periodStart.toISOString() : null,
-        periodEnd: occurredAt.toISOString(),
-      },
-    };
+  return prisma.$transaction(async (tx) => {
+    const results: RecordStockCountResult[] = [];
+    for (const line of input.lines) {
+      const occurredAt = line.occurredAt ?? new Date();
+      // Staff "today only" (ADR-53) + day-close (ADR-52) — same gates as
+      // the single-count path, evaluated per line since each can carry
+      // its own `occurredAt`.
+      assertStaffDateIsToday(occurredAt, ctx);
+      await assertDayOpen(occurredAt, tx);
+      results.push(
+        await recordStockCountLineCore(tx, line, locationId, ctx, occurredAt),
+      );
+    }
+    return results;
   });
-
-  return result;
 }
 
 /**

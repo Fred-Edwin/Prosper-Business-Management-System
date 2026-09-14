@@ -92,24 +92,37 @@ migrated/seeded and fails loudly, rather than quietly falling back to
 
 ### Fresh clone / from scratch
 
-1. Start Postgres. Any Postgres 16+ works; the project uses
-   `postgres:18-alpine` on `localhost:5432` with role `prosper` /
-   password `prosper` (same server as the dev DB). For example:
+1. Start Postgres via the committed `docker-compose.yml` (role `prosper` /
+   password `prosper`, same server as the dev DB — separated by database
+   name, not by server):
    ```bash
-   docker run -d --name prosper-postgres \
-     -e POSTGRES_USER=prosper -e POSTGRES_PASSWORD=prosper \
-     -e POSTGRES_DB=prosper_hotel -p 5432:5432 postgres:18-alpine
+   docker compose up -d
    ```
+   This publishes on **`localhost:5435`**, not the Postgres default 5432
+   — deliberately, so it doesn't collide with another project's own local
+   Postgres container on this machine. Before assuming 5435 is free on a
+   new machine, check:
+   ```bash
+   docker ps --format '{{.Names}}\t{{.Ports}}'   # ports other containers already publish
+   ss -ltnp | grep 543                           # anything already listening on 543x
+   ```
+   If 5435 is taken too, change the published port in `docker-compose.yml`
+   AND the port in `.env` / `.env.test` / `.env.sim` to match (they must
+   all agree — nothing else in the code hardcodes it).
 2. Run the suite. The first run creates + migrates + seeds the test DB:
    ```bash
    pnpm install
    pnpm test
    ```
 
-If your Postgres is somewhere else, edit `DATABASE_URL` in `.env.test`
-(host, port, user, password) before step 2. The database name at the end
-of the URL (`prosper_hotel_tests`) is what the setup script creates — it
-does not have to exist yet.
+If your Postgres is somewhere else (not the compose file), edit
+`DATABASE_URL` in `.env.test` (host, port, user, password) before step 2.
+The database name at the end of the URL (`prosper_hotel_tests`) is what
+the setup script creates — it does not have to exist yet.
+
+`docker compose down` stops it and keeps data; `docker compose down -v`
+also wipes the volume (dev + test + sim data all gone — `pnpm test` will
+recreate/reseed the test DB on its next run regardless).
 
 ### Re-seeding / resetting the test DB
 
@@ -170,11 +183,11 @@ in plain language). The operational notes:
 ### Setting it up from scratch
 
 ```bash
-docker exec <postgres-container> psql -U prosper -d postgres \
+docker exec prosper-postgres psql -U prosper -d postgres \
   -c 'CREATE DATABASE prosper_hotel_sim;'
-DATABASE_URL="postgresql://prosper:prosper@localhost:5432/prosper_hotel_sim?schema=public" \
+DATABASE_URL="postgresql://prosper:prosper@localhost:5435/prosper_hotel_sim?schema=public" \
   pnpm exec prisma migrate deploy
-DATABASE_URL="postgresql://prosper:prosper@localhost:5432/prosper_hotel_sim?schema=public" \
+DATABASE_URL="postgresql://prosper:prosper@localhost:5435/prosper_hotel_sim?schema=public" \
   pnpm exec tsx prisma/seed.ts
 pnpm test:sim
 ```

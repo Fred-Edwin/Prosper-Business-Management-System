@@ -4,6 +4,7 @@ import * as React from "react";
 import type {
   RecordStockCountInput,
   RecordStockCountResult,
+  RecordStockCountBatchResult,
   StockCountPreview,
   DerivedSaleView,
   ListDerivedSalesFilter,
@@ -121,6 +122,32 @@ export function useStockCountActions() {
     [],
   );
 
+  // K1 multi-row count (client UX request, 2026-09-14) — several products
+  // counted in one atomic submit. Mirrors the sibling stock-movement
+  // batches (`use-staff-stock.ts` `issueBatch` / `transferBatch`).
+  const recordStockCountBatch = React.useCallback(
+    async (
+      lines: RecordStockCountInput[],
+    ): Promise<RecordStockCountBatchResult> => {
+      return request<RecordStockCountBatchResult>(
+        "/api/canteen/stock-counts/batch",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            lines: lines.map((input) => ({
+              productId: input.productId,
+              countedQuantity: input.countedQuantity,
+              ...(input.occurredAt
+                ? { occurredAt: input.occurredAt.toISOString() }
+                : {}),
+            })),
+          }),
+        },
+      );
+    },
+    [],
+  );
+
   const voidStockCount = React.useCallback(
     async (countId: string): Promise<void> => {
       await request<unknown>(`/api/canteen/stock-counts/${countId}`, {
@@ -130,7 +157,7 @@ export function useStockCountActions() {
     [],
   );
 
-  return { recordStockCount, voidStockCount };
+  return { recordStockCount, recordStockCountBatch, voidStockCount };
 }
 
 // ── Preview (K1 — sold/revenue before commit) ─────────────────────────

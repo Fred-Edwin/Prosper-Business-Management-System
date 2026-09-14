@@ -17,6 +17,7 @@ export { listOrders } from "./list-orders";
 
 export {
   recordStockCount,
+  recordStockCountBatch,
   voidStockCount,
   previewStockCount,
 } from "./record-stock-count";

@@ -24,6 +24,15 @@ export const recordStockCountSchema = z.object({
 });
 
 /**
+ * `POST /api/canteen/stock-counts/batch` — the K1 multi-row count.
+ * `lines` must be present; emptiness / duplicate `productId` is a domain
+ * `VALIDATION_ERROR` (field `"lines"`), same as the stock-movement batches.
+ */
+export const recordStockCountBatchSchema = z.object({
+  lines: z.array(recordStockCountSchema),
+});
+
+/**
  * Query for `GET /api/canteen/stock-counts/preview` — a dry-run of the
  * derived sale for a counted-remaining value. Same fields as
  * `recordStockCountSchema` minus the persistence.
@@ -44,5 +53,8 @@ export const listDerivedSalesQuerySchema = z.object({
 });
 
 export type RecordStockCountBody = z.infer<typeof recordStockCountSchema>;
+export type RecordStockCountBatchBody = z.infer<
+  typeof recordStockCountBatchSchema
+>;
 export type PreviewStockCountQuery = z.infer<typeof previewStockCountQuerySchema>;
 export type ListDerivedSalesQuery = z.infer<typeof listDerivedSalesQuerySchema>;

@@ -1,0 +1,45 @@
+# Local Postgres for this project — dev, test-suite, and simulation DBs all
+# live on ONE server here (matching .env / .env.test / .env.sim, which
+# already separate by DATABASE NAME, not by server). Named volume persists
+# data across `docker compose down` / restarts; use `down -v` to wipe.
+#
+# Port 5435 (not 5432/5433/5434) — this machine runs other projects' own
+# Postgres containers on those ports. Check what's free before changing it:
+#   ss -ltnp | grep 543
+#   docker ps --format '{{.Names}}\t{{.Ports}}'
+# If 5435 is ever taken too, change POSTGRES_PORT below AND the port in
+# .env / .env.test / .env.sim to match — they must agree.
+#
+# Usage:
+#   docker compose up -d        # start (idempotent)
+#   docker compose down         # stop, keep data
+#   docker compose down -v      # stop, WIPE data
+#   pnpm test                   # creates/migrates/seeds prosper_hotel_tests
+#                                # automatically once this is up (pretest)
+#
+# See docs/TESTING.md for the full test-DB workflow.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: prosper-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prosper
+      POSTGRES_PASSWORD: prosper
+      # Only the dev DB is created at container init; prosper_hotel_tests
+      # and prosper_hotel_sim are created on demand by
+      # scripts/setup-test-db.mjs / the sim harness the first time they run.
+      POSTGRES_DB: prosper
+    ports:
+      - "5435:5432"
+    volumes:
+      - prosper_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prosper"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  prosper_pg_data:

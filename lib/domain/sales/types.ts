@@ -93,6 +93,14 @@ export type RecordStockCountResult = {
   derivedSale: DerivedSale;
 };
 
+/** Body for the K1 multi-row batch count (`POST /api/canteen/stock-counts/batch`). */
+export type RecordStockCountBatchInput = {
+  lines: RecordStockCountInput[];
+};
+
+/** One `RecordStockCountResult` per line, in submitted order. */
+export type RecordStockCountBatchResult = RecordStockCountResult[];
+
 /** Body for the K1 preview (`GET /api/canteen/stock-counts/preview`). */
 export type PreviewStockCountInput = {
   productId: string;

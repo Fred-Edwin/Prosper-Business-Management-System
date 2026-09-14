@@ -5,6 +5,11 @@ import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "@/components/kit/toast";
 import { StockCountClient } from "@/app/canteen/stock-count/stock-count-client";
 
+// K1 rebuild (client UX request, 2026-09-14): one screen, a list of rows
+// each showing "Expected: N unit" up front, tap-to-expand in place (no
+// navigation), one batch "Confirm N counts" submit. See
+// `stock-count-client.tsx` top-of-file note for the full rationale.
+
 const push = vi.fn();
 const back = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -12,25 +17,15 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/canteen/stock-count",
 }));
 
-const mockRecordStockCount = vi.fn();
+const mockRecordStockCountBatch = vi.fn();
 const mockVoidStockCount = vi.fn();
-
-// `useStockCountPreview` is driven per-test via this ref so a test can
-// assert what the K1 preview card renders for a given derived result.
-const previewState = {
-  current: {
-    preview: null as unknown,
-    loading: false,
-    error: null as string | null,
-  },
-};
 
 vi.mock("@/app/canteen/use-stock-count", () => ({
   useStockCountActions: () => ({
-    recordStockCount: mockRecordStockCount,
+    recordStockCount: vi.fn(),
+    recordStockCountBatch: mockRecordStockCountBatch,
     voidStockCount: mockVoidStockCount,
   }),
-  useStockCountPreview: () => previewState.current,
   StockCountRequestError: class StockCountRequestError extends Error {},
 }));
 
@@ -65,41 +60,69 @@ const MOCK_PRODUCTS = [
   },
 ];
 
+function mockFetchImpl(url: string) {
+  if (url.includes("/api/canteen/products")) {
+    return Promise.resolve({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "p-soda", name: "Soda 300ml", unitLabel: "pcs", category: "Drinks" },
+          { id: "p-mandazi", name: "Mandazi", unitLabel: "pcs", category: "Bakery" },
+        ],
+      }),
+    });
+  }
+  if (url.includes("/api/stock-movements?")) {
+    return Promise.resolve({
+      ok: true,
+      json: async () => ({
+        data: [],
+      }),
+    });
+  }
+  if (url.includes("/api/products")) {
+    return Promise.resolve({
+      ok: true,
+      json: async () => ({ data: MOCK_PRODUCTS }),
+    });
+  }
+  if (url.includes("/api/locations")) {
+    return Promise.resolve({
+      ok: true,
+      json: async () => ({
+        data: [{ id: "loc-canteen", name: "Canteen", type: "canteen", active: true }],
+      }),
+    });
+  }
+  if (url.includes("/api/stock-movements/balances")) {
+    return Promise.resolve({
+      ok: true,
+      json: async () => ({
+        data: [
+          { productId: "p-soda", quantity: "48.0000" },
+          { productId: "p-mandazi", quantity: "12.0000" },
+        ],
+      }),
+    });
+  }
+  return Promise.reject(new Error(`Unknown route: ${url}`));
+}
+
+async function waitForExpectedStockLoaded() {
+  await waitFor(() => {
+    expect(
+      screen.getByText((_, el) => el?.textContent === "Expected: 48 pcs"),
+    ).toBeDefined();
+  });
+}
+
 describe("K1 Canteen Stock Count Screen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    previewState.current = { preview: null, loading: false, error: null };
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/canteen/products") || url.includes("/api/products")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            data: [
-              {
-                id: "p-soda",
-                name: "Soda 300ml",
-                unitLabel: "pcs",
-                category: "Drinks",
-                locationId: "loc-canteen",
-                sellingPrice: "60.00",
-              },
-              {
-                id: "p-mandazi",
-                name: "Mandazi",
-                unitLabel: "pcs",
-                category: "Bakery",
-                locationId: "loc-canteen",
-                sellingPrice: "20.00",
-              },
-            ],
-          }),
-        });
-      }
-      return Promise.reject(new Error("Unknown route"));
-    });
+    global.fetch = vi.fn().mockImplementation(mockFetchImpl);
   });
 
-  it("renders product picker with search and category tabs, products listed", async () => {
+  it("renders the picker with search, category tabs, and expected stock per row", async () => {
     render(
       <ToastProvider>
         <StockCountClient />
@@ -113,207 +136,106 @@ describe("K1 Canteen Stock Count Screen", () => {
       expect(screen.getByText("Soda 300ml")).toBeDefined();
       expect(screen.getByText("Mandazi")).toBeDefined();
     });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText((_, el) => el?.textContent === "Expected: 48 pcs"),
+      ).toBeDefined();
+      expect(
+        screen.getByText((_, el) => el?.textContent === "Expected: 12 pcs"),
+      ).toBeDefined();
+    });
   });
 
-  it("transitions to counting screen on product select, allows quantity stepper adjustment, and submits count", async () => {
+  it("selecting a row expands it in place (no navigation) defaulted to the expected quantity", async () => {
     const user = userEvent.setup();
-    mockRecordStockCount.mockResolvedValueOnce({
-      countId: "count-123",
-      sold: "48",
-      revenue: "2880.00",
-    });
-
     render(
       <ToastProvider>
         <StockCountClient />
       </ToastProvider>,
     );
 
-    await waitFor(() => {
-      expect(screen.getByText("Soda 300ml")).toBeDefined();
-    });
+    await waitFor(() => expect(screen.getByText("Soda 300ml")).toBeDefined());
+    await waitForExpectedStockLoaded();
+
+    await user.click(screen.getAllByRole("button", { name: "Select" })[0]);
+
+    // Still on the same screen — search input stays mounted.
+    expect(screen.getByPlaceholderText("Search canteen products")).toBeDefined();
+    // Stepper defaults to the expected value.
+    expect(screen.getByRole("spinbutton", { name: /Soda 300ml counted quantity/i })).toHaveProperty(
+      "value",
+      "48",
+    );
+  });
+
+  it("multiple rows can be counted before one batch submit", async () => {
+    const user = userEvent.setup();
+    mockRecordStockCountBatch.mockResolvedValueOnce([
+      { count: { id: "c1" }, derivedSale: {} },
+      { count: { id: "c2" }, derivedSale: {} },
+    ]);
+
+    render(
+      <ToastProvider>
+        <StockCountClient />
+      </ToastProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("Soda 300ml")).toBeDefined());
+    await waitForExpectedStockLoaded();
 
     const selectButtons = screen.getAllByRole("button", { name: "Select" });
     await user.click(selectButtons[0]);
+    await user.click(screen.getByRole("button", { name: "Select" })); // Mandazi remains
 
-    expect(screen.getByText("Counted remaining")).toBeDefined();
-    expect(screen.getByText("Change")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Confirm 2 counts" })).toBeDefined();
 
-    const confirmBtn = screen.getByRole("button", { name: "Confirm count" });
-    await user.click(confirmBtn);
+    await user.click(screen.getByRole("button", { name: "Confirm 2 counts" }));
 
-    expect(mockRecordStockCount).toHaveBeenCalledWith({
-      productId: "p-soda",
-      countedQuantity: "0",
-    });
+    expect(mockRecordStockCountBatch).toHaveBeenCalledWith([
+      { productId: "p-soda", countedQuantity: "48" },
+      { productId: "p-mandazi", countedQuantity: "12" },
+    ]);
   });
 
-  it("returns to picker screen when tapping Change", async () => {
+  it("Remove closes a row without submitting it", async () => {
     const user = userEvent.setup();
     render(
       <ToastProvider>
         <StockCountClient />
       </ToastProvider>,
     );
-
-    await waitFor(() => {
-      expect(screen.getByText("Soda 300ml")).toBeDefined();
-    });
+    await waitFor(() => expect(screen.getByText("Soda 300ml")).toBeDefined());
+    await waitForExpectedStockLoaded();
 
     await user.click(screen.getAllByRole("button", { name: "Select" })[0]);
-    expect(screen.getByText("Counted remaining")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeDefined();
 
-    await user.click(screen.getByText("Change"));
-    expect(screen.getByPlaceholderText("Search canteen products")).toBeDefined();
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+    expect(screen.getByRole("button", { name: "Confirm counts" })).toBeDefined();
+    expect((screen.getByRole("button", { name: "Confirm counts" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 
-  it("F7-2: the preview card shows the real derived units sold and revenue for the counted value", async () => {
+  it("counting a row above its expected stock blocks the batch submit", async () => {
     const user = userEvent.setup();
-    previewState.current = {
-      preview: {
-        blocked: false,
-        exceedsExpectedBy: null,
-        isFirstCount: false,
-        periodStart: "2026-08-22T05:00:00.000Z",
-        lastCountedAt: "2026-08-22T05:00:00.000Z",
-        daysSincePrevious: 3,
-        countedRemaining: "96.0000",
-        unitsSold: "112.0000",
-        revenue: "6720.00",
-        closingStockWillBe: "96.0000",
-      },
-      loading: false,
-      error: null,
-    };
-
     render(
       <ToastProvider>
         <StockCountClient />
       </ToastProvider>,
     );
     await waitFor(() => expect(screen.getByText("Soda 300ml")).toBeDefined());
+    await waitForExpectedStockLoaded();
+
     await user.click(screen.getAllByRole("button", { name: "Select" })[0]);
+    const input = screen.getByRole("spinbutton", { name: /Soda 300ml counted quantity/i });
+    await user.clear(input);
+    await user.type(input, "999");
+    await user.tab();
 
-    const card = screen.getByTestId("k1-preview");
-    expect(card.textContent).toContain("sold 112 pcs");
-    expect(card.textContent).toContain("KES 6,720.00");
-    expect(card.textContent).toContain("Closing stock will be set to 96 pcs");
-    expect(card.textContent).toContain("3 days");
-    // Confirm is enabled for a valid (non-blocked) preview.
-    expect(
-      (screen.getByRole("button", { name: "Confirm count" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(false);
-  });
-
-  it("F7-2: first-count copy variant", async () => {
-    const user = userEvent.setup();
-    previewState.current = {
-      preview: {
-        blocked: false,
-        exceedsExpectedBy: null,
-        isFirstCount: true,
-        periodStart: null,
-        lastCountedAt: null,
-        daysSincePrevious: null,
-        countedRemaining: "12.0000",
-        unitsSold: "26.0000",
-        revenue: "520.00",
-        closingStockWillBe: "12.0000",
-      },
-      loading: false,
-      error: null,
-    };
-    render(
-      <ToastProvider>
-        <StockCountClient />
-      </ToastProvider>,
-    );
-    await waitFor(() => expect(screen.getByText("Soda 300ml")).toBeDefined());
-    await user.click(screen.getAllByRole("button", { name: "Select" })[0]);
-
-    const card = screen.getByTestId("k1-preview");
-    expect(card.textContent).toContain("First count for this product");
-    expect(card.textContent).toContain("sold 26 pcs");
-    expect(card.textContent).toContain("KES 520.00");
-  });
-
-  it("F7-2: a blocked preview (counted more than expected) disables Confirm and explains why", async () => {
-    const user = userEvent.setup();
-    previewState.current = {
-      preview: {
-        blocked: true,
-        exceedsExpectedBy: "16.0000",
-        isFirstCount: false,
-        periodStart: "2026-08-22T05:00:00.000Z",
-        lastCountedAt: "2026-08-22T05:00:00.000Z",
-        daysSincePrevious: 3,
-        countedRemaining: "112.0000",
-        unitsSold: null,
-        revenue: null,
-        closingStockWillBe: "112.0000",
-      },
-      loading: false,
-      error: null,
-    };
-    render(
-      <ToastProvider>
-        <StockCountClient />
-      </ToastProvider>,
-    );
-    await waitFor(() => expect(screen.getByText("Soda 300ml")).toBeDefined());
-    await user.click(screen.getAllByRole("button", { name: "Select" })[0]);
-
-    const card = screen.getByTestId("k1-preview");
-    expect(card.textContent).toContain("Counted more than expected");
-    expect(card.textContent).toContain("16 pcs more");
-    expect(
-      (screen.getByRole("button", { name: "Confirm count" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-  });
-
-  it("F7-2: preview updates when the counted value changes (stepper +)", async () => {
-    const user = userEvent.setup();
-
-    function setPreviewFor(qty: number) {
-      previewState.current = {
-        preview: {
-          blocked: false,
-          exceedsExpectedBy: null,
-          isFirstCount: true,
-          periodStart: null,
-          lastCountedAt: null,
-          daysSincePrevious: null,
-          countedRemaining: `${qty}.0000`,
-          unitsSold: `${100 - qty}.0000`,
-          revenue: `${(100 - qty) * 60}.00`,
-          closingStockWillBe: `${qty}.0000`,
-        },
-        loading: false,
-        error: null,
-      };
-    }
-
-    setPreviewFor(0);
-    const { rerender } = render(
-      <ToastProvider>
-        <StockCountClient />
-      </ToastProvider>,
-    );
-    await waitFor(() => expect(screen.getByText("Soda 300ml")).toBeDefined());
-    await user.click(screen.getAllByRole("button", { name: "Select" })[0]);
-    expect(screen.getByTestId("k1-preview").textContent).toContain("sold 100 pcs");
-
-    // Step the counted value up; the (mocked) preview hook now returns the
-    // figure for the new count.
-    setPreviewFor(3);
-    await user.click(screen.getByRole("button", { name: /increment|increase|\+/i }));
-    rerender(
-      <ToastProvider>
-        <StockCountClient />
-      </ToastProvider>,
-    );
-    expect(screen.getByTestId("k1-preview").textContent).toContain("sold 97 pcs");
+    expect(screen.getByText(/exceeds expected stock|Only 48 pcs expected/i)).toBeDefined();
+    const confirmBtn = screen.getByRole("button", { name: /Confirm \d+ count/ });
+    expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
   });
 });
