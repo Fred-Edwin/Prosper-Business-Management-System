@@ -9,13 +9,14 @@ import { DB_FREE_INCLUDE, sharedResolve, sharedTest } from "./vitest.shared";
 // also gets its own Postgres schema (see lib/db/index.ts, docs/TESTING.md)
 // so cross-worker read races are gone regardless of worker count.
 //
-// maxWorkers is capped at 4, not 8, purely for THIS machine's own CPU/RAM
-// budget — 8 vitest forks alongside `pnpm dev`, the editor, tsserver, and
-// browser-automation tooling pushed load average to ~2x core count and
-// nearly exhausted swap. 4 leaves headroom for those to keep running.
-// Raise it back toward 8 (still safe re: Postgres and the schema pool —
-// see SCHEMA_POOL_SIZE in scripts/setup-test-db.mjs) on a less contended
-// machine or in CI.
+// maxWorkers raised to 8 (2026-09-14, measured): this machine has 8 cores
+// and SCHEMA_POOL_SIZE (scripts/setup-test-db.mjs) is pinned at 8 to
+// match — going higher starves the extra workers of a pre-created schema
+// and fails outright (confirmed at 12: 58 files failed). 8 cut this lane
+// from ~206s to ~127-156s. Running `pnpm dev` + editor + tsserver +
+// browser-automation tooling alongside a test run will compete harder for
+// CPU than the old cap of 4 did — drop back to 4 locally if that
+// contention gets in the way; CI has no such competition.
 //
 // Include = everything, minus the DB-free lane (kept in sync via the
 // shared DB_FREE_INCLUDE list).
@@ -24,7 +25,7 @@ export default defineConfig({
     ...sharedTest,
     include: ["**/*.test.ts", "**/*.test.tsx"],
     exclude: ["node_modules/**", ...DB_FREE_INCLUDE],
-    maxWorkers: 4,
+    maxWorkers: 8,
   },
   resolve: sharedResolve,
 });
