@@ -111,12 +111,19 @@ export function TransactionsTab({
   const [drawerProductId, setDrawerProductId] = React.useState<
     string | undefined
   >(undefined);
+  // Set only when the drawer was opened from a specific unmatched
+  // receipt's "Record payment" link — carries the receipt through so the
+  // payment links back to it instead of creating a second, orphaned
+  // delivery (see recordPurchasePayment's `purchaseReceiptId`).
+  const [drawerReceipt, setDrawerReceipt] =
+    React.useState<StockMovementView | null>(null);
   const [correctTarget, setCorrectTarget] =
     React.useState<StockMovementView | null>(null);
   const [search, setSearch] = React.useState("");
 
-  const openDrawer = React.useCallback((productId?: string) => {
-    setDrawerProductId(productId);
+  const openDrawer = React.useCallback((receipt?: StockMovementView) => {
+    setDrawerProductId(receipt?.productId);
+    setDrawerReceipt(receipt ?? null);
     setDrawerOpen(true);
   }, []);
 
@@ -364,7 +371,7 @@ export function TransactionsTab({
             {unmatchedReceiptIds.has(r.id) && (
               <button
                 type="button"
-                onClick={() => openDrawer(r.productId)}
+                onClick={() => openDrawer(r)}
                 className="kit-interactive font-ui font-(--weight-medium) text-accent text-caption/micro"
               >
                 Record payment
@@ -489,7 +496,7 @@ export function TransactionsTab({
                 productById={productById}
                 locationById={locationById}
                 unmatchedReceiptIds={unmatchedReceiptIds}
-                onRecordPayment={openDrawer}
+                onRecordPayment={(r) => openDrawer(r)}
                 dateLabel={searchQuery ? "matching your search" : dateLabel}
               />
             )}
@@ -502,9 +509,11 @@ export function TransactionsTab({
           products={products}
           locations={locations}
           preselectedProductId={drawerProductId}
+          matchReceipt={drawerReceipt}
           onClose={() => {
             setDrawerOpen(false);
             setDrawerProductId(undefined);
+            setDrawerReceipt(null);
           }}
           onRecorded={refresh}
         />
@@ -615,7 +624,7 @@ function MobileDeliveryCards({
   productById: Map<string, ProductWithLocations>;
   locationById: Map<string, Location>;
   unmatchedReceiptIds: Set<string>;
-  onRecordPayment: (productId?: string) => void;
+  onRecordPayment: (receipt: StockMovementView) => void;
   dateLabel: string;
 }) {
   if (rows.length === 0) {
@@ -660,7 +669,7 @@ function MobileDeliveryCards({
               {!matched && unmatchedReceiptIds.has(r.id) && (
                 <button
                   type="button"
-                  onClick={() => onRecordPayment(r.productId)}
+                  onClick={() => onRecordPayment(r)}
                   className="kit-interactive font-ui font-(--weight-medium) text-accent text-caption/micro"
                 >
                   Record payment

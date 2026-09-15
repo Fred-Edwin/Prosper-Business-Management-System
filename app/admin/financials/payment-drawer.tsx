@@ -14,6 +14,7 @@ import { SegmentedControl } from "@/components/kit/segmented-control";
 import { Select } from "@/components/kit/select";
 import { useToast } from "@/components/kit/toast";
 import type { Location, ProductWithLocations } from "@/lib/domain/catalog";
+import type { StockMovementView } from "@/lib/domain/stock";
 import { stockApi, StockRequestError } from "../stock/use-stock";
 
 const CODE_MESSAGE: Record<string, string> = {
@@ -39,6 +40,7 @@ export function PaymentDrawer({
   onClose,
   onRecorded,
   preselectedProductId,
+  matchReceipt,
 }: {
   products: ProductWithLocations[];
   locations: Location[];
@@ -46,6 +48,15 @@ export function PaymentDrawer({
   onRecorded: () => void | Promise<void>;
   /** Reconciliation "Record payment" action pre-selects the delivered product. */
   preselectedProductId?: string;
+  /**
+   * Set when opened from a specific unmatched delivery's "Record payment"
+   * link (Deliveries tab). Pre-fills + locks Product/Destination/Quantity
+   * to what was actually received, and the submitted payment links back to
+   * this receipt (`purchaseReceiptId`) instead of creating a second,
+   * unmatched delivery — the bug this drawer used to cause when goods were
+   * received before payment.
+   */
+  matchReceipt?: StockMovementView | null;
 }) {
   const { toast } = useToast();
   // The payment-drawer product picker only ever offers `ingredient` + `goods`
@@ -56,9 +67,13 @@ export function PaymentDrawer({
     [products],
   );
   const [supplier, setSupplier] = React.useState("");
-  const [productId, setProductId] = React.useState(preselectedProductId ?? "");
-  const [locationId, setLocationId] = React.useState("");
-  const [quantity, setQuantity] = React.useState("");
+  const [productId, setProductId] = React.useState(
+    matchReceipt?.productId ?? preselectedProductId ?? "",
+  );
+  const [locationId, setLocationId] = React.useState(
+    matchReceipt?.locationId ?? "",
+  );
+  const [quantity, setQuantity] = React.useState(matchReceipt?.quantity ?? "");
   const [unitCost, setUnitCost] = React.useState("");
   const [cost, setCost] = React.useState("");
   // Total cost is normally derived (quantity × unit cost) — the Admin can
@@ -141,6 +156,7 @@ export function PaymentDrawer({
         quantity: quantity.trim(),
         cost: cost.trim(),
         paidFromAccount: paidFrom,
+        purchaseReceiptId: matchReceipt?.id ?? null,
       });
       await onRecorded();
       toast("Payment recorded", { tone: "success" });
@@ -178,7 +194,7 @@ export function PaymentDrawer({
             disabled={!canSubmit}
             loading={submitting}
           >
-            Disburse &amp; Register Delivery
+            Record Payment
           </Button>
         </>
       }
@@ -186,6 +202,14 @@ export function PaymentDrawer({
       {error && (
         <div role="alert" className="font-ui text-danger text-body/sm">
           {error}
+        </div>
+      )}
+
+      {matchReceipt && (
+        <div className="font-ui [color:var(--text-secondary)] text-caption/micro rounded-sm bg-(--surface-selected) px-(--sp-5) py-(--sp-4)">
+          Settling a delivery already received — Product, Destination and
+          Quantity are locked to what was received so this payment links to
+          it instead of creating a second, unmatched delivery.
         </div>
       )}
 
@@ -209,6 +233,7 @@ export function PaymentDrawer({
           label="Product"
           required
           searchable
+          disabled={Boolean(matchReceipt)}
           noMatchesLabel="No products match"
           className="w-full"
           placeholder="Select a product…"
@@ -228,6 +253,7 @@ export function PaymentDrawer({
         <Select
           label="Destination"
           required
+          disabled={Boolean(matchReceipt)}
           className="w-full"
           placeholder={
             product ? "Select a location…" : "Select a product first…"
@@ -257,9 +283,10 @@ export function PaymentDrawer({
                 aria-describedby={describedBy}
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
+                disabled={Boolean(matchReceipt)}
                 inputMode="decimal"
                 placeholder="0.0"
-                className="font-mono [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
+                className="font-mono [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)] disabled:opacity-60"
               />
               <span className="font-ui shrink-0 inline-block w-max [color:var(--text-tertiary)] text-sm/micro">
                 {product?.unitLabel ?? "unit"}
@@ -335,8 +362,9 @@ export function PaymentDrawer({
       />
 
       <div className="font-ui [color:var(--text-secondary)] text-caption/micro">
-        The Store Manager receives this delivery on mobile with 1-tap
-        matching. (The cash-balance debit lands in Milestone 3.)
+        {matchReceipt
+          ? "This links the payment to the delivery already received — it won't be prompted for receiving again."
+          : "If this delivery hasn't been received yet, it will show as awaiting receipt until the Store Manager or Canteen Attendant matches and receives it."}
       </div>
     </Drawer>
   );

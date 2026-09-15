@@ -152,6 +152,13 @@ export type RecordPurchasePaymentInput = {
   cost: string;
   /** Which balance the money leaves. F3 writes the `MoneyMovement`. */
   paidFromAccount: "cash" | "mpesa_bank";
+  /**
+   * Optional link to a `purchase_receipt` that already arrived unmatched
+   * (goods received before payment). Validated if given — must be a real,
+   * still-unmatched receipt. Sets that receipt's `purchasePaymentId` to
+   * this payment's id so it stops appearing as awaiting receipt.
+   */
+  purchaseReceiptId?: string | null;
   recordedById: string;
 };
 

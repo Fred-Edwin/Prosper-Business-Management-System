@@ -734,7 +734,9 @@ describe("/admin/financials — payment drawer", () => {
       ).not.toHaveTextContent("Store"),
     );
     // …and with no destination the form can't submit.
-    expect(within(dialog).getByRole("button", { name: /Disburse/ })).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Record Payment" }),
+    ).toBeDisabled();
   });
 
   it("records a payment and fires a toast", async () => {
@@ -754,7 +756,9 @@ describe("/admin/financials — payment drawer", () => {
     await user.type(within(dialog).getByLabelText(/Quantity/), "100");
     // Total Cost auto-fills from quantity × the product's prefilled unit
     // cost (180.00) — no need to type it.
-    await user.click(within(dialog).getByRole("button", { name: /Disburse/ }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Record Payment" }),
+    );
 
     expect(api.recordPurchasePayment).toHaveBeenCalledOnce();
     expect(api.recordPurchasePayment).toHaveBeenCalledWith(

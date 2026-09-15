@@ -73,6 +73,20 @@ function trimQty(dec: Prisma.Decimal): string {
  * this payment's unit cost (`cost / orderedQty`), same transaction. The
  * catalog always reflects the most recently paid price, matching how the
  * Admin already sets it by hand today.
+ *
+ * MATCHING A DELIVERY THAT ALREADY ARRIVED: when goods are received
+ * *before* payment, the receipt lands with `purchasePaymentId: null` (2-way
+ * delivery matching's other half — `recordPurchaseReceipt`). Passing
+ * `input.purchaseReceiptId` here links this payment back to that existing
+ * receipt instead of leaving both sides unmatched: it must point at a real,
+ * still-unmatched `purchase_receipt` row, and once verified we
+ * `stockMovement.update` that row's `purchasePaymentId` to this payment's
+ * id in the same transaction. That's a metadata-only field update on an
+ * existing row — no quantity or money value changes — the same category of
+ * touch `flagTransfer` already makes to a row's `note`; it does not violate
+ * the append-only rule, which governs ledger *amounts*. Without this link,
+ * `listOutstandingPurchases` has no way to know the delivery was already
+ * received and will wrongly keep prompting staff to receive it again.
  */
 export async function recordPurchasePayment(
   input: RecordPurchasePaymentInput,
@@ -88,6 +102,29 @@ export async function recordPurchasePayment(
     await assertDayOpen(new Date(), tx);
     await assertProductExists(tx, input.productId);
     await assertLocationExists(tx, input.locationId);
+
+    let matchedReceiptId: string | null = null;
+    if (input.purchaseReceiptId) {
+      const receipt = await tx.stockMovement.findUnique({
+        where: { id: input.purchaseReceiptId },
+        select: { id: true, movementType: true, purchasePaymentId: true },
+      });
+      if (!receipt || receipt.movementType !== "purchase_receipt") {
+        throw new DomainError(
+          "NOT_FOUND",
+          "The delivery to match does not exist.",
+          "purchaseReceiptId",
+        );
+      }
+      if (receipt.purchasePaymentId !== null) {
+        throw new DomainError(
+          "CONFLICT",
+          "That delivery is already matched to a payment.",
+          "purchaseReceiptId",
+        );
+      }
+      matchedReceiptId = receipt.id;
+    }
 
     const product = await tx.product.findUnique({
       where: { id: input.productId },
@@ -138,6 +175,14 @@ export async function recordPurchasePayment(
       where: { id: input.productId },
       data: { buyingPrice: cost.div(orderedQty) },
     });
+
+    // Link back to the delivery this payment settles, if one was picked.
+    if (matchedReceiptId) {
+      await tx.stockMovement.update({
+        where: { id: matchedReceiptId },
+        data: { purchasePaymentId: movement.id },
+      });
+    }
 
     return movement;
   });

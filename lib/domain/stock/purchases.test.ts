@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
-import { recordPurchasePayment } from "./purchases";
+import { recordPurchasePayment, recordPurchaseReceipt } from "./purchases";
+import { listOutstandingPurchases } from "./list-movements";
+import { DomainError } from "./errors";
 import {
   cleanupStockTestData,
   setupStockTestData,
@@ -111,6 +113,140 @@ describe("recordPurchasePayment — real detail columns (ADR-46 §3)", () => {
       recordedById: recorderId,
     });
     expect(view2.purchaseSupplier).toBeNull();
+  });
+});
+
+describe("recordPurchasePayment — matching a delivery already received", () => {
+  let ctx: StockTestCtx;
+  const SCOPE2 = "purchases-match";
+
+  beforeAll(async () => {
+    ctx = await setupStockTestData(SCOPE2);
+  });
+
+  afterAll(async () => {
+    await cleanupStockTestData(SCOPE2);
+    await prisma.$disconnect();
+  });
+
+  it("links the payment to an existing unmatched receipt instead of leaving both unmatched (the client-reported bug)", async () => {
+    const { productId, locationIds, recorderId } = ctx;
+
+    // Store Manager receives first — no payment exists yet.
+    const receipt = await recordPurchaseReceipt({
+      productId,
+      locationId: locationIds.store,
+      quantity: "20",
+      recordedById: recorderId,
+    });
+    expect(receipt.purchasePaymentId).toBeNull();
+
+    // Admin pays later, explicitly settling that receipt.
+    const payment = await recordPurchasePayment({
+      productId,
+      locationId: locationIds.store,
+      supplier: "Nairobi Grains Millers",
+      quantity: "20",
+      cost: "2400",
+      paidFromAccount: "cash",
+      purchaseReceiptId: receipt.id,
+      recordedById: recorderId,
+    });
+
+    // The payment itself still moves no stock.
+    expect(payment.quantity).toBe("0.0000");
+
+    // The receipt now points at the payment that settled it.
+    const updatedReceipt = await prisma.stockMovement.findUniqueOrThrow({
+      where: { id: receipt.id },
+    });
+    expect(updatedReceipt.purchasePaymentId).toBe(payment.id);
+
+    // Exactly one MoneyMovement — the payment — no stock-doubling side
+    // effect from the link itself.
+    const mm = await prisma.moneyMovement.findMany({
+      where: { sourceType: "purchase_payment", sourceId: payment.id },
+    });
+    expect(mm).toHaveLength(1);
+    expect(mm[0].amount.toFixed(2)).toBe("-2400.00");
+
+    // Neither side is left dangling in the reconciliation view — this is
+    // what stops the false "receive again" prompt on the Store Manager's
+    // screen and the false "awaiting delivery" row on the Admin's screen.
+    const outstanding = await listOutstandingPurchases();
+    expect(outstanding.awaitingReceipt.some((p) => p.id === payment.id)).toBe(
+      false,
+    );
+    expect(
+      outstanding.unmatchedReceipts.some((r) => r.id === receipt.id),
+    ).toBe(false);
+  });
+
+  it("rejects a purchaseReceiptId that does not point at a real purchase_receipt row", async () => {
+    const { productId, locationIds, recorderId } = ctx;
+
+    await expect(
+      recordPurchasePayment({
+        productId,
+        locationId: locationIds.store,
+        quantity: "5",
+        cost: "500",
+        paidFromAccount: "cash",
+        purchaseReceiptId: "00000000-0000-0000-0000-000000000000",
+        recordedById: recorderId,
+      }),
+    ).rejects.toThrow(DomainError);
+  });
+
+  it("rejects a purchaseReceiptId that is already matched to another payment", async () => {
+    const { productId, locationIds, recorderId } = ctx;
+
+    const receipt = await recordPurchaseReceipt({
+      productId,
+      locationId: locationIds.store,
+      quantity: "3",
+      recordedById: recorderId,
+    });
+    await recordPurchasePayment({
+      productId,
+      locationId: locationIds.store,
+      quantity: "3",
+      cost: "360",
+      paidFromAccount: "cash",
+      purchaseReceiptId: receipt.id,
+      recordedById: recorderId,
+    });
+
+    // A second payment cannot claim the same already-matched receipt.
+    await expect(
+      recordPurchasePayment({
+        productId,
+        locationId: locationIds.store,
+        quantity: "3",
+        cost: "360",
+        paidFromAccount: "cash",
+        purchaseReceiptId: receipt.id,
+        recordedById: recorderId,
+      }),
+    ).rejects.toThrow(DomainError);
+  });
+
+  it("still creates a standalone unlinked payment when purchaseReceiptId is omitted (pay-first flow, unchanged)", async () => {
+    const { productId, locationIds, recorderId } = ctx;
+
+    const payment = await recordPurchasePayment({
+      productId,
+      locationId: locationIds.store,
+      quantity: "8",
+      cost: "960",
+      paidFromAccount: "cash",
+      recordedById: recorderId,
+    });
+
+    const outstanding = await listOutstandingPurchases();
+    expect(outstanding.awaitingReceipt.some((p) => p.id === payment.id)).toBe(
+      true,
+    );
   });
 });
 

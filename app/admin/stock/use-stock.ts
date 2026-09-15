@@ -89,6 +89,8 @@ export type PurchasePaymentInput = {
   /** Money, decimal string. */
   cost: string;
   paidFromAccount: "cash" | "mpesa_bank";
+  /** Optional link to an already-received, still-unmatched delivery. */
+  purchaseReceiptId?: string | null;
 };
 
 export type CorrectionInput = {

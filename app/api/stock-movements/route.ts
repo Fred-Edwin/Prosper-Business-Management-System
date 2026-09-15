@@ -163,6 +163,7 @@ export async function POST(req: NextRequest) {
           quantity: input.quantity,
           cost: input.cost,
           paidFromAccount: input.paidFromAccount,
+          purchaseReceiptId: input.purchaseReceiptId ?? null,
           recordedById: userId,
         });
         return ok(r, { status: 201 });

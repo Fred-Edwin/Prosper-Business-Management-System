@@ -83,6 +83,8 @@ export const recordPurchasePaymentSchema = z.object({
   quantity: magnitudeString,
   cost: moneyString,
   paidFromAccount: z.enum(["cash", "mpesa_bank"]),
+  /** Optional link to an already-received, still-unmatched delivery. */
+  purchaseReceiptId: id.nullable().optional(),
 });
 
 export const recordPurchaseReceiptSchema = z.object({

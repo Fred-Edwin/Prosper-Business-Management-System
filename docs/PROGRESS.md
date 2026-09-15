@@ -16,6 +16,53 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: purchase payment recorded after receipt caused a false "receive again" prompt and stock double-count (2026-09-15) — DONE
+
+Client-reported bug: Store Manager receives a delivery first (no payment
+yet), Admin later records the payment for it — the app then re-prompted
+the Store Manager to receive that same delivery, and matching it doubled
+the stock quantity.
+
+Root cause: `recordPurchasePayment` always wrote a new, unlinked
+`purchase_payment` row with no way to point at an already-existing
+unmatched `purchase_receipt`. `listOutstandingPurchases` therefore listed
+every unlinked payment as "awaiting receipt" even when the delivery had
+already been received — "2-way delivery matching" only actually matched
+in the receipt→payment direction; the reverse (payment→receipt) was never
+built.
+
+Fix: `recordPurchasePayment` accepts an optional `purchaseReceiptId`.
+When given, it validates the target is a real, still-unmatched
+`purchase_receipt` and links it (`stockMovement.update` on the receipt's
+`purchasePaymentId` — metadata only, no ledger amount touched, same
+category of update `flagTransfer` already makes to `note`) inside the
+same transaction as the payment write. The Admin's existing "Record
+payment" link on an unmatched delivery row (Financials → Deliveries tab)
+now carries the receipt through to the Payment Drawer, which pre-fills
+and locks Product/Destination/Quantity to what was actually received and
+submits with the link set — instead of creating a second, orphaned
+payment. Also renamed the drawer's submit button from "Disburse &
+Register Delivery" (implied the delivery was registered by paying, which
+was never true and likely fed the client's confusion) to "Record
+Payment".
+
+Diagnosed via a set of SQL queries against the Neon production database
+(`docs/diagnostics/*.sql`, not shipped as app code) to first rule out an
+actual double money movement before finding the root cause was a
+misleading UI/matching gap, not a ledger bug.
+
+- Files: `lib/domain/stock/purchases.ts`, `lib/domain/stock/types.ts`,
+  `lib/validation/stock.ts`, `app/api/stock-movements/route.ts`,
+  `app/admin/stock/use-stock.ts`, `app/admin/financials/transactions-tab.tsx`,
+  `app/admin/financials/payment-drawer.tsx`,
+  `lib/domain/stock/purchases.test.ts`,
+  `tests/screens/financials.screen.test.tsx`.
+- Gates: `pnpm typecheck` ✅ · `pnpm build` ✅ · `pnpm test` ✅ (161/161
+  files, 1376/1376) · `pnpm test:db` ✅ (115/115 files, 826/826, including
+  4 new cases for this fix).
+
+---
+
 ## Category filter gap-fill: Cashier +Add item, Opening Plan grid + a z-index bug (2026-09-11) — DONE
 
 Client spreadsheet feedback tracked two item pickers still missing a
