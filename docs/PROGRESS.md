@@ -16,6 +16,35 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: a voided purchase payment's correction row showed as a phantom "Purchase delivery pending" card (2026-09-16) — DONE
+
+Client-reported bug: the Store Manager hub showed "Purchase delivery
+pending · Sugar · 0 Kg · CHIENI" with no way to dismiss it. Traced (via
+read-only production queries plus the live `/api/stock-movements/outstanding`
+response) to a specific row: a supplier payment that had already been
+voided by the Admin. Its ADR-15 correction/void row (`correctsMovementId`
+set, `purchaseOrderedQty: 0`, note "Voided — …") was still being returned
+by `listOutstandingPurchasesImpl` as "awaiting receipt," because the
+payment-side query had no filter excluding correction rows — only the
+original payment is a real order; its correction carries no order of its
+own and no receipt will ever match it, so it would have stayed stuck on
+this list forever.
+
+Fix: `listOutstandingPurchasesImpl`'s `purchase_payment` query now filters
+`correctsMovementId: null`, mirroring the "current state lives on the
+original" rule `listMovements` already applies elsewhere. No data was
+touched — the underlying void was already correct; only the read was
+wrong. Added a regression test (voided payment's correction row must be
+excluded from both the location-scoped and unfiltered `awaitingReceipt`
+lists) to `list-outstanding-destination-scope.test.ts`; confirmed it fails
+without the fix and passes with it.
+
+Files: `lib/domain/stock/list-movements.ts`,
+`lib/domain/stock/list-outstanding-destination-scope.test.ts`.
+
+Gates: `pnpm test` (1377/1377 passed), `pnpm typecheck` (clean), `pnpm
+build` (clean).
+
 ## Fix: purchase payment recorded after receipt caused a false "receive again" prompt and stock double-count (2026-09-15) — DONE
 
 Client-reported bug: Store Manager receives a delivery first (no payment
