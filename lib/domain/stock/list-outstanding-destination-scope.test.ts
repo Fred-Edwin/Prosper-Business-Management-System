@@ -36,6 +36,8 @@ describe("listOutstandingPurchasesForLocation — destination list (ADR-69)", ()
   let paymentAtRestaurant: string;
   let paymentAtCanteen: string;
   let paymentAlreadyReceived: string;
+  let paymentVoided: string;
+  let paymentVoidCorrectionId: string;
 
   beforeAll(async () => {
     ctx = await setupStockTestData(SCOPE);
@@ -93,6 +95,34 @@ describe("listOutstandingPurchasesForLocation — destination list (ADR-69)", ()
         purchasePaymentId: paymentAlreadyReceived,
       },
     });
+
+    // A payment that was voided (ADR-15 correction row, never received) —
+    // the correction row itself must never surface as "awaiting receipt":
+    // it carries no order of its own, only a signed delta on the payment
+    // it voids, and no receipt will ever match it.
+    paymentVoided = await payment(
+      ctx.locationIds.store,
+      ctx.productId,
+      "2026-08-05T11:00:00Z",
+    );
+    paymentVoidCorrectionId = (
+      await prisma.stockMovement.create({
+        data: {
+          productId: ctx.productId,
+          locationId: ctx.locationIds.store,
+          movementType: "purchase_payment",
+          quantity: new Prisma.Decimal("0"),
+          recordedById: ctx.adminId,
+          occurredAt: new Date("2026-08-05T12:00:00Z"),
+          purchaseSupplier: `${ctx.prefix} Supplier`,
+          purchaseOrderedQty: new Prisma.Decimal("0"),
+          purchaseTotalCost: new Prisma.Decimal("-1200"),
+          purchasePaidFrom: "cash",
+          correctsMovementId: paymentVoided,
+          note: "Voided",
+        },
+      })
+    ).id;
   });
 
   afterAll(async () => {
@@ -149,5 +179,15 @@ describe("listOutstandingPurchasesForLocation — destination list (ADR-69)", ()
     expect(ids(scoped.awaitingReceipt)).not.toContain(paymentAlreadyReceived);
     const all = await listOutstandingPurchases();
     expect(ids(all.awaitingReceipt)).not.toContain(paymentAlreadyReceived);
+  });
+
+  it("a voided payment's correction row is excluded, not just the original", async () => {
+    const scoped = await listOutstandingPurchasesForLocation([
+      ctx.locationIds.store,
+      ctx.locationIds.restaurant,
+    ]);
+    expect(ids(scoped.awaitingReceipt)).not.toContain(paymentVoidCorrectionId);
+    const all = await listOutstandingPurchases();
+    expect(ids(all.awaitingReceipt)).not.toContain(paymentVoidCorrectionId);
   });
 });

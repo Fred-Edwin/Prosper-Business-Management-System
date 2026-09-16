@@ -261,8 +261,19 @@ async function listOutstandingPurchasesImpl(
     ? { locationId: { in: [...locationIds] } }
     : {};
   const [payments, unmatchedReceipts, linkedReceipts] = await Promise.all([
+    // `correctsMovementId: null` — a correction/void row (ADR-15) is never
+    // itself "awaiting receipt": it carries no order of its own, only a
+    // signed delta on the original it corrects. Without this filter a
+    // voided payment's own correction row lingers on this list forever,
+    // since nothing will ever match a receipt to it — the same "current
+    // state lives on the original" rule `listMovements` already applies
+    // when folding correction deltas into the original row (see above).
     prisma.stockMovement.findMany({
-      where: { movementType: "purchase_payment", ...locationFilter },
+      where: {
+        movementType: "purchase_payment",
+        correctsMovementId: null,
+        ...locationFilter,
+      },
       orderBy: { occurredAt: "desc" },
     }),
     prisma.stockMovement.findMany({
