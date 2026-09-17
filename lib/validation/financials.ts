@@ -38,6 +38,7 @@ export const recordExpenseSchema = z.object({
   date: businessDate,
   paidFromAccount: moneyAccount,
   note: z.string().trim().max(500).optional(),
+  supplier: z.string().trim().max(200).optional(),
 });
 
 /** `POST /api/expenses/:id/correct` — append-only correction (Admin). */

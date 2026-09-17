@@ -22,6 +22,23 @@ import type {
   OwnerTransactionView,
 } from "@/lib/domain/financials";
 
+// Supplier dropdown (expense drawer) — keep quiet, no test here drives it.
+vi.mock("@/app/admin/financials/use-suppliers", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/app/admin/financials/use-suppliers")
+  >("@/app/admin/financials/use-suppliers");
+  return {
+    ...actual,
+    useSuppliers: () => ({
+      suppliers: [],
+      loading: false,
+      refresh: vi.fn(),
+      addLocal: vi.fn(),
+    }),
+    suppliersApi: { list: vi.fn().mockResolvedValue([]), create: vi.fn() },
+  };
+});
+
 // ── mock use-financials ────────────────────────────────────────────────
 const createExpense = vi.fn();
 const correctExpense = vi.fn();
@@ -78,6 +95,7 @@ function expense(over: Partial<ExpenseView> = {}): ExpenseView {
     date: "2026-09-02T09:00:00.000Z",
     paidFromAccount: "cash",
     note: "Market run",
+    supplier: null,
     recordedById: "admin",
     corrected: false,
     occurredAt: "2026-09-02T09:00:00.000Z",

@@ -12,6 +12,7 @@ import { Button } from "@/components/kit/button";
 import { Drawer } from "@/components/kit/drawer";
 import { FormField } from "@/components/kit/form-field";
 import { SegmentedControl } from "@/components/kit/segmented-control";
+import { Select } from "@/components/kit/select";
 import { useToast } from "@/components/kit/toast";
 import type { StockMovementView } from "@/lib/domain/stock";
 import type { ProductWithLocations } from "@/lib/domain/catalog";
@@ -20,6 +21,9 @@ import {
   StockRequestError,
   type CorrectPurchasePaymentInput,
 } from "../stock/use-stock";
+import { useSuppliers, suppliersApi } from "./use-suppliers";
+
+const ADD_NEW_SUPPLIER = "__add_new_supplier__";
 
 const CODE_MESSAGE: Record<string, string> = {
   VALIDATION_ERROR: "Check the fields and try again.",
@@ -60,7 +64,54 @@ export function PurchasePaymentCorrectionDrawer({
   const { toast } = useToast();
   const unit = product?.unitLabel ?? "unit";
 
-  const [supplier, setSupplier] = React.useState(payment.purchaseSupplier ?? "");
+  const { suppliers, addLocal: addLocalSupplier } = useSuppliers();
+  // Pre-select by name match against the payment's existing free-text
+  // supplier — it may not match any current Supplier row (typed before
+  // Suppliers existed, or since renamed/archived), in which case nothing is
+  // pre-selected but the original name still shows in the drawer's title.
+  const [supplierId, setSupplierId] = React.useState("");
+  const [addingSupplier, setAddingSupplier] = React.useState(false);
+  const [newSupplierName, setNewSupplierName] = React.useState("");
+  const [savingSupplier, setSavingSupplier] = React.useState(false);
+  React.useEffect(() => {
+    if (!payment.purchaseSupplier || suppliers.length === 0) return;
+    const match = suppliers.find(
+      (s) => s.name.toLowerCase() === payment.purchaseSupplier?.toLowerCase(),
+    );
+    if (match) setSupplierId(match.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suppliers]);
+  const supplierOptions = React.useMemo(
+    () => [
+      { value: ADD_NEW_SUPPLIER, label: "+ Add new supplier…" },
+      ...suppliers.map((s) => ({ value: s.id, label: s.name })),
+    ],
+    [suppliers],
+  );
+  // No `Supplier` row selected (nothing matched, or the Admin hasn't picked
+  // one yet) falls back to the payment's original free-text name, so simply
+  // opening this drawer and correcting the quantity/cost doesn't silently
+  // clear an unmatched supplier name.
+  const selectedSupplierName = supplierId
+    ? (suppliers.find((s) => s.id === supplierId)?.name ?? "")
+    : (payment.purchaseSupplier ?? "");
+
+  async function submitNewSupplier() {
+    const name = newSupplierName.trim();
+    if (!name) return;
+    setSavingSupplier(true);
+    try {
+      const created = await suppliersApi.create({ name });
+      addLocalSupplier(created);
+      setSupplierId(created.id);
+      setAddingSupplier(false);
+      setNewSupplierName("");
+    } catch {
+      // Same non-fatal handling as the payment drawer's inline add.
+    } finally {
+      setSavingSupplier(false);
+    }
+  }
   const [orderedQty, setOrderedQty] = React.useState(
     payment.purchaseOrderedQty
       ? String(Number(payment.purchaseOrderedQty))
@@ -94,7 +145,7 @@ export function PurchasePaymentCorrectionDrawer({
     try {
       const input: CorrectPurchasePaymentInput = {
         movementId: payment.id,
-        supplier: supplier.trim() || undefined,
+        supplier: selectedSupplierName || undefined,
         orderedQty: orderedQty.trim(),
         cost: cost.trim(),
         paidFromAccount: paidFrom,
@@ -169,20 +220,62 @@ export function PurchasePaymentCorrectionDrawer({
         balance and the catalog buying price update to match.
       </div>
 
-      <FormField label="Supplier / Vendor" className="w-full">
-        {({ id, "aria-describedby": describedBy }) => (
-          <div className={fieldBox}>
-            <input
-              id={id}
-              aria-describedby={describedBy}
-              value={supplier}
-              onChange={(e) => setSupplier(e.target.value)}
-              placeholder="e.g. Chieni Wholesale"
-              className="font-ui [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
-            />
-          </div>
-        )}
-      </FormField>
+      {addingSupplier ? (
+        <FormField label="New supplier name" className="w-full">
+          {({ id, "aria-describedby": describedBy }) => (
+            <div className="flex flex-col gap-(--sp-2) w-full">
+              <div className={fieldBox}>
+                <input
+                  id={id}
+                  aria-describedby={describedBy}
+                  autoFocus
+                  value={newSupplierName}
+                  onChange={(e) => setNewSupplierName(e.target.value)}
+                  placeholder="e.g. Chieni Wholesale"
+                  className="font-ui [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
+                />
+              </div>
+              <div className="flex gap-(--sp-3)">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setAddingSupplier(false);
+                    setNewSupplierName("");
+                  }}
+                  disabled={savingSupplier}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={submitNewSupplier}
+                  disabled={!newSupplierName.trim()}
+                  loading={savingSupplier}
+                >
+                  Add supplier
+                </Button>
+              </div>
+            </div>
+          )}
+        </FormField>
+      ) : (
+        <Select
+          label="Supplier / Vendor"
+          searchable
+          className="w-full"
+          placeholder={payment.purchaseSupplier ?? "Select a supplier…"}
+          noMatchesLabel="No suppliers match"
+          options={supplierOptions}
+          value={supplierId}
+          onChange={(v) => {
+            if (v === ADD_NEW_SUPPLIER) {
+              setAddingSupplier(true);
+              return;
+            }
+            setSupplierId(v);
+          }}
+        />
+      )}
 
       <div className="flex gap-(--sp-4)">
         <FormField label="Quantity" required className="grow">

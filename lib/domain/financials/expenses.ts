@@ -43,6 +43,7 @@ function toExpenseView(
     date: Date;
     paidFromAccount: ExpenseView["paidFromAccount"];
     note: string | null;
+    supplier: string | null;
     recordedById: string;
   },
   derivedAmount: Prisma.Decimal,
@@ -55,6 +56,7 @@ function toExpenseView(
     date: row.date.toISOString(),
     paidFromAccount: row.paidFromAccount,
     note: row.note,
+    supplier: row.supplier,
     recordedById: row.recordedById,
     corrected,
     occurredAt: row.date.toISOString(),
@@ -100,6 +102,7 @@ export async function recordExpense(
   assertBusinessDate(input.date);
   const occurredAt = businessDateNoonUtc(input.date);
   const note = input.note?.trim() ? input.note.trim() : null;
+  const supplier = input.supplier?.trim() ? input.supplier.trim() : null;
 
   const write = async (tx: Prisma.TransactionClient) => {
     await assertDayOpen(input.date, tx);
@@ -111,6 +114,7 @@ export async function recordExpense(
         date: occurredAt,
         paidFromAccount: input.paidFromAccount,
         note,
+        supplier,
         recordedById: actor.actorId,
       },
     });

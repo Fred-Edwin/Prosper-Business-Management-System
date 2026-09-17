@@ -16,6 +16,72 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature: Supplier/Vendor dropdown on Stock, Financials, Expenses (2026-09-17) — DONE
+
+Client feedback: wanted a dropdown of suppliers/vendors when recording a
+purchase payment (Stock/Financials) or an expense, instead of free-typing
+the name each time.
+
+**Schema** — new `Supplier` model (`name`, `phone?`, `note?`, `deletedAt`
+archive, `createdAt`/`updatedAt`) and a new `Expense.supplier` nullable
+string column, migration `20260917063641_add_supplier_and_expense_supplier`.
+Additive only, no backfill. **Deliberately not a hard FK** on
+`StockMovement`/`Expense` — `StockMovement.purchaseSupplier` and the new
+`Expense.supplier` stay plain, denormalized display strings populated from
+`Supplier.name` at record time. ADR-46 §3 already chose free text over a
+join for purchase-payment detail; promoting to a real FK would mean
+rewriting the correction/void chain in `correct-purchase-payment.ts` for a
+field that only ever displays, which wasn't worth the risk for a name
+lookup. Renaming/archiving a supplier does not retroactively change
+historical rows — same non-goal as a Customer's name edit not rewriting
+old `Debt` rows.
+
+**Backend** — new `lib/domain/suppliers` module (`createSupplier`,
+`listSuppliers`, `archiveSupplier`/`unarchiveSupplier`), mirroring
+`lib/domain/customers`'s shape but simpler: `Supplier` is a pure lookup
+entity with no ledger, no derived balance, and (per CLAUDE.md's
+correction-path rule) no correction/void path is needed since it never
+writes a ledger row. New `lib/validation/suppliers.ts` + routes
+`GET`/`POST /api/suppliers`, `DELETE /api/suppliers/:id` (archive),
+`POST /api/suppliers/:id?mode=unarchive` — **Admin only** on every verb
+(the only role that ever records a purchase payment or an expense).
+`Expense.supplier` threaded through `RecordExpenseInput`/`ExpenseView` in
+`lib/domain/financials` — set once at `recordExpense`, never touched by
+`correctExpense` (same as `category`/`date`/`paidFromAccount`).
+
+**Frontend** — new shared `app/admin/financials/use-suppliers.ts` hook
+(`useSuppliers`, `suppliersApi`). Three drawers switched their Supplier
+field from a plain text `<Input>` to a searchable kit `<Select>` sourced
+from `GET /api/suppliers`, each with an inline "+ Add new supplier"
+mini-form (sentinel option `__add_new_supplier__`) so the Admin can
+register a vendor without leaving the flow:
+- `app/admin/financials/payment-drawer.tsx` (new purchase payment)
+- `app/admin/financials/purchase-payment-correction-drawer.tsx` (correcting
+  an existing payment) — pre-selects by case-insensitive name match against
+  the payment's existing free-text supplier where one exists; falls back to
+  showing the original name as the trigger placeholder when no match is
+  found (typed before Suppliers existed, or since renamed/archived), so
+  opening the drawer and correcting quantity/cost alone doesn't silently
+  clear an unmatched supplier name.
+- `app/admin/financials/expense-drawer.tsx` (create mode only — correction
+  mode has no supplier field, matching the other fixed fields).
+
+The kit itself (`components/kit/select.tsx`) was not modified — the
+"add new" affordance is composed entirely in each screen file via a
+sentinel option value, per the frozen-kit rule.
+
+**Tests**: new `lib/domain/suppliers/suppliers.test.ts` (create/list/
+archive/unarchive, 8 cases). Updated `tests/screens/financials.screen.test.tsx`
+and `tests/screens/admin-financials-expenses.screen.test.tsx` to mock
+`use-suppliers` (no real fetch in jsdom) and to assert the correction
+drawer's supplier trigger text instead of `getByDisplayValue` (it's a
+`<Select>` now, not a plain input).
+
+**Gates**: `pnpm test` (full suite) green, `pnpm typecheck` clean,
+`pnpm build` green. Branch `feat/suppliers-vendors`, not yet merged.
+
+---
+
 ## Feature: KPI strip + archive-only customer removal on Customers & Credit (2026-09-17) — DONE
 
 Client feedback: wanted a KPI strip on the Customers & Credit register
