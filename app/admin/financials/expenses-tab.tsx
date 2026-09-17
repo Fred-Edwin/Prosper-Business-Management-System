@@ -12,9 +12,14 @@ import { StatusChip } from "@/components/kit/status-chip";
 import { Button } from "@/components/kit/button";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
+import { SearchInput } from "@/components/kit/search-input";
+import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
 import type { ExpenseView } from "@/lib/domain/financials";
 import { useExpenses } from "./use-financials";
 import { ExpenseDrawer } from "./expense-drawer";
+
+const ALL_CATEGORIES = "all";
+const ALL_ACCOUNTS = "all";
 
 const CATEGORY_LABEL: Record<string, string> = {
   rent: "Rent",
@@ -68,6 +73,66 @@ export function ExpensesView({
   /** A new expense is dated to the range's END day (the day a create makes sense on). */
   const entryDate = to;
 
+  // Search + Category/Account filters are client-side — the date range
+  // already narrows the fetch to a small set (same trade-off as Catalog's
+  // category filter): no round trip for an exact-match/contains over data
+  // that's already loaded.
+  const [search, setSearch] = React.useState("");
+  const [category, setCategory] = React.useState<string>(ALL_CATEGORIES);
+  const [account, setAccount] = React.useState<string>(ALL_ACCOUNTS);
+
+  const visibleExpenses = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return expenses.filter((e) => {
+      if (category !== ALL_CATEGORIES && e.category !== category) return false;
+      if (account !== ALL_ACCOUNTS && e.paidFromAccount !== account) return false;
+      if (q === "") return true;
+      const categoryLabel = (CATEGORY_LABEL[e.category] ?? e.category).toLowerCase();
+      return (
+        (e.note ?? "").toLowerCase().includes(q) || categoryLabel.includes(q)
+      );
+    });
+  }, [expenses, search, category, account]);
+
+  const filtered =
+    search.trim() !== "" || category !== ALL_CATEGORIES || account !== ALL_ACCOUNTS;
+
+  function clearFilters() {
+    setSearch("");
+    setCategory(ALL_CATEGORIES);
+    setAccount(ALL_ACCOUNTS);
+  }
+
+  const filterControls: FilterControl[] = [
+    {
+      id: "category",
+      kind: "select",
+      label: "Category",
+      options: [
+        { value: ALL_CATEGORIES, label: "All" },
+        ...Object.entries(CATEGORY_LABEL).map(([value, label]) => ({ value, label })),
+      ],
+      value: category,
+      default: ALL_CATEGORIES,
+    },
+    {
+      id: "account",
+      kind: "select",
+      label: "Paid from",
+      options: [
+        { value: ALL_ACCOUNTS, label: "All" },
+        ...Object.entries(ACCOUNT_LABEL).map(([value, label]) => ({ value, label })),
+      ],
+      value: account,
+      default: ALL_ACCOUNTS,
+    },
+  ];
+
+  function onFilterChange(id: string, value: string | boolean | null) {
+    if (id === "category") setCategory(value == null ? ALL_CATEGORIES : String(value));
+    else if (id === "account") setAccount(value == null ? ALL_ACCOUNTS : String(value));
+  }
+
   const handleCreate = React.useCallback(
     async (input: Parameters<typeof create>[0]) => {
       const row = await create(input);
@@ -89,7 +154,7 @@ export function ExpensesView({
     { mode: "create" } | { mode: "correct"; target: ExpenseView } | null
   >(null);
 
-  const total = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  const total = visibleExpenses.reduce((s, e) => s + Number(e.amount), 0);
 
   const columns: SimpleTableColumn<ExpenseView>[] = [
     {
@@ -162,11 +227,30 @@ export function ExpensesView({
         <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
           {loading
             ? "Loading…"
-            : `${expenses.length} ${expenses.length === 1 ? "expense" : "expenses"} · KES ${money(total.toFixed(2))}`}
+            : `${visibleExpenses.length} ${visibleExpenses.length === 1 ? "expense" : "expenses"} · KES ${money(total.toFixed(2))}`}
         </div>
         <Button variant="primary" size="sm" onClick={() => setDrawer({ mode: "create" })}>
           Record Expense
         </Button>
+      </div>
+
+      <div className="px-(--sp-6) md:px-0">
+        <FilterToolbar
+          aria-label="Filter expenses"
+          search={
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search note or category…"
+              aria-label="Search expenses"
+            />
+          }
+          controls={filterControls}
+          onChange={onFilterChange}
+          onReset={clearFilters}
+          resultCount={visibleExpenses.length}
+          resultNoun="expenses"
+        />
       </div>
 
       {error ? (
@@ -187,31 +271,46 @@ export function ExpensesView({
           <div className="hidden md:block overflow-x-auto">
             <SimpleTable
               columns={columns}
-              rows={expenses}
+              rows={visibleExpenses}
               rowKey={(e) => e.id}
-              loading={loading && expenses.length === 0}
+              loading={loading && visibleExpenses.length === 0}
               emptyState={{
-                title: `No expenses for ${dateLabel}`,
-                description:
-                  "Business expenses the Admin logs over the selected range appear here.",
-                actionLabel: "Record Expense",
-                onAction: () => setDrawer({ mode: "create" }),
+                variant: filtered ? "filtered" : "default",
+                title: filtered
+                  ? "No expenses match these filters"
+                  : `No expenses for ${dateLabel}`,
+                description: filtered
+                  ? "Try a different search term, category, or account, or clear the filters."
+                  : "Business expenses the Admin logs over the selected range appear here.",
+                actionLabel: filtered ? "Clear filters" : "Record Expense",
+                onAction: filtered
+                  ? clearFilters
+                  : () => setDrawer({ mode: "create" }),
               }}
             />
           </div>
 
           <div className="flex md:hidden flex-col">
-            {!loading && expenses.length === 0 && (
+            {!loading && visibleExpenses.length === 0 && (
               <div className="p-(--sp-5)">
                 <EmptyState
-                  title={`No expenses for ${dateLabel}`}
-                  description="Business expenses the Admin logs over the selected range appear here."
-                  actionLabel="Record Expense"
-                  onAction={() => setDrawer({ mode: "create" })}
+                  variant={filtered ? "filtered" : "default"}
+                  title={
+                    filtered ? "No expenses match these filters" : `No expenses for ${dateLabel}`
+                  }
+                  description={
+                    filtered
+                      ? "Try a different search term, category, or account, or clear the filters."
+                      : "Business expenses the Admin logs over the selected range appear here."
+                  }
+                  actionLabel={filtered ? "Clear filters" : "Record Expense"}
+                  onAction={
+                    filtered ? clearFilters : () => setDrawer({ mode: "create" })
+                  }
                 />
               </div>
             )}
-            {expenses.map((e) => (
+            {visibleExpenses.map((e) => (
               <div
                 key={e.id}
                 className="flex flex-col p-(--sp-5) gap-(--sp-2) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"

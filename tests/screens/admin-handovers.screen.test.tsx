@@ -290,6 +290,70 @@ describe("Admin Handovers — multi-day worksheet is a flat, day-sorted row list
   });
 });
 
+describe("Admin Handovers — search + Location/Status filters", () => {
+  it("filters by search text, by Location, and by Status; Reset clears the selects", async () => {
+    reconState = {
+      data: view([
+        row({
+          handoverId: "h-a",
+          staffName: "Grace Cashier",
+          locationId: "loc-rest",
+          locationName: "Restaurant",
+          received: false,
+        }),
+        row({
+          handoverId: "h-b",
+          staffName: "Anne Attendant",
+          locationId: "loc-canteen",
+          locationName: "Canteen",
+          received: true,
+          cashReceived: "3000.00",
+          mpesaReceived: "3000.00",
+          cashVariance: "0.00",
+          mpesaVariance: "0.00",
+        }),
+      ]),
+      loading: false,
+      error: null,
+    };
+    const user = userEvent.setup();
+    renderTab();
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Grace Cashier")).toBeInTheDocument();
+    expect(within(table).getByText("Anne Attendant")).toBeInTheDocument();
+
+    // Search narrows to the matching staff name.
+    const searchBox = screen.getByRole("searchbox", { name: "Search handovers" });
+    await user.type(searchBox, "Anne");
+    await waitFor(() =>
+      expect(within(table).queryByText("Grace Cashier")).not.toBeInTheDocument(),
+    );
+    expect(within(table).getByText("Anne Attendant")).toBeInTheDocument();
+    await user.clear(searchBox);
+
+    // Location filter narrows to Canteen only.
+    await user.click(screen.getByRole("combobox", { name: "Location" }));
+    await user.click(await screen.findByRole("option", { name: "Location: Canteen" }));
+    await waitFor(() =>
+      expect(within(table).queryByText("Grace Cashier")).not.toBeInTheDocument(),
+    );
+    expect(within(table).getByText("Anne Attendant")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+    await waitFor(() =>
+      expect(within(table).getByText("Grace Cashier")).toBeInTheDocument(),
+    );
+
+    // Status filter narrows to Awaiting only.
+    await user.click(screen.getByRole("combobox", { name: "Status" }));
+    await user.click(await screen.findByRole("option", { name: "Status: Awaiting" }));
+    await waitFor(() =>
+      expect(within(table).queryByText("Anne Attendant")).not.toBeInTheDocument(),
+    );
+    expect(within(table).getByText("Grace Cashier")).toBeInTheDocument();
+  });
+});
+
 // ── record-a-handover entry (ADR-79) ────────────────────────────────────
 
 describe("Admin Handovers — 'Record a handover' back-entry", () => {

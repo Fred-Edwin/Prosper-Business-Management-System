@@ -16,6 +16,68 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature: search + filters on Handovers, Expenses, Catalog; z-index fix for SimpleTable dropdowns (2026-09-17) — DONE
+
+Client feedback: several admin tables needed a search bar and/or filters —
+named the Handovers table, the Expenses table, and "the utility
+consumption table" (the latter turned out to be the Expenses table
+filtered to category = Utilities — no separate screen exists). An audit
+of every admin table (`components/kit/filter-toolbar.md` is the shared
+pattern) found Handovers and Expenses had zero search/filter
+infrastructure; Catalog already had search + a Location filter but no
+Category filter, and its Location `<Select>` dropdown was visibly clipped
+by the table's sticky header (screenshot from the client).
+
+Root cause of the z-index bug: `SimpleTable`'s `STICKY_HEADER_LEFT_Z` was
+a hardcoded `[z-index:1101]` literal — one more than `--z-dropdown`
+(1100) instead of one more than `--z-sticky` (1000, per the token file).
+`DenseLedger`'s equivalent constant already computed this correctly as
+`calc(var(--z-sticky) + 1)` = 1001; `SimpleTable` had copied the comment's
+reasoning but not the computation, so every sticky-header `SimpleTable`
+(Catalog, Stock ledger) painted over an open `Select`/`DatePicker`
+popover whenever the table was scrolled far enough for the header to be
+sticky. Fixed by computing off the token, matching `DenseLedger`.
+
+Added, following the `FilterToolbar` + `SearchInput` pattern from Assets/
+Customers:
+- **Catalog** (`products-tab.tsx`): a Category `<Select>`, sourced from
+  `usedCategoryNames()` on the kind-tab set (not narrowed by the category
+  filter itself, so its own option list never shrinks). Filtered
+  client-side (small, already-loaded per-tab set). Also fixed a
+  pre-existing bug this exposed: the mobile card list mapped over the raw
+  `products` array instead of `visibleProducts`, so on mobile neither the
+  Archived tab nor any filter actually narrowed the cards shown.
+- **Expenses** (`expenses-tab.tsx`): `FilterToolbar` built from scratch —
+  search (note + category) + Category + Paid-from filters, all
+  client-side over the date-range-scoped `expenses` array. The header
+  total now reflects the filtered set.
+- **Handovers** (`handovers-tab.tsx`): `FilterToolbar` built from scratch
+  — search (staff + location) + Location + Status filters, client-side.
+  The bespoke totals strip now recomputes over the filtered rows
+  (`sumTotals`, plain-number summation of already-2dp KES strings — same
+  display-layer idiom `money()`/`fmtVariance()` already use in this file,
+  not the ledger arithmetic the Decimal/NUMERIC rule governs).
+- **Orders** and **Audit trail** were audited too: Orders already had a
+  fully wired search inside its `FilterToolbar` (the initial audit was
+  wrong here); Audit trail's search was scoped out this session — it's
+  server-paginated and the searchable text (entity labels, change
+  summaries) is computed after the DB query, so a correct full-range
+  search needs a small `list-audit-log.ts`/API change, not just a UI
+  addition. Owner decision: skip for now.
+
+Files: `components/kit/simple-table.tsx`, `app/admin/catalog/products-tab.tsx`,
+`app/admin/financials/expenses-tab.tsx`, `app/admin/financials/handovers-tab.tsx`,
+`tests/screens/catalog.screen.test.tsx`,
+`tests/screens/admin-financials-expenses.screen.test.tsx`,
+`tests/screens/admin-handovers.screen.test.tsx`.
+
+Gates: `pnpm test` (1380/1380 passed, +3 new filter tests), `pnpm
+typecheck` (clean), `pnpm build` (clean). Manually verified in the
+browser (dev server + seeded data): Catalog's location dropdown no
+longer clips under the sticky header, and the new Category filter
+correctly narrows Products to matching rows; Expenses and Handovers
+toolbars render and match the existing kit visual language.
+
 ## Fix: a voided purchase payment's correction row showed as a phantom "Purchase delivery pending" card (2026-09-16) — DONE
 
 Client-reported bug: the Store Manager hub showed "Purchase delivery

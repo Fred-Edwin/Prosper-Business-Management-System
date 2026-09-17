@@ -56,6 +56,8 @@ function fmt(value: string | null): string {
 
 // "All locations" sentinel for the location filter <Select>.
 const ALL_LOCATIONS = "__all__";
+// "All categories" sentinel for the category filter <Select>.
+const ALL_CATEGORIES = "__all__";
 
 // Pinned during horizontal scroll (client feedback 2026-09-11) — px widths
 // must match the "row" and "name" columns' fixed w-[…] classes below.
@@ -133,6 +135,7 @@ export function ProductsTab({
   const [activeTabKey, setActiveTabKey] = React.useState("all");
   const [search, setSearch] = React.useState("");
   const [locationId, setLocationId] = React.useState<string>(ALL_LOCATIONS);
+  const [category, setCategory] = React.useState<string>(ALL_CATEGORIES);
 
   const tab = TABS.find((t) => t.key === activeTabKey) ?? TABS[0];
   const filter: CatalogListFilter = {
@@ -183,18 +186,29 @@ export function ProductsTab({
   // `includeArchived=true` returns active + archived rows; on the Archived
   // tab show only the archived ones (ADR-47 §1 — the tab is archived-only,
   // and an unarchived row must leave it).
-  const visibleProducts = tab.archived
+  const archiveFiltered = tab.archived
     ? products.filter((p) => p.deletedAt != null)
     : products;
 
-  // Category names already in use — feeds the drawer's autocomplete so a
-  // new item's category stays consistent with the pickers (client
-  // feedback 2026-09-10). Sourced from the currently loaded set; a
-  // convenience, never a constraint (the field is still free-text).
+  // Category names already in use — feeds both the drawer's autocomplete
+  // (client feedback 2026-09-10) and the category filter <Select> below.
+  // Sourced from `archiveFiltered` (kind tab + archived, NOT the category
+  // filter itself) so picking a category never shrinks its own option
+  // list. A convenience for the drawer, never a constraint — the field
+  // stays free-text.
   const categorySuggestions = React.useMemo(
-    () => usedCategoryNames(products),
-    [products],
+    () => usedCategoryNames(archiveFiltered),
+    [archiveFiltered],
   );
+
+  // Category has no server-side param wired here (unlike kind/search/
+  // location) — the full kind-tab set is already in memory, so filtering
+  // client-side avoids a second round trip for an exact-match on a field
+  // that's already loaded.
+  const visibleProducts =
+    category === ALL_CATEGORIES
+      ? archiveFiltered
+      : archiveFiltered.filter((p) => (p.category ?? "") === category);
 
   // Kept as just the number (not "N products") — the header badge sits
   // right next to the "Product Catalog" title in a single-row mobile
@@ -204,7 +218,10 @@ export function ProductsTab({
   const count = tab.archived
     ? `${visibleProducts.length} archived`
     : `${visibleProducts.length}`;
-  const filtered = search.trim() !== "" || locationId !== ALL_LOCATIONS;
+  const filtered =
+    search.trim() !== "" ||
+    locationId !== ALL_LOCATIONS ||
+    category !== ALL_CATEGORIES;
 
   // Publish count + create trigger up to the shared header.
   React.useEffect(() => {
@@ -214,6 +231,7 @@ export function ProductsTab({
   function clearFilters() {
     setSearch("");
     setLocationId(ALL_LOCATIONS);
+    setCategory(ALL_CATEGORIES);
   }
 
   // Row position in the currently filtered/sorted list — "how many rows
@@ -380,6 +398,16 @@ export function ProductsTab({
           onChange={setLocationId}
           className="shrink-0"
         />
+        <Select
+          aria-label="Filter by category"
+          options={[
+            { value: ALL_CATEGORIES, label: "All categories" },
+            ...categorySuggestions.map((c) => ({ value: c, label: c })),
+          ]}
+          value={category}
+          onChange={setCategory}
+          className="shrink-0"
+        />
       </div>
 
       {error && (
@@ -423,7 +451,7 @@ export function ProductsTab({
             variant: filtered ? "filtered" : "default",
             title: filtered ? "No products match these filters" : "No products yet",
             description: filtered
-              ? "Try a different search term or location, or clear the filters."
+              ? "Try a different search term, location, or category, or clear the filters."
               : "Add your first product to start building the catalog.",
             actionLabel: filtered ? "Clear filters" : "Add Product",
             onAction: filtered ? clearFilters : openCreate,
@@ -444,7 +472,7 @@ export function ProductsTab({
               : "No products yet."}
           </div>
         ) : (
-          products.map((card, i) => {
+          visibleProducts.map((card, i) => {
             const prices: { label: string; value: string }[] = [
               { label: "Stock", value: fmtStockQty(card.stockQty) },
               { label: "Buying", value: fmt(card.buyingPrice) },

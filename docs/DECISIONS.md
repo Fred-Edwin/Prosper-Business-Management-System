@@ -4773,3 +4773,102 @@ promised.
   click affordances on the same row (narrow "Correct"-style data-cell
   buttons AND a text button), doesn't fix the root cause for any future
   `DenseLedger` period-style usage, and reads as a patch rather than a fix.
+
+## ADR-84: `SimpleTable`'s sticky header z-index computed off `--z-sticky`, not a hardcoded literal; date-range-scoped tables filter client-side (Client feedback, 2026-09-17)
+
+**Context.** Client feedback: several admin tables needed a search bar
+and/or filters (Handovers, Expenses, "the utility consumption table" —
+which turned out to be Expenses filtered to category = Utilities, not a
+separate screen). A full audit of `app/admin/**` found Catalog already
+had search + a Location filter, but its Location `<Select>` popover was
+visibly clipped by the Products table's sticky header on scroll
+(screenshot from the client) — the exact "dropdown renders behind the
+table" bug class `products-tab.tsx`'s own comments already document a
+prior fix for (client feedback 2026-09-11), regressed.
+
+**Root cause.** `components/kit/simple-table.tsx`'s
+`STICKY_HEADER_LEFT_Z` was a hardcoded `[z-index:1101]` literal, applied
+to the ENTIRE sticky header row (not just a sticky-left corner cell, as
+its own comment claimed). The token scale
+(`app/design-system/tokens.css`) is `--z-sticky: 1000` and
+`--z-dropdown: 1100` — a sticky header should sit one step above
+`--z-sticky` (1001), safely below any dropdown it opens over. The
+literal `1101` was one step above `--z-dropdown` instead, so any
+`Select`/`DatePicker` popover opened while a `SimpleTable`'s header was
+stuck painted UNDER the header. `DenseLedger`'s equivalent constant
+already gets this right — `STICKY_HEADER_Z = calc(var(--z-sticky) + 1)`
+— `SimpleTable` had copied the comment's reasoning but not the
+computation.
+
+**Decision.**
+1. `STICKY_HEADER_LEFT_Z` now computes as
+   `[z-index:calc(var(--z-sticky)_+_1)]`, matching `DenseLedger`. Any
+   `SimpleTable` with `stickyHeader` (Catalog, Stock ledger) now stacks
+   correctly under a `--z-dropdown` popover regardless of scroll
+   position.
+2. Catalog gained a Category `<Select>` alongside the existing Location
+   one, sourced from `usedCategoryNames()` over the kind-tab set (not the
+   category filter's own result — so its own option list never shrinks
+   as it's used). Filtered client-side.
+3. Expenses and Handovers gained a `FilterToolbar` (search + two
+   `<Select>` filters each) built from scratch, following the Assets/
+   Customers pattern. Both filter **client-side** over their already-
+   fetched, date-range-scoped array (`expenses` / `data.rows`) rather
+   than adding a server-side search param — the range already bounds the
+   fetch to a small, human-scale set (tens of rows), so a round trip buys
+   nothing a `.filter()` doesn't already give for free. Handovers'
+   bespoke totals strip recomputes over the filtered rows client-side too
+   (`sumTotals`, plain-number summation of already-rounded 2dp KES
+   strings — a display-layer aggregation, not the ledger arithmetic the
+   Decimal/NUMERIC rule governs; same idiom this file's own
+   `money()`/`fmtVariance()` already use).
+4. Audit trail's search was explicitly scoped OUT this session (owner
+   decision) — it is server-paginated (`limit`/`offset` over item
+   buckets, ADR-65) and the searchable text (entity labels, change
+   summaries) is computed AFTER the DB query, from joined tables and JSON
+   diffs, not stored on `AuditLog` itself. A correct full-range search
+   needs a small `list-audit-log.ts` + API change (search applied after
+   label resolution, before pagination), not just a client-side filter —
+   a client-side-only search here would silently miss matches on other
+   pages, which is worse than no search for an investigator's tool. Left
+   for a future session if the client asks for it specifically on this
+   screen.
+
+**Consequences.**
+- Established the convention: a table whose backing hook already scopes
+  its fetch to a bounded range (a business-date range, a single kind-tab)
+  filters search/category-style refinements CLIENT-SIDE over that
+  already-loaded set. A table with no such natural bound, or one that's
+  server-paginated (Audit trail), needs the search pushed server-side
+  instead — the round trip is the point there, not overhead to avoid.
+- Fixed a second, pre-existing bug this work exposed: Catalog's mobile
+  card list mapped over the raw `products` array instead of
+  `visibleProducts`, so on mobile neither the Archived tab nor any filter
+  (existing Location filter included) actually narrowed the cards shown
+  — only the desktop `SimpleTable` was ever really filtered. Now both
+  branches use the same filtered array.
+- No domain/API/schema change for Catalog/Expenses/Handovers — Catalog's
+  `category` query param already existed end-to-end
+  (`listProductsQuerySchema`, `listProducts`) but was unused by the UI;
+  left unused in favour of the client-side approach above, since the full
+  kind-tab set was already in memory.
+- Verified manually against the dev server (seeded data): Catalog's
+  Location dropdown no longer clips under the sticky header; the new
+  Category filter narrows Products to matching rows; Expenses and
+  Handovers toolbars render and match the kit's visual language.
+
+**Alternatives considered.**
+- *Fix only the literal's value (`1101` → `1001`), leave the "applies to
+  the whole header, not just the corner" scope as-is.* This is what
+  shipped — the comment's ORIGINAL intent (corner cell only) doesn't
+  actually match what the code does (whole header), but splitting them
+  apart would mean a sticky-left header's corner and its plain cells
+  could scroll-bleed relative to each other for no benefit; keeping one
+  constant for the whole sticky header, correctly computed, is simpler
+  and was already the shipped (if mis-valued) behaviour.
+- *Add server-side `search` params to Expenses/Handovers now, for
+  symmetry with a future Audit-trail fix.* Rejected for this session —
+  no round-trip benefit at these tables' actual scale, and it would mean
+  touching `use-financials.ts`/`use-handovers.ts`, the API routes, AND
+  the domain filters for no behavioural difference the client would
+  notice.
