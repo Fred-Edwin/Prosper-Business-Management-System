@@ -101,6 +101,13 @@ export type RecordExpenseInput = {
   date: string;
   paidFromAccount: MoneyAccount;
   note?: string;
+  /**
+   * Who the expense was paid to (denormalized display string from
+   * `Supplier.name` — see the `Supplier` model comment in schema.prisma).
+   * Optional; most expense categories have no supplier at all. Set once at
+   * record time — `correctExpense` never changes it, same as `category`.
+   */
+  supplier?: string;
 };
 
 /**
@@ -133,6 +140,7 @@ export type ExpenseView = {
   date: string;
   paidFromAccount: MoneyAccount;
   note: string | null;
+  supplier: string | null;
   recordedById: string;
   /** True when at least one correction row points at this one. */
   corrected: boolean;

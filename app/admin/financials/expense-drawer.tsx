@@ -24,6 +24,9 @@ import type {
   RecordExpenseInput,
 } from "@/lib/domain/financials";
 import { FinancialsRequestError } from "./use-financials";
+import { useSuppliers, suppliersApi } from "./use-suppliers";
+
+const ADD_NEW_SUPPLIER = "__add_new_supplier__";
 
 const CATEGORY_OPTIONS = [
   { value: "rent", label: "Rent" },
@@ -94,8 +97,39 @@ export function ExpenseDrawer({
     target?.paidFromAccount ?? "cash",
   );
   const [note, setNote] = React.useState<string>(target?.note ?? "");
+  const { suppliers, addLocal: addLocalSupplier } = useSuppliers();
+  const [supplierId, setSupplierId] = React.useState("");
+  const [addingSupplier, setAddingSupplier] = React.useState(false);
+  const [newSupplierName, setNewSupplierName] = React.useState("");
+  const [savingSupplier, setSavingSupplier] = React.useState(false);
+  const supplierOptions = React.useMemo(
+    () => [
+      { value: ADD_NEW_SUPPLIER, label: "+ Add new supplier…" },
+      ...suppliers.map((s) => ({ value: s.id, label: s.name })),
+    ],
+    [suppliers],
+  );
+  const selectedSupplierName =
+    suppliers.find((s) => s.id === supplierId)?.name ?? "";
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  async function submitNewSupplier() {
+    const name = newSupplierName.trim();
+    if (!name) return;
+    setSavingSupplier(true);
+    try {
+      const created = await suppliersApi.create({ name });
+      addLocalSupplier(created);
+      setSupplierId(created.id);
+      setAddingSupplier(false);
+      setNewSupplierName("");
+    } catch {
+      // Non-fatal — same handling as the purchase-payment drawers.
+    } finally {
+      setSavingSupplier(false);
+    }
+  }
 
   const canSubmit =
     validAmount(amount) &&
@@ -117,6 +151,7 @@ export function ExpenseDrawer({
           date: entryDate,
           paidFromAccount: paidFrom,
           note: note.trim() || undefined,
+          supplier: selectedSupplierName || undefined,
         });
         toast("Expense recorded", { tone: "success" });
       }
@@ -184,6 +219,64 @@ export function ExpenseDrawer({
           options={[...CATEGORY_OPTIONS]}
         />
       )}
+
+      {!isCorrect &&
+        (addingSupplier ? (
+          <FormField label="New supplier name" className="w-full">
+            {({ id, "aria-describedby": describedBy }) => (
+              <div className="flex flex-col gap-(--sp-2) w-full">
+                <div className={fieldBox}>
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    autoFocus
+                    value={newSupplierName}
+                    onChange={(e) => setNewSupplierName(e.target.value)}
+                    placeholder="e.g. Farmer's Choice Butchery"
+                    className="font-ui [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
+                  />
+                </div>
+                <div className="flex gap-(--sp-3)">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setAddingSupplier(false);
+                      setNewSupplierName("");
+                    }}
+                    disabled={savingSupplier}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    onClick={submitNewSupplier}
+                    disabled={!newSupplierName.trim()}
+                    loading={savingSupplier}
+                  >
+                    Add supplier
+                  </Button>
+                </div>
+              </div>
+            )}
+          </FormField>
+        ) : (
+          <Select
+            label="Supplier / Vendor"
+            searchable
+            className="w-full"
+            placeholder="Optional — who was paid?"
+            noMatchesLabel="No suppliers match"
+            options={supplierOptions}
+            value={supplierId}
+            onChange={(v) => {
+              if (v === ADD_NEW_SUPPLIER) {
+                setAddingSupplier(true);
+                return;
+              }
+              setSupplierId(v);
+            }}
+          />
+        ))}
 
       <div className="flex gap-(--sp-4)">
         <FormField label="Amount" required className="grow">

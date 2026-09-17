@@ -240,7 +240,7 @@ with the created row. Inputs take an **unsigned magnitude**; the domain
 applies the sign.
 
 - `opening` — Admin. `{ movementType: "opening", productId, locationId, quantity }`. Writes an `opening` row at the start of the business's **Day 1** — the date is **pinned server-side** (`resolveOpeningDay`, ADR-70) and is *not* chooseable. `businessDate` is still accepted for backwards compatibility but **ignored**. A second call for the same product/location is a **correction** of the first (ADR-15), not a duplicate — and lands on Day 1, never on the day it was submitted. (Before ADR-70 the caller supplied the date and the screen sent *today*, so a later entry wrote a second, mid-history opening: the correction lookup missed it and COGS was dragged negative.)
-- `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`). `supplier` / `quantity` / `cost` / `paidFromAccount` are persisted to the real `purchaseSupplier` / `purchaseOrderedQty` / `purchaseTotalCost` / `purchasePaidFrom` columns (ADR-46 §3); a human `note` sentence is also composed for display. A paired **`−cost` `MoneyMovement`** is written (`sourceType = "purchase_payment"`, account = `paidFromAccount`) — resolved in M2 Session 4 (was the M1 `TODO(mock)`). The **payment-drawer product picker shows `ingredient` + `goods` only** (a `dish` is never purchased — ADR-33); the API does not reject a `dish` productId, the UI just never offers one.
+- `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`). `supplier` / `quantity` / `cost` / `paidFromAccount` are persisted to the real `purchaseSupplier` / `purchaseOrderedQty` / `purchaseTotalCost` / `purchasePaidFrom` columns (ADR-46 §3); a human `note` sentence is also composed for display. `supplier` is a plain string, same as before — the payment-drawer UI now populates it by selecting from `GET /api/suppliers` (with an inline "+ Add new supplier" affordance) instead of free typing, but the API contract is unchanged (2026-09-17 client feedback — see "Suppliers & Vendors" above). A paired **`−cost` `MoneyMovement`** is written (`sourceType = "purchase_payment"`, account = `paidFromAccount`) — resolved in M2 Session 4 (was the M1 `TODO(mock)`). The **payment-drawer product picker shows `ingredient` + `goods` only** (a `dish` is never purchased — ADR-33); the API does not reject a `dish` productId, the UI just never offers one.
 - `purchase_receipt` — Store Manager (Store + Restaurant) / Canteen Attendant (Canteen) — scoped by **destination**, not by the caller's own location (ADR-69). `{ movementType: "purchase_receipt", productId, locationId, quantity, purchasePaymentId? }`. `+quantity` at `locationId`. `purchasePaymentId`, if given, must reference a real `purchase_payment` row → `404` otherwise.
 - `issue` — Store Manager. `{ movementType: "issue", productId, locationId, quantity }`. `−quantity` at the Store (Store → cooking; single row).
 - `production` — Store Manager. `{ movementType: "production", productId, locationId, quantity }`. `+quantity` at `locationId`, which **must be a `restaurant` location**; `productId` **must be `kind = "dish"`** → `400` otherwise.
@@ -822,6 +822,49 @@ exist.
 
 ---
 
+## Suppliers & Vendors
+
+> **Implemented 2026-09-17 (client feedback).** A pure lookup entity — no
+> ledger, no derived balance (unlike Customer). It backs the supplier/vendor
+> dropdown on purchase payments (Stock/Financials) and expenses.
+> `StockMovement.purchaseSupplier` / `Expense.supplier` stay plain,
+> denormalized display strings populated from `Supplier.name` at record
+> time — **not** a hard FK (see the `Supplier` model comment in
+> `schema.prisma` for why: ADR-46 §3 already chose free text for
+> purchase-payment detail, and promoting to a real FK would mean rewriting
+> the correction/void chain in `correct-purchase-payment.ts` for a field
+> that only ever displays). Renaming or archiving a supplier does not
+> retroactively change historical rows. **Admin only** on every verb — the
+> only role that records a purchase payment or an expense.
+
+### `GET /api/suppliers`
+Roles: Admin. Query: `?search=` (case-insensitive contains on `name`),
+`?includeArchived=true` (defaults to `false` — archived suppliers are
+excluded from the dropdown unless opted in). Returns `{ data: Supplier[] }`,
+name-sorted. Each item:
+`{ id, name, phone, note, archivedAt, createdAt, updatedAt }`.
+
+### `POST /api/suppliers`
+Roles: Admin. Body: `{ "name": "...", "phone"?: "...", "note"?: "..." }`
+(`name` trimmed, non-empty; `phone`/`note` optional, no format check).
+Returns `{ data: Supplier }`, `201`. Writes an `AuditLog` row. Used both by
+a dedicated suppliers register (if one is added) and the inline
+"+ Add new supplier" affordance in the purchase-payment / expense drawers.
+
+### `DELETE /api/suppliers/:id`
+Roles: Admin. Archives (soft-deletes) the supplier: sets `deletedAt =
+now()`. Idempotent. No hard-delete path (mirrors Customer) — historical
+rows keep displaying the supplier's name regardless. Returns
+`{ data: { archived: true } }`. `404 NOT_FOUND` if the supplier doesn't
+exist.
+
+### `POST /api/suppliers/:id?mode=unarchive`
+Roles: Admin. Restores an archived supplier — clears `deletedAt`.
+Idempotent. Returns `{ data: { archived: false } }`. `404 NOT_FOUND` if the
+supplier doesn't exist.
+
+---
+
 ## Money
 
 > **Implemented M2 Session 3 (2026-08-29).** The money ledger
@@ -847,15 +890,21 @@ can eyeball the ledger.
 > decimal strings. COGS model: see ADR-55.
 
 ### `POST /api/expenses`
-Roles: **Admin only.** Body: `{ category, amount, date, paidFromAccount, note? }`
+Roles: **Admin only.** Body: `{ category, amount, date, paidFromAccount, note?, supplier? }`
 — `category` ∈ `rent | utilities | transport | gas_fuel | salaries |
 repairs | other`; `amount` decimal string > 0; `date` `YYYY-MM-DD`
 (Africa/Nairobi business date); `paidFromAccount` ∈ `cash | mpesa_bank`.
-Writes the `Expense` row **and** a paired negative `MoneyMovement`
-(`sourceType: "expense"`) debiting `paidFromAccount`, in one transaction.
-Day-close gated — a fresh expense on a sealed day → `403 FORBIDDEN`
-(correct it instead). `201` with the created `ExpenseView`
-(`{ id, category, amount, date, paidFromAccount, note, recordedById,
+`supplier` (added 2026-09-17, client feedback — see "Suppliers & Vendors"
+above) is an optional plain string — who the expense was paid to, picked
+from `GET /api/suppliers` in the UI (with an inline "+ Add new supplier"
+affordance) or left blank for categories with no vendor (rent, utilities).
+Set once at record time; **`POST /api/expenses/:id/correct` never changes
+it**, same as `category`/`date`/`paidFromAccount`. Writes the `Expense` row
+**and** a paired negative `MoneyMovement` (`sourceType: "expense"`)
+debiting `paidFromAccount`, in one transaction. Day-close gated — a fresh
+expense on a sealed day → `403 FORBIDDEN` (correct it instead). `201` with
+the created `ExpenseView`
+(`{ id, category, amount, date, paidFromAccount, note, supplier, recordedById,
 corrected, occurredAt }`).
 
 ### `POST /api/expenses/:id/correct`

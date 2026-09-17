@@ -528,6 +528,30 @@ model Customer {
   @@map("customer")
 }
 
+// ── Suppliers & Vendors ──────────────────────────────────────────────────
+//
+// A pure lookup entity for the purchase-payment / expense "who did we pay"
+// dropdown (client request 2026-09-17). Deliberately NOT a ledger — no
+// balance, no FK from StockMovement/Expense. `StockMovement.purchaseSupplier`
+// and `Expense.supplier` stay plain, denormalized display strings populated
+// from `Supplier.name` at record time (ADR-46 §3 already chose free text
+// over a join for purchase-payment detail; promoting to a hard FK would mean
+// rewriting the correction/void chain in `correct-purchase-payment.ts` for a
+// field that only ever displays — not worth it for a name lookup). Renaming
+// or archiving a supplier does not retroactively change historical rows,
+// same as a Customer's name being edited doesn't rewrite old Debt rows.
+model Supplier {
+  id        String    @id @default(uuid())
+  name      String
+  phone     String?
+  note      String?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("supplier")
+}
+
 model Debt {
   id         String   @id @default(uuid())
   customerId String   @map("customer_id")
@@ -584,6 +608,10 @@ model Expense {
   date            DateTime
   paidFromAccount MoneyAccount    @map("paid_from_account")
   note            String?
+  // Denormalized display string from Supplier.name (see Supplier model
+  // comment) — who the expense was paid to. Optional; most expense
+  // categories (rent, utilities) have no supplier at all.
+  supplier        String?
 
   recordedById String @map("recorded_by")
   recordedBy   User   @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])

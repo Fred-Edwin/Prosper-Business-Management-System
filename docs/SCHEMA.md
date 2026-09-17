@@ -413,7 +413,33 @@ for S4 to call; S3 itself only reads `Debt` (for balances / the ledger).
 | recorded_by | FK → `User` (Admin or Cashier) |
 | occurred_at | |
 
-No supplier credit is tracked (PRD §4.6).
+No supplier credit is tracked (PRD §4.6) — that is, the business's own
+running balance owed *to* a supplier. `Supplier` (below) is a different,
+unrelated concept: a lookup list of vendor names for the purchase-payment
+and expense dropdowns.
+
+---
+
+## 8a. Suppliers & Vendors
+
+### `Supplier`
+| Column | Notes |
+|---|---|
+| name | |
+| phone | Nullable — no format constraint. |
+| note | Nullable, free text. |
+| deleted_at | Nullable — archive timestamp. No hard-delete path. |
+
+Added 2026-09-17 (client feedback) — a pure lookup entity, **not** a
+ledger: no balance, no FK from `StockMovement`/`Expense`.
+`StockMovement.purchase_supplier` and `Expense.supplier` stay plain,
+denormalized display strings populated from `Supplier.name` at record
+time, rather than a hard FK — ADR-46 §3 already chose free text over a
+join for purchase-payment detail, and promoting to a real FK would mean
+rewriting the correction/void chain in `correct-purchase-payment.ts` for a
+field that only ever displays. Renaming or archiving a supplier does not
+retroactively change historical rows. `listSuppliers` excludes archived
+suppliers by default (`includeArchived` opts in), same shape as `Customer`.
 
 ---
 
@@ -427,6 +453,7 @@ No supplier credit is tracked (PRD §4.6).
 | date | |
 | paid_from_account | enum: `cash`, `mpesa_bank` |
 | note | text, nullable |
+| supplier | text, nullable — denormalized display string from `Supplier.name` (added 2026-09-17). Set once at record time; a correction never changes it. |
 | recorded_by | FK → `User` |
 | corrects_expense_id | FK → `Expense`, nullable, self-referencing |
 

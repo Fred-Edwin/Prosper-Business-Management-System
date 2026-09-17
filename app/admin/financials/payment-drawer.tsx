@@ -16,6 +16,9 @@ import { useToast } from "@/components/kit/toast";
 import type { Location, ProductWithLocations } from "@/lib/domain/catalog";
 import type { StockMovementView } from "@/lib/domain/stock";
 import { stockApi, StockRequestError } from "../stock/use-stock";
+import { useSuppliers, suppliersApi } from "./use-suppliers";
+
+const ADD_NEW_SUPPLIER = "__add_new_supplier__";
 
 const CODE_MESSAGE: Record<string, string> = {
   VALIDATION_ERROR: "Check the fields and try again.",
@@ -66,7 +69,39 @@ export function PaymentDrawer({
     () => products.filter((p) => p.kind !== "dish"),
     [products],
   );
-  const [supplier, setSupplier] = React.useState("");
+  const { suppliers, addLocal: addLocalSupplier } = useSuppliers();
+  const [supplierId, setSupplierId] = React.useState("");
+  const [addingSupplier, setAddingSupplier] = React.useState(false);
+  const [newSupplierName, setNewSupplierName] = React.useState("");
+  const [savingSupplier, setSavingSupplier] = React.useState(false);
+  const supplierOptions = React.useMemo(
+    () => [
+      { value: ADD_NEW_SUPPLIER, label: "+ Add new supplier…" },
+      ...suppliers.map((s) => ({ value: s.id, label: s.name })),
+    ],
+    [suppliers],
+  );
+  const selectedSupplierName =
+    suppliers.find((s) => s.id === supplierId)?.name ?? "";
+
+  async function submitNewSupplier() {
+    const name = newSupplierName.trim();
+    if (!name) return;
+    setSavingSupplier(true);
+    try {
+      const created = await suppliersApi.create({ name });
+      addLocalSupplier(created);
+      setSupplierId(created.id);
+      setAddingSupplier(false);
+      setNewSupplierName("");
+    } catch {
+      // Inline creation failure — the drawer's own submit error banner
+      // covers the main flow; a failed supplier add just leaves the mini
+      // form open so the Admin can retry or cancel.
+    } finally {
+      setSavingSupplier(false);
+    }
+  }
   const [productId, setProductId] = React.useState(
     matchReceipt?.productId ?? preselectedProductId ?? "",
   );
@@ -152,7 +187,7 @@ export function PaymentDrawer({
       await stockApi.recordPurchasePayment({
         productId,
         locationId,
-        supplier: supplier.trim() || undefined,
+        supplier: selectedSupplierName || undefined,
         quantity: quantity.trim(),
         cost: cost.trim(),
         paidFromAccount: paidFrom,
@@ -213,20 +248,62 @@ export function PaymentDrawer({
         </div>
       )}
 
-      <FormField label="Supplier / Vendor" className="w-full">
-        {({ id, "aria-describedby": describedBy }) => (
-          <div className={fieldBox}>
-            <input
-              id={id}
-              aria-describedby={describedBy}
-              value={supplier}
-              onChange={(e) => setSupplier(e.target.value)}
-              placeholder="e.g. Farmer's Choice Butchery"
-              className="font-ui [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
-            />
-          </div>
-        )}
-      </FormField>
+      {addingSupplier ? (
+        <FormField label="New supplier name" className="w-full">
+          {({ id, "aria-describedby": describedBy }) => (
+            <div className="flex flex-col gap-(--sp-2) w-full">
+              <div className={fieldBox}>
+                <input
+                  id={id}
+                  aria-describedby={describedBy}
+                  autoFocus
+                  value={newSupplierName}
+                  onChange={(e) => setNewSupplierName(e.target.value)}
+                  placeholder="e.g. Farmer's Choice Butchery"
+                  className="font-ui [color:var(--text-primary)] text-body/sm w-full bg-transparent outline-none placeholder:[color:var(--text-tertiary)]"
+                />
+              </div>
+              <div className="flex gap-(--sp-3)">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setAddingSupplier(false);
+                    setNewSupplierName("");
+                  }}
+                  disabled={savingSupplier}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={submitNewSupplier}
+                  disabled={!newSupplierName.trim()}
+                  loading={savingSupplier}
+                >
+                  Add supplier
+                </Button>
+              </div>
+            </div>
+          )}
+        </FormField>
+      ) : (
+        <Select
+          label="Supplier / Vendor"
+          searchable
+          className="w-full"
+          placeholder="Select a supplier…"
+          noMatchesLabel="No suppliers match"
+          options={supplierOptions}
+          value={supplierId}
+          onChange={(v) => {
+            if (v === ADD_NEW_SUPPLIER) {
+              setAddingSupplier(true);
+              return;
+            }
+            setSupplierId(v);
+          }}
+        />
+      )}
 
       <div className="flex flex-col gap-(--sp-2) w-full">
         <Select

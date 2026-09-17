@@ -45,6 +45,23 @@ vi.mock("@/app/admin/stock/use-stock", async () => {
   return { ...actual, stockApi: api };
 });
 
+// Supplier dropdown (payment drawers) — keep quiet, no test here drives it.
+vi.mock("@/app/admin/financials/use-suppliers", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/app/admin/financials/use-suppliers")
+  >("@/app/admin/financials/use-suppliers");
+  return {
+    ...actual,
+    useSuppliers: () => ({
+      suppliers: [],
+      loading: false,
+      refresh: vi.fn(),
+      addLocal: vi.fn(),
+    }),
+    suppliersApi: { list: vi.fn().mockResolvedValue([]), create: vi.fn() },
+  };
+});
+
 // Handovers tab pulls its own read — keep it quiet unless a test drives it.
 const reconRefresh = vi.fn();
 let reconState: {
@@ -471,8 +488,10 @@ describe("/admin/financials — Stock Purchases tab", () => {
     const dialog = await screen.findByRole("dialog", {
       name: /Correct Purchase Payment/,
     });
-    // Prefilled from the current values.
-    expect(within(dialog).getByDisplayValue("Chieni Wholesale")).toBeInTheDocument();
+    // Prefilled from the current values. The supplier dropdown has no
+    // matching Supplier row in this test (none seeded), so it falls back to
+    // showing the original free-text name as the trigger's placeholder.
+    expect(within(dialog).getByText("Chieni Wholesale")).toBeInTheDocument();
     expect(within(dialog).getByDisplayValue("2085")).toBeInTheDocument();
 
     const qty = within(dialog).getByLabelText(/^Quantity/);
