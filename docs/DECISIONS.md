@@ -5362,6 +5362,62 @@ matched case, a dead end:
 - `docs/API.md` gained `correct-purchase` / `void-purchase` /
   `void-receipt` entries (the first two were previously undocumented).
 
+**Follow-up in this same session — the read side didn't fold voids in.**
+Client review (three direct questions after the initial write-up) found
+the domain fix above was correct but incomplete: voiding writes a
+*separate* reversal row and never overwrites the original (ADR-15's own
+rule), so every read that decides "is this still live / awaiting
+receipt" needed to fold the correction in, exactly like `listMovements`
+already folded a plain (non-zero) `purchase_payment` correction — and
+none of them did for a *void*.
+
+- **`listOutstandingPurchases` didn't exclude a voided row.** It filtered
+  `correctsMovementId: null` (so a correction/reversal row's own entry
+  wouldn't show), but never checked whether the *original's* derived
+  value had folded to zero. A voided payment kept pinning the "Review &
+  receive" banner on the Store Manager / Canteen hub — staff could be
+  sent to receive a delivery the Admin had already cancelled. A voided
+  unmatched receipt kept showing as a real delivery awaiting a payment
+  match. Fixed by computing the same derived-cost / derived-quantity fold
+  `listMovements` uses (a `groupBy` on `correctsMovementId`, summed per
+  original) and dropping anything that nets to zero, for both the
+  `awaitingReceipt` and `unmatchedReceipts` halves.
+- **`listMovements` folded `purchase_payment` corrections but never
+  `purchase_receipt` ones.** The payment-side fold (the block just above
+  this one in the diff) predates this session; the receipt side never
+  got the equivalent treatment, so a voided receipt's original row kept
+  showing its pre-void quantity on the Admin Deliveries table and the
+  staff hub timeline — indistinguishable from a live delivery. Added the
+  same fold for `purchase_receipt`: correction rows dropped from the
+  list, the original's `quantity` replaced with the derived (post-void)
+  value.
+- **New `voided: boolean | null` field on `StockMovementView`.** Rather
+  than have every UI re-derive "is this zero because it was voided, or
+  because it's a genuine zero-value row" from `quantity`/`purchaseTotalCost`
+  alone (ambiguous, and easy to get subtly wrong at each call site), the
+  fold in `listMovements` sets it explicitly: `true` only on an original
+  row whose corrections summed to exactly zero, `false` for a live row
+  (including one with a real, non-zero correction), `null` from every
+  single-write function (they have no correction history to fold).
+  `listOutstandingPurchases` excludes a voided row outright instead of
+  flagging it, since "awaiting receipt" has no sensible reading of a
+  voided payment.
+- **UI:** Admin Stock Purchases / Deliveries tables (desktop + mobile)
+  gained a "Voided" `StatusChip` (the existing `neutral` variant, same
+  one "Closed" uses) that wins over every other status, and hide the
+  Void/Correct-adjacent action once a row is voided (Correct is still
+  offered on a voided payment — un-voiding via a non-zero correction is
+  a legitimate recovery, so only Void, which the domain already rejects
+  as "already voided," is hidden). The Store Manager / Canteen "Today's
+  deliveries" list excludes a voided receipt (nothing left to void
+  again); the plain movement-log timeline still shows it, with the
+  subtitle suffixed " · Voided" so a 0-quantity "Delivery received" row
+  doesn't read as a live delivery.
+- Added 4 domain tests (`void-purchase-receipt.test.ts`) proving each
+  fixed behavior directly against `listOutstandingPurchases` /
+  `listMovements`, plus screen coverage in `store-manager-hub` and
+  `financials.screen.test.tsx` for the status chip and banner exclusion.
+
 **Alternatives considered.**
 - *Let `correctPurchasePayment`/`voidPurchasePayment` silently unlink the
   receipt themselves instead of requiring a separate void.* Rejected —

@@ -99,6 +99,9 @@ export function toMovementView(row: StockMovementRowWithProduct): StockMovementV
         ? row.purchasePaidFrom
         : null,
     correctsMovementId: row.correctsMovementId,
+    // Only `listMovements` computes the fold that can tell a fully-voided
+    // original from a live one; see the field's doc comment.
+    voided: null,
     note: row.note,
     // Only `listMovements` joins the `canteen_sale` MoneyMovement; the
     // single-write path has no revenue to report.

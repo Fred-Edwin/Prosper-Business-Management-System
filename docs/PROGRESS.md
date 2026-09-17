@@ -65,17 +65,45 @@ Store Manager / Canteen Attendant — ownership decided by the domain).
   `voidPurchaseReceipt`; the staff client also gained a generic
   `correct` call (the domain already permitted it, no client wired it).
 
-**Docs:** `docs/API.md` gained `correct-purchase` / `void-purchase` /
-`void-receipt` route docs (the first two were previously undocumented);
-`docs/DECISIONS.md` ADR-88.
+**Follow-up same session — the read side didn't fold voids in.** Client
+review after the first pass asked three direct questions ("shouldn't a
+voided purchase disappear from the table / clear the banner / say
+Voided?") that found the domain fix was right but incomplete — voiding
+writes a *separate* reversal row (ADR-15), so every READ that decides
+"is this still live" needed to fold that in, and none of them did for a
+void specifically:
+- `listOutstandingPurchases` didn't exclude a voided payment/receipt —
+  a voided payment kept pinning the "Review & receive" banner on staff
+  hubs; a voided unmatched receipt kept showing as a real delivery.
+  Fixed by folding the correction delta (same maths `listMovements`
+  already used for a plain correction) and dropping anything that nets
+  to zero.
+- `listMovements` folded `purchase_payment` corrections but never
+  `purchase_receipt` ones — a voided receipt's original row kept
+  showing its pre-void quantity on the Admin Deliveries table and the
+  staff hub timeline. Added the equivalent fold.
+- New `voided: boolean | null` on `StockMovementView`, set by the fold
+  above. UI: Admin Stock Purchases / Deliveries tables show a "Voided"
+  status chip (wins over every other status) and hide the now-redundant
+  Void action; staff "Today's deliveries" excludes a voided receipt
+  (nothing left to void); the plain movement-log timeline marks it
+  " · Voided" instead of showing a bare "+0 kg" that reads as live.
+- 4 new domain tests proving each behavior directly; screen tests for
+  the status chip + banner exclusion.
 
-**Tests:** `lib/domain/stock/void-purchase-receipt.test.ts` (new, 7
-cases) — including the deadlock-fix proof (void the receipt → payment
-becomes voidable/correctable again). Screen coverage added to
-`store-manager-hub`, `canteen-hub`, and `financials.screen.test.tsx`.
+**Docs:** `docs/API.md` gained `correct-purchase` / `void-purchase` /
+`void-receipt` route docs (the first two were previously undocumented)
+plus the `voided` field and the read-side fold; `docs/DECISIONS.md`
+ADR-88 (updated with the follow-up).
+
+**Tests:** `lib/domain/stock/void-purchase-receipt.test.ts` (11 cases
+total) — including the deadlock-fix proof (void the receipt → payment
+becomes voidable/correctable again) and the 4 read-side fold cases.
+Screen coverage added to `store-manager-hub`, `canteen-hub`, and
+`financials.screen.test.tsx`.
 
 **Gate:** `pnpm typecheck` clean. `pnpm test` — full suite, 167 files /
-1455 tests, all green. `pnpm build` — clean, new
+1462 tests, all green. `pnpm build` — clean, new
 `/api/stock-movements/[id]/void-receipt` route registered.
 
 **Out of scope this session:** a general correction UI for every

@@ -7,7 +7,7 @@ import {
   voidPurchaseReceipt,
 } from "./purchases";
 import { correctPurchasePayment, voidPurchasePayment } from "./correct-purchase-payment";
-import { listOutstandingPurchases } from "./list-movements";
+import { listOutstandingPurchases, listMovements } from "./list-movements";
 import { getDerivedStockBalance } from "./derived-balance";
 import { DomainError } from "./errors";
 import {
@@ -245,5 +245,133 @@ describe("voidPurchaseReceipt", () => {
       { userId: adminId, role: "admin", locationId: null },
     );
     expect(corrected.correctsMovementId).toBe(payment.id);
+  });
+
+  // ── Read-side fixes: what the Admin/staff screens actually see ──────
+  // A void writes a SEPARATE reversal row (ADR-15 — never overwrites the
+  // original), so every read that shows "is this awaiting receipt / a
+  // live row" must fold the correction deltas in, or a voided
+  // payment/receipt keeps looking exactly like a live one.
+
+  it("a voided payment no longer appears in listOutstandingPurchases' awaitingReceipt (banner data)", async () => {
+    const { productId, locationIds, adminId } = ctx;
+    const payment = await recordPurchasePayment({
+      productId,
+      locationId: locationIds.store,
+      supplier: "Chieni Wholesale",
+      quantity: "10",
+      cost: "1000",
+      paidFromAccount: "cash",
+      recordedById: adminId,
+    });
+
+    let outstanding = await listOutstandingPurchases();
+    expect(outstanding.awaitingReceipt.some((p) => p.id === payment.id)).toBe(true);
+
+    await voidPurchasePayment(payment.id, {
+      userId: adminId,
+      role: "admin",
+      locationId: null,
+    });
+
+    outstanding = await listOutstandingPurchases();
+    expect(outstanding.awaitingReceipt.some((p) => p.id === payment.id)).toBe(false);
+  });
+
+  it("a voided unmatched receipt no longer appears in listOutstandingPurchases' unmatchedReceipts", async () => {
+    const { productId, locationIds, recorderId, adminId } = ctx;
+    const receipt = await recordPurchaseReceipt({
+      productId,
+      locationId: locationIds.store,
+      quantity: "6",
+      recordedById: recorderId,
+    });
+
+    let outstanding = await listOutstandingPurchases();
+    expect(outstanding.unmatchedReceipts.some((r) => r.id === receipt.id)).toBe(true);
+
+    await voidPurchaseReceipt(
+      { movementId: receipt.id, recordedById: adminId },
+      { userId: adminId, role: "admin", locationId: null },
+    );
+
+    outstanding = await listOutstandingPurchases();
+    expect(outstanding.unmatchedReceipts.some((r) => r.id === receipt.id)).toBe(false);
+  });
+
+  it("listMovements folds a voided receipt's quantity to zero and flags voided: true on the original row; the reversal row is dropped", async () => {
+    const { productId, locationIds, recorderId, adminId } = ctx;
+    const receipt = await recordPurchaseReceipt({
+      productId,
+      locationId: locationIds.store,
+      quantity: "9",
+      recordedById: recorderId,
+    });
+    await voidPurchaseReceipt(
+      { movementId: receipt.id, recordedById: adminId },
+      { userId: adminId, role: "admin", locationId: null },
+    );
+
+    const rows = await listMovements(
+      { productId, movementType: "purchase_receipt" },
+      { userId: adminId, role: "admin", locationId: null },
+    );
+    const originalRow = rows.find((r) => r.id === receipt.id);
+    expect(originalRow?.quantity).toBe("0.0000");
+    expect(originalRow?.voided).toBe(true);
+    // The reversal is a separate row in the DB but must not appear as its
+    // own line in the list — same "current state lives on the original"
+    // rule the payment-side fold already applies.
+    expect(rows.filter((r) => r.correctsMovementId === receipt.id)).toHaveLength(0);
+  });
+
+  it("listMovements folds a voided payment's cost to zero and flags voided: true; a plain (non-zero) correction is NOT flagged voided", async () => {
+    const { productId, locationIds, adminId } = ctx;
+    const voidedPayment = await recordPurchasePayment({
+      productId,
+      locationId: locationIds.store,
+      supplier: "A",
+      quantity: "10",
+      cost: "1000",
+      paidFromAccount: "cash",
+      recordedById: adminId,
+    });
+    await voidPurchasePayment(voidedPayment.id, {
+      userId: adminId,
+      role: "admin",
+      locationId: null,
+    });
+
+    const correctedPayment = await recordPurchasePayment({
+      productId,
+      locationId: locationIds.store,
+      supplier: "B",
+      quantity: "5",
+      cost: "500",
+      paidFromAccount: "cash",
+      recordedById: adminId,
+    });
+    await correctPurchasePayment(
+      {
+        movementId: correctedPayment.id,
+        supplier: "B",
+        orderedQty: "5",
+        cost: "450", // corrected down, but not to zero
+        paidFromAccount: "cash",
+        recordedById: adminId,
+      },
+      { userId: adminId, role: "admin", locationId: null },
+    );
+
+    const rows = await listMovements(
+      { productId, movementType: "purchase_payment" },
+      { userId: adminId, role: "admin", locationId: null },
+    );
+    const voidedRow = rows.find((r) => r.id === voidedPayment.id);
+    const correctedRow = rows.find((r) => r.id === correctedPayment.id);
+    expect(voidedRow?.purchaseTotalCost).toBe("0.00");
+    expect(voidedRow?.voided).toBe(true);
+    expect(correctedRow?.purchaseTotalCost).toBe("450.00");
+    expect(correctedRow?.voided).toBe(false);
   });
 });

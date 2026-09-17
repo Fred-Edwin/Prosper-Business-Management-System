@@ -73,6 +73,7 @@ function mv(over: Partial<StockMovementView>): StockMovementView {
     purchaseTotalCost: null,
     purchasePaidFrom: null,
     correctsMovementId: null,
+    voided: null,
     note: null,
     derivedRevenue: null,
     productName: null,
@@ -368,5 +369,33 @@ describe("/store-manager hub — kit composition", () => {
     expect(
       screen.getAllByRole("button", { name: "Void delivery" }),
     ).toHaveLength(1);
+  });
+
+  // `listMovements` (server) folds a voided receipt's correction into the
+  // original and sets `voided: true` — the shape the hub actually receives
+  // in real usage, as opposed to the raw two-row shape above.
+  it("a receipt the server already folded to voided:true is excluded from Today's deliveries", () => {
+    hook.data.movements = [
+      mv({
+        id: "rcpt-voided",
+        movementType: "purchase_receipt",
+        quantity: "0.0000",
+        voided: true,
+        occurredAt: "2026-08-28T09:00:00Z",
+      }),
+      mv({
+        id: "rcpt-live",
+        movementType: "purchase_receipt",
+        quantity: "5.0000",
+        voided: false,
+        occurredAt: "2026-08-28T09:10:00Z",
+      }),
+    ];
+    renderScreen();
+    expect(
+      screen.getAllByRole("button", { name: "Void delivery" }),
+    ).toHaveLength(1);
+    // The voided one still shows on the plain movement log, marked.
+    expect(screen.getByText(/Delivery received · Voided/)).toBeInTheDocument();
   });
 });

@@ -78,6 +78,19 @@ export type StockMovementView = {
   purchaseTotalCost: string | null;
   purchasePaidFrom: "cash" | "mpesa_bank" | null;
   correctsMovementId: string | null;
+  /**
+   * `true` when this is a `purchase_payment` or `purchase_receipt`
+   * ORIGINAL row (`correctsMovementId === null`) whose correction deltas
+   * (ADR-15) have folded its current derived value down to exactly zero
+   * — i.e. `voidPurchasePayment` / `voidPurchaseReceipt` fully reversed
+   * it. Populated only by `listMovements`, which is where the fold
+   * happens; `null` from every single-write function and from
+   * `listOutstandingPurchases` (which excludes a voided row outright
+   * rather than flagging it — see its doc comment). `false` for every
+   * other row, including one with a *non-zero* correction (a plain
+   * "Correct" edit, not a void).
+   */
+  voided: boolean | null;
   note: string | null;
   /**
    * For a canteen derived `sale` row (`movementType === "sale"` with a

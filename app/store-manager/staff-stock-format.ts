@@ -163,9 +163,14 @@ export function movementsToTimeline(
       m.movementType === "non_sale_consumption" && m.reason
         ? NON_SALE_LABEL[m.reason]
         : MOVEMENT_LABEL[m.movementType];
+    // `voided` (currently only ever set on a `purchase_receipt` original
+    // that `voidPurchaseReceipt` folded down to zero — `listMovements`)
+    // — mark it plainly rather than showing "Delivery received · +0 kg",
+    // which reads as a live delivery that happened to be zero.
+    const kindLabel = m.voided ? `${kind} · Voided` : kind;
     return {
       title: name,
-      subtitle: `${kind} · ${shortTime(m.occurredAt)}`,
+      subtitle: `${kindLabel} · ${shortTime(m.occurredAt)}`,
       value: `${signedQty(m.quantity)}${unit ? ` ${unit}` : ""}`,
       sign: Number.parseFloat(m.quantity) < 0 ? "negative" : "positive",
     };

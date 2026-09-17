@@ -70,16 +70,27 @@ const PAID_FROM_LABEL: Record<string, string> = {
   mpesa_bank: "M-Pesa / Bank Till",
 };
 
-type PurchaseStatus = "awaiting_delivery" | "delivered" | "flagged";
+type PurchaseStatus = "awaiting_delivery" | "delivered" | "flagged" | "voided";
 
 const PURCHASE_STATUS: Record<
   PurchaseStatus,
-  { label: string; variant: "success" | "warning" | "danger" }
+  { label: string; variant: "success" | "warning" | "danger" | "neutral" }
 > = {
   awaiting_delivery: { label: "Awaiting delivery", variant: "warning" },
   delivered: { label: "Delivered", variant: "success" },
   flagged: { label: "Flagged", variant: "danger" },
+  voided: { label: "Voided", variant: "neutral" },
 };
+
+/** Shared by desktop + mobile — `voided` always wins over every other status. */
+function purchaseStatus(
+  m: StockMovementView,
+  awaitingIds: Set<string>,
+): PurchaseStatus {
+  if (m.voided) return "voided";
+  if (m.note?.toLowerCase().includes("variance")) return "flagged";
+  return awaitingIds.has(m.id) ? "awaiting_delivery" : "delivered";
+}
 
 // ── component ──────────────────────────────────────────────────────────
 
@@ -289,14 +300,7 @@ export function TransactionsTab({
       header: "Status",
       width: "w-[150px] shrink-0",
       render: (m) => {
-        const status: PurchaseStatus = m.note
-          ?.toLowerCase()
-          .includes("variance")
-          ? "flagged"
-          : awaitingIds.has(m.id)
-            ? "awaiting_delivery"
-            : "delivered";
-        const s = PURCHASE_STATUS[status];
+        const s = PURCHASE_STATUS[purchaseStatus(m, awaitingIds)];
         return <StatusChip variant={s.variant}>{s.label}</StatusChip>;
       },
     },
@@ -366,7 +370,9 @@ export function TransactionsTab({
       header: "Status",
       width: "w-[180px] shrink-0",
       render: (r) =>
-        r.purchasePaymentId ? (
+        r.voided ? (
+          <StatusChip variant="neutral">Voided</StatusChip>
+        ) : r.purchasePaymentId ? (
           <StatusChip variant="success">Matched</StatusChip>
         ) : (
           <div className="flex items-center gap-(--sp-4)">
@@ -388,15 +394,16 @@ export function TransactionsTab({
       header: "",
       width: "w-[90px] shrink-0",
       align: "right",
-      render: (r) => (
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setVoidReceiptTarget(r)}
-        >
-          Void
-        </Button>
-      ),
+      render: (r) =>
+        r.voided ? null : (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setVoidReceiptTarget(r)}
+          >
+            Void
+          </Button>
+        ),
     },
   ];
 
@@ -593,14 +600,7 @@ function MobilePurchaseCards({
       {rows.map((m) => {
         const p = productById.get(m.productId);
         const dest = locationById.get(m.locationId)?.name ?? "—";
-        const status: PurchaseStatus = m.note
-          ?.toLowerCase()
-          .includes("variance")
-          ? "flagged"
-          : awaitingIds.has(m.id)
-            ? "awaiting_delivery"
-            : "delivered";
-        const s = PURCHASE_STATUS[status];
+        const s = PURCHASE_STATUS[purchaseStatus(m, awaitingIds)];
         return (
           <div
             key={m.id}
@@ -694,10 +694,14 @@ function MobileDeliveryCards({
             </div>
             <div className="flex items-center justify-between gap-(--sp-4)">
               <div className="flex items-center gap-(--sp-4)">
-                <StatusChip variant={matched ? "success" : "warning"}>
-                  {matched ? "Matched" : "Unmatched"}
-                </StatusChip>
-                {!matched && unmatchedReceiptIds.has(r.id) && (
+                {r.voided ? (
+                  <StatusChip variant="neutral">Voided</StatusChip>
+                ) : (
+                  <StatusChip variant={matched ? "success" : "warning"}>
+                    {matched ? "Matched" : "Unmatched"}
+                  </StatusChip>
+                )}
+                {!r.voided && !matched && unmatchedReceiptIds.has(r.id) && (
                   <button
                     type="button"
                     onClick={() => onRecordPayment(r)}
@@ -707,9 +711,11 @@ function MobileDeliveryCards({
                   </button>
                 )}
               </div>
-              <Button variant="secondary" size="sm" onClick={() => onVoid(r)}>
-                Void
-              </Button>
+              {!r.voided && (
+                <Button variant="secondary" size="sm" onClick={() => onVoid(r)}>
+                  Void
+                </Button>
+              )}
             </div>
           </div>
         );

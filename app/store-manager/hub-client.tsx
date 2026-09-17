@@ -70,8 +70,15 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
     null;
 
   const incoming = deriveIncomingTransfers(data.movements, myLocationId);
+  // `voided` excluded — a fully-reversed receipt has nothing left to void
+  // again (the server already rejects it with VALIDATION_ERROR); showing
+  // it here as a live 0-quantity row with an active Void button was
+  // confusing. It still appears in the movement log below, unchanged.
   const todaysReceipts = todaysMovements(data.movements).filter(
-    (m) => m.movementType === "purchase_receipt" && m.correctsMovementId === null,
+    (m) =>
+      m.movementType === "purchase_receipt" &&
+      m.correctsMovementId === null &&
+      !m.voided,
   );
   const timeline = movementsToTimeline(todaysMovements(data.movements), data.products);
 
