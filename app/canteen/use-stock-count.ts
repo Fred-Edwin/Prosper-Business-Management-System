@@ -68,7 +68,7 @@ export function useDerivedSales(filter: DerivedSalesFilter = {}) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  const { productId, date } = filter;
+  const { productId, date, from, to } = filter;
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -76,7 +76,12 @@ export function useDerivedSales(filter: DerivedSalesFilter = {}) {
     try {
       const params = new URLSearchParams();
       if (productId) params.set("productId", productId);
-      if (date) params.set("date", date);
+      if (from || to) {
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
+      } else if (date) {
+        params.set("date", date);
+      }
       const data = await request<DerivedSaleView[]>(
         `/api/canteen/stock-counts?${params.toString()}`,
       );
@@ -86,7 +91,7 @@ export function useDerivedSales(filter: DerivedSalesFilter = {}) {
     } finally {
       setLoading(false);
     }
-  }, [productId, date]);
+  }, [productId, date, from, to]);
 
   React.useEffect(() => {
     void refresh();

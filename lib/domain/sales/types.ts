@@ -161,8 +161,13 @@ export type DerivedSaleView = {
 
 export type ListDerivedSalesFilter = {
   productId?: string;
-  /** A business date (`YYYY-MM-DD`) — windows on the count's `occurredAt`. */
+  /** A business date (`YYYY-MM-DD`) — windows on the count's `occurredAt`.
+   *  Ignored when `from`/`to` is given. */
   date?: string;
+  /** Inclusive business-date range — windows on the count's `occurredAt`.
+   *  Takes precedence over `date` when either is given. */
+  from?: string;
+  to?: string;
 };
 
 export type OrderLineInput = {
@@ -199,8 +204,13 @@ export type CorrectOrderInput = CreateOrderInput;
 
 export type ListOrdersFilter = {
   cashierId?: string;
-  /** A business date (`YYYY-MM-DD`) — windowed on `occurredAt`. */
+  /** A business date (`YYYY-MM-DD`) — windowed on `occurredAt`. Ignored
+   *  when `from`/`to` is given. */
   date?: string;
+  /** Inclusive business-date range — windowed on `occurredAt`. Takes
+   *  precedence over `date` when either is given. */
+  from?: string;
+  to?: string;
   paymentMethod?: PaymentMethod;
   orderType?: OrderType;
 };

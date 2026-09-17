@@ -17,6 +17,12 @@ export default async function AdminSalesPage({
 }) {
   const { tab } = await searchParams;
   const initialTab: SalesTabKey = tab === "derived" ? "derived" : "orders";
-  // `key` remounts the client when the sidebar deep-links a different tab.
-  return <SalesClient key={initialTab} initialTab={initialTab} />;
+  // No `key` here (was `key={initialTab}`) — the KPI strip's date range now
+  // lives on `SalesClient`, shared by both tabs (2026-09-17). Remounting on
+  // every tab switch (including the sidebar's own `?tab=derived` link,
+  // which hits this same route) silently reset that range back to "Today"
+  // each time. `SalesClient` syncs its active tab from `initialTab` via an
+  // effect instead, so the component — and the range — survives a tab
+  // switch from either entry point.
+  return <SalesClient initialTab={initialTab} />;
 }

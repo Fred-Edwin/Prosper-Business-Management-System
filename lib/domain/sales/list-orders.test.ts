@@ -109,6 +109,28 @@ describe("listOrders", () => {
     expect(otherDay).toHaveLength(0);
   });
 
+  it("from/to windows an inclusive range and takes precedence over date", async () => {
+    const today = toBusinessDate(new Date());
+    const inRange = await listOrders(
+      { from: today, to: today },
+      { userId: ctx.cashierId, role: "cashier" },
+    );
+    expect(inRange).toHaveLength(2);
+
+    const outOfRange = await listOrders(
+      { from: "2019-01-01", to: "2019-01-02" },
+      { userId: ctx.cashierId, role: "cashier" },
+    );
+    expect(outOfRange).toHaveLength(0);
+
+    // from/to wins even when a stale `date` is also present.
+    const bothGiven = await listOrders(
+      { date: "2019-01-01", from: today, to: today },
+      { userId: ctx.cashierId, role: "cashier" },
+    );
+    expect(bothGiven).toHaveLength(2);
+  });
+
   it("newest first", async () => {
     const rows = await listOrders(
       {},

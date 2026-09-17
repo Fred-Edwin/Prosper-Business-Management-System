@@ -152,8 +152,9 @@ export async function getDerivedSalesForProduct(
 
 /**
  * All canteen products (or one), newest count first. `date` windows on
- * the latest count's `occurredAt`. A product with no count in scope is
- * still listed with `null` figures.
+ * the latest count's `occurredAt`; `from`/`to` window an inclusive range
+ * the same way and take precedence over `date`. A product with no count
+ * in scope is still listed with `null` figures.
  */
 export async function listDerivedSales(
   filter: ListDerivedSalesFilter,
@@ -162,7 +163,11 @@ export async function listDerivedSales(
   const scope = resolveScope(ctx);
 
   const countFilter: Prisma.StockCountWhereInput = {};
-  if (filter.date) {
+  if (filter.from || filter.to) {
+    countFilter.occurredAt = {};
+    if (filter.from) countFilter.occurredAt.gte = businessDateStartUtc(filter.from);
+    if (filter.to) countFilter.occurredAt.lt = businessDateEndUtc(filter.to);
+  } else if (filter.date) {
     countFilter.occurredAt = {
       gte: businessDateStartUtc(filter.date),
       lt: businessDateEndUtc(filter.date),

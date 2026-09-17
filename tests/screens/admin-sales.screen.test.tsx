@@ -27,7 +27,17 @@ let mockOrdersState: {
   loading: boolean;
   error: string | null;
 } = { orders: [], loading: false, error: null };
-let lastOrdersFilter: Record<string, unknown> = {};
+// The page now calls `useOrders` twice — once range-only for the KPI strip,
+// once per-tab with the tab's own filters (cashierId / paymentMethod /
+// orderType). Tests that assert on the TAB's query find it as the call
+// carrying one of those tab-only keys; every other call is the KPI read.
+let ordersFilterCalls: Record<string, unknown>[] = [];
+function lastTabOrdersFilter(): Record<string, unknown> {
+  const tabCalls = ordersFilterCalls.filter(
+    (f) => "cashierId" in f || "paymentMethod" in f || "orderType" in f,
+  );
+  return tabCalls.at(-1) ?? {};
+}
 
 vi.mock("@/app/cashier/use-orders", async (importOriginal) => {
   const actual =
@@ -35,7 +45,7 @@ vi.mock("@/app/cashier/use-orders", async (importOriginal) => {
   return {
     ...actual,
     useOrders: (filter: Record<string, unknown>) => {
-      lastOrdersFilter = filter;
+      ordersFilterCalls.push(filter);
       return {
         orders: mockOrdersState.orders,
         loading: mockOrdersState.loading,
@@ -184,7 +194,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockOrdersState = { orders: [CASH_ORDER, MPESA_ORDER], loading: false, error: null };
   mockDerivedState = { rows: [DERIVED_SALE], loading: false, error: null };
-  lastOrdersFilter = {};
+  ordersFilterCalls = [];
 });
 
 // ── Shell / tabs ─────────────────────────────────────────────────
@@ -233,15 +243,14 @@ describe("Restaurant Orders tab", () => {
     expect(desktop().getAllByText("Posted").length).toBeGreaterThan(0);
   });
 
-  it("empty 'today' offers a Show all dates action (default date filter = today)", async () => {
-    const user = userEvent.setup();
+  it("empty state at the default range (Today) points at the page-level range control", () => {
     mockOrdersState = { orders: [], loading: false, error: null };
     renderSales();
-    // The tab defaults to date=today (flow doc §G); an empty today is a
-    // narrowing, so the Admin gets a way to widen it.
-    expect(screen.getByText("No orders today")).toBeDefined();
-    await user.click(screen.getByRole("button", { name: "Show all dates" }));
-    await waitFor(() => expect(lastOrdersFilter.date).toBeUndefined());
+    // Date is now a page-level range control (header), not a tab-local
+    // filter — the empty state points the Admin at widening it there
+    // instead of offering its own action.
+    expect(screen.getByText("No orders in this range")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Show all dates" })).toBeNull();
   });
 
   it("filtered-empty state with a Reset action when a filter matches nothing", async () => {
@@ -260,36 +269,25 @@ describe("Restaurant Orders tab", () => {
     expect(screen.getByText("Couldn't load orders")).toBeDefined();
   });
 
-  it("date control: picking a day in the kit DatePicker re-queries with that YYYY-MM-DD; Reset restores the 'Today' default", async () => {
+  it("page-level range control: switching to 'This week' re-queries both tabs with the wider range", async () => {
     const user = userEvent.setup();
     renderSales();
 
-    // The kit kind:"date" control is a plain DatePicker trigger labelled with
-    // the current value ("Today" at default). Open it and page a month back —
-    // the calendar dialog stays open (only picking a day commits).
-    await user.click(screen.getByRole("button", { name: /Date: Today/i }));
-    const grid = await screen.findByRole("grid");
-    const prevMonth = screen.getByRole("button", { name: /previous month/i });
-    await user.click(prevMonth);
-    expect(screen.getByRole("grid")).toBeDefined();
+    await waitFor(() => {
+      const f = lastTabOrdersFilter();
+      // Today's default range is a single day: from === to.
+      expect(f.from).toBe(f.to);
+    });
+    const todayFrom = lastTabOrdersFilter().from as string;
 
-    // Pick the first selectable day cell → re-queries with a YYYY-MM-DD string
-    // that is not today.
-    const dayCell = within(grid)
-      .getAllByRole("gridcell")
-      .map((c) => c.querySelector("button"))
-      .find((b) => b && !(b as HTMLButtonElement).disabled) as HTMLButtonElement;
-    await user.click(dayCell);
-    await waitFor(() => expect(typeof lastOrdersFilter.date).toBe("string"));
-    expect(lastOrdersFilter.date).not.toBe(
-      new Date().toISOString().slice(0, 10),
-    );
-
-    // Reset (now shown — date is off its default) restores date=today.
-    await user.click(screen.getByRole("button", { name: "Reset" }));
-    await waitFor(() =>
-      expect(lastOrdersFilter.date).toBe(new Date().toISOString().slice(0, 10)),
-    );
+    await user.click(screen.getAllByRole("radio", { name: "This week" })[0]);
+    await waitFor(() => {
+      const f = lastTabOrdersFilter();
+      // The week range starts before (or on, if today is Monday) today and
+      // is no longer a single day — a strictly wider window than before.
+      expect((f.from as string) <= todayFrom).toBe(true);
+      expect(f.from).not.toBe(f.to);
+    });
   });
 
   it("loading state shows skeleton rows", () => {
@@ -304,7 +302,7 @@ describe("Restaurant Orders tab", () => {
     // kit FilterToolbar names the select's combobox with the control label.
     await user.click(screen.getByRole("combobox", { name: "Payment" }));
     await user.click(screen.getByRole("option", { name: "Payment: M-Pesa" }));
-    await waitFor(() => expect(lastOrdersFilter.paymentMethod).toBe("mpesa"));
+    await waitFor(() => expect(lastTabOrdersFilter().paymentMethod).toBe("mpesa"));
   });
 
   it("F7-8: the Cashier filter lists cashiers seen in the loaded orders and re-queries", async () => {
@@ -315,7 +313,7 @@ describe("Restaurant Orders tab", () => {
     expect(screen.getByRole("option", { name: "Cashier: John Otieno" })).toBeDefined();
     await user.click(screen.getByRole("option", { name: "Cashier: Mary Njeri" }));
     await waitFor(() =>
-      expect(lastOrdersFilter.cashierId).toBe("cashier-uuid-mary"),
+      expect(lastTabOrdersFilter().cashierId).toBe("cashier-uuid-mary"),
     );
   });
 
@@ -483,5 +481,71 @@ describe("Canteen Derived tab", () => {
     expect(
       screen.getByRole("option", { name: "Product: Cooking Oil 1L" }),
     ).toBeDefined();
+  });
+});
+
+// ── KPI strip ────────────────────────────────────────────────────
+
+describe("Sales KPI strip", () => {
+  // desktop + mobile both render in jsdom (responsive `hidden md:flex` /
+  // `md:hidden`) — the desktop strip has no table role to key off, so
+  // scope by the visible caption row's sibling; simplest is to just take
+  // the first match, since desktop renders first in the DOM.
+  function firstTile(label: string) {
+    return screen.getAllByText(label)[0];
+  }
+
+  it("defaults to the 'All' scope combining Restaurant + Canteen figures", () => {
+    renderSales();
+    // Restaurant: 210 + 1240 = 1450 ; Canteen: 5760 ; combined 7210.
+    expect(firstTile("Total Sales Revenue")).toBeDefined();
+    expect(screen.getAllByText("KES 7,210.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("KES 1,450.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("KES 5,760.00").length).toBeGreaterThan(0);
+  });
+
+  it("Restaurant scope shows Total Sales, Orders, and the Cash/M-Pesa/Credit split", async () => {
+    const user = userEvent.setup();
+    renderSales();
+    await user.click(screen.getAllByRole("radio", { name: "Restaurant" })[0]);
+
+    expect(firstTile("Total Sales")).toBeDefined();
+    expect(screen.getAllByText("KES 1,450.00").length).toBeGreaterThan(0); // 210 + 1240
+    expect(firstTile("Orders")).toBeDefined();
+    expect(screen.getAllByText("2").length).toBeGreaterThan(0);
+    expect(firstTile("Cash")).toBeDefined();
+    expect(screen.getAllByText("KES 210.00").length).toBeGreaterThan(0);
+    expect(firstTile("M-Pesa")).toBeDefined();
+    expect(screen.getAllByText("KES 1,240.00").length).toBeGreaterThan(0);
+    expect(firstTile("Credit")).toBeDefined();
+    expect(screen.getAllByText("KES 0.00").length).toBeGreaterThan(0);
+  });
+
+  it("Canteen scope shows Total Revenue, Units Sold, and Products Counted", async () => {
+    const user = userEvent.setup();
+    renderSales();
+    await user.click(screen.getAllByRole("radio", { name: "Canteen" })[0]);
+
+    expect(firstTile("Total Revenue")).toBeDefined();
+    expect(screen.getAllByText("KES 5,760.00").length).toBeGreaterThan(0);
+    expect(firstTile("Units Sold")).toBeDefined();
+    expect(screen.getAllByText("96").length).toBeGreaterThan(0);
+    expect(firstTile("Products Counted")).toBeDefined();
+  });
+
+  it("the KPI strip is independent of the active tab's own filters", async () => {
+    const user = userEvent.setup();
+    renderSales();
+    await user.click(screen.getAllByRole("radio", { name: "Restaurant" })[0]);
+    // Narrow the Orders tab to M-Pesa only — the KPI strip still sums both.
+    await user.click(screen.getByRole("combobox", { name: "Payment" }));
+    await user.click(screen.getByRole("option", { name: "Payment: M-Pesa" }));
+    expect(screen.getAllByText("KES 1,450.00").length).toBeGreaterThan(0);
+  });
+
+  it("shows an error state when the KPI read fails, independent of table errors", () => {
+    mockOrdersState = { orders: [], loading: false, error: "boom" };
+    renderSales();
+    expect(screen.getByText("Couldn't load the period figures")).toBeDefined();
   });
 });

@@ -65,6 +65,10 @@ export type OrdersListFilter = Omit<ListOrdersFilter, "date"> & {
   date?: string | "today";
 };
 
+// `from`/`to` (inclusive business-date range) come through unchanged from
+// `ListOrdersFilter` via the `Omit` above and take precedence over `date`
+// when either is given — same convention as `lib/domain/stock`.
+
 const NAIROBI_TZ = "Africa/Nairobi";
 
 /** Africa/Nairobi business date as `YYYY-MM-DD` (ADR-29 boundary). */
@@ -88,7 +92,7 @@ export function useOrders(filter: OrdersListFilter = {}) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  const { cashierId, date, paymentMethod, orderType } = filter;
+  const { cashierId, date, from, to, paymentMethod, orderType } = filter;
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -96,7 +100,12 @@ export function useOrders(filter: OrdersListFilter = {}) {
     try {
       const params = new URLSearchParams();
       if (cashierId) params.set("cashierId", cashierId);
-      if (date) params.set("date", date === "today" ? nairobiBusinessDate() : date);
+      if (from || to) {
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
+      } else if (date) {
+        params.set("date", date === "today" ? nairobiBusinessDate() : date);
+      }
       if (paymentMethod) params.set("paymentMethod", paymentMethod);
       if (orderType) params.set("orderType", orderType);
       const rows = await request<OrderView[]>(
@@ -108,7 +117,7 @@ export function useOrders(filter: OrdersListFilter = {}) {
     } finally {
       setLoading(false);
     }
-  }, [cashierId, date, paymentMethod, orderType]);
+  }, [cashierId, date, from, to, paymentMethod, orderType]);
 
   React.useEffect(() => {
     void refresh();

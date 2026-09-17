@@ -16,6 +16,75 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature: KPI strip + shared date-range control on Sales (2026-09-17) — DONE
+
+Client feedback: wanted "some stats or a KPI strip" on the Sales page
+(`/admin/sales`), which covers both Restaurant Orders and Canteen Derived
+under two tabs. Follow-up in the same session: replace the page's old
+single-date filter with the same Today/This week/This month/Custom range
+control already used on Stock/Financials/Dashboard, and make the KPI
+strip show a combined total across the whole business as well as each
+side on its own — not just whichever tab happens to be open.
+
+**Backend** — `listOrders` / `listDerivedSales` (`lib/domain/sales`)
+gained an inclusive `from`/`to` business-date range filter, alongside the
+existing single `date` (still supported, `from`/`to` takes precedence
+when both are given). Mirrors the `from`/`to` convention already used by
+`lib/domain/stock/list-movements.ts`. Validation schemas
+(`lib/validation/orders.ts`, `lib/validation/canteen.ts`) and the two GET
+routes (`/api/orders`, `/api/canteen/stock-counts`) pass the new params
+through unchanged otherwise. `use-orders.ts` / `use-stock-count.ts`
+updated to send `from`/`to` when given.
+
+**Frontend** (`app/admin/sales/*`):
+- `sales-client.tsx` now owns one `useAdminDateRange()` (the shared
+  Today/This week/This month/Custom range control, `AdminDateRangeControl`
+  in the header actions, matching Stock's placement) and passes `range`
+  down to both tabs — replacing each tab's own local single-date filter
+  control. `OrdersTab` / `DerivedTab` dropped their `date`/`dateFilter`
+  state and the `kind:"date"` toolbar control entirely; their other local
+  filters (Cashier, Payment, Corrected only, Product) are unchanged.
+- New `kpi-strip.tsx` (`SalesKpiStrip`) — a dense hairline-tile row above
+  the `<Tabs>` row, adapted from the Financials KPI strip pattern
+  (`docs/design/design-principles.md` "Stat Tiles & KPI", 6R4-0) but
+  **not** a tab switcher: a `SegmentedControl` (All / Restaurant /
+  Canteen) picks the figures shown, independent of which tab's *table* is
+  open below, because Canteen has no "order" and Restaurant has no
+  "derived sale" — a combined total needs its own axis, not the tab.
+  Figures sum client-side over the page-level range from the same
+  `orders`/derived-sales rows the tabs already hold (no new endpoint):
+  Restaurant → Total Sales, Orders, Cash, M-Pesa, Credit; Canteen → Total
+  Revenue, Units Sold, Products Counted; All → Total Sales Revenue
+  (combined), Restaurant Sales, Canteen Revenue, Orders.
+
+**Bug found in manual QA, fixed same session**: `page.tsx` remounted
+`SalesClient` on every tab switch (`key={initialTab}`) — a pre-existing
+pattern that was harmless while each tab owned its own local date filter,
+but now silently reset the page-level range (and KPI scope) back to
+"Today"/"All" on every switch, including via the sidebar's own
+`?tab=derived` link (same route, no full reload). Dropped the `key`;
+`SalesClient` now syncs its active tab from `initialTab` via a `useEffect`
+instead, so the component instance — and its range/scope state — survives
+a tab switch from either entry point. Caught by driving the real screen
+in a browser (`pnpm dev`) after the test suite already passed with the
+old remount-based code, since the screen tests render each tab in
+isolation and never exercised a live tab switch.
+
+**Tests**: `list-orders.test.ts` / `derived-sales.test.ts` — range
+filtering + `from`/`to` precedence over a stale `date`.
+`admin-sales.screen.test.tsx` — replaced the two tests that exercised the
+removed per-tab date control with one exercising the page-level range
+control re-querying both tabs; added a new `describe` block (5 tests) for
+KPI strip scope switching, tile figures, and that the strip stays
+independent of each tab's own filters.
+
+**Gate**: `pnpm test` (161 files / 1387 tests), `pnpm typecheck`,
+`pnpm build` — all green. Manually verified in-browser (all three KPI
+scopes, all four range presets, tab switch via both the in-page tabs and
+the sidebar link, mobile 390px layout).
+
+---
+
 ## Feature: search + filters on Handovers, Expenses, Catalog; z-index fix for SimpleTable dropdowns (2026-09-17) — DONE
 
 Client feedback: several admin tables needed a search bar and/or filters —
