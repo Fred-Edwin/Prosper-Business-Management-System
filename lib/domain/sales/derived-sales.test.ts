@@ -143,6 +143,27 @@ describe("getDerivedSalesForProduct / listDerivedSales", () => {
     expect(sodaRow.periodEnd).toBe(T1.toISOString());
   });
 
+  it("listDerivedSales: from/to windows an inclusive range and takes precedence over date", async () => {
+    const soda = await seedTwoCounts();
+    // Range covering both T1 (08-21) and T2 (08-22) → the latest count in
+    // range wins, same as an unfiltered read.
+    const rangeRows = await listDerivedSales(
+      { from: "2026-08-21", to: "2026-08-22" },
+      adminCtx,
+    );
+    const sodaInRange = rangeRows.find((r) => r.productId === soda.id)!;
+    expect(sodaInRange.unitsSold).toBe("75.0000");
+    expect(sodaInRange.periodEnd).toBe(T2.toISOString());
+
+    // A stale `date` is ignored once from/to is given.
+    const bothGiven = await listDerivedSales(
+      { date: "2019-01-01", from: "2026-08-21", to: "2026-08-22" },
+      adminCtx,
+    );
+    const sodaBothGiven = bothGiven.find((r) => r.productId === soda.id)!;
+    expect(sodaBothGiven.unitsSold).toBe("75.0000");
+  });
+
   it("canteen_attendant sees their own canteen; another role → FORBIDDEN", async () => {
     await seedTwoCounts();
     const rows = await listDerivedSales({}, attendantCtx);

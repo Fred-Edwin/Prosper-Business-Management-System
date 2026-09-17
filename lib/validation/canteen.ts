@@ -43,13 +43,18 @@ export const previewStockCountQuerySchema = z.object({
   occurredAt: z.string().datetime().optional(),
 });
 
+const derivedSalesBusinessDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
+
 export const listDerivedSalesQuerySchema = z.object({
   productId: z.string().trim().min(1).optional(),
   // A business date (YYYY-MM-DD) — windows on the count's occurredAt.
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
-    .optional(),
+  date: derivedSalesBusinessDate.optional(),
+  // Inclusive business-date range — windows on occurredAt the same way,
+  // and takes precedence over `date` when either is given.
+  from: derivedSalesBusinessDate.optional(),
+  to: derivedSalesBusinessDate.optional(),
 });
 
 export type RecordStockCountBody = z.infer<typeof recordStockCountSchema>;

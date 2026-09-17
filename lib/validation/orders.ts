@@ -45,12 +45,15 @@ export const orderInputSchema = z.object({
   lines: z.array(orderLine).min(1, "An order must have at least one line"),
 });
 
+const businessDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD");
+
 export const listOrdersQuerySchema = z.object({
   cashierId: z.string().min(1).optional(),
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD")
-    .optional(),
+  date: businessDate.optional(),
+  from: businessDate.optional(),
+  to: businessDate.optional(),
   paymentMethod: paymentMethod.optional(),
   orderType: orderType.optional(),
 });

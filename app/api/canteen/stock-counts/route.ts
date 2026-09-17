@@ -16,7 +16,8 @@ const GET_ROLES: readonly Role[] = ["admin", "canteen_attendant"];
 /**
  * `GET /api/canteen/stock-counts` — per-product canteen derived-sales
  * (PRD §4.4). `admin` → every canteen; `canteen_attendant` → their own.
- * `?productId=&date=` narrow.
+ * `?productId=&date=` narrow; `?from=&to=` (inclusive range) take
+ * precedence over `date` when either is given.
  */
 export async function GET(req: NextRequest) {
   const auth = await requireApiRoleIn(GET_ROLES);
@@ -26,6 +27,8 @@ export async function GET(req: NextRequest) {
   const parsed = listDerivedSalesQuerySchema.safeParse({
     productId: sp.get("productId") ?? undefined,
     date: sp.get("date") ?? undefined,
+    from: sp.get("from") ?? undefined,
+    to: sp.get("to") ?? undefined,
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];

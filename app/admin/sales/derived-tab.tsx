@@ -21,6 +21,7 @@ import { useDerivedSales } from "@/app/canteen/use-stock-count";
 import type { DerivedSaleView } from "@/lib/domain/sales";
 import { nairobiBusinessDate } from "@/app/cashier/use-orders";
 import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
+import type { AdminDateRange } from "@/app/admin/use-date-range";
 
 // ── Display helpers ────────────────────────────────────────────────────
 
@@ -28,16 +29,6 @@ function fmtMoney(amount: string): string {
   const n = Number(amount);
   if (!Number.isFinite(n)) return amount;
   return `KES ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
-}
-
-/** `YYYY-MM-DD` → "Aug 26" for the date-control label. */
-function fmtDayMon(ymd: string): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Intl.DateTimeFormat("en-US", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
 /** ISO → "Thu 28 Aug" in Africa/Nairobi */
@@ -65,14 +56,17 @@ function relativeDay(iso: string): string {
 
 const ALL = "__all__";
 
-export function DerivedTab() {
+/** The date range lives on the Sales page (shared with the Restaurant
+ *  Orders tab and the KPI strip) — `<AdminDateRangeControl>` in the
+ *  header, not a per-tab filter. */
+export function DerivedTab({ range }: { range: AdminDateRange }) {
   const [productFilter, setProductFilter] = React.useState<string>(ALL);
-  const [dateFilter, setDateFilter] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
 
   const { rows: fetchedRows, loading, error, refresh } = useDerivedSales({
     productId: productFilter === ALL ? undefined : productFilter,
-    date: dateFilter ?? undefined,
+    from: range.from,
+    to: range.to,
   });
 
   const rows = React.useMemo(() => {
@@ -97,8 +91,9 @@ export function DerivedTab() {
     [allRows],
   );
 
-  const hasFilters =
-    productFilter !== ALL || dateFilter !== null || search.trim() !== "";
+  // Date is a page-level range control (header), not a tab-local filter —
+  // see the `range` prop.
+  const hasFilters = productFilter !== ALL || search.trim() !== "";
 
   const controls: FilterControl[] = [
     {
@@ -109,28 +104,14 @@ export function DerivedTab() {
       value: productFilter,
       default: ALL,
     },
-    {
-      id: "date",
-      kind: "date",
-      // Display string; null → "All dates" is the default. The screen owns
-      // the string↔YYYY-MM-DD map (kit kind:"date" carries a label only).
-      label: "Date",
-      value: dateFilter === null ? "All dates" : fmtDayMon(dateFilter),
-      default: "All dates",
-    },
   ];
 
   function onControlChange(id: string, value: string | boolean | null) {
     if (id === "product") setProductFilter(value == null ? ALL : String(value));
-    else if (id === "date")
-      setDateFilter(
-        value === "All dates" || value == null ? null : String(value),
-      );
   }
 
   function resetFilters() {
     setProductFilter(ALL);
-    setDateFilter(null);
     setSearch("");
   }
 

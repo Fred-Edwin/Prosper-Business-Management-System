@@ -33,9 +33,10 @@ import type {
   PaymentMethod,
   CorrectOrderInput,
 } from "@/lib/domain/sales";
-import { useOrders, nairobiBusinessDate } from "@/app/cashier/use-orders";
+import { useOrders } from "@/app/cashier/use-orders";
 import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
 import { CorrectionForm } from "./correction-form";
+import type { AdminDateRange } from "@/app/admin/use-date-range";
 
 // ── Display helpers ────────────────────────────────────────────────────
 
@@ -69,16 +70,6 @@ function fmtDateShort(iso: string): string {
   }).format(new Date(iso));
 }
 
-/** `YYYY-MM-DD` → "Aug 26" (Africa/Nairobi), for the date-control label. */
-function fmtDayMon(ymd: string): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Intl.DateTimeFormat("en-US", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  }).format(new Date(Date.UTC(y, m - 1, d)));
-}
-
 export function fmtMoney(amount: string | number): string {
   const n = typeof amount === "number" ? amount : Number(amount);
   if (!Number.isFinite(n)) return String(amount);
@@ -94,7 +85,6 @@ function cashierFallback(id: string): string {
 
 type OrdersFilter = {
   cashierId: string | null;
-  date: string | null; // YYYY-MM-DD or null → "Today"
   paymentMethod: PaymentMethod | null;
   correctedOnly: boolean;
 };
@@ -106,12 +96,12 @@ type DrawerMode =
 
 const ALL = "__all__";
 
-export function OrdersTab() {
-  const today = nairobiBusinessDate();
-
+/** The date range lives on the Sales page (shared with the Canteen Derived
+ *  tab and the KPI strip) — `<AdminDateRangeControl>` in the header, not a
+ *  per-tab filter. */
+export function OrdersTab({ range }: { range: AdminDateRange }) {
   const [filter, setFilter] = React.useState<OrdersFilter>({
     cashierId: null,
-    date: today,
     paymentMethod: null,
     correctedOnly: false,
   });
@@ -119,7 +109,8 @@ export function OrdersTab() {
 
   const { orders, loading, error, refresh, correctOrder } = useOrders({
     cashierId: filter.cashierId ?? undefined,
-    date: filter.date ?? undefined,
+    from: range.from,
+    to: range.to,
     paymentMethod: filter.paymentMethod ?? undefined,
   });
 
@@ -195,16 +186,8 @@ export function OrdersTab() {
   }, [orders]);
 
   // ── Toolbar wiring ──────────────────────────────────────────────────
-
-  // Date-control display label: "Today" for the default business day, "All
-  // dates" for null, otherwise "Aug 26". The kit's kind:"date" carries a
-  // display string as `value`; the screen owns the string↔YYYY-MM-DD map.
-  const dateLabel =
-    filter.date === null
-      ? "All dates"
-      : filter.date === today
-        ? "Today"
-        : fmtDayMon(filter.date);
+  // Date is a page-level range control (header), not a tab-local filter —
+  // see the `range` prop.
 
   const controls: FilterControl[] = [
     {
@@ -227,15 +210,6 @@ export function OrdersTab() {
       ],
       value: filter.paymentMethod ?? ALL,
       default: ALL,
-    },
-    {
-      id: "date",
-      kind: "date",
-      label: "Date",
-      // Display string; "Today" is the default business day. Off-default
-      // when the Admin has picked another day OR widened to "All dates".
-      value: dateLabel,
-      default: "Today",
     },
     {
       // IEA-0 draws this as a checkbox; the proven kit exposes a boolean only
@@ -261,14 +235,6 @@ export function OrdersTab() {
         paymentMethod:
           value === ALL || value == null ? null : (value as PaymentMethod),
       }));
-    } else if (id === "date") {
-      // The kit reports a picked day as a "YYYY-MM-DD" string; Reset reports
-      // the default display label "Today". The empty-state "Show all dates"
-      // path sets null directly (below).
-      setFilter((f) => ({
-        ...f,
-        date: value === "Today" || value == null ? today : String(value),
-      }));
     } else if (id === "correctedOnly") {
       setFilter((f) => ({ ...f, correctedOnly: Boolean(value) }));
     }
@@ -277,31 +243,25 @@ export function OrdersTab() {
   function resetFilters() {
     setFilter({
       cashierId: null,
-      date: today,
       paymentMethod: null,
       correctedOnly: false,
     });
     setSearch("");
   }
 
-  // Off-default = anything other than {no cashier, no payment, date=today,
-  // not corrected-only, no search}. `date === null` (all dates) counts as
-  // off-default.
+  // Off-default = anything other than {no cashier, no payment,
+  // not corrected-only, no search}. The date range is page-level, not part
+  // of this tab's own filter state.
   const anyFilterActive =
     filter.cashierId !== null ||
     filter.paymentMethod !== null ||
     filter.correctedOnly ||
-    filter.date !== today ||
     search.trim() !== "";
 
-  // The "Today" date is the default (flow doc §G) — but an empty Today is
-  // still a filter narrowing the view, and the Admin needs a path to older
-  // orders. Offer a "Show all dates" action on that specific empty.
-  const onlyTodayFilter =
+  const onlyRangeFilter =
     filter.cashierId === null &&
     filter.paymentMethod === null &&
     !filter.correctedOnly &&
-    filter.date === today &&
     search.trim() === "";
 
   // ── Table columns ──────────────────────────────────────────────────
@@ -426,29 +386,24 @@ export function OrdersTab() {
         </div>
       ) : visibleOrders.length === 0 ? (
         <EmptyState
-          variant={anyFilterActive || onlyTodayFilter ? "filtered" : "default"}
+          variant={anyFilterActive ? "filtered" : "default"}
           title={
             anyFilterActive
               ? "No orders match"
-              : onlyTodayFilter
-                ? "No orders today"
+              : onlyRangeFilter
+                ? "No orders in this range"
                 : "No orders yet"
           }
           description={
             anyFilterActive
               ? "Try different filters or reset."
-              : onlyTodayFilter
-                ? "No orders have been recorded today. Change the date to see earlier orders."
+              : onlyRangeFilter
+                ? "No orders have been recorded in the selected date range. Widen the range above to see earlier orders."
                 : "Orders placed by the Cashiers will appear here."
           }
           {...(anyFilterActive
             ? { actionLabel: "Reset filters", onAction: resetFilters }
-            : onlyTodayFilter
-              ? {
-                  actionLabel: "Show all dates",
-                  onAction: () => setFilter((f) => ({ ...f, date: null })),
-                }
-              : {})}
+            : {})}
         />
       ) : (
         <>

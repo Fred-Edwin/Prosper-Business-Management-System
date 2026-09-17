@@ -15,7 +15,9 @@ import type { ActorContext, ListOrdersFilter, OrderView } from "./types";
  *   - any other role → `FORBIDDEN`.
  *
  * `filter.date` is an Africa/Nairobi business date, windowed on
- * `occurredAt` as `[businessDateStartUtc, businessDateEndUtc)`.
+ * `occurredAt` as `[businessDateStartUtc, businessDateEndUtc)`. `filter.from`
+ * / `filter.to` window an inclusive business-date range the same way
+ * (mirrors `stock/list-movements.ts`) and take precedence over `date`.
  *
  * Newest first (`occurredAt` desc, then `createdAt` desc). Lines included.
  *
@@ -57,7 +59,11 @@ export async function listOrders(
 
   if (filter.paymentMethod) where.paymentMethod = filter.paymentMethod;
   if (filter.orderType) where.orderType = filter.orderType;
-  if (filter.date) {
+  if (filter.from || filter.to) {
+    where.occurredAt = {};
+    if (filter.from) where.occurredAt.gte = businessDateStartUtc(filter.from);
+    if (filter.to) where.occurredAt.lt = businessDateEndUtc(filter.to);
+  } else if (filter.date) {
     where.occurredAt = {
       gte: businessDateStartUtc(filter.date),
       lt: businessDateEndUtc(filter.date),

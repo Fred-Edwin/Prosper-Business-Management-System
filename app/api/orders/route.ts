@@ -25,6 +25,8 @@ export async function GET(req: NextRequest) {
   const parsed = listOrdersQuerySchema.safeParse({
     cashierId: sp.get("cashierId") ?? undefined,
     date: sp.get("date") ?? undefined,
+    from: sp.get("from") ?? undefined,
+    to: sp.get("to") ?? undefined,
     paymentMethod: sp.get("paymentMethod") ?? undefined,
     orderType: sp.get("orderType") ?? undefined,
   });
