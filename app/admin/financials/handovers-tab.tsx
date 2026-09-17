@@ -56,12 +56,17 @@ import { StatusChip } from "@/components/kit/status-chip";
 import { Button } from "@/components/kit/button";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
+import { SearchInput } from "@/components/kit/search-input";
+import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
 import type { ReconciliationRow } from "@/lib/domain/handovers";
 import { useRoster } from "../staff/use-staff";
 import { useReconciliation } from "./use-handovers";
 import { ReceiptDrawer } from "./receipt-drawer";
 import { HandoverCorrectionDrawer } from "./handover-correction-drawer";
 import { RecordHandoverDrawer } from "./record-handover-drawer";
+
+const ALL_LOCATIONS = "all";
+const ALL_STATUS = "all";
 
 // ── Display helpers ────────────────────────────────────────────────────
 
@@ -383,6 +388,26 @@ function sortByDay(rows: ReconciliationRow[]): ReconciliationRow[] {
   );
 }
 
+/** "5000.00" strings summed as plain numbers — same idiom as `money()` /
+ * `fmtVariance()` above; display-layer aggregation of already-rounded 2dp
+ * currency figures, not the ledger arithmetic the Decimal/NUMERIC rule
+ * governs. `null` (not-yet-received) contributes 0. */
+function sumDec(values: (string | null)[]): string {
+  return values.reduce((s, v) => s + (v == null ? 0 : Number(v)), 0).toFixed(2);
+}
+
+/** Recomputes the totals strip over a (possibly filtered) row set. */
+function sumTotals(rows: ReconciliationRow[]) {
+  return {
+    cashDeclared: sumDec(rows.map((r) => r.cashDeclared)),
+    mpesaDeclared: sumDec(rows.map((r) => r.mpesaDeclared)),
+    cashReceived: sumDec(rows.map((r) => r.cashReceived)),
+    mpesaReceived: sumDec(rows.map((r) => r.mpesaReceived)),
+    cashVariance: sumDec(rows.map((r) => r.cashVariance)),
+    mpesaVariance: sumDec(rows.map((r) => r.mpesaVariance)),
+  };
+}
+
 // ── View ───────────────────────────────────────────────────────────────
 
 export function HandoversView({
@@ -406,13 +431,87 @@ export function HandoversView({
   const [recording, setRecording] = React.useState(false);
 
   const rows = data?.rows ?? [];
-  const totals = data?.totals;
   const closedDates = React.useMemo(
     () => new Set(data?.closedDates ?? []),
     [data?.closedDates],
   );
   const awaitingCount = rows.filter((r) => !r.received).length;
-  const sortedRows = React.useMemo(() => sortByDay(rows), [rows]);
+
+  // Search + Location/Status filters are client-side — the range already
+  // narrows the fetch to a small worksheet (same trade-off as Expenses'
+  // filters): no round trip for an exact-match/contains over data that's
+  // already loaded. Totals recompute over the FILTERED rows so the strip
+  // always sums what's on screen.
+  const [search, setSearch] = React.useState("");
+  const [locationId, setLocationId] = React.useState<string>(ALL_LOCATIONS);
+  const [status, setStatus] = React.useState<string>(ALL_STATUS);
+
+  const knownLocations = React.useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const r of rows) seen.set(r.locationId, r.locationName);
+    return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [rows]);
+
+  const visibleRows = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (locationId !== ALL_LOCATIONS && r.locationId !== locationId) return false;
+      if (status === "received" && !r.received) return false;
+      if (status === "awaiting" && r.received) return false;
+      if (q === "") return true;
+      return (
+        r.staffName.toLowerCase().includes(q) ||
+        r.locationName.toLowerCase().includes(q)
+      );
+    });
+  }, [rows, search, locationId, status]);
+
+  const filtered =
+    search.trim() !== "" || locationId !== ALL_LOCATIONS || status !== ALL_STATUS;
+
+  function clearFilters() {
+    setSearch("");
+    setLocationId(ALL_LOCATIONS);
+    setStatus(ALL_STATUS);
+  }
+
+  const filterControls: FilterControl[] = [
+    {
+      id: "location",
+      kind: "select",
+      label: "Location",
+      options: [
+        { value: ALL_LOCATIONS, label: "All" },
+        ...knownLocations.map(([id, name]) => ({ value: id, label: name })),
+      ],
+      value: locationId,
+      default: ALL_LOCATIONS,
+    },
+    {
+      id: "status",
+      kind: "select",
+      label: "Status",
+      options: [
+        { value: ALL_STATUS, label: "All" },
+        { value: "received", label: "Received" },
+        { value: "awaiting", label: "Awaiting" },
+      ],
+      value: status,
+      default: ALL_STATUS,
+    },
+  ];
+
+  function onFilterChange(id: string, value: string | boolean | null) {
+    if (id === "location") setLocationId(value == null ? ALL_LOCATIONS : String(value));
+    else if (id === "status") setStatus(value == null ? ALL_STATUS : String(value));
+  }
+
+  // The totals strip sums the currently VISIBLE (filtered) rows, computed
+  // client-side to match — the endpoint's pre-summed `totals` covers the
+  // whole unfiltered range, which would read wrong once a filter narrows
+  // the rows on screen.
+  const totals = React.useMemo(() => sumTotals(visibleRows), [visibleRows]);
+  const sortedRows = React.useMemo(() => sortByDay(visibleRows), [visibleRows]);
 
   return (
     <div className="flex flex-col grow gap-(--sp-5) pt-(--sp-6) pb-(--sp-12)">
@@ -437,6 +536,25 @@ export function HandoversView({
         <Button variant="secondary" size="sm" onClick={() => setRecording(true)}>
           Record a handover
         </Button>
+      </div>
+
+      <div className="px-(--sp-6) md:px-0">
+        <FilterToolbar
+          aria-label="Filter handovers"
+          search={
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search staff or location…"
+              aria-label="Search handovers"
+            />
+          }
+          controls={filterControls}
+          onChange={onFilterChange}
+          onReset={clearFilters}
+          resultCount={visibleRows.length}
+          resultNoun="handovers"
+        />
       </div>
 
       {error ? (
@@ -474,11 +592,22 @@ export function HandoversView({
                     <div className="kit-skeleton h-[14px] w-full rounded-sm" />
                   </div>
                 ))
-              ) : rows.length === 0 ? (
+              ) : visibleRows.length === 0 ? (
                 <div className="p-(--sp-8)">
                   <EmptyState
-                    title="No handovers in this range"
-                    description="Cash and M-Pesa handovers declared by cashiers and the canteen attendant show up here for you to receive."
+                    variant={filtered ? "filtered" : "default"}
+                    title={
+                      filtered
+                        ? "No handovers match these filters"
+                        : "No handovers in this range"
+                    }
+                    description={
+                      filtered
+                        ? "Try a different search term, location, or status, or clear the filters."
+                        : "Cash and M-Pesa handovers declared by cashiers and the canteen attendant show up here for you to receive."
+                    }
+                    actionLabel={filtered ? "Clear filters" : undefined}
+                    onAction={filtered ? clearFilters : undefined}
                   />
                 </div>
               ) : (
@@ -492,7 +621,7 @@ export function HandoversView({
                   />
                 ))
               )}
-              {totals && rows.length > 0 && <TotalsRow totals={totals} />}
+              {visibleRows.length > 0 && <TotalsRow totals={totals} />}
             </div>
           </div>
 
@@ -510,11 +639,22 @@ export function HandoversView({
                   </div>
                 ))}
               </div>
-            ) : rows.length === 0 ? (
+            ) : visibleRows.length === 0 ? (
               <div className="p-(--sp-5)">
                 <EmptyState
-                  title="No handovers in this range"
-                  description="Cash and M-Pesa handovers declared by cashiers and the canteen attendant show up here for you to receive."
+                  variant={filtered ? "filtered" : "default"}
+                  title={
+                    filtered
+                      ? "No handovers match these filters"
+                      : "No handovers in this range"
+                  }
+                  description={
+                    filtered
+                      ? "Try a different search term, location, or status, or clear the filters."
+                      : "Cash and M-Pesa handovers declared by cashiers and the canteen attendant show up here for you to receive."
+                  }
+                  actionLabel={filtered ? "Clear filters" : undefined}
+                  onAction={filtered ? clearFilters : undefined}
                 />
               </div>
             ) : (
@@ -528,7 +668,7 @@ export function HandoversView({
                 />
               ))
             )}
-            {totals && rows.length > 0 && <MobileTotals totals={totals} />}
+            {visibleRows.length > 0 && <MobileTotals totals={totals} />}
           </div>
         </>
       )}

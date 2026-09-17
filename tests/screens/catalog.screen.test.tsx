@@ -214,6 +214,37 @@ describe("/admin/catalog — kit composition", () => {
     );
   });
 
+  it("the category filter narrows the visible rows client-side and clears with Clear filters", async () => {
+    state.products = [
+      PRODUCT,
+      { ...PRODUCT, id: "p2", name: "Cabbages", category: "Vegetables" },
+    ];
+    renderScreen();
+    const user = userEvent.setup();
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Chicken Breast")).toBeInTheDocument();
+    expect(within(table).getByText("Cabbages")).toBeInTheDocument();
+
+    // Pick Vegetables from the category <Select> — filters client-side, so
+    // useCatalog's filter (and thus lastFilter) is untouched.
+    await user.click(screen.getByRole("combobox", { name: "Filter by category" }));
+    await user.click(await screen.findByRole("option", { name: "Vegetables" }));
+
+    await waitFor(() =>
+      expect(within(table).queryByText("Chicken Breast")).not.toBeInTheDocument(),
+    );
+    expect(within(table).getByText("Cabbages")).toBeInTheDocument();
+
+    // Picking "All categories" again restores both rows.
+    await user.click(screen.getByRole("combobox", { name: "Filter by category" }));
+    await user.click(await screen.findByRole("option", { name: "All categories" }));
+    await waitFor(() =>
+      expect(within(table).getByText("Chicken Breast")).toBeInTheDocument(),
+    );
+    expect(within(table).getByText("Cabbages")).toBeInTheDocument();
+  });
+
   it("opens the create Drawer, traps focus, and restores focus to the opener on Esc", async () => {
     renderScreen();
     const user = userEvent.setup();

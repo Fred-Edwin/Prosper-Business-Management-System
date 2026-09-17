@@ -40,14 +40,19 @@ const STICKY_HEADER_BG: React.CSSProperties = {
 
 /**
  * A sticky-left header CELL (pinned on both axes — top AND left, in the
- * corner) needs its z-index one step above `--z-sticky` (1100). Its row
+ * corner) needs its z-index one step above `--z-sticky` (1000). Its row
  * container is already `sticky top-0` at `--z-sticky`; a sticky-left BODY
  * cell in a later row sits in that same row's own stacking context at
  * `--z-sticky` too, and later DOM order would let it paint over an
  * equal-z-index header corner cell as the page scrolls. Same fix, same
- * reasoning, as DenseLedger's `STICKY_HEADER_Z` (1101 there; matched here).
+ * reasoning, as DenseLedger's `STICKY_HEADER_Z`.
+ *
+ * Computed off the token (not a hardcoded 1101 literal) so it can never
+ * drift above `--z-dropdown` (1100) — a hardcoded 1101 previously did
+ * exactly that, painting the sticky header over an open Select/date popover
+ * (client feedback 2026-09-17, Catalog "Filter by location").
  */
-const STICKY_HEADER_LEFT_Z = "[z-index:1101]";
+const STICKY_HEADER_LEFT_Z = "[z-index:calc(var(--z-sticky)_+_1)]";
 
 // Trailing row affordance — matches the A1 artboard (16×16, ChevronRight,
 // --text-tertiary, 1.5 stroke) in a w-[24px] right-aligned slot.

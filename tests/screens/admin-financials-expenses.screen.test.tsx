@@ -159,6 +159,66 @@ describe("Admin Financials — Expenses tab", () => {
     expect(within(table).getByText(/No expenses for/)).toBeInTheDocument();
   });
 
+  it("filters by search text and by Category/Account, and Reset clears them", async () => {
+    expensesState = {
+      expenses: [
+        expense({ id: "e1", category: "transport", note: "Market run", paidFromAccount: "cash" }),
+        expense({
+          id: "e2",
+          category: "utilities",
+          note: "KPLC token",
+          amount: "1200.00",
+          paidFromAccount: "mpesa_bank",
+        }),
+      ],
+      loading: false,
+      error: null,
+    };
+    const user = userEvent.setup();
+    render(
+      <ToastProvider placement="top-right">
+        <ExpensesView from="2026-09-02" to="2026-09-02" />
+      </ToastProvider>,
+    );
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Market run")).toBeInTheDocument();
+    expect(within(table).getByText("KPLC token")).toBeInTheDocument();
+
+    // Search narrows to the matching note.
+    const searchBox = screen.getByRole("searchbox", { name: "Search expenses" });
+    await user.type(searchBox, "KPLC");
+    await waitFor(() =>
+      expect(within(table).queryByText("Market run")).not.toBeInTheDocument(),
+    );
+    expect(within(table).getByText("KPLC token")).toBeInTheDocument();
+
+    // Clearing the search box restores both rows (search alone carries no
+    // Reset — Reset only reacts to the select controls, per FilterToolbar's
+    // contract, same as Assets/Customers).
+    await user.clear(searchBox);
+    await waitFor(() =>
+      expect(within(table).getByText("Market run")).toBeInTheDocument(),
+    );
+
+    // Category filter narrows to Utilities only.
+    await user.click(screen.getByRole("combobox", { name: "Category" }));
+    await user.click(await screen.findByRole("option", { name: "Category: Utilities" }));
+    await waitFor(() =>
+      expect(within(table).queryByText("Market run")).not.toBeInTheDocument(),
+    );
+    expect(within(table).getByText("KPLC token")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+
+    // Account filter narrows to Cash only.
+    await user.click(screen.getByRole("combobox", { name: "Paid from" }));
+    await user.click(await screen.findByRole("option", { name: "Paid from: Cash" }));
+    await waitFor(() =>
+      expect(within(table).queryByText("KPLC token")).not.toBeInTheDocument(),
+    );
+    expect(within(table).getByText("Market run")).toBeInTheDocument();
+  });
+
   it("corrects an existing expense with the absolute corrected amount", async () => {
     const user = userEvent.setup();
     render(
