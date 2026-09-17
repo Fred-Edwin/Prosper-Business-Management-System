@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { businessDateStartUtc } from "@/lib/time";
 import type {
   RecordKitchenIssueInput,
   RecordProductionInput,
@@ -32,7 +33,13 @@ type Tx = Prisma.TransactionClient;
  */
 async function issueLineCore(
   tx: Tx,
-  line: { productId: string; locationId: string; magnitude: Prisma.Decimal; recordedById: string },
+  line: {
+    productId: string;
+    locationId: string;
+    magnitude: Prisma.Decimal;
+    recordedById: string;
+    occurredAt?: Date;
+  },
   audit: LineAuditMeta,
 ) {
   await assertProductExists(tx, line.productId);
@@ -49,7 +56,7 @@ async function issueLineCore(
       movementType: "issue",
       quantity: line.magnitude.negated(),
       recordedById: line.recordedById,
-      occurredAt: new Date(),
+      occurredAt: line.occurredAt ?? new Date(),
     },
     audit,
   );
@@ -61,7 +68,13 @@ async function issueLineCore(
  */
 async function productionLineCore(
   tx: Tx,
-  line: { productId: string; locationId: string; magnitude: Prisma.Decimal; recordedById: string },
+  line: {
+    productId: string;
+    locationId: string;
+    magnitude: Prisma.Decimal;
+    recordedById: string;
+    occurredAt?: Date;
+  },
   audit: LineAuditMeta,
 ) {
   await assertProductIsDish(tx, line.productId);
@@ -76,7 +89,7 @@ async function productionLineCore(
       movementType: "production",
       quantity: line.magnitude,
       recordedById: line.recordedById,
-      occurredAt: new Date(),
+      occurredAt: line.occurredAt ?? new Date(),
     },
     audit,
   );
@@ -94,6 +107,9 @@ export async function recordKitchenIssue(
   input: RecordKitchenIssueInput,
 ): Promise<StockMovementView> {
   const magnitude = toMagnitude(input.quantity);
+  const occurredAt = input.businessDate
+    ? businessDateStartUtc(input.businessDate)
+    : undefined;
   const row = await prisma.$transaction((tx) =>
     issueLineCore(
       tx,
@@ -102,8 +118,14 @@ export async function recordKitchenIssue(
         locationId: input.locationId,
         magnitude,
         recordedById: input.recordedById,
+        occurredAt,
       },
-      { actorId: input.recordedById, action: "issue" },
+      {
+        actorId: input.recordedById,
+        action: "issue",
+        actorRole: input.actorRole,
+        allowAdminBackfill: input.allowAdminBackfill,
+      },
     ),
   );
   return toMovementView(row);
@@ -119,6 +141,9 @@ export async function recordProduction(
   input: RecordProductionInput,
 ): Promise<StockMovementView> {
   const magnitude = toMagnitude(input.quantity);
+  const occurredAt = input.businessDate
+    ? businessDateStartUtc(input.businessDate)
+    : undefined;
   const row = await prisma.$transaction((tx) =>
     productionLineCore(
       tx,
@@ -127,8 +152,14 @@ export async function recordProduction(
         locationId: input.locationId,
         magnitude,
         recordedById: input.recordedById,
+        occurredAt,
       },
-      { actorId: input.recordedById, action: "production" },
+      {
+        actorId: input.recordedById,
+        action: "production",
+        actorRole: input.actorRole,
+        allowAdminBackfill: input.allowAdminBackfill,
+      },
     ),
   );
   return toMovementView(row);

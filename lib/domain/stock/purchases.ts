@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { recordMoneyMovement } from "@/lib/domain/financials";
 import { assertDayOpen } from "@/lib/domain/audit";
+import { businessDateStartUtc } from "@/lib/time";
 import type {
   RecordPurchasePaymentInput,
   RecordPurchaseReceiptInput,
@@ -207,6 +208,7 @@ async function receiptLineCore(
     magnitude: Prisma.Decimal;
     purchasePaymentId?: string | null;
     recordedById: string;
+    occurredAt?: Date;
   },
   audit: LineAuditMeta,
 ) {
@@ -243,7 +245,7 @@ async function receiptLineCore(
       movementType: "purchase_receipt",
       quantity: line.magnitude,
       recordedById: line.recordedById,
-      occurredAt: new Date(),
+      occurredAt: line.occurredAt ?? new Date(),
       purchasePaymentId: linkedId,
     },
     audit,
@@ -254,6 +256,9 @@ export async function recordPurchaseReceipt(
   input: RecordPurchaseReceiptInput,
 ): Promise<StockMovementView> {
   const magnitude = toMagnitude(input.quantity);
+  const occurredAt = input.businessDate
+    ? businessDateStartUtc(input.businessDate)
+    : undefined;
   const row = await prisma.$transaction((tx) =>
     receiptLineCore(
       tx,
@@ -263,8 +268,14 @@ export async function recordPurchaseReceipt(
         magnitude,
         purchasePaymentId: input.purchasePaymentId,
         recordedById: input.recordedById,
+        occurredAt,
       },
-      { actorId: input.recordedById, action: "purchase_receipt" },
+      {
+        actorId: input.recordedById,
+        action: "purchase_receipt",
+        actorRole: input.actorRole,
+        allowAdminBackfill: input.allowAdminBackfill,
+      },
     ),
   );
   return toMovementView(row);

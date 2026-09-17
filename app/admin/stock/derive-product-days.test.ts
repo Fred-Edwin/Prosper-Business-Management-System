@@ -49,7 +49,7 @@ function mv(partial: Partial<StockMovementView>): StockMovementView {
 
 describe("deriveProductDayRows", () => {
   it("returns one row per day in the inclusive range, oldest first", () => {
-    const rows = deriveProductDayRows({
+    const { rows } = deriveProductDayRows({
       movements: [],
       from: "2026-09-01",
       to: "2026-09-03",
@@ -68,7 +68,7 @@ describe("deriveProductDayRows", () => {
   });
 
   it("each day's closing = that day's own balance; opening walked back from it", () => {
-    const rows = deriveProductDayRows({
+    const { rows } = deriveProductDayRows({
       movements: [
         mv({ movementType: "purchase_receipt", quantity: "50.0000", occurredAt: "2026-09-02T08:00:00.000Z" }),
       ],
@@ -87,8 +87,32 @@ describe("deriveProductDayRows", () => {
     expect(rows[1].opening.value).toBe("12.0");
   });
 
+  it("buckets a movement at the FIRST instant of a Nairobi business day onto that day, not the prior UTC calendar date (2026-09-17 client report)", () => {
+    // businessDateStartUtc("2026-09-02") === "2026-09-01T21:00:00.000Z" —
+    // a naive occurredAt.slice(0, 10) string compare reads "2026-09-01"
+    // and misfiles the row a day early; toBusinessDate() must be used.
+    const { rows } = deriveProductDayRows({
+      movements: [
+        mv({
+          movementType: "non_sale_consumption",
+          quantity: "-4.0000",
+          occurredAt: "2026-09-01T21:00:00.000Z",
+        }),
+      ],
+      from: "2026-09-01",
+      to: "2026-09-02",
+      closingByDay: new Map([
+        ["2026-09-01", "16.0"],
+        ["2026-09-02", "12.0"], // 16 - 4
+      ]),
+      product: beef,
+    });
+    expect(rows[0].nonSale.dash).toBe(true);
+    expect(rows[1].nonSale.value).toBe("-4.0");
+  });
+
   it("values soldValue/closingValue at the product's buyingPrice", () => {
-    const rows = deriveProductDayRows({
+    const { rows } = deriveProductDayRows({
       movements: [mv({ movementType: "sale", quantity: "-2.0000", occurredAt: "2026-09-01T08:00:00.000Z" })],
       from: "2026-09-01",
       to: "2026-09-01",
@@ -101,7 +125,7 @@ describe("deriveProductDayRows", () => {
 
   it("dashes value columns for a dish (ADR-55)", () => {
     const dish: ProductWithLocations = { ...beef, kind: "dish", buyingPrice: null };
-    const rows = deriveProductDayRows({
+    const { rows } = deriveProductDayRows({
       movements: [mv({ movementType: "sale", quantity: "-2.0000" })],
       from: "2026-09-01",
       to: "2026-09-01",

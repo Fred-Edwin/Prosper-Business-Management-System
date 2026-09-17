@@ -5005,3 +5005,245 @@ real customer has at least one order or debt.
   Rejected — `useCustomers` already holds the full `CustomerListRow[]` in
   memory with everything the four tiles need; a new endpoint or extra
   fetches would duplicate data the screen already has.
+
+## ADR-86: Stock Ledger blank cells are click-to-record; Admin may backdate onto a closed day for this one flow (Client feedback, 2026-09-17)
+
+**Status:** DECIDED (maintenance — client feedback, 2026-09-17).
+
+**Context.** The client had been going to the database directly (raw SQL
+`DELETE`s against production — the untracked `.sql` files this session
+found sitting in the working tree) to fix stock-ledger mistakes, because
+the existing correction-entry pattern (CONVENTIONS §4, `correctMovement`)
+only works on a cell that already has a movement behind it. A cell with
+nothing recorded (a dash on the grid) had no click target at all — the
+kit's `DenseLedger` already renders every cell, dash or not, as a clickable
+button when `onCellClick` is wired (`components/kit/dense-ledger.tsx`); the
+screen's own handler was the thing silently no-opping on a blank cell. She
+also needed to backfill an entry on an already-**closed** day, which every
+create path in the app blocks for everyone, Admin included
+(`assertDayOpen`, ADR-52) — the existing rule's stated escape hatch
+("the Admin's route back in is the correction path") doesn't apply when
+there's no original row to correct.
+
+**Decision.**
+
+- **Blank cells open a new "record new entry" drawer** (`RecordEntryDrawer`,
+  `app/admin/stock/record-entry-drawer.tsx`) instead of the correction
+  drawer — same kit composition (`Drawer` + `FormField` + `Textarea` +
+  `Button` + `Toast`), but it calls the existing create functions
+  (`recordKitchenIssue` / `recordProduction` / `recordNonSaleConsumption` /
+  `recordPurchaseReceipt`) rather than `correctMovement`. Non-blank cells
+  are completely unchanged.
+- **Opening is now a click target on the ledger grid itself**
+  (`CORRECTABLE` gains `"opening"`), reusing `setOpeningStock` directly —
+  it already self-corrects on a second call (ADR-70), so there's no
+  blank/non-blank fork for this column; every click is the same call.
+- **Sold stays deliberately non-editable when blank.** A `sale` row only
+  ever comes out of `createOrder` or a canteen `recordStockCount` — both
+  carry invariants (payment method, cashier/customer, order lines) a
+  standalone backfilled row can't honestly represent; fabricating one
+  would make Financials' revenue figures disagree with Sales. A blank
+  Sold cell shows an explanatory `cellNote` instead of opening a drawer. A
+  wrong **existing** Sold value is still fixed via `correctOrder` on the
+  Sales screen, not here.
+- **Admin may backdate a blank-cell entry onto an already-closed day** —
+  the one deliberate exception to `assertDayOpen`. New
+  `assertDayOpenOrAdminBackfill` (`lib/domain/audit/day-close-guard.ts`)
+  is **additive**: `assertDayOpen` itself is untouched, and every one of
+  its other 17 call sites (money, payroll, handovers, orders, the rest of
+  stock) is unaffected — only the new blank-cell record path opts into
+  the new guard, via an optional `allowAdminBackfill` flag on
+  `LineAuditMeta` (`movement-core.ts`) that every existing caller omits.
+  `recordKitchenIssue` / `recordProduction` / `recordNonSaleConsumption` /
+  `recordPurchaseReceipt` each gained an optional `businessDate` +
+  `actorRole` + `allowAdminBackfill`; omitted, they behave byte-identical
+  to before (write to now, plain `assertDayOpen`). The API route
+  (`POST /api/stock-movements`) only forwards `businessDate`/backfill for
+  `role === "admin"` with a `businessDate` actually present in the body —
+  a non-admin's `businessDate`, if somehow sent, is silently dropped.
+- **Transfer gets its own backfill function, not a reuse of `recordTransfer`
+  + `acceptTransfer`.** A transfer is normally 2-phase — dispatch now,
+  accept later, with a real pending/in-transit window and short-accept
+  variance handling. Backdating a blank Transfer cell doesn't map onto
+  that: which phase would a backfill even represent? New
+  `recordCompletedTransfer` (`lib/domain/stock/transfer.ts`) writes
+  **both legs together, in one transaction**, dated to `businessDate`,
+  linked exactly like `acceptTransfer` links an ordinary accepted transfer
+  (`correctsMovementId` on the `+q` row) — skipping the pending state
+  entirely, since a backfill represents something already fully settled
+  in the past, not a live transfer with a phase 2 still to come. New
+  endpoint `POST /api/stock-movements/transfers/backfill` (Admin only,
+  `businessDate` required — no "now" fallback, since the endpoint only
+  exists to backdate). `recordTransfer`/`acceptTransfer`/`flagTransfer`
+  are completely unchanged.
+- **`variance`'s correction path turned out to already work.**
+  `correctMovement` copies `original.movementType` verbatim onto the
+  correction row, so it was already type-agnostic — a `variance` row
+  (written only by `acceptTransfer`/`flagTransfer` on a short-accepted
+  transfer) was already correctable via the existing
+  `MovementBreakdownDrawer` → `CorrectionDrawer` hand-off. Only the
+  display label was missing (`correction-drawer.tsx`'s
+  `MOVEMENT_TYPE_LABEL` had no `variance` entry, so it fell back to the
+  raw enum string) — fixed to "Transfer variance". No domain change.
+
+**Consequences.**
+- **Follow-up in this same session:** the client asked why the Week/Month
+  period-summary's "View days →" drill-in table couldn't be edited either.
+  Investigating found it was never wired for this at all — not a
+  deliberate read-only design, just predating the feature — so
+  `deriveProductDayRows` gained the same `cellMovements` map
+  `deriveLedgerRows` already had, and the drill-in's `<DenseLedger>` now
+  takes an `onCellClick` reusing the single-day ledger's exact
+  correct/blank-cell/Sold-note logic, scoped to the drill-in's fixed
+  product/location and keyed by each row's own `businessDate`. Desktop
+  only, matching the rest of this ADR.
+- Mobile's blank-cell affordance is **out of scope this session**. The
+  mobile "Adjust" button only ever targets an existing movement chip
+  (`filter((k) => !row[k].dash)` — a blank column renders no chip to tap
+  at all); adding new entries from mobile needs its own control, not
+  designed here. Desktop-only for now, matching the session's stated
+  priority.
+- A closed-day Admin backfill is a **create**, not a correction — it
+  never touches `correctsMovementId` and isn't shown in the audit trail's
+  "originally X, corrected to Y" framing (CONVENTIONS §4.5); it reads as
+  an ordinary movement dated to the backfilled day, attributed to the
+  Admin who entered it.
+- `lib/domain/stock/admin-backfill.test.ts` (new) exercises the four
+  single-write backfill types end-to-end (open day, closed day, non-admin
+  blocked, balances still add up); `transfer.test.ts` gained a
+  `recordCompletedTransfer` describe block; `close-day.test.ts` gained
+  `assertDayOpenOrAdminBackfill` cases; `stock.screen.test.tsx` gained
+  blank-cell / Opening-click / blank-Sold / Transfer-In-backfill screen
+  tests.
+
+**Alternatives considered.**
+- *Loosen `assertDayOpen` itself to accept an actor and let Admin through
+  everywhere.* Rejected — it's called from 17 sites across customers,
+  financials, handovers, sales, staff, and stock; silently opening every
+  one of those domains to closed-day backfills (money and payroll
+  drifting after a day's already been reconciled) is a far bigger, riskier
+  change than what was asked for, and not something to decide inline
+  without the owner scoping it domain-by-domain.
+- *Let a blank Sold cell also open a record-entry flow, backed by a
+  minimal synthetic `sale` row.* Rejected — a `sale` row with no `Order`/
+  `OrderLine`/payment behind it would corrupt the sales domain's own
+  invariants and make Financials' revenue disagree with Sales; the
+  honest fix for a wrong sale is `correctOrder`, not a ledger-level
+  workaround.
+- *Reuse `recordTransfer` + `acceptTransfer` for the backfill, just
+  passing a backdated `occurredAt` to both.* Rejected — `acceptTransfer`
+  has real pending-state semantics (double-accept `409`, short-accept
+  variance rows) that don't apply to something being recorded as already
+  fully settled; forcing the backfill through that machinery would need
+  either a fake intermediate "pending" state the UI never shows, or
+  special-casing `acceptTransfer` for a caller that isn't really
+  accepting anything — `recordCompletedTransfer` writing both rows
+  directly is simpler and matches what's actually happening.
+
+## ADR-87: Drill-in refresh scoping, a UTC/Nairobi day-boundary bug, and URL-restorable ledger state (Bug fixes + client feedback, 2026-09-17)
+
+**Status:** DECIDED (maintenance — same-session follow-up to ADR-86).
+
+**Context.** While the client was testing ADR-86's drill-in editing
+addition live, three real problems surfaced in quick succession:
+
+1. Recording a Non-Sale entry inside the drill-in ("View days →" table)
+   saved successfully but the drill-in table kept showing the old
+   (blank) figure until she left and re-entered it.
+2. Once forced to refresh to see it, the entry appeared on the wrong
+   day — one day earlier than the day she'd actually clicked.
+3. Every time she refreshed the page (or would have shared a link), the
+   screen reset to Today/All, discarding the range and drill-in she had
+   open, forcing her to re-navigate back to where she was.
+
+None of these were present in the plan or caught by the automated tests
+for ADR-86 — the tests exercised each drawer's success path but never a
+second interaction with the same drill-in instance, never a value
+sitting exactly on a Nairobi business-day boundary, and never a page
+reload.
+
+**Decision.**
+
+1. **Refresh scoping.** `stock-client.tsx` had one `refresh` variable
+   (`isSingleDay ? singleDay.refresh : period.refresh`) that both
+   drawers' `onCorrected`/`onRecorded` called unconditionally. That never
+   covered the drill-in's own data source (`useProductDayLedger`,
+   `drillInDay`) — a save made while a drill-in was open refreshed the
+   period-summary *behind* it, not the table on screen. New
+   `refreshAfterEdit`: when `drillIn` is set, refresh `drillInDay` (what's
+   visible) and `period` (so its totals agree once the user backs out);
+   otherwise the existing plain `refresh`. Both drawers now call this
+   instead of `refresh` directly.
+2. **UTC/Nairobi day-boundary bug in `derive-product-days.ts`.** The
+   drill-in bucketed each movement into a day via
+   `movements.filter((m) => m.occurredAt.slice(0, 10) === day)` — a raw
+   string compare on the UTC timestamp. A row dated to the *first
+   instant* of a Nairobi business day (`businessDateStartUtc`, which is
+   21:00 **UTC the prior calendar date**) has a UTC date-string one day
+   earlier than its actual Nairobi business date, so it was silently
+   filed under the wrong row — invisible on the day it was just recorded
+   to, present (unexplained) on the day before. Fixed to
+   `toBusinessDate(new Date(m.occurredAt)) === day` — the same
+   UTC→Nairobi conversion every other day-grouping in this codebase
+   already uses; this file had simply never been brought in line with it.
+   This bug predates ADR-86 (the derivation logic is untouched by it) but
+   was invisible until ADR-86 gave a UI path that writes rows landing
+   exactly on that boundary — the demo/seed data never had.
+3. **URL-restorable ledger state.** The screen's range, location,
+   category, and drill-in target now round-trip through the URL query
+   string (`?preset=week&location=<id>&category=<kind>
+   &drillProduct=<id>&drillLocation=<id>`): read once on mount (a
+   `React.useRef` snapshot of `useSearchParams()`, taken once, never
+   re-consulted — the URL becomes a write target after that, driven by
+   the screen's own state, not synced bidirectionally), written back via
+   `router.replace` (shallow: no new history entry, `scroll: false`) on
+   every change. `useAdminDateRange` (shared by Dashboard, Financials,
+   Sales, and Stock) gained an optional `initialRange` param, defaulting
+   to `undefined` → the exact prior "always start at Today" behavior —
+   every caller except Stock omits it and is unaffected. Search is
+   deliberately **not** persisted to the URL: a stale search term
+   silently filtering a reopened/shared link down to "no rows" reads as a
+   worse surprise than the search box starting empty, so it resets every
+   mount.
+
+**Consequences.**
+- The drill-in's product/location **labels** aren't in the URL (only
+  ids) — a URL-restored drill-in briefly shows the raw id as its heading
+  for one render, then a `React.useEffect` swaps in the real name once
+  the catalogue (`period.data.products`/`locations`) has loaded. A guard
+  ref (`drillInLabelsResolvedRef`) stops this from re-firing on every
+  catalogue refetch and fighting a manual "View days →" click, which
+  already sets the real labels immediately.
+- The existing "reset `drillIn` when range/location changes" effect had
+  to be guarded to skip its very first run — otherwise it would clear the
+  drill-in the URL had just restored, reading the mount itself as a
+  "change." Every genuine subsequent range/location change still clears
+  it as before.
+- `tests/screens/stock.screen.test.tsx` and `stock-ledger-v2.screen.test.tsx`
+  needed a `next/navigation` mock added (`useRouter`/`useSearchParams`) to
+  keep mounting `<StockClient>` in jsdom — the same pattern
+  `admin-sales.screen.test.tsx` already uses for `SalesClient`.
+- Verified against a live dev server via Playwright for the exact
+  reported sequence: record a Non-Sale entry from inside a drill-in →
+  confirm the row updates without leaving the view → confirm the entry
+  lands on the day actually clicked, not the day before → copy the
+  resulting URL, reload it fresh, confirm it lands back in the same
+  range + drill-in.
+
+**Alternatives considered.**
+- *Give the drill-in its own independent refresh, never touching
+  `period`.* Rejected — leaving the period-summary stale until its own
+  next fetch means backing out of the drill-in right after a save could
+  briefly show a total that disagrees with the day-by-day table the user
+  just edited; refreshing both keeps them consistent immediately.
+- *Store the full ledger state in `sessionStorage` instead of the URL.*
+  Rejected — doesn't support the "share a link to this exact view" case,
+  survives a browser-storage clear less predictably than a URL, and the
+  URL is the more conventional place for this kind of view state in a
+  server-rendered Next.js app.
+- *Sync the URL bidirectionally (read `searchParams` on every render, not
+  just mount).* Rejected — Next's `useSearchParams()` re-render on every
+  navigation would fight the screen's own `router.replace` writes in a
+  feedback loop; read-once-on-mount + write-on-change is the simpler,
+  already-proven shape (mirrors how `sales-client.tsx` handles its one
+  `tab` URL param).

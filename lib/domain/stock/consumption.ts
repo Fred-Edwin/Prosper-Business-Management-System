@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import type { NonSaleReason } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { businessDateStartUtc } from "@/lib/time";
 import type { RecordNonSaleConsumptionInput, StockMovementView } from "./types";
 import { toMagnitude, toMovementView } from "./internal";
 import { DomainError } from "./errors";
@@ -53,6 +54,7 @@ async function nonSaleLineCore(
     reason: NonSaleReason;
     reasonNote: string | null;
     recordedById: string;
+    occurredAt?: Date;
   },
   audit: LineAuditMeta,
 ) {
@@ -69,7 +71,7 @@ async function nonSaleLineCore(
       movementType: "non_sale_consumption",
       quantity: line.magnitude.negated(),
       recordedById: line.recordedById,
-      occurredAt: new Date(),
+      occurredAt: line.occurredAt ?? new Date(),
       reason: line.reason,
       reasonNote: line.reasonNote,
     },
@@ -91,6 +93,9 @@ export async function recordNonSaleConsumption(
 ): Promise<StockMovementView> {
   const magnitude = toMagnitude(input.quantity);
   const reasonNote = resolveReasonNote(input.reason, input.reasonNote, "reasonNote");
+  const occurredAt = input.businessDate
+    ? businessDateStartUtc(input.businessDate)
+    : undefined;
 
   const row = await prisma.$transaction((tx) =>
     nonSaleLineCore(
@@ -102,8 +107,14 @@ export async function recordNonSaleConsumption(
         reason: input.reason,
         reasonNote,
         recordedById: input.recordedById,
+        occurredAt,
       },
-      { actorId: input.recordedById, action: "non_sale_consumption" },
+      {
+        actorId: input.recordedById,
+        action: "non_sale_consumption",
+        actorRole: input.actorRole,
+        allowAdminBackfill: input.allowAdminBackfill,
+      },
     ),
   );
   return toMovementView(row);

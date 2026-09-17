@@ -29,6 +29,7 @@
 // grid rows — same precedent as the Financials screen's Profit panel (its
 // KPI figures are unfiltered by the transaction-tab filters there too).
 import * as React from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PageShell } from "@/components/kit/page-shell";
 import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolbar";
@@ -46,7 +47,13 @@ import {
 } from "@/lib/domain/stock/stock-value-kpis";
 import { SegmentedControl } from "@/components/kit/segmented-control";
 import { AdminDateRangeControl } from "@/app/admin/date-range-control";
-import { useAdminDateRange, shortBusinessDateWithYear } from "@/app/admin/use-date-range";
+import {
+  useAdminDateRange,
+  shortBusinessDateWithYear,
+  resolvePreset,
+  type AdminDateRange as AdminDateRangeType,
+} from "@/app/admin/use-date-range";
+import { nairobiToday } from "@/lib/time";
 import { useFinancialSummary } from "@/app/admin/financials/use-financials";
 import {
   CorrectionDrawer,
@@ -54,6 +61,11 @@ import {
   type CorrectionTarget,
   type BreakdownTarget,
 } from "./correction-drawer";
+import {
+  RecordEntryDrawer,
+  type RecordEntryTarget,
+  type RecordEntryKind,
+} from "./record-entry-drawer";
 
 // Human labels for the ledger's movement columns (correction-drawer field label).
 const COLUMN_LABEL: Record<string, string> = {
@@ -64,6 +76,21 @@ const COLUMN_LABEL: Record<string, string> = {
   transferIn: "Transfer In (+)",
   transferOut: "Transfer Out (-)",
   sold: "Sold (-)",
+};
+
+// Which blank movement columns open the "record new entry" flow, and which
+// RecordEntryKind they map to (2026-09-17 client request). "sold" is
+// deliberately absent — a sale can't be fabricated as a standalone row (it
+// comes from an Order or a canteen stock count, both with their own
+// invariants); a blank Sold cell stays inert with an explanatory note.
+const BLANK_CELL_KIND: Partial<Record<string, RecordEntryKind>> = {
+  purchases: "purchases",
+  issues: "issues",
+  nonSale: "nonSale",
+  production: "production",
+  transferIn: "transferIn",
+  transferOut: "transferOut",
+  opening: "opening",
 };
 
 // Short chip labels for the mobile stacked-row deltas — aligned to artboard
@@ -81,9 +108,12 @@ const MOBILE_CHIP_LABEL: Record<string, string> = {
   sold: "Sold",
 };
 
-// Columns that can be corrected (a movement sits behind them). opening/closing
-// are derived; the *Value columns are cosmetic.
-const CORRECTABLE = new Set(Object.keys(COLUMN_LABEL));
+// Columns that can be corrected (a movement sits behind them). closing and
+// the *Value columns are derived/cosmetic — never clickable. "opening" is
+// correctable too (2026-09-17): it always has a value, so a click there
+// always opens the record-entry flow (setOpeningStock self-corrects), never
+// the "no movement" cellNote.
+const CORRECTABLE = new Set([...Object.keys(COLUMN_LABEL), "opening"]);
 
 function shortDate(businessDate: string): string {
   // "2026-08-24" -> "Aug 24"
@@ -192,8 +222,55 @@ type DrillInTarget = {
   locationLabel: string;
 };
 
+// ── URL state restoration (client report, 2026-09-17) ─────────────────────
+// A page refresh (or a shared link) previously always reset this screen to
+// Today/All/no-drill-in, discarding whatever range/location/drill-in the
+// Admin had open — she'd have to re-navigate back to it by hand every time.
+// The screen's range/location/category/drill-in now round-trip through the
+// URL query string: read once on mount as the initial state, written back
+// on every change via `router.replace` (shallow — no history entry, no
+// scroll jump). `useAdminDateRange`'s `initialRange` param (new, optional,
+// every other caller omits it) is what lets this seed from something other
+// than "today".
+const VALID_PRESETS = new Set(["today", "week", "month", "custom"]);
+const BUSINESS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function initialRangeFromParams(
+  params: URLSearchParams,
+  today: string,
+): AdminDateRangeType | undefined {
+  const preset = params.get("preset");
+  if (!preset || !VALID_PRESETS.has(preset)) return undefined;
+  if (preset === "today") return { preset: "today", ...resolvePreset("today", today) };
+  if (preset === "week" || preset === "month") {
+    return { preset, ...resolvePreset(preset, today) };
+  }
+  // custom
+  const from = params.get("from");
+  const to = params.get("to");
+  if (!from || !BUSINESS_DATE_RE.test(from)) return undefined;
+  const validTo = to && BUSINESS_DATE_RE.test(to) && to >= from ? to : from;
+  return { preset: "custom", from, to: validTo };
+}
+
 export function StockClient() {
-  const { range, setPreset, setCustomDay, setCustomRange, today } = useAdminDateRange();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // Read once, on mount — these seed useState initializers below and are
+  // never consulted again (the URL is a WRITE target after that, driven by
+  // this screen's own state, never read back mid-session).
+  const initialParamsRef = React.useRef(searchParams);
+
+  const { range, setPreset, setCustomDay, setCustomRange, today } = useAdminDateRange(
+    React.useMemo(
+      () =>
+        initialRangeFromParams(
+          initialParamsRef.current,
+          nairobiToday(),
+        ),
+      [],
+    ),
+  );
   // Custom used to always be a single day; it can now be a real from..to
   // range (client feedback, 2026-09-11). A multi-day Custom reads as a
   // period, same as Week/Month — only Today and a single-day Custom get
@@ -206,10 +283,18 @@ export function StockClient() {
   // Location scope — re-fetched server-side by useLedger/usePeriodLedger.
   // "__all__" = every location. (Was a <PillFilter>; now a FilterToolbar
   // select, LDZ-0.)
-  const [locationId, setLocationId] = React.useState<string>(ALL);
+  const [locationId, setLocationId] = React.useState<string>(
+    () => initialParamsRef.current.get("location") ?? ALL,
+  );
   // Category — a client-side cut over the derived rows by Product.kind.
-  const [category, setCategory] = React.useState<string>(ALL);
+  const [category, setCategory] = React.useState<string>(
+    () => initialParamsRef.current.get("category") ?? ALL,
+  );
   // Search — client-side substring match over product + location text.
+  // Deliberately NOT restored from the URL — a stale search term silently
+  // filtering a shared/reopened link to "no rows" is a worse surprise than
+  // starting blank; the range/location/drill-in are what she actually
+  // asked to keep.
   const [search, setSearch] = React.useState("");
   const [drawerTarget, setDrawerTarget] = React.useState<CorrectionTarget | null>(
     null,
@@ -217,13 +302,39 @@ export function StockClient() {
   const [breakdownTarget, setBreakdownTarget] = React.useState<BreakdownTarget | null>(
     null,
   );
+  const [recordTarget, setRecordTarget] = React.useState<RecordEntryTarget | null>(
+    null,
+  );
   const [cellNote, setCellNote] = React.useState<string | null>(null);
   // Week/Month only — which row's "View days →" is open, if any. Reset
   // whenever the range or location scope changes so a stale drill-in never
-  // survives a range/location switch.
-  const [drillIn, setDrillIn] = React.useState<DrillInTarget | null>(null);
+  // survives a range/location switch. Restored from the URL on mount by
+  // product/location id; the human-readable labels are filled back in once
+  // the catalogue loads (see the effect below) since the URL only carries
+  // ids, not names.
+  const [drillIn, setDrillIn] = React.useState<DrillInTarget | null>(() => {
+    const p = initialParamsRef.current;
+    const productId = p.get("drillProduct");
+    const drillLocationId = p.get("drillLocation");
+    if (!productId || !drillLocationId) return null;
+    return {
+      productId,
+      locationId: drillLocationId,
+      productLabel: productId,
+      locationLabel: drillLocationId,
+    };
+  });
 
+  // Skips the very first run — a drill-in restored from the URL on mount
+  // must survive this effect firing once for "range/location changed from
+  // nothing to their initial value"; every genuine subsequent change still
+  // clears it as before.
+  const rangeOrLocationMounted = React.useRef(false);
   React.useEffect(() => {
+    if (!rangeOrLocationMounted.current) {
+      rangeOrLocationMounted.current = true;
+      return;
+    }
     setDrillIn(null);
   }, [range.preset, range.from, range.to, locationId]);
 
@@ -275,8 +386,10 @@ export function StockClient() {
     [period.data.products, drillIn],
   );
 
-  const drillInRows = React.useMemo(() => {
-    if (!drillIn) return [];
+  const { rows: drillInRows, cellMovements: drillInCellMovements } = React.useMemo((): ReturnType<
+    typeof deriveProductDayRows
+  > => {
+    if (!drillIn) return { rows: [], cellMovements: new Map() };
     return deriveProductDayRows({
       movements: drillInDay.data.movements,
       from: range.from,
@@ -292,6 +405,69 @@ export function StockClient() {
   const loading = isSingleDay ? singleDay.loading : period.loading;
   const error = isSingleDay ? singleDay.error : period.error;
   const refresh = isSingleDay ? singleDay.refresh : period.refresh;
+
+  // The correction/record-entry drawers need to refetch whichever data
+  // source is actually ON SCREEN, which `refresh` above does NOT cover
+  // for the drill-in: a save made while `drillIn` is open previously only
+  // called `period.refresh()` (the period-summary behind it, not visible)
+  // and left `drillInDay` — the table the user is actually looking at —
+  // stale until they backed out and re-entered (client report,
+  // 2026-09-17: "why don't the values update immediately"). Also refresh
+  // the period-summary in that case so its totals agree once the user
+  // backs out, without waiting for a stale re-fetch.
+  const refreshAfterEdit = React.useCallback(() => {
+    if (drillIn) {
+      void drillInDay.refresh();
+      void period.refresh();
+      return;
+    }
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drillIn, drillInDay.refresh, period.refresh, refresh]);
+
+  // Fill in the drill-in's real product/location NAMES once the catalogue
+  // has loaded — a drill-in restored from the URL only carries ids (the
+  // labels aren't in the query string), so it opens showing raw ids for
+  // one render until this replaces them. Runs once per successful lookup,
+  // not on every catalogue refetch, to avoid fighting a manual drill-in
+  // pick (which already sets the real labels immediately).
+  const drillInLabelsResolvedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (drillInLabelsResolvedRef.current) return;
+    if (!drillIn) return;
+    if (drillIn.productLabel !== drillIn.productId) return; // already a real label
+    const product = period.data.products.find((p) => p.id === drillIn.productId);
+    const location = period.data.locations.find((l) => l.id === drillIn.locationId);
+    if (!product || !location) return; // catalogue not loaded yet
+    drillInLabelsResolvedRef.current = true;
+    setDrillIn({
+      productId: drillIn.productId,
+      locationId: drillIn.locationId,
+      productLabel: `${product.name} (${product.unitLabel})`,
+      locationLabel: location.name,
+    });
+  }, [drillIn, period.data.products, period.data.locations]);
+
+  // Write the current range/location/category/drill-in back to the URL —
+  // shallow (no new history entry, no scroll reset) so a refresh or a
+  // copied link restores exactly this view (client report, 2026-09-17).
+  // Search is deliberately excluded (see its own state comment above).
+  React.useEffect(() => {
+    const params = new URLSearchParams();
+    params.set("preset", range.preset);
+    if (range.preset === "custom") {
+      params.set("from", range.from);
+      params.set("to", range.to);
+    }
+    if (locationId !== ALL) params.set("location", locationId);
+    if (category !== ALL) params.set("category", category);
+    if (drillIn) {
+      params.set("drillProduct", drillIn.productId);
+      params.set("drillLocation", drillIn.locationId);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `/admin/stock?${qs}` : "/admin/stock", { scroll: false });
+  }, [range.preset, range.from, range.to, locationId, category, drillIn, router]);
 
   // productId → kind (Goods/Dishes/Ingredients), for the client-side Category filter.
   const kindByProduct = React.useMemo(() => {
@@ -482,9 +658,70 @@ export function StockClient() {
 
   function onCellClick(rowId: string, columnKey: string) {
     setCellNote(null);
+
+    // Sold is never a blank-cell record target — a `sale` row only ever
+    // comes out of an Order or a canteen stock count, both carrying
+    // invariants (payment, cashier/customer) a standalone backfilled row
+    // can't honestly represent. A non-blank Sold cell still opens the
+    // ordinary correction flow below; a blank one just explains itself.
+    if (columnKey === "sold" && (cellMovements.get(rowId)?.sold ?? []).length === 0) {
+      setCellNote(
+        "Sales are recorded through Orders or Canteen stock counts, not the ledger. Correct a wrong sale from the Sales screen.",
+      );
+      return;
+    }
+
     if (!CORRECTABLE.has(columnKey)) return;
+
+    // Opening always has a value (even 0) and no backing movement id in
+    // cellMovements — it's a click target of its own, not a blank-cell
+    // vs. correction fork. setOpeningStock self-corrects, so the same
+    // record-entry drawer call is right whether or not one already exists.
+    if (columnKey === "opening") {
+      const [productId, rowLocationId] = rowId.split("@");
+      const { subtitle, unit } = rowContext(rowId);
+      setRecordTarget({
+        kind: "opening",
+        productId,
+        locationId: rowLocationId,
+        businessDate: date,
+        subtitle,
+        fieldLabel: "Opening",
+        unit,
+        locations: activeData.locations,
+      });
+      return;
+    }
+
     const ids = cellMovements.get(rowId)?.[columnKey] ?? [];
-    if (ids.length === 0) return;
+
+    // Blank cell (no movement behind it yet) — open the "record new entry"
+    // flow instead of a correction (2026-09-17 client request). Every
+    // BLANK_CELL_KIND column maps cleanly to a create function; anything
+    // not in that map (there is none today besides "sold", handled above)
+    // stays a silent no-op, same as before this change.
+    if (ids.length === 0) {
+      const kind = BLANK_CELL_KIND[columnKey];
+      if (!kind) return;
+      const [productId, rowLocationId] = rowId.split("@");
+      const { subtitle, unit } = rowContext(rowId);
+      const fieldLabel = COLUMN_LABEL[columnKey] ?? columnKey;
+      // Transfer In's "other" location is unknown until she picks it in
+      // the drawer (a blank Transfer In cell has no counterpart to infer
+      // from); Transfer Out is the same — both leave counterpartLocationId
+      // unset and let the drawer's own Select collect it.
+      setRecordTarget({
+        kind,
+        productId,
+        locationId: rowLocationId,
+        businessDate: date,
+        subtitle,
+        fieldLabel,
+        unit,
+        locations: activeData.locations,
+      });
+      return;
+    }
 
     const { subtitle, unit } = rowContext(rowId);
     const fieldLabel = COLUMN_LABEL[columnKey] ?? columnKey;
@@ -504,6 +741,84 @@ export function StockClient() {
     }
 
     const movement = singleDay.data.movements.find((m) => m.id === ids[0]);
+    if (!movement) return;
+    setDrawerTarget({ movement, subtitle, fieldLabel, unit });
+  }
+
+  // Drill-in cell click (Week/Month "View days →" table) — same
+  // correct/blank-cell logic as onCellClick above, but the row id here is
+  // just a YYYY-MM-DD businessDate (deriveProductDayRows keys `id` on the
+  // day, not `productId@locationId`), and product/location are fixed to
+  // the drill-in's own target rather than parsed off the row id. Client
+  // request 2026-09-17: "why can't I edit from the drill-in?" — it never
+  // had a click handler wired at all (deriveProductDayRows had no
+  // cellMovements map until now), not a deliberate restriction.
+  function onDrillInCellClick(businessDate: string, columnKey: string) {
+    setCellNote(null);
+    if (!drillIn) return;
+
+    const product = period.data.products.find((p) => p.id === drillIn.productId);
+    const productLabel = product
+      ? `${product.name} (${product.unitLabel})`
+      : drillIn.productLabel;
+    const unit = product?.unitLabel ?? unitOf(drillIn.productLabel);
+    const subtitle = `${drillIn.locationLabel} · ${productLabel} · ${shortDate(businessDate)}`;
+
+    if (
+      columnKey === "sold" &&
+      (drillInCellMovements.get(businessDate)?.sold ?? []).length === 0
+    ) {
+      setCellNote(
+        "Sales are recorded through Orders or Canteen stock counts, not the ledger. Correct a wrong sale from the Sales screen.",
+      );
+      return;
+    }
+
+    if (!CORRECTABLE.has(columnKey)) return;
+
+    if (columnKey === "opening") {
+      setRecordTarget({
+        kind: "opening",
+        productId: drillIn.productId,
+        locationId: drillIn.locationId,
+        businessDate,
+        subtitle,
+        fieldLabel: "Opening",
+        unit,
+        locations: period.data.locations,
+      });
+      return;
+    }
+
+    const ids = drillInCellMovements.get(businessDate)?.[columnKey] ?? [];
+    const fieldLabel = COLUMN_LABEL[columnKey] ?? columnKey;
+
+    if (ids.length === 0) {
+      const kind = BLANK_CELL_KIND[columnKey];
+      if (!kind) return;
+      setRecordTarget({
+        kind,
+        productId: drillIn.productId,
+        locationId: drillIn.locationId,
+        businessDate,
+        subtitle,
+        fieldLabel,
+        unit,
+        locations: period.data.locations,
+      });
+      return;
+    }
+
+    if (ids.length > 1) {
+      const movements = ids
+        .map((id) => drillInDay.data.movements.find((m) => m.id === id))
+        .filter((m): m is NonNullable<typeof m> => !!m);
+      if (movements.length === 0) return;
+      setBreakdownTarget({ movements, subtitle, fieldLabel, unit });
+      return;
+    }
+
+    const movement = drillInDay.data.movements.find((m) => m.id === ids[0]);
     if (!movement) return;
     setDrawerTarget({ movement, subtitle, fieldLabel, unit });
   }
@@ -695,6 +1010,7 @@ export function StockClient() {
             error={drillInDay.error}
             onRetry={() => void drillInDay.refresh()}
             onBack={() => setDrillIn(null)}
+            onCellClick={onDrillInCellClick}
           />
         ) : error ? (
           <ErrorState
@@ -906,7 +1222,15 @@ export function StockClient() {
         <CorrectionDrawer
           target={drawerTarget}
           onClose={() => setDrawerTarget(null)}
-          onCorrected={refresh}
+          onCorrected={refreshAfterEdit}
+        />
+      )}
+
+      {recordTarget && (
+        <RecordEntryDrawer
+          target={recordTarget}
+          onClose={() => setRecordTarget(null)}
+          onRecorded={refreshAfterEdit}
         />
       )}
     </PageShell>
@@ -927,13 +1251,16 @@ function DrillInView({
   error,
   onRetry,
   onBack,
+  onCellClick,
 }: {
   target: DrillInTarget;
-  rows: ReturnType<typeof deriveProductDayRows>;
+  rows: ReturnType<typeof deriveProductDayRows>["rows"];
   loading: boolean;
   error: string | null;
   onRetry: () => void;
   onBack: () => void;
+  /** `(businessDate, columnKey)` — same shape as the single-day ledger's onCellClick. */
+  onCellClick: (businessDate: string, columnKey: string) => void;
 }) {
   const gridRows: LedgerRow[] = rows.map((r) => ({
     ...r,
@@ -973,6 +1300,7 @@ function DrillInView({
             stickyHeader
             loading={loading && gridRows.length === 0}
             emptyMessage="No stock movements for this product in this range."
+            onCellClick={onCellClick}
           />
         </div>
       )}
@@ -998,7 +1326,7 @@ function MobileDrillIn({
   onBack,
 }: {
   target: DrillInTarget;
-  rows: ReturnType<typeof deriveProductDayRows>;
+  rows: ReturnType<typeof deriveProductDayRows>["rows"];
   loading: boolean;
   error: string | null;
   onRetry: () => void;

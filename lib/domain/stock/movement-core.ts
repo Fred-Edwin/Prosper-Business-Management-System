@@ -1,6 +1,10 @@
 import { Prisma } from "@prisma/client";
 import type { MovementType, Role } from "@prisma/client";
-import { assertDayOpen, assertStaffDateIsToday } from "@/lib/domain/audit";
+import {
+  assertDayOpen,
+  assertDayOpenOrAdminBackfill,
+  assertStaffDateIsToday,
+} from "@/lib/domain/audit";
 import { DomainError } from "./errors";
 import { toMagnitude } from "./internal";
 
@@ -43,6 +47,15 @@ export type LineAuditMeta = {
   correlationId?: string;
   /** Human label for the logical action, e.g. `"issue"`, `"issue_batch"`. */
   action: string;
+  /**
+   * Set only by the Admin Stock Ledger's "record new entry" blank-cell
+   * flow (client request, 2026-09-17): lets an Admin backfill a missing
+   * movement on an already-closed day, via `assertDayOpenOrAdminBackfill`
+   * instead of the normal `assertDayOpen`. Every other caller omits this
+   * and keeps the unconditional closed-day block, for every role
+   * including Admin — unchanged from today.
+   */
+  allowAdminBackfill?: boolean;
 };
 
 /** Signed sum of every `StockMovement.quantity` for the pair, ON `tx`. */
@@ -97,7 +110,15 @@ export async function writeMovementLine(
   if (audit.actorRole) {
     assertStaffDateIsToday(occurredAt, { role: audit.actorRole });
   }
-  await assertDayOpen(occurredAt, tx);
+  if (audit.allowAdminBackfill) {
+    await assertDayOpenOrAdminBackfill(
+      occurredAt,
+      { role: audit.actorRole ?? "" },
+      tx,
+    );
+  } else {
+    await assertDayOpen(occurredAt, tx);
+  }
 
   const row = await tx.stockMovement.create({ data });
   await tx.auditLog.create({

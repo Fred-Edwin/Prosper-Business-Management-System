@@ -222,7 +222,7 @@ const MOVEMENT_TYPE_LABEL: Record<string, string> = {
   production: "Production",
   transfer: "Transfer",
   sale: "Sale",
-  variance: "Variance",
+  variance: "Transfer variance",
 };
 
 export type BreakdownTarget = {

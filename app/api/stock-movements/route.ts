@@ -189,6 +189,9 @@ export async function POST(req: NextRequest) {
           quantity: input.quantity,
           purchasePaymentId: input.purchasePaymentId ?? null,
           recordedById: userId,
+          businessDate: role === "admin" ? input.businessDate : undefined,
+          actorRole: role,
+          allowAdminBackfill: role === "admin" && !!input.businessDate,
         });
         return ok(r, { status: 201 });
       }
@@ -200,6 +203,9 @@ export async function POST(req: NextRequest) {
           locationId: input.locationId,
           quantity: input.quantity,
           recordedById: userId,
+          businessDate: role === "admin" ? input.businessDate : undefined,
+          actorRole: role,
+          allowAdminBackfill: role === "admin" && !!input.businessDate,
         });
         return ok(r, { status: 201 });
       }
@@ -213,6 +219,9 @@ export async function POST(req: NextRequest) {
           locationId: input.locationId,
           quantity: input.quantity,
           recordedById: userId,
+          businessDate: role === "admin" ? input.businessDate : undefined,
+          actorRole: role,
+          allowAdminBackfill: role === "admin" && !!input.businessDate,
         });
         return ok(r, { status: 201 });
       }
@@ -238,6 +247,9 @@ export async function POST(req: NextRequest) {
           reason: input.reason,
           reasonNote: input.reasonNote ?? null,
           recordedById: userId,
+          businessDate: role === "admin" ? input.businessDate : undefined,
+          actorRole: role,
+          allowAdminBackfill: role === "admin" && !!input.businessDate,
         });
         return ok(r, { status: 201 });
       }
