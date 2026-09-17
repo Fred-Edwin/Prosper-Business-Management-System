@@ -327,7 +327,14 @@ describe("A1 — archive / unarchive", () => {
     await user.click(
       within(drawer).getByRole("button", { name: /Archive this customer/ }),
     );
-    return screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("alertdialog");
+    // The dialog mounts with data-state="opening" for two animation frames
+    // before flipping to "open" (useOverlayTransition); a pointer event
+    // during "opening" can land on a still-transitioning/pointer-locked
+    // panel and flake in CI's slower runners. Wait for "open" before any
+    // click inside it.
+    await waitFor(() => expect(dialog).toHaveAttribute("data-state", "open"));
+    return dialog;
   }
 
   it("Archive lives inside the repayment drawer and opens an on-brand ConfirmDialog (not a native confirm)", async () => {
@@ -459,6 +466,10 @@ describe("A2 — Customer detail", () => {
     const dialog = await screen.findByRole("alertdialog", {
       name: "Archive customer",
     });
+    // See the A1 helper's comment above — wait past the "opening" phase
+    // before clicking, or a pointer event can land on a still-transitioning
+    // panel and flake (observed in CI).
+    await waitFor(() => expect(dialog).toHaveAttribute("data-state", "open"));
     expect(
       within(dialog).getByText(/Archive Grace Wanjiru\?/),
     ).toBeInTheDocument();
