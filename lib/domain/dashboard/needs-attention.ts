@@ -153,10 +153,19 @@ export async function getNeedsAttention(
 }
 
 /**
- * Products at or below zero on-hand at any location, right now. One
- * grouped sum over the whole `StockMovement` ledger (the derived-balance
- * rule — no stored total), then the product/location names for only the
- * offending rows.
+ * Products at or below their reorder point (or zero, if unset) at any
+ * location, right now. One grouped sum over the whole `StockMovement`
+ * ledger (the derived-balance rule — no stored total), then the
+ * product/location names for only the offending rows.
+ *
+ * The per-item `Product.lowStockThreshold` (client feedback 2026-09-17) is
+ * compared **per location**, same grain as the underlying groupBy — a
+ * product with a threshold of 10 flags at any location where that one
+ * location's on-hand qty is `<= 10`, not the sum across locations (which
+ * is what the Catalog screen's own `lowStockOnly` filter uses instead,
+ * against `stockQty` — see `list-products.ts`). A product with no
+ * threshold set keeps the original `qty <= 0` rule — additive, no
+ * regression for existing products.
  *
  * Also returns `countByLocationId` — the same low/negative rows folded to
  * a per-location count, reused by the "Stock & activity by location" zone
@@ -168,17 +177,24 @@ export async function getLowOrNegativeStock(): Promise<{
   view: DashboardNeedsAttention["lowOrNegativeStock"];
   countByLocationId: Map<string, number>;
 }> {
-  const grouped = await prisma.stockMovement.groupBy({
-    by: ["productId", "locationId"],
-    _sum: { quantity: true },
-  });
+  const [grouped, thresholdRows] = await Promise.all([
+    prisma.stockMovement.groupBy({
+      by: ["productId", "locationId"],
+      _sum: { quantity: true },
+    }),
+    prisma.product.findMany({ select: { id: true, lowStockThreshold: true } }),
+  ]);
+  const thresholdByProduct = new Map(
+    thresholdRows.map((p) => [p.id, p.lowStockThreshold ?? ZERO]),
+  );
+
   const low = grouped
     .map((g) => ({
       productId: g.productId,
       locationId: g.locationId,
       qty: g._sum.quantity ?? ZERO,
     }))
-    .filter((r) => r.qty.lte(ZERO))
+    .filter((r) => r.qty.lte(thresholdByProduct.get(r.productId) ?? ZERO))
     .sort((a, b) => a.qty.comparedTo(b.qty));
 
   const countByLocationId = new Map<string, number>();

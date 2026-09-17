@@ -32,6 +32,15 @@ export type CreateProductInput = {
    * trimmed; empty → `null`. Powers the C2 / K1 category tab rows.
    */
   category?: string | null;
+  /**
+   * Reorder point (client feedback 2026-09-17) — when `stockQty` (total
+   * on-hand, summed across every location) is at or below this, the
+   * product counts as low stock. Decimal string, or `null`/omitted for no
+   * threshold (falls back to the pre-existing `qty <= 0` rule). Ignored
+   * for `kind: "dish"` (forced to `null` — a dish's stock is derived from
+   * its recipe, ADR-33, never held directly).
+   */
+  lowStockThreshold?: string | null;
   locations: LocationPriceInput[];
 };
 
@@ -55,6 +64,8 @@ export type ProductWithLocations = {
   buyingPrice: string | null;
   /** Admin-set menu category, or `null` if uncategorised. */
   category: string | null;
+  /** Reorder point, decimal string, or `null` if unset (see `CreateProductInput`). */
+  lowStockThreshold: string | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -81,6 +92,12 @@ export type ListProductsFilter = {
    * (location dropped for the product) does not match.
    */
   locationId?: string;
+  /**
+   * Restrict to products currently low on stock — `stockQty <= (threshold
+   * ?? 0)`. Requires `includeStock` (admin-only); the domain enforces this
+   * rather than silently ignoring the flag.
+   */
+  lowStockOnly?: boolean;
 };
 
 export type ActorContext = {

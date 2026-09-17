@@ -20,6 +20,7 @@ import {
 } from "@/components/kit/simple-table";
 import { StatusChip } from "@/components/kit/status-chip";
 import { Select } from "@/components/kit/select";
+import { ToggleSwitch } from "@/components/kit/toggle-switch";
 import { useToast } from "@/components/kit/toast";
 import type { ProductWithLocations } from "@/lib/domain/catalog";
 import { usedCategoryNames } from "@/lib/catalog-categories";
@@ -52,6 +53,21 @@ const KIND_TONE: Record<string, string> = {
 
 function fmt(value: string | null): string {
   return value == null ? "—" : value;
+}
+
+/**
+ * Low stock (client feedback 2026-09-17) — `stockQty` (already fetched,
+ * summed across every location) at or below the product's own
+ * `lowStockThreshold`, or at or below zero if the Admin never set one.
+ * Undefined `stockQty` (non-admin caller, or `includeStock` not requested)
+ * never counts as low — there's nothing to compare.
+ */
+function isLowStock(product: ProductWithLocations): boolean {
+  if (product.stockQty == null) return false;
+  const threshold = product.lowStockThreshold
+    ? Number(product.lowStockThreshold)
+    : 0;
+  return Number(product.stockQty) <= threshold;
 }
 
 // "All locations" sentinel for the location filter <Select>.
@@ -136,6 +152,7 @@ export function ProductsTab({
   const [search, setSearch] = React.useState("");
   const [locationId, setLocationId] = React.useState<string>(ALL_LOCATIONS);
   const [category, setCategory] = React.useState<string>(ALL_CATEGORIES);
+  const [lowStockOnly, setLowStockOnly] = React.useState(false);
 
   const tab = TABS.find((t) => t.key === activeTabKey) ?? TABS[0];
   const filter: CatalogListFilter = {
@@ -205,10 +222,19 @@ export function ProductsTab({
   // location) — the full kind-tab set is already in memory, so filtering
   // client-side avoids a second round trip for an exact-match on a field
   // that's already loaded.
-  const visibleProducts =
+  const categoryFiltered =
     category === ALL_CATEGORIES
       ? archiveFiltered
       : archiveFiltered.filter((p) => (p.category ?? "") === category);
+
+  // Same client-side approach as the category filter above — `stockQty` /
+  // `lowStockThreshold` are already on every row this screen fetches
+  // (includeStock=true), so no extra round trip is needed.
+  const visibleProducts = lowStockOnly
+    ? categoryFiltered.filter(isLowStock)
+    : categoryFiltered;
+
+  const lowStockCount = archiveFiltered.filter(isLowStock).length;
 
   // Kept as just the number (not "N products") — the header badge sits
   // right next to the "Product Catalog" title in a single-row mobile
@@ -221,7 +247,8 @@ export function ProductsTab({
   const filtered =
     search.trim() !== "" ||
     locationId !== ALL_LOCATIONS ||
-    category !== ALL_CATEGORIES;
+    category !== ALL_CATEGORIES ||
+    lowStockOnly;
 
   // Publish count + create trigger up to the shared header.
   React.useEffect(() => {
@@ -232,6 +259,7 @@ export function ProductsTab({
     setSearch("");
     setLocationId(ALL_LOCATIONS);
     setCategory(ALL_CATEGORIES);
+    setLowStockOnly(false);
   }
 
   // Row position in the currently filtered/sorted list — "how many rows
@@ -408,6 +436,19 @@ export function ProductsTab({
           onChange={setCategory}
           className="shrink-0"
         />
+        {!tab.archived && (
+          <label className="flex items-center shrink-0 gap-(--sp-3) font-ui text-sm/sm [color:var(--text-secondary)]">
+            <ToggleSwitch
+              checked={lowStockOnly}
+              onChange={setLowStockOnly}
+              aria-label="Low stock only"
+            />
+            Low stock only
+            {lowStockCount > 0 && (
+              <StatusChip variant="warning">{lowStockCount}</StatusChip>
+            )}
+          </label>
+        )}
       </div>
 
       {error && (

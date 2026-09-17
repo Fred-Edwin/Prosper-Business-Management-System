@@ -22,6 +22,7 @@ const PRODUCT: ProductWithLocations = {
   unitLabel: "kg",
   buyingPrice: "580.00",
   category: null,
+  lowStockThreshold: null,
   deletedAt: null,
   createdAt: NOW.toISOString(),
   updatedAt: NOW.toISOString(),
@@ -243,6 +244,41 @@ describe("/admin/catalog — kit composition", () => {
       expect(within(table).getByText("Chicken Breast")).toBeInTheDocument(),
     );
     expect(within(table).getByText("Cabbages")).toBeInTheDocument();
+  });
+
+  it("the 'Low stock only' toggle narrows to rows at or below their threshold (or zero, if unset), client-side", async () => {
+    state.products = [
+      { ...PRODUCT, id: "p-low", name: "Low Salt", stockQty: "0" },
+      {
+        ...PRODUCT,
+        id: "p-low-threshold",
+        name: "Low Flour",
+        lowStockThreshold: "10",
+        stockQty: "8",
+      },
+      { ...PRODUCT, id: "p-ok", name: "Plenty Rice", stockQty: "50" },
+    ];
+    renderScreen();
+    const user = userEvent.setup();
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Low Salt")).toBeInTheDocument();
+    expect(within(table).getByText("Low Flour")).toBeInTheDocument();
+    expect(within(table).getByText("Plenty Rice")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("switch", { name: "Low stock only" }));
+
+    await waitFor(() =>
+      expect(within(table).queryByText("Plenty Rice")).not.toBeInTheDocument(),
+    );
+    expect(within(table).getByText("Low Salt")).toBeInTheDocument();
+    expect(within(table).getByText("Low Flour")).toBeInTheDocument();
+
+    // Toggling back off restores the full set.
+    await user.click(screen.getByRole("switch", { name: "Low stock only" }));
+    await waitFor(() =>
+      expect(within(table).getByText("Plenty Rice")).toBeInTheDocument(),
+    );
   });
 
   it("opens the create Drawer, traps focus, and restores focus to the opener on Esc", async () => {

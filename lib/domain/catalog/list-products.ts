@@ -7,6 +7,7 @@ import type {
   ProductWithLocations,
 } from "./types";
 import { productInclude, toProductView } from "./internal";
+import { DomainError } from "./errors";
 
 /**
  * List catalog products with their per-location pricing.
@@ -43,6 +44,14 @@ export async function listProducts(
     };
   }
 
+  if (filter.lowStockOnly && !filter.includeStock) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "lowStockOnly requires includeStock.",
+      "lowStockOnly",
+    );
+  }
+
   const rows = await prisma.product.findMany({
     where,
     include: productInclude,
@@ -51,6 +60,9 @@ export async function listProducts(
 
   const stripBuyingPrice = actor.role !== "admin";
   const views = rows.map((row) => toProductView(row, { stripBuyingPrice }));
+  const thresholdByProduct = new Map(
+    rows.map((r) => [r.id, r.lowStockThreshold]),
+  );
 
   // Admin-only (route already gates the query param to admin callers) —
   // one grouped aggregate for the whole page, not N+1.
@@ -58,6 +70,14 @@ export async function listProducts(
     const stockByProduct = await getTotalStockByProduct(views.map((v) => v.id));
     for (const view of views) {
       view.stockQty = stockByProduct[view.id];
+    }
+
+    if (filter.lowStockOnly) {
+      return views.filter((v) => {
+        if (v.stockQty == null) return false;
+        const threshold = thresholdByProduct.get(v.id) ?? new Prisma.Decimal(0);
+        return new Prisma.Decimal(v.stockQty).lte(threshold);
+      });
     }
   }
 

@@ -16,6 +16,73 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature: Per-item low-stock threshold on Catalog (2026-09-17) — DONE
+
+Client feedback: wanted to know which items are low on stock, with a way
+to set a threshold per item (previously the dashboard's "needs attention"
+card just flagged anything at or below **zero** on-hand — no per-item
+setting existed anywhere).
+
+**Schema** — `Product.lowStockThreshold` (`Decimal? @db.Decimal(14,4)`,
+nullable), migration `20260917071336_add_product_low_stock_threshold`.
+Additive only, no backfill — unset behaves exactly like the pre-existing
+`qty <= 0` rule, so no regression for existing products. Forced to `null`
+for `kind: "dish"` even if submitted (a dish's stock is derived from its
+recipe, ADR-33, never held directly) — same pattern as `buyingPrice`'s
+dish invariant.
+
+**Backend**:
+- `lib/domain/catalog`: `normaliseProductCore` (`internal.ts`) now also
+  parses/validates the threshold (`>= 0`, dish → `null`); `createProduct`/
+  `updateProduct` persist it; `toProductView` surfaces it (trimmed decimal
+  string, or `null`). `list-products.ts` gained `lowStockOnly` — filters to
+  `stockQty <= (lowStockThreshold ?? 0)`, **requires** `includeStock=true`
+  (the domain rejects the combination with `VALIDATION_ERROR` rather than
+  silently ignoring the flag).
+- `lib/domain/dashboard/needs-attention.ts`'s `getLowOrNegativeStock` now
+  compares each `(product, location)` row's derived quantity against that
+  product's own threshold (`?? 0`) instead of a hardcoded zero — the one
+  line that changed the actual dashboard alert.
+- **Two deliberately different grains for the same threshold value**: the
+  dashboard alert is per-location (matches its underlying `StockMovement`
+  groupBy); the Catalog `lowStockOnly` filter uses `stockQty` summed
+  across every location (matches what the Catalog table's Stock column
+  already shows). Documented explicitly in `docs/API.md` so this isn't
+  mistaken for a bug later — a product stocked at two locations can show
+  low on one screen and not the other.
+- `lib/validation/catalog.ts`: new `quantityString` (4dp, vs. money's 2dp)
+  for the threshold field; `lowStockThreshold` added to
+  `createProductSchema` (shared by update); `lowStockOnly` added to
+  `listProductsQuerySchema`.
+
+**Frontend**:
+- `app/admin/catalog/product-drawer.tsx`: new "Low Stock Threshold" field
+  in the Cost & Buying Price section, disabled with an explanatory hint for
+  a dish, cleared automatically on switching kind to dish.
+- `app/admin/catalog/products-tab.tsx`: new "Low stock only" `ToggleSwitch`
+  next to the existing category filter, plus a warning-tone count chip.
+  Client-side filter (like the existing category filter) — `stockQty`
+  is already fetched for every row (`includeStock=true` is always
+  requested by this screen), so no new endpoint or server round-trip was
+  needed. `isLowStock()` helper added for the shared predicate.
+
+**Tests**: new `lib/domain/catalog/low-stock-threshold.test.ts` (create/
+update round-trip, negative rejection, dish-forces-null, `lowStockOnly`
+requires `includeStock`, filter correctness — 6 cases) and new
+`lib/domain/dashboard/needs-attention.test.ts` (per-item threshold
+respected, product above threshold not flagged, no-threshold default
+preserved — 3 cases). New screen-test case in
+`tests/screens/catalog.screen.test.tsx` for the toggle. Several existing
+`ProductWithLocations` test fixtures updated with the new required field.
+
+**Gates**: `pnpm test` (full suite) green, `pnpm typecheck` clean,
+`pnpm build` green. Merged to `main` from `feat/catalog-low-stock-threshold`.
+Local dev database was reset (`prisma migrate reset`, explicit user
+consent) mid-session to resolve migration-history drift from
+branch-switching — dev-only, no production/shared data involved.
+
+---
+
 ## Feature: Supplier/Vendor dropdown on Stock, Financials, Expenses (2026-09-17) — DONE
 
 Client feedback: wanted a dropdown of suppliers/vendors when recording a
@@ -78,7 +145,7 @@ drawer's supplier trigger text instead of `getByDisplayValue` (it's a
 `<Select>` now, not a plain input).
 
 **Gates**: `pnpm test` (full suite) green, `pnpm typecheck` clean,
-`pnpm build` green. Branch `feat/suppliers-vendors`, not yet merged.
+`pnpm build` green. Merged to `main` from `feat/suppliers-vendors`.
 
 ---
 

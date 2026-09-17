@@ -16,6 +16,14 @@ const decimalString = z
   .trim()
   .regex(/^\d+(\.\d{1,2})?$/, "Must be a number with up to 2 decimal places");
 
+// Quantity-shaped decimal (up to 4dp, matching `Decimal(14,4)` columns like
+// StockMovement.quantity) — used for the low-stock threshold, which is a
+// unit count, not money.
+const quantityString = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,4})?$/, "Must be a number with up to 4 decimal places");
+
 const productKind = z.enum(["ingredient", "dish", "goods"]);
 
 const locationPrice = z.object({
@@ -43,6 +51,9 @@ export const createProductSchema = z.object({
     .optional()
     .nullable()
     .transform((v) => (v == null || v === "" ? null : v)),
+  // Reorder point — optional; the domain forces it to `null` for a dish
+  // (ADR-33: a dish's stock is never held directly).
+  lowStockThreshold: quantityString.nullable().optional(),
   locations: z.array(locationPrice),
 });
 
@@ -69,6 +80,12 @@ export const listProductsQuerySchema = z.object({
   // Admin-only (checked at the route) — adds `stockQty` (total on-hand,
   // summed across every location) to each row for the Catalog screen.
   includeStock: z
+    .union([z.literal("true"), z.literal("false")])
+    .optional()
+    .transform((v) => v === "true"),
+  // Requires includeStock=true — the domain rejects the combination
+  // otherwise rather than silently ignoring the flag.
+  lowStockOnly: z
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),

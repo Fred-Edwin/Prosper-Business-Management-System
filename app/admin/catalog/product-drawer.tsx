@@ -92,6 +92,9 @@ export function ProductDrawer({
   // category tab rows (`null` → an "Uncategorised" tab).
   const [category, setCategory] = React.useState("");
   const [buyingPrice, setBuyingPrice] = React.useState("0.00");
+  // Reorder point (client feedback 2026-09-17) — "" means unset, which
+  // falls back to the domain's qty <= 0 rule. Ignored for a dish.
+  const [lowStockThreshold, setLowStockThreshold] = React.useState("");
   const [rows, setRows] = React.useState<LocationRowState[]>([]);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>(
     {},
@@ -111,6 +114,7 @@ export function ProductDrawer({
       setUnitLabel(product.unitLabel);
       setCategory(product.category ?? "");
       setBuyingPrice(product.buyingPrice ?? "0.00");
+      setLowStockThreshold(product.lowStockThreshold ?? "");
       setRows(
         locations.map((loc) => {
           const existing = product.locations.find(
@@ -132,6 +136,7 @@ export function ProductDrawer({
       setUnitLabel("");
       setCategory("");
       setBuyingPrice("0.00");
+      setLowStockThreshold("");
       setRows(
         // New product defaults to Ingredient (ADR-67 R1) — the Store row
         // starts enabled, matching "ingredients always go to the Store".
@@ -163,7 +168,10 @@ export function ProductDrawer({
   function pickKind(nextLabel: string) {
     const next = KIND_BY_LABEL[nextLabel];
     setKind(next);
-    if (next === "dish") setBuyingPrice("0.00");
+    if (next === "dish") {
+      setBuyingPrice("0.00");
+      setLowStockThreshold("");
+    }
     // Switching kind changes which locations are even legal (R1, ADR-67):
     // reset every row rather than carry over a now-invalid selection.
     setRows((prev) =>
@@ -201,6 +209,8 @@ export function ProductDrawer({
       unitLabel: unitLabel.trim(),
       category: category.trim() === "" ? null : category.trim(),
       buyingPrice: isDish ? "0" : buyingPrice.trim(),
+      lowStockThreshold:
+        isDish || lowStockThreshold.trim() === "" ? null : lowStockThreshold.trim(),
       // R1 (ADR-67): submit exactly the rows this kind is legal at —
       // ingredient -> Store only (always active, storage only, no price);
       // dish/goods -> non-Store rows as toggled.
@@ -435,6 +445,38 @@ export function ProductDrawer({
                   className="font-mono [color:var(--text-primary)] text-sm/micro w-full bg-transparent outline-none disabled:cursor-not-allowed"
                 />
               </div>
+            </div>
+          )}
+        </FormField>
+
+        <FormField
+          label="Low Stock Threshold"
+          hint={
+            isDish
+              ? "Not applicable to a dish — its stock is derived from its recipe, not held directly."
+              : "Optional. Flags this item as low stock once on-hand quantity (across every location) falls to or below this number. Leave blank to use the default (flags at zero or below)."
+          }
+          error={fieldErrors.lowStockThreshold}
+          className="w-full"
+        >
+          {({ id, "aria-describedby": describedBy, "aria-invalid": invalid }) => (
+            <div
+              className={`${fieldBox} ${
+                invalid ? "border-danger" : "[border-color:var(--border-strong)]"
+              } ${isDish ? "opacity-[0.5]" : ""}`}
+              data-invalid={invalid || undefined}
+            >
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
+                value={isDish ? "" : lowStockThreshold}
+                onChange={(e) => setLowStockThreshold(e.target.value)}
+                disabled={isDish}
+                inputMode="decimal"
+                placeholder={`e.g. 5 ${unitLabel || "units"}`}
+                className="font-mono [color:var(--text-primary)] text-sm/micro w-full bg-transparent outline-none disabled:cursor-not-allowed placeholder:[color:var(--text-tertiary)]"
+              />
             </div>
           )}
         </FormField>

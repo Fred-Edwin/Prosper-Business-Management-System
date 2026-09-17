@@ -83,13 +83,18 @@ stock-flow product pickers, the mobile stock-levels views, and — from M2 —
 the Cashier's C2 New-Order product grid). `POST` stays Admin.
 Query: `?kind=ingredient|dish|goods`, `?search=` (case-insensitive `name`
 contains), `?category=` (exact match on the menu category),
-`?includeArchived=true` (default excludes soft-deleted).
+`?includeArchived=true` (default excludes soft-deleted), `?includeStock=true`
+(Admin-only — adds `stockQty`), `?lowStockOnly=true` (added 2026-09-17,
+client feedback — **requires** `includeStock=true`, `400 VALIDATION_ERROR`
+otherwise; keeps only rows where `stockQty <= (lowStockThreshold ?? 0)`).
 Returns `{ data: ProductWithLocations[] }`, sorted kind→name. Each item:
-`{ id, name, kind, unitLabel, buyingPrice, category, deletedAt, createdAt,
-updatedAt, locations: [{ locationId, locationName, locationType,
-sellingPrice, active }] }`. Money fields are decimal **strings**
-(`"580.00"`); `sellingPrice` is `null` when the location is stocked but
-not sold; `category` is `null` when uncategorised.
+`{ id, name, kind, unitLabel, buyingPrice, category, lowStockThreshold,
+deletedAt, createdAt, updatedAt, locations: [{ locationId, locationName,
+locationType, sellingPrice, active }] }`. Money fields are decimal
+**strings** (`"580.00"`); `sellingPrice` is `null` when the location is
+stocked but not sold; `category` is `null` when uncategorised;
+`lowStockThreshold` is a decimal string (up to 4dp, e.g. `"12.5"`) or
+`null` if unset — see "Low Stock Threshold" below.
 
 > **`category` + Cashier read access — M2 Session 6 (2026-08-30,
 > owner-approved scope exception).** `Product.category` (`String?`,
@@ -106,22 +111,46 @@ Roles: Admin. Body:
 ```json
 { "name": "...", "kind": "ingredient|dish|goods", "unitLabel": "...",
   "buyingPrice": "580.00", "category": "Mains" | null,
+  "lowStockThreshold": "5" | null,
   "locations": [{ "locationId": "...", "sellingPrice": "850.00" | null, "active": true }] }
 ```
 `buyingPrice` required for `ingredient`/`goods` (`>= 0`); ignored (forced
 to `"0.00"`) for `dish` — ADR-33. `category` optional, free-text, trimmed,
-≤40 chars; `""` → `null`. Writes the product + one `ProductLocation` per
-`locations[]` entry in one transaction. Returns
-`{ data: ProductWithLocations }`, `201`. `PATCH /api/products/:id` takes
-the same body shape (`category` included).
+≤40 chars; `""` → `null`. `lowStockThreshold` (added 2026-09-17, client
+feedback — see "Low Stock Threshold" below) optional, decimal string up to
+4dp, `>= 0`; **forced to `null` for `dish`** even if submitted (a dish's
+stock is derived from its recipe, ADR-33, never held directly). Writes the
+product + one `ProductLocation` per `locations[]` entry in one transaction.
+Returns `{ data: ProductWithLocations }`, `201`. `PATCH /api/products/:id`
+takes the same body shape (`category` / `lowStockThreshold` included).
 
 ### `PATCH /api/products/:id`
 Roles: Admin. Same body as `POST`. True edit, not a correction (a catalog
 entry is not a ledger). `locations[]` is reconciled to the submitted set:
 entries present are upserted; a previously-active location no longer in
 the array is **deactivated** (`active = false`), not deleted (ADR-38).
-Switching `kind` to `dish` zeroes `buyingPrice`. `404` if missing or
-soft-deleted.
+Switching `kind` to `dish` zeroes `buyingPrice` **and** `lowStockThreshold`.
+`404` if missing or soft-deleted.
+
+#### Low Stock Threshold (2026-09-17, client feedback)
+
+Before this, "low stock" had no per-item setting anywhere — the dashboard's
+"needs attention" card simply flagged any product at or below **zero**
+on-hand at a location (`lib/domain/dashboard/needs-attention.ts`). The
+Admin can now set `Product.lowStockThreshold` (Catalog product drawer,
+`ingredient`/`goods` only) so the alert fires earlier, per item:
+
+- **Unset (`null`)** — behaves exactly as before (`qty <= 0`). Additive,
+  no regression for existing products.
+- **Dashboard** (`needsAttention.lowOrNegativeStock`, above) compares
+  **per location** — same grain as the underlying `StockMovement` groupBy.
+- **Catalog** (`GET /api/products?lowStockOnly=true`, above) compares
+  against `stockQty` — on-hand **summed across every location** — since
+  that's the figure the Catalog table already shows in its Stock column.
+  These two are deliberately different grains for the same threshold
+  value; a product stocked at two locations could show as low on the
+  dashboard (one location depleted) but not on Catalog (the sum is still
+  healthy), or vice versa.
 
 ### `DELETE /api/products/:id`
 Roles: Admin.
@@ -1647,8 +1676,16 @@ Africa/Nairobi business dates. The five bands map 1:1 to
       },
       "openShortfalls": { "count": 1, "total": "450.00" },   // ALL currently-open handover shortfalls — NOT month-scoped
       "lowOrNegativeStock": {
+        // Added 2026-09-17 (client feedback): "low" is now per-item —
+        // flags at qty <= Product.lowStockThreshold, per location, same
+        // grain as the underlying groupBy. A product with no threshold set
+        // keeps the original qty <= 0 rule (no regression). See "Low Stock
+        // Threshold" under Catalog above — the Catalog screen's own
+        // ?lowStockOnly filter uses a DIFFERENT grain (stockQty summed
+        // across every location, not per-location) since that's what the
+        // Catalog table already shows.
         "count": 4,
-        "top": [                                  // up to 3, most negative first
+        "top": [                                  // up to 3, lowest qty first
           { "productName": "Cooking Oil 5L", "locationName": "Store", "qty": "-3.0000", "unit": "btl" }
         ]
       }
