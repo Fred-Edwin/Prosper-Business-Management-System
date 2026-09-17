@@ -33,6 +33,7 @@ import type { Location, ProductWithLocations } from "@/lib/domain/catalog";
 import { stockApi } from "../stock/use-stock";
 import { PaymentDrawer } from "./payment-drawer";
 import { PurchasePaymentCorrectionDrawer } from "./purchase-payment-correction-drawer";
+import { ReceiptVoidDrawer } from "./receipt-void-drawer";
 import { HandoversView } from "./handovers-tab";
 
 export type TxTabKey = "purchases" | "deliveries" | "handovers";
@@ -69,16 +70,27 @@ const PAID_FROM_LABEL: Record<string, string> = {
   mpesa_bank: "M-Pesa / Bank Till",
 };
 
-type PurchaseStatus = "awaiting_delivery" | "delivered" | "flagged";
+type PurchaseStatus = "awaiting_delivery" | "delivered" | "flagged" | "voided";
 
 const PURCHASE_STATUS: Record<
   PurchaseStatus,
-  { label: string; variant: "success" | "warning" | "danger" }
+  { label: string; variant: "success" | "warning" | "danger" | "neutral" }
 > = {
   awaiting_delivery: { label: "Awaiting delivery", variant: "warning" },
   delivered: { label: "Delivered", variant: "success" },
   flagged: { label: "Flagged", variant: "danger" },
+  voided: { label: "Voided", variant: "neutral" },
 };
+
+/** Shared by desktop + mobile — `voided` always wins over every other status. */
+function purchaseStatus(
+  m: StockMovementView,
+  awaitingIds: Set<string>,
+): PurchaseStatus {
+  if (m.voided) return "voided";
+  if (m.note?.toLowerCase().includes("variance")) return "flagged";
+  return awaitingIds.has(m.id) ? "awaiting_delivery" : "delivered";
+}
 
 // ── component ──────────────────────────────────────────────────────────
 
@@ -118,6 +130,8 @@ export function TransactionsTab({
   const [drawerReceipt, setDrawerReceipt] =
     React.useState<StockMovementView | null>(null);
   const [correctTarget, setCorrectTarget] =
+    React.useState<StockMovementView | null>(null);
+  const [voidReceiptTarget, setVoidReceiptTarget] =
     React.useState<StockMovementView | null>(null);
   const [search, setSearch] = React.useState("");
 
@@ -286,14 +300,7 @@ export function TransactionsTab({
       header: "Status",
       width: "w-[150px] shrink-0",
       render: (m) => {
-        const status: PurchaseStatus = m.note
-          ?.toLowerCase()
-          .includes("variance")
-          ? "flagged"
-          : awaitingIds.has(m.id)
-            ? "awaiting_delivery"
-            : "delivered";
-        const s = PURCHASE_STATUS[status];
+        const s = PURCHASE_STATUS[purchaseStatus(m, awaitingIds)];
         return <StatusChip variant={s.variant}>{s.label}</StatusChip>;
       },
     },
@@ -363,7 +370,9 @@ export function TransactionsTab({
       header: "Status",
       width: "w-[180px] shrink-0",
       render: (r) =>
-        r.purchasePaymentId ? (
+        r.voided ? (
+          <StatusChip variant="neutral">Voided</StatusChip>
+        ) : r.purchasePaymentId ? (
           <StatusChip variant="success">Matched</StatusChip>
         ) : (
           <div className="flex items-center gap-(--sp-4)">
@@ -378,6 +387,22 @@ export function TransactionsTab({
               </button>
             )}
           </div>
+        ),
+    },
+    {
+      key: "action",
+      header: "",
+      width: "w-[90px] shrink-0",
+      align: "right",
+      render: (r) =>
+        r.voided ? null : (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setVoidReceiptTarget(r)}
+          >
+            Void
+          </Button>
         ),
     },
   ];
@@ -497,6 +522,7 @@ export function TransactionsTab({
                 locationById={locationById}
                 unmatchedReceiptIds={unmatchedReceiptIds}
                 onRecordPayment={(r) => openDrawer(r)}
+                onVoid={setVoidReceiptTarget}
                 dateLabel={searchQuery ? "matching your search" : dateLabel}
               />
             )}
@@ -524,6 +550,15 @@ export function TransactionsTab({
           payment={correctTarget}
           product={productById.get(correctTarget.productId)}
           onClose={() => setCorrectTarget(null)}
+          onDone={refresh}
+        />
+      )}
+
+      {voidReceiptTarget && (
+        <ReceiptVoidDrawer
+          receipt={voidReceiptTarget}
+          product={productById.get(voidReceiptTarget.productId)}
+          onClose={() => setVoidReceiptTarget(null)}
           onDone={refresh}
         />
       )}
@@ -565,14 +600,7 @@ function MobilePurchaseCards({
       {rows.map((m) => {
         const p = productById.get(m.productId);
         const dest = locationById.get(m.locationId)?.name ?? "—";
-        const status: PurchaseStatus = m.note
-          ?.toLowerCase()
-          .includes("variance")
-          ? "flagged"
-          : awaitingIds.has(m.id)
-            ? "awaiting_delivery"
-            : "delivered";
-        const s = PURCHASE_STATUS[status];
+        const s = PURCHASE_STATUS[purchaseStatus(m, awaitingIds)];
         return (
           <div
             key={m.id}
@@ -618,6 +646,7 @@ function MobileDeliveryCards({
   locationById,
   unmatchedReceiptIds,
   onRecordPayment,
+  onVoid,
   dateLabel,
 }: {
   rows: StockMovementView[];
@@ -625,6 +654,7 @@ function MobileDeliveryCards({
   locationById: Map<string, Location>;
   unmatchedReceiptIds: Set<string>;
   onRecordPayment: (receipt: StockMovementView) => void;
+  onVoid: (receipt: StockMovementView) => void;
   dateLabel: string;
 }) {
   if (rows.length === 0) {
@@ -662,18 +692,29 @@ function MobileDeliveryCards({
             <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
               {dest} · {fmtDate(r.occurredAt)}
             </div>
-            <div className="flex items-center gap-(--sp-4)">
-              <StatusChip variant={matched ? "success" : "warning"}>
-                {matched ? "Matched" : "Unmatched"}
-              </StatusChip>
-              {!matched && unmatchedReceiptIds.has(r.id) && (
-                <button
-                  type="button"
-                  onClick={() => onRecordPayment(r)}
-                  className="kit-interactive font-ui font-(--weight-medium) text-accent text-caption/micro"
-                >
-                  Record payment
-                </button>
+            <div className="flex items-center justify-between gap-(--sp-4)">
+              <div className="flex items-center gap-(--sp-4)">
+                {r.voided ? (
+                  <StatusChip variant="neutral">Voided</StatusChip>
+                ) : (
+                  <StatusChip variant={matched ? "success" : "warning"}>
+                    {matched ? "Matched" : "Unmatched"}
+                  </StatusChip>
+                )}
+                {!r.voided && !matched && unmatchedReceiptIds.has(r.id) && (
+                  <button
+                    type="button"
+                    onClick={() => onRecordPayment(r)}
+                    className="kit-interactive font-ui font-(--weight-medium) text-accent text-caption/micro"
+                  >
+                    Record payment
+                  </button>
+                )}
+              </div>
+              {!r.voided && (
+                <Button variant="secondary" size="sm" onClick={() => onVoid(r)}>
+                  Void
+                </Button>
               )}
             </div>
           </div>

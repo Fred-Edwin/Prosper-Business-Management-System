@@ -15,6 +15,7 @@ export {
   recordPurchasePayment,
   recordPurchaseReceipt,
   recordPurchaseReceiptBatch,
+  voidPurchaseReceipt,
   type RecordPurchaseReceiptBatchInput,
 } from "./purchases";
 export {

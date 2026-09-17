@@ -36,6 +36,7 @@ import {
   deriveIncomingTransfers,
 } from "./use-staff-stock";
 import { movementsToTimeline, todaysMovements, trimQty } from "./staff-stock-format";
+import type { StockMovementView } from "@/lib/domain/stock";
 
 // (Session 16 — the `MOCK_PENDING_DELIVERIES` fixture that stood here is
 // gone; `useOutstandingDeliveries()` is the real read. See the header.)
@@ -51,6 +52,15 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
   // renders without the banner, same as the Receive flow treats it.
   const outstanding = useOutstandingDeliveries();
   const [busyId, setBusyId] = React.useState<string | null>(null);
+  // Today's own deliveries, with a "Void" recovery path (F-1 fix, 2026-09-
+  // 17 — a store manager who fat-fingers a receipt had no way to undo it
+  // short of calling the Admin; the domain already allowed the original
+  // recorder to correct their own same-day entry, only no screen exposed
+  // it). Same reachable-minimum shape as the Canteen hub's "Delete today's
+  // count" list — not a full ledger UI, just the recovery action.
+  const [voidingReceiptId, setVoidingReceiptId] = React.useState<string | null>(
+    null,
+  );
 
   // The Store's own locationId — resolved from any movement row at this
   // location (the list is already scoped to it server-side).
@@ -60,12 +70,47 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
     null;
 
   const incoming = deriveIncomingTransfers(data.movements, myLocationId);
+  // `voided` excluded — a fully-reversed receipt has nothing left to void
+  // again (the server already rejects it with VALIDATION_ERROR); showing
+  // it here as a live 0-quantity row with an active Void button was
+  // confusing. It still appears in the movement log below, unchanged.
+  const todaysReceipts = todaysMovements(data.movements).filter(
+    (m) =>
+      m.movementType === "purchase_receipt" &&
+      m.correctsMovementId === null &&
+      !m.voided,
+  );
   const timeline = movementsToTimeline(todaysMovements(data.movements), data.products);
 
   const productName = (id: string) =>
     data.products.find((p) => p.id === id)?.name ?? "stock";
   const productUnit = (id: string) =>
     data.products.find((p) => p.id === id)?.unitLabel ?? "";
+
+  async function onVoidReceipt(receipt: StockMovementView) {
+    const qty = trimQty(receipt.quantity).replace("-", "");
+    const unit = productUnit(receipt.productId);
+    const ok = window.confirm(
+      `Void today's delivery of ${qty} ${unit} ${productName(
+        receipt.productId,
+      )}? This removes it from stock. Do a fresh receipt to replace it.`,
+    );
+    if (!ok) return;
+    setVoidingReceiptId(receipt.id);
+    try {
+      await stockApi.voidPurchaseReceipt(receipt.id);
+      toast(`Delivery voided · ${productName(receipt.productId)}`, {
+        tone: "info",
+      });
+      await refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Couldn't void the delivery.", {
+        tone: "danger",
+      });
+    } finally {
+      setVoidingReceiptId(null);
+    }
+  }
 
   async function onAccept(movementId: string, productId: string, qty: string) {
     setBusyId(movementId);
@@ -209,6 +254,42 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
         </div>
         <ActionTileGrid tiles={tiles} className="w-full" />
       </div>
+
+      {/* Today's deliveries — void recovery path */}
+      {todaysReceipts.length > 0 && (
+        <div className="flex flex-col gap-(--sp-4)">
+          <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-caption/micro">
+            Today&rsquo;s deliveries
+          </div>
+          <ul className="flex flex-col rounded-md border border-solid [border-color:var(--border-subtle)] overflow-hidden">
+            {todaysReceipts.map((r) => (
+              <li
+                key={r.id}
+                className="flex items-center justify-between gap-(--sp-4) px-(--sp-5) py-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)] last:border-b-0"
+              >
+                <div className="flex flex-col gap-px min-w-0">
+                  <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/sm">
+                    {productName(r.productId)}
+                  </span>
+                  <span className="font-ui [color:var(--text-secondary)] text-caption/micro">
+                    {trimQty(r.quantity).replace("-", "")} {productUnit(r.productId)}
+                    {" received"}
+                    {r.purchasePaymentId ? " · matched to a payment" : ""}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onVoidReceipt(r)}
+                  disabled={voidingReceiptId === r.id}
+                  className="font-ui font-(--weight-medium) text-danger text-caption/micro kit-focus-ring rounded-sm shrink-0 disabled:opacity-50"
+                >
+                  {voidingReceiptId === r.id ? "Voiding…" : "Void delivery"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Today's movement log */}
       <div className="flex flex-col gap-(--sp-4)">

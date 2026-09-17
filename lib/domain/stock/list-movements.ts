@@ -118,10 +118,10 @@ export async function listMovements(
   // `purchaseTotalCost` / new supplier / qty / account. The Stock
   // Purchases screen shows one line per payment with the CURRENT values —
   // so fold each original's correction deltas into it and drop the
-  // correction rows from the list. (Only `purchase_payment` is folded
-  // here; every other type's correction rows still pass through, because
-  // the ledger grid derives balances by summing all rows including deltas
-  // — `app/admin/stock/derive-ledger.ts`.)
+  // correction rows from the list. (Only `purchase_payment` and
+  // `purchase_receipt` are folded this way; every other type's correction
+  // rows still pass through, because the ledger grid derives balances by
+  // summing all rows including deltas — `app/admin/stock/derive-ledger.ts`.)
   const paymentOriginalRows = rows.filter(
     (r) => r.movementType === "purchase_payment" && r.correctsMovementId === null,
   );
@@ -164,6 +164,10 @@ export async function listMovements(
           v.movementType === "purchase_payment"
             ? latestByOriginal.get(v.id)
             : undefined;
+        if (v.movementType === "purchase_payment" && v.correctsMovementId === null) {
+          const derivedCost = costByOriginal.get(v.id) ?? new Prisma.Decimal(0);
+          v = { ...v, voided: latest != null && derivedCost.isZero() };
+        }
         if (!latest) return v;
         const derivedCost = costByOriginal.get(v.id);
         return {
@@ -180,6 +184,57 @@ export async function listMovements(
             latest.purchasePaidFrom === "mpesa_bank"
               ? latest.purchasePaidFrom
               : v.purchasePaidFrom,
+        };
+      });
+  }
+
+  // `purchase_receipt` corrections (same ADR-15 shape as payments, above,
+  // added 2026-09-17 alongside `voidPurchaseReceipt`): fold each original
+  // receipt's correction deltas into it, drop the correction rows, and
+  // flag a fully-voided original (`quantity` folded to exactly zero) so
+  // the UI can show "Voided" instead of a live-looking zero-quantity row.
+  const receiptOriginalRows = rows.filter(
+    (r) => r.movementType === "purchase_receipt" && r.correctsMovementId === null,
+  );
+  if (receiptOriginalRows.length > 0) {
+    const originalById = new Map(receiptOriginalRows.map((r) => [r.id, r]));
+    const corrections = await prisma.stockMovement.findMany({
+      where: {
+        movementType: "purchase_receipt",
+        correctsMovementId: { in: [...originalById.keys()] },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const correctionIds = new Set(corrections.map((c) => c.id));
+    const qtyByOriginal = new Map<string, Prisma.Decimal>();
+    for (const [oid, orig] of originalById) {
+      qtyByOriginal.set(oid, orig.quantity);
+    }
+    for (const c of corrections) {
+      const oid = c.correctsMovementId as string;
+      qtyByOriginal.set(oid, (qtyByOriginal.get(oid) ?? new Prisma.Decimal(0)).add(c.quantity));
+    }
+
+    const hasCorrection = new Set(corrections.map((c) => c.correctsMovementId as string));
+    views = views
+      .filter(
+        (v) =>
+          !(v.movementType === "purchase_receipt" && correctionIds.has(v.id)),
+      )
+      .map((v) => {
+        if (v.movementType !== "purchase_receipt" || v.correctsMovementId !== null) {
+          return v;
+        }
+        const derivedQty = qtyByOriginal.get(v.id);
+        if (derivedQty == null) return v;
+        // `v.purchasePaymentId` already reflects the current row —
+        // `voidPurchaseReceipt` clears it on the original in the same
+        // transaction as the reversal, so no extra lookup is needed here.
+        return {
+          ...v,
+          quantity: derivedQty.toFixed(4),
+          voided: hasCorrection.has(v.id) && derivedQty.isZero(),
         };
       });
   }
@@ -297,10 +352,56 @@ async function listOutstandingPurchasesImpl(
     linkedReceipts.map((r) => r.purchasePaymentId as string),
   );
 
+  // A `voidPurchasePayment` / `voidPurchaseReceipt` fully reverses the row
+  // via a SEPARATE correction row (never overwrites the original — ADR-15),
+  // so `correctsMovementId: null` above is not enough by itself to exclude
+  // a voided row: the original payment/receipt still comes back with its
+  // ORIGINAL cost/quantity, looking exactly like a live one. Without this,
+  // a payment the Admin just voided kept pinning the "Review & receive"
+  // banner on the Store Manager / Canteen hub, and a voided receipt kept
+  // showing as a real unmatched delivery. Fold in the correction deltas —
+  // same maths `listMovements` already applies — per original id, and
+  // drop anything that nets to zero.
+  const [paymentDeltaRows, receiptDeltaRows] = await Promise.all([
+    prisma.stockMovement.groupBy({
+      by: ["correctsMovementId"],
+      where: {
+        movementType: "purchase_payment",
+        correctsMovementId: { in: payments.map((p) => p.id) },
+      },
+      _sum: { purchaseTotalCost: true },
+    }),
+    prisma.stockMovement.groupBy({
+      by: ["correctsMovementId"],
+      where: {
+        movementType: "purchase_receipt",
+        correctsMovementId: { in: unmatchedReceipts.map((r) => r.id) },
+      },
+      _sum: { quantity: true },
+    }),
+  ]);
+  const paymentDeltaById = new Map(
+    paymentDeltaRows.map((r) => [r.correctsMovementId as string, r._sum.purchaseTotalCost ?? new Prisma.Decimal(0)]),
+  );
+  const receiptDeltaById = new Map(
+    receiptDeltaRows.map((r) => [r.correctsMovementId as string, r._sum.quantity ?? new Prisma.Decimal(0)]),
+  );
+
+  const livePayments = payments.filter((p) => {
+    const derived = (p.purchaseTotalCost ?? new Prisma.Decimal(0)).add(
+      paymentDeltaById.get(p.id) ?? 0,
+    );
+    return !derived.isZero();
+  });
+  const liveUnmatchedReceipts = unmatchedReceipts.filter((r) => {
+    const derived = r.quantity.add(receiptDeltaById.get(r.id) ?? 0);
+    return !derived.isZero();
+  });
+
   return {
-    awaitingReceipt: payments
+    awaitingReceipt: livePayments
       .filter((p) => !linkedPaymentIds.has(p.id))
       .map(toMovementView),
-    unmatchedReceipts: unmatchedReceipts.map(toMovementView),
+    unmatchedReceipts: liveUnmatchedReceipts.map(toMovementView),
   };
 }

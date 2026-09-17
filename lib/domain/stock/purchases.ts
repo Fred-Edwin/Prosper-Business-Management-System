@@ -1,12 +1,14 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { recordMoneyMovement } from "@/lib/domain/financials";
-import { assertDayOpen } from "@/lib/domain/audit";
+import { assertDayOpen, assertActorMayCorrectOnDate } from "@/lib/domain/audit";
 import { businessDateStartUtc } from "@/lib/time";
 import type {
+  ActorContext,
   RecordPurchasePaymentInput,
   RecordPurchaseReceiptInput,
   StockMovementView,
+  VoidPurchaseReceiptInput,
 } from "./types";
 import { toMagnitude, toMoney, toMovementView } from "./internal";
 import { DomainError } from "./errors";
@@ -178,11 +180,27 @@ export async function recordPurchasePayment(
     });
 
     // Link back to the delivery this payment settles, if one was picked.
+    // `updateMany` with `purchasePaymentId: null` in the `where` (not a
+    // blind `update`) makes this a compare-and-swap: the read above and
+    // this write are two separate statements, so two concurrent payments
+    // racing to match the same receipt could otherwise both pass the read
+    // and both try to link, with the second silently overwriting the
+    // first's match. Guarding the write on the column still being null
+    // means only one of the two can ever win the link — the loser's
+    // `matchedCount` is 0 here, which the receipt-side sibling
+    // (`receiptLineCore`) already treats as a real conflict to surface.
     if (matchedReceiptId) {
-      await tx.stockMovement.update({
-        where: { id: matchedReceiptId },
+      const { count } = await tx.stockMovement.updateMany({
+        where: { id: matchedReceiptId, purchasePaymentId: null },
         data: { purchasePaymentId: movement.id },
       });
+      if (count === 0) {
+        throw new DomainError(
+          "CONFLICT",
+          "That delivery is already matched to a payment.",
+          "purchaseReceiptId",
+        );
+      }
     }
 
     return movement;
@@ -232,6 +250,22 @@ async function receiptLineCore(
       throw new DomainError(
         "NOT_FOUND",
         "The linked purchase payment does not exist.",
+        "purchasePaymentId",
+      );
+    }
+    // A payment may only ever back one receipt. Unlike the payment-side
+    // match (`recordPurchasePayment`, which links an EXISTING receipt
+    // row via `updateMany`), this receipt carries the link at create
+    // time, so the guard is "does another receipt already claim this
+    // payment?" rather than a compare-and-swap on this row.
+    const alreadyClaimed = await tx.stockMovement.findFirst({
+      where: { movementType: "purchase_receipt", purchasePaymentId: linkedId },
+      select: { id: true },
+    });
+    if (alreadyClaimed) {
+      throw new DomainError(
+        "CONFLICT",
+        "That payment is already matched to a delivery.",
         "purchasePaymentId",
       );
     }
@@ -335,4 +369,124 @@ export async function recordPurchaseReceiptBatch(
   });
 
   return rows.map(toMovementView);
+}
+
+// ── Void a receipt ─────────────────────────────────────────────────────
+
+/**
+ * Fully reverse a `purchase_receipt` (ADR-15 — a void is a correction to
+ * zero, the receipt-side sibling of `voidPurchasePayment`). Admin any day;
+ * the original recorder while the day is still open
+ * (`assertActorMayCorrectOnDate` — same gate `correctMovement` uses).
+ *
+ * Writes a reversal `StockMovement` (`purchase_receipt`, `quantity =
+ * -currentDerivedQuantity`, `correctsMovementId` set) so the location's
+ * derived stock balance returns to what it was before this delivery.
+ *
+ * THE UNMATCH (the fix this exists for): when the receipt is matched to a
+ * `purchase_payment` (`purchasePaymentId` set), that payment's
+ * `correctPurchasePayment` / `voidPurchasePayment` guard refuses to touch
+ * it while a receipt is linked — "Unmatch or correct the delivery first."
+ * Until this function existed neither escape was real: nothing ever set
+ * `purchasePaymentId` back to `null`. Voiding the receipt now does exactly
+ * that, in the same transaction as the reversal row, so the payment
+ * reappears in `awaitingReceipt` and becomes correctable/voidable again.
+ * The link is cleared on the **original** receipt row (never mutated in
+ * amount — this is the same metadata-only touch `recordPurchasePayment`
+ * already makes when it links a receipt, not a violation of the
+ * append-only rule, which governs ledger amounts).
+ */
+export async function voidPurchaseReceipt(
+  input: VoidPurchaseReceiptInput,
+  actor: ActorContext,
+): Promise<StockMovementView> {
+  const row = await prisma.$transaction(async (tx) => {
+    const original = await tx.stockMovement.findUnique({
+      where: { id: input.movementId },
+    });
+    if (!original) {
+      throw new DomainError("NOT_FOUND", "Delivery not found.", "movementId");
+    }
+    if (original.movementType !== "purchase_receipt") {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "That movement is not a purchase receipt.",
+        "movementId",
+      );
+    }
+    if (original.correctsMovementId !== null) {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "This row is itself a correction. Void the original delivery instead.",
+        "movementId",
+      );
+    }
+
+    await assertActorMayCorrectOnDate(
+      original.occurredAt,
+      actor,
+      original.recordedById,
+      tx,
+    );
+
+    const priorDeltas = await tx.stockMovement.aggregate({
+      _sum: { quantity: true },
+      where: { correctsMovementId: original.id },
+    });
+    const currentValue = original.quantity.add(priorDeltas._sum.quantity ?? 0);
+
+    if (currentValue.isZero()) {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "This delivery is already voided.",
+        "movementId",
+      );
+    }
+
+    const reversal = await tx.stockMovement.create({
+      data: {
+        productId: original.productId,
+        locationId: original.locationId,
+        movementType: "purchase_receipt",
+        quantity: currentValue.negated(),
+        recordedById: input.recordedById,
+        occurredAt: original.occurredAt,
+        // The reversal is its own row — it does not inherit the match; the
+        // unlink below clears it on the ORIGINAL so `awaitingReceipt` and
+        // `unmatchedReceipts` both read correctly off one row.
+        purchasePaymentId: null,
+        correctsMovementId: original.id,
+        note: original.note ? `Voided — ${original.note}` : "Voided",
+      },
+    });
+
+    // The unmatch: release the payment this receipt was linked to, if any,
+    // so it stops being blocked from correction/void and reappears as
+    // awaiting receipt.
+    if (original.purchasePaymentId !== null) {
+      await tx.stockMovement.update({
+        where: { id: original.id },
+        data: { purchasePaymentId: null },
+      });
+    }
+
+    await tx.auditLog.create({
+      data: {
+        userId: input.recordedById,
+        action: "soft_delete",
+        entityType: "stock_movement",
+        entityId: original.id,
+        oldValue: {
+          quantity: currentValue.toFixed(4),
+          purchasePaymentId: original.purchasePaymentId ?? "—",
+        },
+        newValue: { voided: true, reversalId: reversal.id },
+        occurredAt: original.occurredAt,
+      },
+    });
+
+    return reversal;
+  });
+
+  return toMovementView(row);
 }

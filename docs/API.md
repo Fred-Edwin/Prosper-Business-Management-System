@@ -241,7 +241,20 @@ decimal string, from this row's location's perspective), recordedById,
 occurredAt (ISO), reason, reasonNote, orderId, stockCountId,
 transferCounterpartLocationId, purchasePaymentId, purchaseSupplier,
 purchaseOrderedQty, purchaseTotalCost, purchasePaidFrom,
-correctsMovementId, note, derivedRevenue, createdAt, updatedAt }`.
+correctsMovementId, voided, note, derivedRevenue, createdAt, updatedAt }`.
+
+**`voided`** (`boolean | null`, added 2026-09-17 alongside `void-receipt`
+below) — `true` only on a `purchase_payment` or `purchase_receipt`
+**original** row (`correctsMovementId === null`) whose correction deltas
+have folded its current derived cost/quantity down to exactly zero (i.e.
+fully reversed by `voidPurchasePayment` / `voidPurchaseReceipt`); `false`
+for a live row (including one with a non-zero correction — a plain
+"Correct", not a void); `null` from every single-write endpoint (only
+this list read computes the fold). A voided original's `quantity` /
+`purchaseTotalCost` on this row already reflect the folded (zero) value
+— same "current state lives on the original" rule the correction-delta
+fold has always applied, the correction/reversal row itself is dropped
+from the list entirely, never returned as its own line.
 
 `derivedRevenue` (2dp decimal string | `null`) is set **only on a canteen
 derived `sale` row** (`movementType === "sale"` with a `stockCountId`): it
@@ -366,6 +379,54 @@ Body: `{ correctedQuantity (signed decimal string), note? }` — the
 Roles: if a `DayClose` exists for the original's business day → **Admin
 only** (`403` otherwise); if the day is still open → Admin **or the
 original recorder**. `delta = 0` → `400`.
+
+### `POST /api/stock-movements/:id/correct-purchase`
+Admin only. Body: `{ supplier?, orderedQty, cost, paidFromAccount, note? }`
+— the **corrected final** values of a `purchase_payment` row (ADR-15).
+The domain computes the cost delta against the payment's current derived
+value, writes an append-only correction row + the paired `MoneyMovement`
+delta(s), and resets the catalog `buyingPrice`. Returns `201`. `409
+CONFLICT` if a `purchase_receipt` is currently matched to this payment —
+void or correct the delivery first (`.../void-receipt` below releases the
+match).
+
+### `POST /api/stock-movements/:id/void-purchase`
+Admin only. No body. Fully reverses a `purchase_payment` (a correction to
+zero): a reversal row, a `MoneyMovement` refunding the paid-from account,
+and the catalog `buyingPrice` rolled back to what it was before. Returns
+`201`. Same `409 CONFLICT` as `correct-purchase` while a receipt is
+matched.
+
+### `POST /api/stock-movements/:id/void-receipt`
+Roles: **Admin** (any day) or **Store Manager / Canteen Attendant**
+(their own same-day entry) — gated by the same rule as `.../correct`
+(`assertActorMayCorrectOnDate`): closed day → Admin only; open day →
+Admin or the original recorder. No body. Fully reverses a
+`purchase_receipt` (a correction to zero, ADR-15): a reversal row with
+`quantity = -currentDerivedQuantity`. Returns `201`.
+
+**Added 2026-09-17 (F-1 fix)** — closes the matched-payment deadlock: when
+the receipt being voided is matched to a `purchase_payment`
+(`purchasePaymentId` set), voiding it also clears that link on the
+*original* receipt row, so the payment returns to `awaitingReceipt` and
+becomes correctable/voidable again via `correct-purchase` /
+`void-purchase` above. Before this endpoint existed, nothing ever cleared
+`purchasePaymentId` once set, so a matched pair could never be undone
+through the app.
+
+**Read-side follow-up (same day):** voiding writes a separate reversal
+row and never overwrites the original (ADR-15), so the read paths that
+decide "is this still a live/awaiting-receipt row" needed to fold the
+correction in too, or a voided payment/receipt looked exactly like a
+live one to the Admin and to staff. `GET /api/stock-movements/outstanding`
+now excludes a payment/receipt whose current derived cost/quantity has
+folded to zero — a voided payment no longer keeps pinning the "Review &
+receive" banner on the Store Manager / Canteen hub, and a voided
+unmatched receipt no longer shows as a real delivery awaiting a payment
+match. `GET /api/stock-movements` now sets `voided: true` on a folded-to-
+zero original (see the field's doc comment above) so the Admin Stock
+Purchases / Deliveries tables show a "Voided" status chip instead of a
+confusing zero-value live-looking row.
 
 ### `GET /api/stock-movements/outstanding`
 Roles: **Admin, Store Manager or Canteen Attendant** (`403` for every

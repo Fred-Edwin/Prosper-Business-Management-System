@@ -80,6 +80,7 @@ function mv(over: Partial<StockMovementView>): StockMovementView {
     purchaseTotalCost: null,
     purchasePaidFrom: null,
     correctsMovementId: null,
+    voided: null,
     note: "Transfer dispatched — awaiting receipt",
     derivedRevenue: null,
     productName: null,
