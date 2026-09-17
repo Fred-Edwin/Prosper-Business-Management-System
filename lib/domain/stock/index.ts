@@ -35,6 +35,7 @@ export {
   acceptTransfer,
   flagTransfer,
   recordTransferBatch,
+  recordCompletedTransfer,
   type RecordTransferBatchInput,
 } from "./transfer";
 export { correctMovement } from "./correct-movement";

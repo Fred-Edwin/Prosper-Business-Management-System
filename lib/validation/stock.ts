@@ -93,6 +93,12 @@ export const recordPurchaseReceiptSchema = z.object({
   locationId: id,
   quantity: magnitudeString,
   purchasePaymentId: id.nullable().optional(),
+  /**
+   * Admin Stock Ledger blank-cell backfill only (client request,
+   * 2026-09-17): backdates the row to this business date instead of now.
+   * Every other caller omits it. See `createStockMovementSchema` header.
+   */
+  businessDate: businessDate.optional(),
 });
 
 export const recordKitchenIssueSchema = z.object({
@@ -100,6 +106,8 @@ export const recordKitchenIssueSchema = z.object({
   productId: id,
   locationId: id,
   quantity: magnitudeString,
+  /** See `recordPurchaseReceiptSchema.businessDate`. */
+  businessDate: businessDate.optional(),
 });
 
 export const recordProductionSchema = z.object({
@@ -107,6 +115,8 @@ export const recordProductionSchema = z.object({
   productId: id,
   locationId: id,
   quantity: magnitudeString,
+  /** See `recordPurchaseReceiptSchema.businessDate`. */
+  businessDate: businessDate.optional(),
 });
 
 export const recordTransferSchema = z.object({
@@ -124,6 +134,22 @@ export const recordNonSaleConsumptionSchema = z.object({
   quantity: magnitudeString,
   reason: nonSaleReason,
   reasonNote: z.string().trim().min(1).nullable().optional(),
+  /** See `recordPurchaseReceiptSchema.businessDate`. */
+  businessDate: businessDate.optional(),
+});
+
+// POST /api/stock-movements/transfers/backfill — Admin Stock Ledger
+// blank-cell backfill for a transfer that already fully happened on a
+// past day (client request, 2026-09-17). Both legs are written together;
+// `businessDate` is required (unlike the single-record schemas above,
+// there is no "now" fallback for this endpoint — it only exists to
+// backdate).
+export const recordCompletedTransferSchema = z.object({
+  productId: id,
+  fromLocationId: id,
+  toLocationId: id,
+  quantity: magnitudeString,
+  businessDate,
 });
 
 /** The `POST /api/stock-movements` body — dispatched on `movementType`. */
@@ -257,3 +283,6 @@ export type RecordNonSaleConsumptionBody = z.infer<
 export type CorrectMovementBody = z.infer<typeof correctMovementSchema>;
 export type FlagTransferBody = z.infer<typeof flagTransferSchema>;
 export type ListMovementsQuery = z.infer<typeof listMovementsQuerySchema>;
+export type RecordCompletedTransferBody = z.infer<
+  typeof recordCompletedTransferSchema
+>;

@@ -83,7 +83,17 @@ export function rangeLabel(range: AdminDateRange): string {
   return `${shortBusinessDate(range.from)} – ${shortBusinessDateWithYear(range.to)}`;
 }
 
-export function useAdminDateRange(): {
+export function useAdminDateRange(
+  /**
+   * Seed the range from something other than "today" — e.g. a caller
+   * restoring state from the URL on mount (client report, 2026-09-17: a
+   * page refresh always reset the Stock Ledger to Today, losing the
+   * range/drill-in the user had open). Omitted (every existing caller)
+   * behaves exactly as before. Only read on the first render — like
+   * `today` below, this is a `useState` initializer, not a synced prop.
+   */
+  initialRange?: AdminDateRange,
+): {
   range: AdminDateRange;
   /** Switch to a preset (today / this week / this month). */
   setPreset: (preset: Exclude<RangePreset, "custom">) => void;
@@ -96,10 +106,13 @@ export function useAdminDateRange(): {
   today: string;
 } {
   const today = React.useMemo(() => nairobiToday(), []);
-  const [range, setRange] = React.useState<AdminDateRange>(() => ({
-    preset: "today",
-    ...resolvePreset("today", today),
-  }));
+  const [range, setRange] = React.useState<AdminDateRange>(
+    () =>
+      initialRange ?? {
+        preset: "today",
+        ...resolvePreset("today", today),
+      },
+  );
 
   const setPreset = React.useCallback(
     (preset: Exclude<RangePreset, "custom">) => {

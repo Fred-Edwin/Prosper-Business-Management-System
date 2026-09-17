@@ -14,7 +14,7 @@
 import type { LedgerRow, LedgerCell } from "@/components/kit/dense-ledger";
 import type { MovementType, StockMovementView } from "@/lib/domain/stock";
 import type { ProductWithLocations } from "@/lib/domain/catalog";
-import { addBusinessDays } from "@/lib/time";
+import { addBusinessDays, toBusinessDate } from "@/lib/time";
 
 const DASH: LedgerCell = { dash: true };
 
@@ -98,20 +98,43 @@ export type DeriveProductDaysInput = {
 /**
  * One row per business day in `[from, to]` inclusive, oldest first — the
  * period-summary's drill-in table for a single product/location.
+ *
+ * `cellMovements` mirrors `deriveLedgerRows`' map of the same name (keyed
+ * here by `businessDate` instead of `productId@locationId`, since a
+ * drill-in row is already scoped to one product/location) — the movement
+ * ids behind each column, so the drill-in can be a correction/record-entry
+ * target exactly like the single-day ledger (2026-09-17 client request:
+ * "why can't I edit from the drill-in?").
  */
-export function deriveProductDayRows(input: DeriveProductDaysInput): ProductDayRow[] {
+export function deriveProductDayRows(input: DeriveProductDaysInput): {
+  rows: ProductDayRow[];
+  cellMovements: Map<string, Partial<Record<string, string[]>>>;
+} {
   const { movements, from, to, closingByDay, product } = input;
   const costValue = costValueOf(product);
 
   const days: string[] = [];
   for (let d = from; d <= to; d = addBusinessDays(d, 1)) days.push(d);
 
-  return days.map((day) => {
+  const cellMovements = new Map<string, Partial<Record<string, string[]>>>();
+
+  const rows = days.map((day) => {
     const closing = num(closingByDay.get(day) ?? "0");
-    const dayMovements = movements.filter((m) => m.occurredAt.slice(0, 10) === day);
+    // Bug fix (2026-09-17 client report): a raw `occurredAt.slice(0, 10)`
+    // string compare bucketed a row by its UTC calendar date, not its
+    // Africa/Nairobi business date — a row recorded for the FIRST instant
+    // of a business day (businessDateStartUtc, 21:00 UTC the prior
+    // calendar date) landed one day early and never showed on the row the
+    // user had just saved it to. `toBusinessDate` is the one correct
+    // UTC→Nairobi-business-date conversion (see lib/time) — every other
+    // movement-to-day grouping in this codebase already goes through it.
+    const dayMovements = movements.filter(
+      (m) => toBusinessDate(new Date(m.occurredAt)) === day,
+    );
 
     const col = ZERO_SUMS();
     const correctedCols = new Set<string>();
+    const perCell: Partial<Record<string, string[]>> = {};
     for (const m of dayMovements) {
       const target = COLUMN_FOR_TYPE[m.movementType];
       if (!target) continue;
@@ -119,8 +142,10 @@ export function deriveProductDayRows(input: DeriveProductDaysInput): ProductDayR
       const columnKey: keyof LedgerColumnSums =
         target === "transfer" ? (q >= 0 ? "transferIn" : "transferOut") : target;
       col[columnKey] += q;
+      (perCell[columnKey] ??= []).push(m.id);
       if (m.correctsMovementId) correctedCols.add(columnKey);
     }
+    cellMovements.set(day, perCell);
 
     const opening =
       closing -
@@ -151,4 +176,6 @@ export function deriveProductDayRows(input: DeriveProductDaysInput): ProductDayR
       closingValue: valueCell(closingValue),
     };
   });
+
+  return { rows, cellMovements };
 }

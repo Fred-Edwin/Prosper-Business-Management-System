@@ -5,9 +5,12 @@ import {
   recordTransferBatch,
   acceptTransfer,
   flagTransfer,
+  recordCompletedTransfer,
 } from "./transfer";
 import { setOpeningStock } from "./opening-stock";
 import { getDerivedStockBalance } from "./derived-balance";
+import { closeDay, reopenDay } from "@/lib/domain/audit";
+import { toBusinessDate } from "@/lib/time";
 import { DomainError } from "./errors";
 import {
   cleanupStockTestData,
@@ -396,5 +399,107 @@ describe("recordTransfer (2-phase)", () => {
       field: "fromLocationId",
     });
     expect(await countRows(p)).toBe(before);
+  });
+
+  describe("recordCompletedTransfer (Admin ledger blank-cell backfill)", () => {
+    it("writes both legs together, dated to businessDate, linked like an accepted transfer", async () => {
+      const { restaurant, canteen } = ctx.locationIds;
+      const productId = await freshProductWithOpening("100", restaurant);
+
+      const { dispatch, receipt } = await recordCompletedTransfer({
+        productId,
+        fromLocationId: restaurant,
+        toLocationId: canteen,
+        quantity: "15",
+        businessDate: "2026-08-05",
+        recordedById: ctx.adminId,
+        actorRole: "admin",
+      });
+
+      expect(dispatch.quantity).toBe("-15.0000");
+      expect(dispatch.locationId).toBe(restaurant);
+      expect(receipt.quantity).toBe("15.0000");
+      expect(receipt.locationId).toBe(canteen);
+      expect(receipt.correctsMovementId).toBe(dispatch.id);
+      expect(toBusinessDate(new Date(dispatch.occurredAt))).toBe("2026-08-05");
+      expect(toBusinessDate(new Date(receipt.occurredAt))).toBe("2026-08-05");
+
+      const fromBal = await getDerivedStockBalance({ productId, locationId: restaurant });
+      const toBal = await getDerivedStockBalance({ productId, locationId: canteen });
+      expect(fromBal.quantity).toBe("85.0000");
+      expect(toBal.quantity).toBe("15.0000");
+    });
+
+    it("Admin may backfill on an already-closed day; a non-admin role is blocked", async () => {
+      const { restaurant, canteen } = ctx.locationIds;
+      const productId = await freshProductWithOpening("50", restaurant);
+      const closedDate = "2026-08-06";
+
+      await closeDay(closedDate, ctx.adminId);
+      try {
+        await expect(
+          recordCompletedTransfer({
+            productId,
+            fromLocationId: restaurant,
+            toLocationId: canteen,
+            quantity: "5",
+            businessDate: closedDate,
+            recordedById: ctx.recorderId,
+            actorRole: "store_manager",
+          }),
+        ).rejects.toMatchObject({ constructor: DomainError, code: "FORBIDDEN" });
+
+        const { dispatch } = await recordCompletedTransfer({
+          productId,
+          fromLocationId: restaurant,
+          toLocationId: canteen,
+          quantity: "5",
+          businessDate: closedDate,
+          recordedById: ctx.adminId,
+          actorRole: "admin",
+        });
+        expect(dispatch.quantity).toBe("-5.0000");
+      } finally {
+        await reopenDay(closedDate, ctx.adminId);
+      }
+    });
+
+    it("rejects the same from/to location", async () => {
+      const { restaurant } = ctx.locationIds;
+      const productId = await freshProductWithOpening("10", restaurant);
+      await expect(
+        recordCompletedTransfer({
+          productId,
+          fromLocationId: restaurant,
+          toLocationId: restaurant,
+          quantity: "1",
+          businessDate: "2026-08-05",
+          recordedById: ctx.adminId,
+          actorRole: "admin",
+        }),
+      ).rejects.toMatchObject({
+        constructor: DomainError,
+        code: "VALIDATION_ERROR",
+      });
+    });
+
+    it("blocks a removal that would drive the from-balance negative", async () => {
+      const { restaurant, canteen } = ctx.locationIds;
+      const productId = await freshProductWithOpening("10", restaurant);
+      await expect(
+        recordCompletedTransfer({
+          productId,
+          fromLocationId: restaurant,
+          toLocationId: canteen,
+          quantity: "999",
+          businessDate: "2026-08-05",
+          recordedById: ctx.adminId,
+          actorRole: "admin",
+        }),
+      ).rejects.toMatchObject({
+        constructor: DomainError,
+        code: "VALIDATION_ERROR",
+      });
+    });
   });
 });

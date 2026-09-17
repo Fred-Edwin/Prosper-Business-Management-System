@@ -170,6 +170,10 @@ export type RecordPurchaseReceiptInput = {
   /** Optional link back to a `purchase_payment` row. Validated if given. */
   purchasePaymentId?: string | null;
   recordedById: string;
+  /** See `RecordKitchenIssueInput.businessDate`. */
+  businessDate?: string;
+  actorRole?: Role;
+  allowAdminBackfill?: boolean;
 };
 
 export type RecordKitchenIssueInput = {
@@ -179,6 +183,15 @@ export type RecordKitchenIssueInput = {
   /** Unsigned magnitude; stored as `-quantity`. */
   quantity: string;
   recordedById: string;
+  /**
+   * Backdate the row to this business date (Admin Stock Ledger blank-cell
+   * backfill, client request 2026-09-17). Omitted → now, exactly as
+   * before. Only the Admin ledger backfill path sets this + `actorRole` +
+   * `allowAdminBackfill` together.
+   */
+  businessDate?: string;
+  actorRole?: Role;
+  allowAdminBackfill?: boolean;
 };
 
 export type RecordProductionInput = {
@@ -189,6 +202,10 @@ export type RecordProductionInput = {
   /** Unsigned magnitude; stored as `+quantity`. */
   quantity: string;
   recordedById: string;
+  /** See `RecordKitchenIssueInput.businessDate`. */
+  businessDate?: string;
+  actorRole?: Role;
+  allowAdminBackfill?: boolean;
 };
 
 export type RecordTransferInput = {
@@ -198,6 +215,26 @@ export type RecordTransferInput = {
   /** Unsigned magnitude moved. */
   quantity: string;
   recordedById: string;
+};
+
+export type RecordCompletedTransferInput = {
+  productId: string;
+  fromLocationId: string;
+  toLocationId: string;
+  /** Unsigned magnitude moved. */
+  quantity: string;
+  recordedById: string;
+  /**
+   * Admin Stock Ledger blank-cell backfill only (client request,
+   * 2026-09-17): records a transfer that already fully happened on a
+   * past day — both the dispatch and receipt legs are written together,
+   * dated to this business date, skipping the pending/in-transit state
+   * `recordTransfer` + `acceptTransfer` normally go through. There is no
+   * "phase 2" to complete later; this is for a transfer that was simply
+   * never logged, not a live one.
+   */
+  businessDate: string;
+  actorRole?: Role;
 };
 
 export type AcceptTransferInput = {
@@ -232,6 +269,10 @@ export type RecordNonSaleConsumptionInput = {
   /** Required iff `reason === "other"`. */
   reasonNote?: string | null;
   recordedById: string;
+  /** See `RecordKitchenIssueInput.businessDate`. */
+  businessDate?: string;
+  actorRole?: Role;
+  allowAdminBackfill?: boolean;
 };
 
 export type CorrectMovementInput = {

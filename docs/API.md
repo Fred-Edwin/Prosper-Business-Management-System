@@ -270,11 +270,22 @@ applies the sign.
 
 - `opening` — Admin. `{ movementType: "opening", productId, locationId, quantity }`. Writes an `opening` row at the start of the business's **Day 1** — the date is **pinned server-side** (`resolveOpeningDay`, ADR-70) and is *not* chooseable. `businessDate` is still accepted for backwards compatibility but **ignored**. A second call for the same product/location is a **correction** of the first (ADR-15), not a duplicate — and lands on Day 1, never on the day it was submitted. (Before ADR-70 the caller supplied the date and the screen sent *today*, so a later entry wrote a second, mid-history opening: the correction lookup missed it and COGS was dragged negative.)
 - `purchase_payment` — Admin. `{ movementType: "purchase_payment", productId, locationId, supplier, quantity, cost, paidFromAccount: "cash" | "mpesa_bank" }`. **No stock effect** (row stored with `quantity = 0`). `supplier` / `quantity` / `cost` / `paidFromAccount` are persisted to the real `purchaseSupplier` / `purchaseOrderedQty` / `purchaseTotalCost` / `purchasePaidFrom` columns (ADR-46 §3); a human `note` sentence is also composed for display. `supplier` is a plain string, same as before — the payment-drawer UI now populates it by selecting from `GET /api/suppliers` (with an inline "+ Add new supplier" affordance) instead of free typing, but the API contract is unchanged (2026-09-17 client feedback — see "Suppliers & Vendors" above). A paired **`−cost` `MoneyMovement`** is written (`sourceType = "purchase_payment"`, account = `paidFromAccount`) — resolved in M2 Session 4 (was the M1 `TODO(mock)`). The **payment-drawer product picker shows `ingredient` + `goods` only** (a `dish` is never purchased — ADR-33); the API does not reject a `dish` productId, the UI just never offers one.
-- `purchase_receipt` — Store Manager (Store + Restaurant) / Canteen Attendant (Canteen) — scoped by **destination**, not by the caller's own location (ADR-69). `{ movementType: "purchase_receipt", productId, locationId, quantity, purchasePaymentId? }`. `+quantity` at `locationId`. `purchasePaymentId`, if given, must reference a real `purchase_payment` row → `404` otherwise.
-- `issue` — Store Manager. `{ movementType: "issue", productId, locationId, quantity }`. `−quantity` at the Store (Store → cooking; single row).
-- `production` — Store Manager. `{ movementType: "production", productId, locationId, quantity }`. `+quantity` at `locationId`, which **must be a `restaurant` location**; `productId` **must be `kind = "dish"`** → `400` otherwise.
+- `purchase_receipt` — Store Manager (Store + Restaurant) / Canteen Attendant (Canteen) — scoped by **destination**, not by the caller's own location (ADR-69). `{ movementType: "purchase_receipt", productId, locationId, quantity, purchasePaymentId?, businessDate? }`. `+quantity` at `locationId`. `purchasePaymentId`, if given, must reference a real `purchase_payment` row → `404` otherwise.
+- `issue` — Store Manager. `{ movementType: "issue", productId, locationId, quantity, businessDate? }`. `−quantity` at the Store (Store → cooking; single row).
+- `production` — Store Manager. `{ movementType: "production", productId, locationId, quantity, businessDate? }`. `+quantity` at `locationId`, which **must be a `restaurant` location**; `productId` **must be `kind = "dish"`** → `400` otherwise.
 - `transfer` — Store Manager / Canteen Attendant. `{ movementType: "transfer", productId, fromLocationId, toLocationId, quantity }`. **Phase 1 of 2:** writes the `−quantity` dispatch row at `fromLocationId` only (stock leaves now; `toLocationId` in `transferCounterpartLocationId`). Same from/to → `400`. Completed by `POST .../:id/accept`.
-- `non_sale_consumption` — Admin / Store Manager / Canteen Attendant, location-scoped. `{ movementType: "non_sale_consumption", productId, locationId, quantity, reason, reasonNote? }`. `−quantity`. `reason` ∈ `staff_meal | complimentary | spoiled | damaged | other`; `reasonNote` **required iff `reason = "other"`** → `400` on `reasonNote`.
+- `non_sale_consumption` — Admin / Store Manager / Canteen Attendant, location-scoped. `{ movementType: "non_sale_consumption", productId, locationId, quantity, reason, reasonNote?, businessDate? }`. `−quantity`. `reason` ∈ `staff_meal | complimentary | spoiled | damaged | other`; `reasonNote` **required iff `reason = "other"`** → `400` on `reasonNote`.
+
+**`businessDate` (Admin Stock Ledger blank-cell backfill, 2026-09-17):**
+optional on `purchase_receipt` / `issue` / `production` /
+`non_sale_consumption` only. Backdates the row instead of writing to now.
+**Ignored for any role other than Admin** — a non-admin's `businessDate`
+is silently dropped and the row lands at now, exactly as before this
+field existed. For Admin, supplying it also allows the write on an
+**already-closed day** (`assertDayOpenOrAdminBackfill` — the one
+deliberate exception to the closed-day block every other create path
+still enforces for everyone, Admin included). Without `businessDate`,
+behavior for every role is unchanged.
 
 ### Batch movement endpoints — `POST /api/stock-movements/<type>/batch`
 
@@ -330,6 +341,21 @@ Admin.
   `201`. Stock lands at the destination only now. Double-accept → `409`.
 - `{ "flag": true, "note": "..." }` → **flag a discrepancy**: records the
   note on the pending dispatch row, releases **no** stock. `200`.
+
+### `POST /api/stock-movements/transfers/backfill`
+Admin Stock Ledger blank-cell backfill (2026-09-17) — Admin only. For a
+transfer that already fully happened on a past day and was never logged
+at all, not a live transfer. `{ productId, fromLocationId, toLocationId,
+quantity, businessDate }` (`businessDate` **required**, no "now"
+fallback). Writes **both legs together** in one transaction, dated to
+`businessDate`, linked exactly like an ordinary `POST .../:id/accept` —
+there is no pending/in-transit phase, since both ends are being recorded
+as an already-settled fact. Allowed on an already-closed day (Admin only —
+`assertDayOpenOrAdminBackfill`). `201` with
+`{ "data": { "dispatch": StockMovementView, "receipt": StockMovementView } }`.
+Same from/to → `400`; over-stock at `fromLocationId` → `400`
+`VALIDATION_ERROR`. Deliberately separate from `POST /api/stock-movements`
+(`transfer`) + `.../accept` — those stay the live 2-phase flow, unchanged.
 
 ### `POST /api/stock-movements/:id/correct`
 Body: `{ correctedQuantity (signed decimal string), note? }` — the

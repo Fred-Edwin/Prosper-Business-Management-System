@@ -14,6 +14,19 @@ import type { PeriodSummaryRow } from "@/app/admin/stock/derive-period-summary";
 import type { ProductDayRow } from "@/app/admin/stock/derive-product-days";
 import type { FinancialSummary } from "@/lib/domain/financials";
 
+// ── next/navigation ─────────────────────────────────────────────────
+// URL state restoration (2026-09-17 client request): StockClient reads
+// its initial range/location/category/drill-in from the URL on mount and
+// writes them back via router.replace on every change, so a refresh or a
+// shared link restores the exact view instead of always resetting to
+// Today (client report — this used to be lost on every reload).
+const routerReplace = vi.hoisted(() => vi.fn());
+const initialSearchParams = vi.hoisted(() => ({ value: new URLSearchParams() }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: routerReplace, back: vi.fn() }),
+  useSearchParams: () => initialSearchParams.value,
+}));
+
 const singleDayHook = vi.hoisted(() => ({
   data: {
     movements: [] as unknown[],
@@ -54,6 +67,7 @@ const periodRowsBox = vi.hoisted(() => ({
 
 const dayRowsBox = vi.hoisted(() => ({
   rows: [] as ProductDayRow[],
+  cellMovements: new Map<string, Record<string, string[]>>(),
 }));
 
 const singleDayRowsBox = vi.hoisted(() => ({
@@ -61,6 +75,9 @@ const singleDayRowsBox = vi.hoisted(() => ({
   totals: undefined as unknown,
   cellMovements: new Map<string, Record<string, string[]>>(),
 }));
+
+const correctFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+const recordNonSaleFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 
 vi.mock("@/app/admin/stock/use-stock", async () => {
   const actual = await vi.importActual<
@@ -71,6 +88,11 @@ vi.mock("@/app/admin/stock/use-stock", async () => {
     useLedger: () => singleDayHook,
     usePeriodLedger: () => periodHook,
     useProductDayLedger: () => productDayHook,
+    stockApi: {
+      ...actual.stockApi,
+      correct: correctFn,
+      recordNonSaleConsumption: recordNonSaleFn,
+    },
   };
 });
 
@@ -92,7 +114,7 @@ vi.mock("@/app/admin/stock/derive-product-days", async () => {
   const actual = await vi.importActual<
     typeof import("@/app/admin/stock/derive-product-days")
   >("@/app/admin/stock/derive-product-days");
-  return { ...actual, deriveProductDayRows: () => dayRowsBox.rows };
+  return { ...actual, deriveProductDayRows: () => dayRowsBox };
 });
 
 const financialSummary = vi.hoisted(() => ({
@@ -171,6 +193,7 @@ function dayRow(businessDate: string, over: Partial<ProductDayRow> = {}): Produc
 
 beforeEach(() => {
   vi.clearAllMocks();
+  initialSearchParams.value = new URLSearchParams();
   singleDayHook.loading = false;
   singleDayHook.error = null;
   singleDayHook.data.movements = [];
@@ -190,7 +213,9 @@ beforeEach(() => {
 
   productDayHook.loading = false;
   productDayHook.error = null;
+  productDayHook.data = { movements: [], closingByDay: new Map() };
   dayRowsBox.rows = [dayRow("2026-09-01"), dayRow("2026-09-02")];
+  dayRowsBox.cellMovements = new Map();
 
   financialSummary.summary = {
     from: "2026-09-01",
@@ -341,5 +366,146 @@ describe("/admin/stock — period-summary drill-in", () => {
     const user = userEvent.setup();
     await toWeekView(user);
     expect(screen.getAllByText(/⚠ Beef Fillet \(kg\)/).length).toBeGreaterThan(0);
+  });
+});
+
+// ── Drill-in editing (2026-09-17 client request) ──────────────────────────
+// The day-by-day drill-in table was previously read-only — DenseLedger was
+// never wired with onCellClick there at all. It now supports the same
+// correct/blank-cell-record flow as the single-day ledger, keyed by each
+// row's own businessDate instead of the page-level date.
+describe("/admin/stock — drill-in editing", () => {
+  async function toDrillIn(user: ReturnType<typeof userEvent.setup>) {
+    renderScreen();
+    await user.click(screen.getAllByRole("radio", { name: "This week" })[0]);
+    await waitFor(() => {
+      expect(screen.getAllByText("Beef Fillet (kg)").length).toBeGreaterThan(0);
+    });
+    const row = screen.getAllByRole("button", {
+      name: /View day-by-day for Beef Fillet/,
+    })[0];
+    await user.click(row);
+    await waitFor(() =>
+      expect(screen.getAllByText("← Back to period summary").length).toBeGreaterThan(0),
+    );
+  }
+
+  it("clicking an existing movement cell in the drill-in opens the correction drawer", async () => {
+    dayRowsBox.rows = [
+      dayRow("2026-09-01", { purchases: { value: "+50.0", tone: "success" } }),
+    ];
+    dayRowsBox.cellMovements = new Map([["2026-09-01", { purchases: ["mv-1"] }]]);
+    productDayHook.data = {
+      movements: [
+        {
+          id: "mv-1",
+          productId: "prod-1",
+          locationId: "loc-store",
+          movementType: "purchase_receipt",
+          quantity: "50.0",
+          recordedById: "u1",
+          occurredAt: "2026-09-01T09:00:00.000Z",
+          reason: null,
+          reasonNote: null,
+          orderId: null,
+          stockCountId: null,
+          transferCounterpartLocationId: null,
+          purchasePaymentId: null,
+          purchaseSupplier: null,
+          purchaseOrderedQty: null,
+          purchaseTotalCost: null,
+          purchasePaidFrom: null,
+          correctsMovementId: null,
+          note: null,
+          createdAt: "",
+          updatedAt: "",
+        },
+      ],
+      closingByDay: new Map(),
+    };
+    const user = userEvent.setup();
+    await toDrillIn(user);
+
+    const cell = screen.getByRole("button", {
+      name: /Correct Purchases .* for Sep 1/,
+    });
+    await user.click(cell);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Adjust Row Movements")).toBeInTheDocument();
+  });
+
+  it("clicking a BLANK cell in the drill-in opens the record-entry drawer and saves", async () => {
+    dayRowsBox.rows = [dayRow("2026-09-01", { nonSale: CELL })];
+    dayRowsBox.cellMovements = new Map([["2026-09-01", {}]]);
+    productDayHook.data = { movements: [], closingByDay: new Map() };
+    recordNonSaleFn.mockResolvedValueOnce({});
+
+    const user = userEvent.setup();
+    await toDrillIn(user);
+
+    const cell = screen.getByRole("button", {
+      name: /Correct Non-Sale .* for Sep 1/,
+    });
+    await user.click(cell);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Record New Entry")).toBeInTheDocument();
+
+    const field = await within(dialog).findByLabelText(/Non-Sale/);
+    await user.type(field, "3");
+    await user.click(within(dialog).getByRole("button", { name: "Save Entry" }));
+
+    await waitFor(() => expect(recordNonSaleFn).toHaveBeenCalledOnce());
+    expect(recordNonSaleFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: "prod-1",
+        quantity: "3",
+        businessDate: "2026-09-01",
+      }),
+    );
+  });
+});
+
+// ── URL state restoration (2026-09-17 client request) ──────────────────
+describe("/admin/stock — URL state restoration", () => {
+  it("mounts on This Week and a location when the URL carries them (survives a refresh)", () => {
+    initialSearchParams.value = new URLSearchParams(
+      "preset=week&location=loc-store",
+    );
+    renderScreen();
+    const d = within(desktop());
+    // Week view renders the period-summary "View day-by-day" row buttons,
+    // not the single-day Date filter control.
+    expect(
+      d.getAllByRole("button", { name: /View day-by-day for Beef Fillet/ })
+        .length,
+    ).toBeGreaterThan(0);
+    const toolbar = within(
+      screen.getAllByRole("search", { name: "Filter the stock ledger" })[0],
+    );
+    expect(toolbar.queryByRole("button", { name: /Date:/ })).not.toBeInTheDocument();
+  });
+
+  it("mounts straight into a drill-in when the URL carries drillProduct/drillLocation", async () => {
+    initialSearchParams.value = new URLSearchParams(
+      "preset=week&drillProduct=prod-1&drillLocation=loc-store",
+    );
+    renderScreen();
+    expect(
+      (await screen.findAllByText("← Back to period summary")).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("writes the range back to the URL via router.replace on a preset change", async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await user.click(screen.getAllByRole("radio", { name: "This week" })[0]);
+    await waitFor(() => {
+      expect(routerReplace).toHaveBeenCalledWith(
+        expect.stringContaining("preset=week"),
+        expect.objectContaining({ scroll: false }),
+      );
+    });
   });
 });

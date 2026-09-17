@@ -1,8 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { businessDateStartUtc } from "@/lib/time";
+import { assertDayOpenOrAdminBackfill } from "@/lib/domain/audit";
 import type {
   AcceptTransferInput,
   FlagTransferInput,
+  RecordCompletedTransferInput,
   RecordTransferInput,
   StockMovementView,
 } from "./types";
@@ -127,6 +130,113 @@ export async function recordTransfer(
   });
 
   return toMovementView(row);
+}
+
+/**
+ * Admin Stock Ledger blank-cell backfill only (client request, 2026-09-17):
+ * record a transfer that already fully happened on a past business day,
+ * never observed by the app. Unlike `recordTransfer` + `acceptTransfer`
+ * (dispatch now, accept later, with a real pending/in-transit window),
+ * this writes **both legs together, in one transaction**, dated to
+ * `businessDate` — there is no phase 2 to complete later, because both
+ * ends of the movement are being backfilled at once as an already-settled
+ * fact. The two rows are linked the identical way `acceptTransfer` links
+ * them (`correctsMovementId` on the `+q` row pointing at the `-q` row), so
+ * every downstream read (`deriveIncomingTransfers`, the ledger grid) sees
+ * an ordinary already-accepted transfer — no variance, no pending banner.
+ *
+ * Gated by `assertDayOpenOrAdminBackfill`, not the plain
+ * `assertDayOpen` `writeMovementLine` uses — this is the one deliberate
+ * exception allowing Admin to write to an already-closed day. Not exposed
+ * to any other caller; `recordTransfer`/`acceptTransfer` are unchanged.
+ */
+export async function recordCompletedTransfer(
+  input: RecordCompletedTransferInput,
+): Promise<{ dispatch: StockMovementView; receipt: StockMovementView }> {
+  const qty = toMagnitude(input.quantity);
+
+  if (input.fromLocationId === input.toLocationId) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "A transfer needs two different locations.",
+      "toLocationId",
+    );
+  }
+
+  const occurredAt = businessDateStartUtc(input.businessDate);
+
+  const { dispatch, receipt } = await prisma.$transaction(async (tx) => {
+    await assertLocationExists(tx, input.fromLocationId, "fromLocationId");
+    await assertLocationExists(tx, input.toLocationId, "toLocationId");
+    await assertTransferLocations(tx, input.fromLocationId, input.toLocationId);
+    await assertProductExists(tx, input.productId);
+    await assertTransferableKind(tx, input.productId);
+    await assertDayOpenOrAdminBackfill(
+      occurredAt,
+      { role: input.actorRole ?? "" },
+      tx,
+    );
+    await assertRemovalWouldNotGoNegative(
+      tx,
+      input.productId,
+      input.fromLocationId,
+      qty,
+      "Product",
+    );
+
+    const dispatchRow = await tx.stockMovement.create({
+      data: {
+        productId: input.productId,
+        locationId: input.fromLocationId,
+        movementType: "transfer",
+        quantity: qty.negated(),
+        recordedById: input.recordedById,
+        occurredAt,
+        transferCounterpartLocationId: input.toLocationId,
+        note: "Transfer dispatched (backfilled)",
+      },
+    });
+
+    const receiptRow = await tx.stockMovement.create({
+      data: {
+        productId: input.productId,
+        locationId: input.toLocationId,
+        movementType: "transfer",
+        quantity: qty,
+        recordedById: input.recordedById,
+        occurredAt,
+        transferCounterpartLocationId: input.fromLocationId,
+        correctsMovementId: dispatchRow.id,
+        note: "Transfer received (backfilled)",
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId: input.recordedById,
+        action: "create",
+        entityType: "stock_movement",
+        entityId: dispatchRow.id,
+        newValue: {
+          action: "transfer_backfill",
+          movementType: "transfer",
+          productId: dispatchRow.productId,
+          fromLocationId: input.fromLocationId,
+          toLocationId: input.toLocationId,
+          quantity: qty.toFixed(4),
+          receiptId: receiptRow.id,
+        },
+        occurredAt,
+      },
+    });
+
+    return { dispatch: dispatchRow, receipt: receiptRow };
+  });
+
+  return {
+    dispatch: toMovementView(dispatch),
+    receipt: toMovementView(receipt),
+  };
 }
 
 // ── Batch (dispatch side only) ──────────────────────────────────────────

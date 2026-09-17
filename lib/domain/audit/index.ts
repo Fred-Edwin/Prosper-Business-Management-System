@@ -8,6 +8,7 @@ export * from "./types";
 export {
   isDayClosed,
   assertDayOpen,
+  assertDayOpenOrAdminBackfill,
   assertActorMayCorrectOnDate,
   assertStaffDateIsToday,
   type DateOrBusinessDate,

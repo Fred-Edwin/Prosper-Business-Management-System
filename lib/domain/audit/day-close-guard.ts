@@ -101,6 +101,28 @@ export async function assertDayOpen(
 }
 
 /**
+ * Like `assertDayOpen`, but an Admin may proceed on a closed day — the one
+ * deliberate exception, for backfilling a missing ledger entry from the
+ * Admin Stock Ledger's blank-cell "record new entry" flow (client request,
+ * 2026-09-17: she needs to add an entry that was never recorded on an
+ * already-closed day, not just correct one that exists).
+ *
+ * Every other actor is blocked exactly as `assertDayOpen` blocks them —
+ * this is a narrow, additive escape hatch for that one flow, not a change
+ * to `assertDayOpen` itself. Every other call site (money, payroll,
+ * handovers, orders, the rest of stock) keeps calling `assertDayOpen`
+ * unchanged.
+ */
+export async function assertDayOpenOrAdminBackfill(
+  value: DateOrBusinessDate,
+  actor: { role: string },
+  db: Db = prisma,
+): Promise<void> {
+  if (actor.role === "admin") return;
+  await assertDayOpen(value, db);
+}
+
+/**
  * The gate for a **correction** of an existing row (CONVENTIONS §4.6).
  *
  *   - Closed day  → only `role === "admin"` may proceed.

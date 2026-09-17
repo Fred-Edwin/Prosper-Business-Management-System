@@ -110,6 +110,48 @@ export type CorrectPurchasePaymentInput = {
   note?: string;
 };
 
+// ── Admin Stock Ledger blank-cell "record new entry" inputs (2026-09-17) ──
+// `businessDate` backdates the row; only meaningful for the Admin — the
+// route ignores it for any other role.
+
+export type RecordPurchaseReceiptInput = {
+  productId: string;
+  locationId: string;
+  quantity: string;
+  businessDate?: string;
+};
+
+export type RecordKitchenIssueInput = {
+  productId: string;
+  locationId: string;
+  quantity: string;
+  businessDate?: string;
+};
+
+export type RecordProductionInput = {
+  productId: string;
+  locationId: string;
+  quantity: string;
+  businessDate?: string;
+};
+
+export type RecordNonSaleConsumptionInput = {
+  productId: string;
+  locationId: string;
+  quantity: string;
+  reason: "staff_meal" | "complimentary" | "spoiled" | "damaged" | "other";
+  reasonNote?: string;
+  businessDate?: string;
+};
+
+export type RecordCompletedTransferInput = {
+  productId: string;
+  fromLocationId: string;
+  toLocationId: string;
+  quantity: string;
+  businessDate: string;
+};
+
 // ── Low-level API calls (no React state) ────────────────────────────────
 
 export const stockApi = {
@@ -206,6 +248,56 @@ export const stockApi = {
       method: "POST",
       body: JSON.stringify({ movementType: "purchase_payment", ...input }),
     });
+  },
+
+  /** Admin ledger blank-cell backfill — a Purchase(+) cell with no row yet. */
+  recordPurchaseReceipt(
+    input: RecordPurchaseReceiptInput,
+  ): Promise<StockMovementView> {
+    return request<StockMovementView>(`/api/stock-movements`, {
+      method: "POST",
+      body: JSON.stringify({ movementType: "purchase_receipt", ...input }),
+    });
+  },
+
+  /** Admin ledger blank-cell backfill — a Kitchen(-) cell with no row yet. */
+  recordKitchenIssue(input: RecordKitchenIssueInput): Promise<StockMovementView> {
+    return request<StockMovementView>(`/api/stock-movements`, {
+      method: "POST",
+      body: JSON.stringify({ movementType: "issue", ...input }),
+    });
+  },
+
+  /** Admin ledger blank-cell backfill — a Production(+) cell with no row yet. */
+  recordProduction(input: RecordProductionInput): Promise<StockMovementView> {
+    return request<StockMovementView>(`/api/stock-movements`, {
+      method: "POST",
+      body: JSON.stringify({ movementType: "production", ...input }),
+    });
+  },
+
+  /** Admin ledger blank-cell backfill — a Non-Sale(-) cell with no row yet. */
+  recordNonSaleConsumption(
+    input: RecordNonSaleConsumptionInput,
+  ): Promise<StockMovementView> {
+    return request<StockMovementView>(`/api/stock-movements`, {
+      method: "POST",
+      body: JSON.stringify({ movementType: "non_sale_consumption", ...input }),
+    });
+  },
+
+  /**
+   * Admin ledger blank-cell backfill — a Transfer In/Out cell with no row
+   * yet. Writes BOTH legs together, dated to `businessDate`; there is no
+   * pending/in-transit phase for this path (`recordCompletedTransfer`).
+   */
+  recordCompletedTransfer(
+    input: RecordCompletedTransferInput,
+  ): Promise<{ dispatch: StockMovementView; receipt: StockMovementView }> {
+    return request<{ dispatch: StockMovementView; receipt: StockMovementView }>(
+      `/api/stock-movements/transfers/backfill`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
   },
 
   listProducts(): Promise<ProductWithLocations[]> {

@@ -11,6 +11,7 @@ import {
 import {
   isDayClosed,
   assertDayOpen,
+  assertDayOpenOrAdminBackfill,
   assertActorMayCorrectOnDate,
 } from "./day-close-guard";
 import {
@@ -164,6 +165,29 @@ describe("Day Close domain (ADR-52)", () => {
         { userId: ctx.adminId, role: "admin" },
         ctx.staffId,
       );
+    });
+
+    it("assertDayOpenOrAdminBackfill: open day passes for everyone; closed day is admin-only", async () => {
+      // Open day — passes for staff and admin alike, same as assertDayOpen.
+      await assertDayOpenOrAdminBackfill(D2, { role: "store_manager" });
+      await assertDayOpenOrAdminBackfill(D2, { role: "admin" });
+
+      await closeDay(D1, ctx.adminId);
+
+      // Closed day — every non-admin role is still blocked, exactly as
+      // assertDayOpen blocks them.
+      await expect(
+        assertDayOpenOrAdminBackfill(D1, { role: "store_manager" }),
+      ).rejects.toMatchObject({ constructor: DomainError, code: "FORBIDDEN" });
+
+      // Closed day — admin is the one deliberate exception (backfill).
+      await assertDayOpenOrAdminBackfill(D1, { role: "admin" });
+
+      // assertDayOpen itself is untouched — still blocks admin on a closed day.
+      await expect(assertDayOpen(D1)).rejects.toMatchObject({
+        constructor: DomainError,
+        code: "FORBIDDEN",
+      });
     });
   });
 });

@@ -10,6 +10,17 @@ import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "@/components/kit/toast";
 import type { LedgerRow } from "@/components/kit/dense-ledger";
 
+// ── next/navigation ─────────────────────────────────────────────────
+// URL state restoration (2026-09-17 client request) — StockClient now
+// calls useRouter/useSearchParams to round-trip range/location/drill-in
+// through the query string. No test here asserts on the written URL
+// itself (that's covered by the derive-product-days / stock-client unit
+// logic); these are just enough to let the component mount.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const hook = vi.hoisted(() => ({
   data: {
     movements: [] as unknown[],
@@ -55,6 +66,11 @@ const rowsBox = vi.hoisted(() => ({
 }));
 
 const correctFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+const recordNonSaleFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+const setOpeningStockFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+const recordCompletedTransferFn = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({}),
+);
 
 vi.mock("@/app/admin/stock/use-stock", async () => {
   const actual = await vi.importActual<
@@ -65,7 +81,13 @@ vi.mock("@/app/admin/stock/use-stock", async () => {
     useLedger: () => hook,
     usePeriodLedger: () => periodHook,
     useProductDayLedger: () => productDayHook,
-    stockApi: { ...actual.stockApi, correct: correctFn },
+    stockApi: {
+      ...actual.stockApi,
+      correct: correctFn,
+      recordNonSaleConsumption: recordNonSaleFn,
+      setOpeningStock: setOpeningStockFn,
+      recordCompletedTransfer: recordCompletedTransferFn,
+    },
   };
 });
 
@@ -247,6 +269,118 @@ describe("/admin/stock — kit composition", () => {
 
     await waitFor(() => expect(correctFn).toHaveBeenCalledOnce());
     expect(await screen.findByText("Correction saved")).toBeInTheDocument();
+  });
+
+  it("clicking a BLANK movement cell opens the record-entry drawer, not the correction drawer", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+
+    // nonSale is a dash cell in makeRow's fixture — no movement behind it.
+    const cell = screen.getByRole("button", {
+      name: /Correct Non-Sale .* for Beef Fillet/,
+    });
+    await user.click(cell);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Record New Entry")).toBeInTheDocument();
+    // The correction drawer's title must NOT be the one that opened.
+    expect(within(dialog).queryByText("Adjust Row Movements")).not.toBeInTheDocument();
+  });
+
+  it("records a new entry from a blank Non-Sale cell and toasts on save", async () => {
+    recordNonSaleFn.mockResolvedValueOnce({});
+    renderScreen();
+    const user = userEvent.setup();
+
+    await user.click(
+      screen.getByRole("button", { name: /Correct Non-Sale .* for Beef Fillet/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+
+    const field = within(dialog).getByLabelText(/Non-Sale \(-\)/);
+    await user.type(field, "2");
+    await user.click(within(dialog).getByRole("button", { name: "Save Entry" }));
+
+    await waitFor(() => expect(recordNonSaleFn).toHaveBeenCalledOnce());
+    expect(recordNonSaleFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: "prod-1",
+        locationId: "loc-store",
+        quantity: "2",
+        reason: "staff_meal",
+        businessDate: expect.any(String),
+      }),
+    );
+    expect(await screen.findByText("Entry recorded")).toBeInTheDocument();
+  });
+
+  it("clicking the Opening cell opens the record-entry drawer and calls setOpeningStock", async () => {
+    setOpeningStockFn.mockResolvedValueOnce({});
+    renderScreen();
+    const user = userEvent.setup();
+
+    await user.click(
+      screen.getByRole("button", { name: "Correct Opening for Beef Fillet (kg)" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Record New Entry")).toBeInTheDocument();
+
+    const field = await within(dialog).findByLabelText(/^Opening/);
+    await user.type(field, "30");
+    await user.click(within(dialog).getByRole("button", { name: "Save Entry" }));
+
+    await waitFor(() => expect(setOpeningStockFn).toHaveBeenCalledOnce());
+    expect(setOpeningStockFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: "prod-1",
+        locationId: "loc-store",
+        quantity: "30",
+      }),
+    );
+  });
+
+  it("clicking a blank Sold cell shows an explanatory note, no drawer", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+
+    await user.click(
+      screen.getByRole("button", { name: "Correct Sold (-) for Beef Fillet (kg)" }),
+    );
+
+    expect(
+      (await screen.findAllByText(/Sales are recorded through Orders or Canteen stock counts/))[0],
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("records a blank Transfer In cell via recordCompletedTransfer, picking the other location", async () => {
+    recordCompletedTransferFn.mockResolvedValueOnce({});
+    renderScreen();
+    const user = userEvent.setup();
+
+    await user.click(
+      screen.getByRole("button", { name: "Correct Transfer In (+) for Beef Fillet (kg)" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Record New Entry")).toBeInTheDocument();
+
+    // Pick the "from" location — the fixture's other location, Restaurant.
+    await user.click(within(dialog).getByRole("combobox", { name: "From location" }));
+    await user.click(screen.getByRole("option", { name: "Restaurant" }));
+
+    const field = await within(dialog).findByLabelText(/^Transfer In/);
+    await user.type(field, "8");
+    await user.click(within(dialog).getByRole("button", { name: "Save Entry" }));
+
+    await waitFor(() => expect(recordCompletedTransferFn).toHaveBeenCalledOnce());
+    expect(recordCompletedTransferFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: "prod-1",
+        fromLocationId: "loc-rest",
+        toLocationId: "loc-store",
+        quantity: "8",
+      }),
+    );
   });
 });
 
