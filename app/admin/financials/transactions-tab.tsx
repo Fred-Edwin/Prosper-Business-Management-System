@@ -33,6 +33,7 @@ import type { Location, ProductWithLocations } from "@/lib/domain/catalog";
 import { stockApi } from "../stock/use-stock";
 import { PaymentDrawer } from "./payment-drawer";
 import { PurchasePaymentCorrectionDrawer } from "./purchase-payment-correction-drawer";
+import { ReceiptVoidDrawer } from "./receipt-void-drawer";
 import { HandoversView } from "./handovers-tab";
 
 export type TxTabKey = "purchases" | "deliveries" | "handovers";
@@ -118,6 +119,8 @@ export function TransactionsTab({
   const [drawerReceipt, setDrawerReceipt] =
     React.useState<StockMovementView | null>(null);
   const [correctTarget, setCorrectTarget] =
+    React.useState<StockMovementView | null>(null);
+  const [voidReceiptTarget, setVoidReceiptTarget] =
     React.useState<StockMovementView | null>(null);
   const [search, setSearch] = React.useState("");
 
@@ -380,6 +383,21 @@ export function TransactionsTab({
           </div>
         ),
     },
+    {
+      key: "action",
+      header: "",
+      width: "w-[90px] shrink-0",
+      align: "right",
+      render: (r) => (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setVoidReceiptTarget(r)}
+        >
+          Void
+        </Button>
+      ),
+    },
   ];
 
   const dateLabel =
@@ -497,6 +515,7 @@ export function TransactionsTab({
                 locationById={locationById}
                 unmatchedReceiptIds={unmatchedReceiptIds}
                 onRecordPayment={(r) => openDrawer(r)}
+                onVoid={setVoidReceiptTarget}
                 dateLabel={searchQuery ? "matching your search" : dateLabel}
               />
             )}
@@ -524,6 +543,15 @@ export function TransactionsTab({
           payment={correctTarget}
           product={productById.get(correctTarget.productId)}
           onClose={() => setCorrectTarget(null)}
+          onDone={refresh}
+        />
+      )}
+
+      {voidReceiptTarget && (
+        <ReceiptVoidDrawer
+          receipt={voidReceiptTarget}
+          product={productById.get(voidReceiptTarget.productId)}
+          onClose={() => setVoidReceiptTarget(null)}
           onDone={refresh}
         />
       )}
@@ -618,6 +646,7 @@ function MobileDeliveryCards({
   locationById,
   unmatchedReceiptIds,
   onRecordPayment,
+  onVoid,
   dateLabel,
 }: {
   rows: StockMovementView[];
@@ -625,6 +654,7 @@ function MobileDeliveryCards({
   locationById: Map<string, Location>;
   unmatchedReceiptIds: Set<string>;
   onRecordPayment: (receipt: StockMovementView) => void;
+  onVoid: (receipt: StockMovementView) => void;
   dateLabel: string;
 }) {
   if (rows.length === 0) {
@@ -662,19 +692,24 @@ function MobileDeliveryCards({
             <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
               {dest} · {fmtDate(r.occurredAt)}
             </div>
-            <div className="flex items-center gap-(--sp-4)">
-              <StatusChip variant={matched ? "success" : "warning"}>
-                {matched ? "Matched" : "Unmatched"}
-              </StatusChip>
-              {!matched && unmatchedReceiptIds.has(r.id) && (
-                <button
-                  type="button"
-                  onClick={() => onRecordPayment(r)}
-                  className="kit-interactive font-ui font-(--weight-medium) text-accent text-caption/micro"
-                >
-                  Record payment
-                </button>
-              )}
+            <div className="flex items-center justify-between gap-(--sp-4)">
+              <div className="flex items-center gap-(--sp-4)">
+                <StatusChip variant={matched ? "success" : "warning"}>
+                  {matched ? "Matched" : "Unmatched"}
+                </StatusChip>
+                {!matched && unmatchedReceiptIds.has(r.id) && (
+                  <button
+                    type="button"
+                    onClick={() => onRecordPayment(r)}
+                    className="kit-interactive font-ui font-(--weight-medium) text-accent text-caption/micro"
+                  >
+                    Record payment
+                  </button>
+                )}
+              </div>
+              <Button variant="secondary" size="sm" onClick={() => onVoid(r)}>
+                Void
+              </Button>
             </div>
           </div>
         );

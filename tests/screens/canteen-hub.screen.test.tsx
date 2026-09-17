@@ -36,6 +36,7 @@ const outstanding = vi.hoisted(() => ({
 }));
 const acceptFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 const flagFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+const voidReceiptFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 
 vi.mock("@/app/store-manager/use-staff-stock", async () => {
   const actual = await vi.importActual<
@@ -45,7 +46,12 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
     ...actual,
     useStaffStock: () => hook,
     useOutstandingDeliveries: () => outstanding,
-    stockApi: { ...actual.stockApi, acceptTransfer: acceptFn, flagTransfer: flagFn },
+    stockApi: {
+      ...actual.stockApi,
+      acceptTransfer: acceptFn,
+      flagTransfer: flagFn,
+      voidPurchaseReceipt: voidReceiptFn,
+    },
   };
 });
 
@@ -381,5 +387,54 @@ describe("/canteen hub — kit composition", () => {
     renderScreen();
     expect(screen.getByText("+48 kg")).toBeInTheDocument();
     expect(screen.getByText(/Transfer ·/)).toBeInTheDocument();
+  });
+
+  // ── F-1 fix: "Today's deliveries" void recovery path ────────────────
+  it("no 'Today's deliveries' section when there are no receipts today", () => {
+    renderScreen();
+    expect(screen.queryByText("Today's deliveries")).not.toBeInTheDocument();
+  });
+
+  it("lists today's receipts and voids one on confirm", async () => {
+    hook.data.movements = [
+      mv({
+        id: "rcpt-1",
+        movementType: "purchase_receipt",
+        quantity: "6.0000",
+        occurredAt: "2026-08-28T09:00:00Z",
+      }),
+    ];
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderScreen();
+    const user = userEvent.setup();
+
+    expect(screen.getByText("Today’s deliveries")).toBeInTheDocument();
+    expect(screen.getByText(/6 kg received/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Void delivery" }));
+
+    await waitFor(() => expect(voidReceiptFn).toHaveBeenCalledWith("rcpt-1"));
+    expect(hook.refresh).toHaveBeenCalled();
+    expect(await screen.findByText(/Delivery voided/)).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  it("declining the confirm dialog does not call the API", async () => {
+    hook.data.movements = [
+      mv({
+        id: "rcpt-1",
+        movementType: "purchase_receipt",
+        quantity: "6.0000",
+        occurredAt: "2026-08-28T09:00:00Z",
+      }),
+    ];
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderScreen();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Void delivery" }));
+
+    expect(voidReceiptFn).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 });

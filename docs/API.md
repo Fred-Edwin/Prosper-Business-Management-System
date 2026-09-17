@@ -367,6 +367,40 @@ Roles: if a `DayClose` exists for the original's business day → **Admin
 only** (`403` otherwise); if the day is still open → Admin **or the
 original recorder**. `delta = 0` → `400`.
 
+### `POST /api/stock-movements/:id/correct-purchase`
+Admin only. Body: `{ supplier?, orderedQty, cost, paidFromAccount, note? }`
+— the **corrected final** values of a `purchase_payment` row (ADR-15).
+The domain computes the cost delta against the payment's current derived
+value, writes an append-only correction row + the paired `MoneyMovement`
+delta(s), and resets the catalog `buyingPrice`. Returns `201`. `409
+CONFLICT` if a `purchase_receipt` is currently matched to this payment —
+void or correct the delivery first (`.../void-receipt` below releases the
+match).
+
+### `POST /api/stock-movements/:id/void-purchase`
+Admin only. No body. Fully reverses a `purchase_payment` (a correction to
+zero): a reversal row, a `MoneyMovement` refunding the paid-from account,
+and the catalog `buyingPrice` rolled back to what it was before. Returns
+`201`. Same `409 CONFLICT` as `correct-purchase` while a receipt is
+matched.
+
+### `POST /api/stock-movements/:id/void-receipt`
+Roles: **Admin** (any day) or **Store Manager / Canteen Attendant**
+(their own same-day entry) — gated by the same rule as `.../correct`
+(`assertActorMayCorrectOnDate`): closed day → Admin only; open day →
+Admin or the original recorder. No body. Fully reverses a
+`purchase_receipt` (a correction to zero, ADR-15): a reversal row with
+`quantity = -currentDerivedQuantity`. Returns `201`.
+
+**Added 2026-09-17 (F-1 fix)** — closes the matched-payment deadlock: when
+the receipt being voided is matched to a `purchase_payment`
+(`purchasePaymentId` set), voiding it also clears that link on the
+*original* receipt row, so the payment returns to `awaitingReceipt` and
+becomes correctable/voidable again via `correct-purchase` /
+`void-purchase` above. Before this endpoint existed, nothing ever cleared
+`purchasePaymentId` once set, so a matched pair could never be undone
+through the app.
+
 ### `GET /api/stock-movements/outstanding`
 Roles: **Admin, Store Manager or Canteen Attendant** (`403` for every
 other role; a location-bound staff user with no assigned location →

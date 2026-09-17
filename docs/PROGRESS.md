@@ -16,6 +16,75 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: Purchase payment/delivery matching — void deadlock + staff cancel UX (2026-09-17) — DONE
+
+Session audit of the two-way purchase-payment/delivery pipeline (either
+side can be recorded first; they match via `purchasePaymentId`). Found
+and fixed:
+
+1. **Matched-payment void deadlock.** `correctPurchasePayment` /
+   `voidPurchasePayment` refuse to touch a payment while a receipt is
+   matched to it, and say "unmatch or correct the delivery first" — but
+   nothing in the codebase ever cleared `purchasePaymentId` back to
+   `null`. A matched pair was permanently stuck once wrong (money left
+   the account with no way to reverse it in-app). Proved with a test
+   before fixing it.
+2. **No staff cancel/correct UX.** The domain already allowed a staff
+   member to correct their own same-day entry (`assertActorMayCorrectOnDate`)
+   but no screen ever called it — Store Manager / Canteen hubs were
+   read-only.
+3. **Match-write race.** `recordPurchasePayment`'s receipt-link write was
+   a blind `update`, not a compare-and-swap.
+
+**Domain (`lib/domain/stock/purchases.ts`):**
+- New `voidPurchaseReceipt(input, actor)` — reversal row to zero
+  (`correctsMovementId` set), gated by `assertActorMayCorrectOnDate`
+  (Admin any day; the original recorder same-day). When the receipt
+  carries a `purchasePaymentId`, clears it on the original row in the
+  same transaction — this is the actual unmatch the payment-side error
+  message has always pointed to.
+- `recordPurchasePayment`'s match write changed to
+  `updateMany({ where: { purchasePaymentId: null } })` + a `count === 0`
+  → `CONFLICT` check (was a blind `update`). `receiptLineCore`'s match
+  gained an equivalent "is this payment already claimed?" guard.
+
+**API:** new `POST /api/stock-movements/:id/void-receipt` (Admin /
+Store Manager / Canteen Attendant — ownership decided by the domain).
+
+**Frontend:**
+- `app/admin/financials/receipt-void-drawer.tsx` (new) — confirm-only
+  void drawer, wired into the Deliveries tab (desktop table + mobile
+  cards) alongside the existing payment correction drawer.
+- `app/store-manager/hub-client.tsx` / `app/canteen/hub-client.tsx` —
+  new "Today's deliveries" section (same reachable-minimum shape as the
+  Canteen hub's existing "Delete today's count"): lists today's own
+  receipts, "Void delivery" → confirm → API → toast → refresh. Composed
+  around the frozen `<ActivityTimeline>` kit component (not forked — it
+  has no row id or click hook).
+- `use-stock.ts` (admin) / `use-staff-stock.ts` (staff) gained
+  `voidPurchaseReceipt`; the staff client also gained a generic
+  `correct` call (the domain already permitted it, no client wired it).
+
+**Docs:** `docs/API.md` gained `correct-purchase` / `void-purchase` /
+`void-receipt` route docs (the first two were previously undocumented);
+`docs/DECISIONS.md` ADR-88.
+
+**Tests:** `lib/domain/stock/void-purchase-receipt.test.ts` (new, 7
+cases) — including the deadlock-fix proof (void the receipt → payment
+becomes voidable/correctable again). Screen coverage added to
+`store-manager-hub`, `canteen-hub`, and `financials.screen.test.tsx`.
+
+**Gate:** `pnpm typecheck` clean. `pnpm test` — full suite, 167 files /
+1455 tests, all green. `pnpm build` — clean, new
+`/api/stock-movements/[id]/void-receipt` route registered.
+
+**Out of scope this session:** a general correction UI for every
+movement type on the staff hubs (only the purchase-receipt void, the
+specific gap audited) — deliberately narrow, matching the "Delete
+today's count" precedent rather than a new kit pattern.
+
+---
+
 ## Feature: Stock Ledger blank-cell editing + Admin closed-day backfill (2026-09-17) — DONE
 
 Client feedback: the Admin has been going to the database directly (raw SQL

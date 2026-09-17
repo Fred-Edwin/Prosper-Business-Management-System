@@ -5247,3 +5247,136 @@ reload.
   feedback loop; read-once-on-mount + write-on-change is the simpler,
   already-proven shape (mirrors how `sales-client.tsx` handles its one
   `tab` URL param).
+
+## ADR-88: `voidPurchaseReceipt` closes the matched-payment deadlock; staff get an in-app void for their own same-day deliveries (Audit + client feedback, 2026-09-17)
+
+**Status:** DECIDED (maintenance — session audit of the two-way
+purchase-payment/delivery matching pipeline, 2026-09-17).
+
+**Context.** An audit of the purchase payment ⇄ delivery matching flow
+(PRD §4.2 — either side can be recorded first, `recordPurchasePayment` /
+`recordPurchaseReceipt` link the two via `purchasePaymentId` when both
+exist) found the correction/void side was one-directional and, in the
+matched case, a dead end:
+
+- `correctPurchasePayment` / `voidPurchasePayment` both refuse to touch a
+  payment while any `purchase_receipt` links to it — "Unmatch or correct
+  the delivery first." **Neither escape existed.** Grepping every write of
+  `purchasePaymentId` in the codebase found it set in two places
+  (`recordPurchasePayment`'s match, `receiptLineCore`'s match) and never
+  once cleared back to `null` — not by `correctMovement` (it copies the
+  field verbatim onto the delta row, so the guard's `findFirst` still
+  matched after a "correction"), not by anything else. A wrong payment
+  once matched to a receipt was **permanently unvoidable through the
+  app** — the money stayed stuck out of the cash/M-Pesa account. This is
+  why hand-written `docs/diagnostics/*.sql` files exist in the working
+  tree: the only escape was a direct database edit. Reproduced with a
+  failing-then-fixed test (`void-purchase-receipt.test.ts`, "unlinks a
+  matched payment on void…") before writing the fix.
+- Store Manager / Canteen Attendant had **no correction or void UX at
+  all**. The domain gate for a same-day self-correction already existed
+  and was correct (`assertActorMayCorrectOnDate` — Admin any day, the
+  original recorder on an open day; `POST /api/stock-movements/:id/correct`
+  accepts any signed-in user and lets the domain decide) — grepping both
+  staff hubs for correct/void/undo turned up nothing. The backend was
+  ready; no screen ever called it. A store manager who mis-keyed a
+  delivery quantity had no recourse but to phone the Admin.
+- The delivery side of the ledger-create-path (ADR-72: "a `recordX`
+  writing a stock/money ledger row is incomplete without a `correctX`")
+  was missing its void: `recordPurchasePayment` has both
+  `correctPurchasePayment` and `voidPurchasePayment`;
+  `recordPurchaseReceipt` had neither — only the generic, quantity-only
+  `correctMovement`, no dedicated void, and (see above) no unmatch.
+
+**Decision.**
+
+- **New `voidPurchaseReceipt`** (`lib/domain/stock/purchases.ts`), the
+  receipt-side sibling of `voidPurchasePayment` — same "correction to
+  zero" shape (a reversal `StockMovement` with
+  `quantity = -currentDerivedQuantity`, `correctsMovementId` set). Gated
+  by `assertActorMayCorrectOnDate`, the same rule `correctMovement` uses
+  (not admin-only, unlike `voidPurchasePayment` — a receipt has no money
+  effect, so there's no reason to withhold same-day self-service from the
+  role that already self-corrects quantities via `.../correct`). **The
+  fix itself:** when the receipt being voided carries a
+  `purchasePaymentId`, voiding it clears that link on the *original*
+  receipt row (a metadata-only touch, same category `flagTransfer` and
+  the payment-side match already make — not a violation of the
+  append-only rule, which governs ledger amounts, not link columns) —
+  so the payment returns to `awaitingReceipt` and becomes
+  correctable/voidable again. New endpoint `POST
+  /api/stock-movements/:id/void-receipt` (Admin / Store Manager / Canteen
+  Attendant — the domain decides ownership, the route only checks the
+  coarse role allowlist, same pattern as `.../accept`).
+- **Staff hubs gain a reachable "Today's deliveries" section** (Store
+  Manager and Canteen, `hub-client.tsx` in each) listing today's own
+  `purchase_receipt` rows with a "Void delivery" action:
+  `window.confirm` → `stockApi.voidPurchaseReceipt` → toast → refresh.
+  Deliberately the same reachable-minimum shape as the Canteen hub's
+  existing "Delete today's count" list (`voidStockCount`, F7-3) — not a
+  new kit component or a general correction UI. The frozen
+  `<ActivityTimeline>` kit component takes plain display rows with no id
+  and no click hook, so it could not be wired for this without forking
+  it (CLAUDE.md: the kit is frozen, a new pattern is an owner
+  conversation); this composes a small plain list *around* it in the
+  screen file instead, exactly the precedent `todaysCounts` already set.
+- **Admin gets a "Void" action on the Deliveries tab** of
+  `/admin/financials` (new `ReceiptVoidDrawer`, desktop table + mobile
+  cards), confirm-only (no corrected-value form — a receipt carries no
+  money, so reversing to zero is the whole action), sibling to the
+  existing `PurchasePaymentCorrectionDrawer`'s "Void this payment".
+- **Idempotency hardening on the match itself**, found while tracing the
+  deadlock: `recordPurchasePayment`'s "link an existing unmatched
+  receipt" write was a blind `tx.stockMovement.update`, not a
+  compare-and-swap — two concurrent payments racing to match the same
+  receipt could both pass the read-time "is it unmatched?" check and the
+  second would silently overwrite the first's link. Changed to
+  `updateMany({ where: { id, purchasePaymentId: null } })` and a `count
+  === 0` check throws `CONFLICT`. `receiptLineCore` (the receipt-side
+  match, set at create time rather than via update) gained the
+  equivalent guard — "does any receipt already claim this payment?" —
+  since a receipt's `purchasePaymentId` is written on create, not via a
+  subsequent update, so there was no existing row to compare-and-swap
+  against.
+
+**Consequences.**
+- The error message on `correctPurchasePayment` / `voidPurchasePayment`
+  ("Unmatch or correct the delivery first") is now **true** — voiding the
+  delivery is the unmatch path it always claimed existed.
+- `lib/domain/stock/void-purchase-receipt.test.ts` (new, 7 cases)
+  exercises the reversal, the double-void rejection, the
+  corrections-don't-chain guard, both day-close gate branches, and —
+  the two cases this ADR exists for — that voiding a matched receipt
+  frees the payment for both `voidPurchasePayment` and
+  `correctPurchasePayment`. `tests/screens/{store-manager,canteen}-hub`
+  and `tests/screens/financials.screen.test.tsx` gained coverage for the
+  new UI.
+- A residual narrow TOCTOU window remains on the match-time guards under
+  Postgres's default read-committed isolation (two transactions could
+  still both pass a read-time check before either commits) — the
+  `updateMany`/`findFirst` hardening closes the common case (the same
+  category of protection the rest of the codebase relies on for this
+  kind of race) without introducing a different transaction isolation
+  level than every other write path uses, which would be a bigger,
+  isolated change not scoped to this session.
+- `docs/API.md` gained `correct-purchase` / `void-purchase` /
+  `void-receipt` entries (the first two were previously undocumented).
+
+**Alternatives considered.**
+- *Let `correctPurchasePayment`/`voidPurchasePayment` silently unlink the
+  receipt themselves instead of requiring a separate void.* Rejected —
+  the payment side doesn't know whether the linked delivery is real (the
+  goods may actually have arrived); silently detaching a true receipt
+  from its payment on every correction would let the two drift apart
+  without the delivery ever being flagged wrong. Requiring the receipt to
+  be explicitly voided first keeps "this delivery didn't happen" an
+  honest, visible statement instead of a side effect.
+- *Fork `<ActivityTimeline>` to accept row ids and an `onRowClick`.*
+  Rejected — CLAUDE.md is explicit that the kit is frozen and a new
+  pattern is an owner conversation, not an in-session call; the
+  `todaysCounts`-style plain list already proved a composable path that
+  needs no kit change.
+- *Serializable transaction isolation for the match writes.* Rejected —
+  no other write path in the codebase changes isolation level; doing it
+  only here would be inconsistent and a bigger, separately-reviewable
+  change than the compare-and-swap hardening this session shipped.

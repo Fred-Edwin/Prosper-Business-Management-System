@@ -332,6 +332,41 @@ export const stockApi = {
     );
   },
 
+  /**
+   * Correct any stock movement's quantity to a new final value (ADR-15).
+   * The domain gate (`correctMovement`) is what actually decides who may:
+   * the original recorder while the day is still open, or an admin any
+   * time. `note` is optional context carried onto the correction row.
+   */
+  correct(
+    movementId: string,
+    correctedQuantity: string,
+    note?: string,
+  ): Promise<StockMovementView> {
+    return request<StockMovementView>(
+      `/api/stock-movements/${movementId}/correct`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          correctedQuantity,
+          note: note && note.trim() !== "" ? note.trim() : undefined,
+        }),
+      },
+    );
+  },
+
+  /**
+   * Fully reverse a `purchase_receipt` this staff member recorded today
+   * (or any day, for an admin). When the receipt is matched to a payment,
+   * this also releases that link.
+   */
+  voidPurchaseReceipt(movementId: string): Promise<StockMovementView> {
+    return request<StockMovementView>(
+      `/api/stock-movements/${movementId}/void-receipt`,
+      { method: "POST" },
+    );
+  },
+
   listProducts(): Promise<ProductWithLocations[]> {
     return request<ProductWithLocations[]>(`/api/products`);
   },

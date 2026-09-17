@@ -234,6 +234,19 @@ export const stockApi = {
     );
   },
 
+  /**
+   * Fully reverse a `purchase_receipt` (Admin any day; the original
+   * recorder while the day is still open). When the receipt is matched to
+   * a payment, this also releases that link — the payment returns to
+   * `awaitingReceipt` and becomes correctable/voidable again.
+   */
+  voidPurchaseReceipt(movementId: string): Promise<StockMovementView> {
+    return request<StockMovementView>(
+      `/api/stock-movements/${movementId}/void-receipt`,
+      { method: "POST" },
+    );
+  },
+
   setOpeningStock(input: OpeningStockInput): Promise<StockMovementView> {
     return request<StockMovementView>(`/api/stock-movements`, {
       method: "POST",

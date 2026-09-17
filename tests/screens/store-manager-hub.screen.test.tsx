@@ -24,6 +24,7 @@ const hook = vi.hoisted(() => ({
 }));
 const acceptFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 const flagFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+const voidReceiptFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 // Session 16: the hub reads real outstanding deliveries (it used to read
 // an empty `MOCK_PENDING_DELIVERIES` fixture, so the banner never showed).
 const outstanding = vi.hoisted(() => ({
@@ -45,6 +46,7 @@ vi.mock("@/app/store-manager/use-staff-stock", async () => {
       ...actual.stockApi,
       acceptTransfer: acceptFn,
       flagTransfer: flagFn,
+      voidPurchaseReceipt: voidReceiptFn,
     },
   };
 });
@@ -293,5 +295,78 @@ describe("/store-manager hub — kit composition", () => {
       screen.queryByText(/Purchase delivery pending/),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Quick store operations")).toBeInTheDocument();
+  });
+
+  // ── F-1 fix: "Today's deliveries" void recovery path ────────────────
+  it("no 'Today's deliveries' section when there are no receipts today", () => {
+    renderScreen();
+    expect(screen.queryByText("Today's deliveries")).not.toBeInTheDocument();
+  });
+
+  it("lists today's receipts and voids one on confirm", async () => {
+    hook.data.movements = [
+      mv({
+        id: "rcpt-1",
+        movementType: "purchase_receipt",
+        quantity: "10.0000",
+        occurredAt: "2026-08-28T09:00:00Z",
+      }),
+    ];
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderScreen();
+    const user = userEvent.setup();
+
+    expect(screen.getByText("Today’s deliveries")).toBeInTheDocument();
+    expect(screen.getByText(/10 pcs received/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Void delivery" }));
+
+    await waitFor(() => expect(voidReceiptFn).toHaveBeenCalledWith("rcpt-1"));
+    expect(hook.refresh).toHaveBeenCalled();
+    expect(await screen.findByText(/Delivery voided/)).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  it("declining the confirm dialog does not call the API", async () => {
+    hook.data.movements = [
+      mv({
+        id: "rcpt-1",
+        movementType: "purchase_receipt",
+        quantity: "10.0000",
+        occurredAt: "2026-08-28T09:00:00Z",
+      }),
+    ];
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderScreen();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Void delivery" }));
+
+    expect(voidReceiptFn).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("a correction row (already-voided receipt) is not listed again", () => {
+    hook.data.movements = [
+      mv({
+        id: "rcpt-1",
+        movementType: "purchase_receipt",
+        quantity: "10.0000",
+        occurredAt: "2026-08-28T09:00:00Z",
+      }),
+      mv({
+        id: "rcpt-1-reversal",
+        movementType: "purchase_receipt",
+        quantity: "-10.0000",
+        correctsMovementId: "rcpt-1",
+        occurredAt: "2026-08-28T09:05:00Z",
+      }),
+    ];
+    renderScreen();
+    // Both rows still land on the general timeline; only the ORIGINAL
+    // (non-correction) row gets a Void action.
+    expect(
+      screen.getAllByRole("button", { name: "Void delivery" }),
+    ).toHaveLength(1);
   });
 });

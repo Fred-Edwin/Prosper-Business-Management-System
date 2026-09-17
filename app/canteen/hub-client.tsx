@@ -40,12 +40,14 @@ import {
   useStaffStock,
   useOutstandingDeliveries,
   deriveIncomingTransfers,
+  stockApi,
 } from "@/app/store-manager/use-staff-stock";
 import {
   movementsToTimeline,
   todaysMovements,
   trimQty,
 } from "@/app/store-manager/staff-stock-format";
+import type { StockMovementView } from "@/lib/domain/stock";
 import {
   useDerivedSales,
   useStockCountActions,
@@ -73,6 +75,11 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
   });
   const { voidStockCount } = useStockCountActions();
   const [voidingId, setVoidingId] = React.useState<string | null>(null);
+  // Today's own deliveries, with a "Void" recovery path (F-1 fix, 2026-09-
+  // 17) — same reachable-minimum shape as "Delete today's count" below.
+  const [voidingReceiptId, setVoidingReceiptId] = React.useState<string | null>(
+    null,
+  );
 
   const todaysCounts = derivedToday.filter(
     (r) => r.stockCountId != null && r.lastCountedAt != null,
@@ -108,6 +115,9 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
     null;
 
   const incoming = deriveIncomingTransfers(data.movements, myLocationId);
+  const todaysReceipts = todaysMovements(data.movements).filter(
+    (m) => m.movementType === "purchase_receipt" && m.correctsMovementId === null,
+  );
   const timeline = movementsToTimeline(todaysMovements(data.movements), data.products);
   const incomingUnits = incoming.reduce(
     (sum, { movement }) =>
@@ -119,6 +129,31 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
     data.products.find((p) => p.id === id)?.name ?? "stock";
   const productUnit = (id: string) =>
     data.products.find((p) => p.id === id)?.unitLabel ?? "";
+
+  async function onVoidReceipt(receipt: StockMovementView) {
+    const qty = trimQty(receipt.quantity).replace("-", "");
+    const unit = productUnit(receipt.productId);
+    const ok = window.confirm(
+      `Void today's delivery of ${qty} ${unit} ${productName(
+        receipt.productId,
+      )}? This removes it from stock. Do a fresh receipt to replace it.`,
+    );
+    if (!ok) return;
+    setVoidingReceiptId(receipt.id);
+    try {
+      await stockApi.voidPurchaseReceipt(receipt.id);
+      toast(`Delivery voided · ${productName(receipt.productId)}`, {
+        tone: "info",
+      });
+      await refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Couldn't void the delivery.", {
+        tone: "danger",
+      });
+    } finally {
+      setVoidingReceiptId(null);
+    }
+  }
 
   // Deliveries awaiting receipt, once the read has settled cleanly.
   const pendingDeliveries =
@@ -217,6 +252,41 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
         </div>
         <ActionTileGrid tiles={tiles} className="w-full" />
       </div>
+
+      {todaysReceipts.length > 0 && (
+        <div className="flex flex-col gap-(--sp-4)">
+          <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-caption/micro">
+            Today&rsquo;s deliveries
+          </div>
+          <ul className="flex flex-col rounded-md border border-solid [border-color:var(--border-subtle)] overflow-hidden">
+            {todaysReceipts.map((r) => (
+              <li
+                key={r.id}
+                className="flex items-center justify-between gap-(--sp-4) px-(--sp-5) py-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)] last:border-b-0"
+              >
+                <div className="flex flex-col gap-px min-w-0">
+                  <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/sm">
+                    {productName(r.productId)}
+                  </span>
+                  <span className="font-ui [color:var(--text-secondary)] text-caption/micro">
+                    {trimQty(r.quantity).replace("-", "")} {productUnit(r.productId)}
+                    {" received"}
+                    {r.purchasePaymentId ? " · matched to a payment" : ""}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onVoidReceipt(r)}
+                  disabled={voidingReceiptId === r.id}
+                  className="font-ui font-(--weight-medium) text-danger text-caption/micro kit-focus-ring rounded-sm shrink-0 disabled:opacity-50"
+                >
+                  {voidingReceiptId === r.id ? "Voiding…" : "Void delivery"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {todaysCounts.length > 0 && (
         <div className="flex flex-col gap-(--sp-4)">

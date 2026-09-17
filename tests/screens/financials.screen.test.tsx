@@ -36,6 +36,7 @@ const api = vi.hoisted(() => ({
   recordPurchasePayment: vi.fn().mockResolvedValue(undefined),
   correctPurchasePayment: vi.fn().mockResolvedValue(undefined),
   voidPurchasePayment: vi.fn().mockResolvedValue(undefined),
+  voidPurchaseReceipt: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/app/admin/stock/use-stock", async () => {
@@ -667,6 +668,44 @@ describe("/admin/financials — Deliveries tab", () => {
     expect(
       within(dialog).getByRole("combobox", { name: /Product/ }),
     ).toHaveTextContent(/Rice Basmati/);
+  });
+
+  it("a delivery row has a Void action that opens a confirm drawer and calls voidPurchaseReceipt", async () => {
+    api.listMovements.mockImplementation(
+      ({ movementType }: { movementType: string }) =>
+        Promise.resolve(
+          movementType === "purchase_receipt"
+            ? [
+                movement({
+                  id: "rc1",
+                  movementType: "purchase_receipt",
+                  quantity: "46.0000",
+                  purchasePaymentId: "pp1",
+                }),
+              ]
+            : [],
+        ),
+    );
+    api.outstanding.mockResolvedValue({
+      awaitingReceipt: [],
+      unmatchedReceipts: [],
+    });
+    api.listProducts.mockResolvedValue([PROD_1]);
+    api.listLocations.mockResolvedValue([LOC_1]);
+    renderScreen();
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("tab", { name: "Deliveries" }));
+
+    const table = screen.getByRole("table");
+    await user.click(within(table).getByRole("button", { name: "Void" }));
+
+    const dialog = await screen.findByRole("dialog", { name: /Void Delivery/ });
+    // Matched-receipt context line only shows when purchasePaymentId is set.
+    expect(within(dialog).getByText(/matched to a payment/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Confirm void" }));
+
+    await waitFor(() => expect(api.voidPurchaseReceipt).toHaveBeenCalledWith("rc1"));
   });
 });
 

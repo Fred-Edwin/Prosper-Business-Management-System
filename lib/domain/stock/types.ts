@@ -307,6 +307,21 @@ export type CorrectPurchasePaymentInput = {
   recordedById: string;
 };
 
+/**
+ * Void a `purchase_receipt` row (ADR-15 — a void is a correction to zero,
+ * same shape as `voidPurchasePayment`). No body beyond who's asking and
+ * when: it reverses the row's quantity to zero and, if the receipt is
+ * matched to a payment, clears that payment's `purchasePaymentId` link so
+ * the payment returns to `awaitingReceipt` and becomes correctable/voidable
+ * again itself. Gated by `assertActorMayCorrectOnDate` — same rule as
+ * `correctMovement`: Admin any day, the original recorder on an open day.
+ */
+export type VoidPurchaseReceiptInput = {
+  /** The original `purchase_receipt` row being voided. */
+  movementId: string;
+  recordedById: string;
+};
+
 export type ListMovementsFilter = {
   productId?: string;
   locationId?: string;
