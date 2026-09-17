@@ -231,6 +231,14 @@ model Product {
   category    String?
   buyingPrice Decimal?    @map("buying_price") @db.Decimal(12, 2)
   unitLabel   String      @map("unit_label")
+  // Admin-set per-product reorder point (client feedback 2026-09-17).
+  // Nullable — unset behaves exactly like the pre-existing dashboard rule
+  // (flag at qty <= 0), so this is additive with no regression. Compared
+  // against `stockQty` (on-hand, summed across every location — the same
+  // grain Catalog already shows), not per-location; `ingredient`/`goods`
+  // only — a `dish`'s stock is derived from its recipe (ADR-33), never
+  // held directly, so a threshold on a dish would never mean anything.
+  lowStockThreshold Decimal? @map("low_stock_threshold") @db.Decimal(14, 4)
   deletedAt   DateTime?   @map("deleted_at")
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")

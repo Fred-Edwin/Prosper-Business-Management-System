@@ -65,6 +65,7 @@ const PRODUCTS: ProductWithLocations[] = [
     unitLabel: "kg",
     buyingPrice: null,
     category: null,
+    lowStockThreshold: null,
     deletedAt: null,
     createdAt: "",
     updatedAt: "",

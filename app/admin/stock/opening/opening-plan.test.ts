@@ -19,6 +19,7 @@ function product(
     unitLabel: "kg",
     buyingPrice: "10.00",
     category: null,
+    lowStockThreshold: null,
     deletedAt: null,
     createdAt: "",
     updatedAt: "",

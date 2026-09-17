@@ -64,6 +64,7 @@ export async function createProduct(
         unitLabel: core.unitLabel,
         buyingPrice: core.buyingPrice,
         category: input.category ?? null,
+        lowStockThreshold: core.lowStockThreshold,
         productLocations: {
           create: locationData.map((l) => ({
             locationId: l.locationId,

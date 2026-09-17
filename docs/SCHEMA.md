@@ -73,6 +73,7 @@ set — enforced in `createStaff`, not the DB.
 | kind | enum: `ingredient`, `dish`, `goods` |
 | buying_price | NUMERIC, nullable — Ingredient only. Dish is always `0` (see ADR-33) — its real cost is captured at the ingredient level, never per unit, to avoid double-counting. |
 | unit_label | e.g. kg, pcs, crate, ream |
+| low_stock_threshold | NUMERIC(14,4), nullable — reorder point (client feedback 2026-09-17). Unset falls back to the pre-existing `qty <= 0` rule. Forced to `null` for a dish (its stock is derived from its recipe, ADR-33, never held directly). Compared against different grains by different callers — see "Low Stock Threshold" in `docs/API.md`. |
 | deleted_at | nullable — soft-delete |
 
 ### `ProductLocation`

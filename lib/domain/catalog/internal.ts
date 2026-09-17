@@ -33,6 +33,9 @@ export function toProductView(
     unitLabel: row.unitLabel,
     buyingPrice: opts.stripBuyingPrice ? null : money(row.buyingPrice),
     category: row.category ?? null,
+    lowStockThreshold: row.lowStockThreshold
+      ? row.lowStockThreshold.toFixed(4).replace(/\.?0+$/, "")
+      : null,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -60,7 +63,13 @@ export function normaliseProductCore(input: {
   kind: "ingredient" | "dish" | "goods";
   unitLabel: string;
   buyingPrice?: string | null;
-}): { name: string; unitLabel: string; buyingPrice: Prisma.Decimal } {
+  lowStockThreshold?: string | null;
+}): {
+  name: string;
+  unitLabel: string;
+  buyingPrice: Prisma.Decimal;
+  lowStockThreshold: Prisma.Decimal | null;
+} {
   const name = input.name.trim();
   if (name.length === 0) {
     throw new DomainError("VALIDATION_ERROR", "Product name is required.", "name");
@@ -71,8 +80,15 @@ export function normaliseProductCore(input: {
     throw new DomainError("VALIDATION_ERROR", "Unit label is required.", "unitLabel");
   }
 
+  // A dish's stock is derived from its recipe (ADR-33) — never held
+  // directly — so a reorder point on one would never mean anything.
   if (input.kind === "dish") {
-    return { name, unitLabel, buyingPrice: new Prisma.Decimal(0) };
+    return {
+      name,
+      unitLabel,
+      buyingPrice: new Prisma.Decimal(0),
+      lowStockThreshold: null,
+    };
   }
 
   if (input.buyingPrice == null || input.buyingPrice === "") {
@@ -93,7 +109,27 @@ export function normaliseProductCore(input: {
     throw new DomainError("VALIDATION_ERROR", "Buying price cannot be negative.", "buyingPrice");
   }
 
-  return { name, unitLabel, buyingPrice };
+  let lowStockThreshold: Prisma.Decimal | null = null;
+  if (input.lowStockThreshold != null && input.lowStockThreshold !== "") {
+    try {
+      lowStockThreshold = new Prisma.Decimal(input.lowStockThreshold);
+    } catch {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "Low stock threshold must be a number.",
+        "lowStockThreshold",
+      );
+    }
+    if (lowStockThreshold.isNegative()) {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "Low stock threshold cannot be negative.",
+        "lowStockThreshold",
+      );
+    }
+  }
+
+  return { name, unitLabel, buyingPrice, lowStockThreshold };
 }
 
 /** Parse a submitted per-location selling price to a `Decimal | null`. */

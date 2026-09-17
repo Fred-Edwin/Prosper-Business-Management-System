@@ -10,6 +10,7 @@ const beef: ProductWithLocations = {
   unitLabel: "kg",
   buyingPrice: "580.00",
   category: null,
+  lowStockThreshold: null,
   deletedAt: null,
   createdAt: "",
   updatedAt: "",

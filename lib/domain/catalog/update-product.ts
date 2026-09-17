@@ -76,6 +76,7 @@ export async function updateProduct(
         unitLabel: core.unitLabel,
         buyingPrice: core.buyingPrice,
         category: input.category ?? null,
+        lowStockThreshold: core.lowStockThreshold,
       },
     });
 
