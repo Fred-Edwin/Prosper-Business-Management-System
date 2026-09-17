@@ -16,6 +16,7 @@ import { Drawer } from "@/components/kit/drawer";
 import { Button } from "@/components/kit/button";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
+import { ConfirmDialog } from "@/components/kit/confirm-dialog";
 import { useToast } from "@/components/kit/toast";
 import type { CustomerLedgerEntry } from "@/lib/domain/customers";
 import { useCustomerLedger } from "../use-customers";
@@ -55,8 +56,40 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
     recordRepayment,
     correctRepayment,
     voidRepayment,
+    archiveCustomer,
+    unarchiveCustomer,
   } = useCustomerLedger(customerId);
   const { toast } = useToast();
+
+  const [confirmingArchive, setConfirmingArchive] = React.useState(false);
+  const [archiveSubmitting, setArchiveSubmitting] = React.useState(false);
+
+  async function confirmArchive() {
+    if (archiveSubmitting) return;
+    setArchiveSubmitting(true);
+    try {
+      await archiveCustomer();
+      toast("Customer archived", { tone: "success" });
+      setConfirmingArchive(false);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not archive the customer.", {
+        tone: "danger",
+      });
+    } finally {
+      setArchiveSubmitting(false);
+    }
+  }
+
+  async function handleUnarchive() {
+    try {
+      await unarchiveCustomer();
+      toast("Customer restored", { tone: "success" });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not restore the customer.", {
+        tone: "danger",
+      });
+    }
+  }
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   // The repayment ledger entry currently open in the correction drawer.
   const [correcting, setCorrecting] =
@@ -163,8 +196,15 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
               Current-balance read-out + Record-repayment action right. */}
           <div className="flex items-start justify-between gap-(--sp-6) border-b border-b-solid [border-bottom-color:var(--border-subtle)] pb-(--sp-6)">
             <div className="flex flex-col gap-(--sp-1)">
-              <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
-                {loading ? "…" : ledger?.customer.name}
+              <div className="flex items-center gap-(--sp-3)">
+                <div className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-h1/h1">
+                  {loading ? "…" : ledger?.customer.name}
+                </div>
+                {ledger?.customer.archivedAt && (
+                  <span className="font-ui font-(--weight-semibold) uppercase [letter-spacing:0.03em] text-micro/micro [color:var(--text-tertiary)] px-[6px] py-[2px] rounded-sm border border-solid [border-color:var(--border-subtle)]">
+                    Archived
+                  </span>
+                )}
               </div>
               <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
                 {ledger?.customer.phone ?? ""}
@@ -183,9 +223,17 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
                   {loading ? "" : balanceText}
                 </span>
               </div>
-              <Button variant="primary" onClick={() => setDrawerOpen(true)}>
-                Record repayment
-              </Button>
+              <div className="flex items-center gap-(--sp-4)">
+                {ledger?.customer.archivedAt ? (
+                  <Button variant="secondary" onClick={() => void handleUnarchive()}>
+                    Unarchive
+                  </Button>
+                ) : (
+                  <Button variant="primary" onClick={() => setDrawerOpen(true)}>
+                    Record repayment
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -285,24 +333,77 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
         footer={null}
       >
         {ledger && (
-          <RepaymentForm
-            customerId={customerId}
-            balance={balance}
-            withNote
-            onSubmit={recordRepayment}
-            onDone={() => {
-              toast("Repayment recorded", { tone: "success" });
-              setDrawerOpen(false);
-            }}
-            renderFooter={(node) => (
-              <div className="flex items-center gap-(--sp-4) pt-(--sp-4)">
-                <Button variant="secondary" onClick={() => setDrawerOpen(false)}>
-                  Cancel
-                </Button>
-                {node}
+          <>
+            <RepaymentForm
+              customerId={customerId}
+              balance={balance}
+              withNote
+              onSubmit={recordRepayment}
+              onDone={() => {
+                toast("Repayment recorded", { tone: "success" });
+                setDrawerOpen(false);
+              }}
+              renderFooter={(node) => (
+                <div className="flex items-center gap-(--sp-4) pt-(--sp-4)">
+                  <Button variant="secondary" onClick={() => setDrawerOpen(false)}>
+                    Cancel
+                  </Button>
+                  {node}
+                </div>
+              )}
+            />
+
+            {/* Archive section — Assets' Edit-drawer danger-section pattern. */}
+            <div className="flex flex-col mt-[4px] pt-[20px] gap-[8px] border-t border-t-solid [border-top-color:var(--border-subtle)]">
+              <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:0.04em] [color:var(--text-tertiary)] text-caption/micro">
+                Archive this customer
               </div>
-            )}
-          />
+              <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
+                Hides them from the active list and blocks new credit orders.
+                Their history stays intact and they can be unarchived later.
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDrawerOpen(false);
+                  setConfirmingArchive(true);
+                }}
+                className="kit-interactive kit-focus-ring inline-flex self-start items-center h-[32px] mt-[2px] px-[4px] gap-[6px] shrink-0 rounded-sm"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
+                  <path
+                    d="M21 8v13H3V8"
+                    fill="none"
+                    stroke="var(--color-danger)"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M1 3h22v5H1z"
+                    fill="none"
+                    stroke="var(--color-danger)"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <line
+                    x1="10"
+                    y1="12"
+                    x2="14"
+                    y2="12"
+                    stroke="var(--color-danger)"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span className="font-ui font-(--weight-medium) text-danger text-sm/sm">
+                  Archive this customer…
+                </span>
+              </button>
+            </div>
+          </>
         )}
       </Drawer>
 
@@ -330,6 +431,22 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
           />
         )}
       </Drawer>
+
+      <ConfirmDialog
+        open={confirmingArchive}
+        onClose={() => setConfirmingArchive(false)}
+        onConfirm={confirmArchive}
+        title="Archive customer"
+        bodyCopy={
+          ledger
+            ? `Archive ${ledger.customer.name}? They'll be hidden from the ` +
+              `active list and can't be added to new credit orders. You can ` +
+              `unarchive them later.`
+            : ""
+        }
+        confirmLabel="Archive"
+        submitting={archiveSubmitting}
+      />
     </PageShell>
   );
 }

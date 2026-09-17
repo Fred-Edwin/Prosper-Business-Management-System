@@ -16,6 +16,109 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature: KPI strip + archive-only customer removal on Customers & Credit (2026-09-17) — DONE
+
+Client feedback: wanted a KPI strip on the Customers & Credit register
+(`/admin/customers`, like the ones now on Sales/Financials), and a way to
+delete or archive a customer they no longer deal with. See ADR-85 for the
+full reasoning.
+
+**Schema** — `Customer.deletedAt` (nullable, additive), migration
+`20260917054302_add_customer_archive`. Same widening-only shape as
+`Product.deletedAt`/`Asset.deletedAt` — no backfill.
+
+**Backend** (`lib/domain/customers`) — new `archive-customer.ts`
+(`archiveCustomer`/`unarchiveCustomer`, mirroring
+`archiveProduct`/`unarchiveProduct`; idempotent, `NOT_FOUND` if missing).
+**No hard-delete path** — `Customer`'s FK history
+(`Order`/`Debt`/`Repayment`) makes a guarded hard-delete essentially
+unreachable for any real customer, so archive is the only removal path.
+`listCustomers` gains `includeArchived` (defaults `false`) — archived
+customers are excluded everywhere by default, including the cashier's
+credit-order customer picker, so an archived customer can't be attached to
+new debt. `getCustomerLedger` is unaffected (archived customers' ledgers
+stay reachable by direct link). `CustomerListRow`/`Customer` both gained
+`archivedAt`. New routes `DELETE /api/customers/:id` (archive) and
+`POST /api/customers/:id?mode=unarchive` — **Admin only**, unlike the rest
+of this resource's Admin+Cashier routes.
+
+**Frontend**:
+- New `app/admin/customers/kpi-strip.tsx` (`CustomersKpiStrip`) — adapted
+  from `app/admin/sales/kpi-strip.tsx`'s house pattern, client-derived
+  from the `CustomerListRow[]` the register already holds (no new
+  endpoint), no scope selector. Four tiles: Total Outstanding, Customers
+  Owing, Credit in Hand, Oldest Unpaid Debt.
+- `customers-client.tsx`: KPI strip above the toolbar; new "Include
+  archived" filter toggle; a row action ("Record repayment" or, for an
+  archived row, "Unarchive"); archived rows get a dim + "Archived" tag
+  treatment (desktop table cell and mobile row) and no longer open the
+  repayment drawer on tap. Archive itself is **not** a row button — see
+  the correction below.
+- `customer-detail-client.tsx`: header gains an "Unarchive" action when
+  archived, and the same "Archived" tag. Archive itself is not a header
+  button — see the correction below.
+- `use-customers.ts`: `includeArchived` threaded through both hooks;
+  `archiveCustomer`/`unarchiveCustomer` added to both `useCustomers` and
+  `useCustomerLedger`.
+- New kit component **`components/kit/confirm-dialog.tsx`**
+  (`ConfirmDialog`) — an on-brand, reversible-action yes/no dialog, reusing
+  `FrictionDeleteDialog`'s shared overlay machinery but without its
+  retype-to-confirm gate or danger framing. Gates the Archive action on
+  both customer screens. See ADR-85 for why this was added.
+
+**Bug found in review, fixed same session**: the KPI strip was originally
+given its own `error`/`onRetry` props (mirroring the Sales strip) and
+rendered unconditionally, so a failed customer-list fetch produced two
+`role="alert"` `ErrorState`s on screen — the register's existing
+page-level one and the strip's own — which broke
+`admin-customers.screen.test.tsx`'s `getByRole("alert")` assertion.
+Simplified the strip to take only `customers` (no error prop) and gated
+its render in the screen with `{!error && <CustomersKpiStrip .../>}`.
+
+**Two corrections made live in the session, both driven by direct owner
+feedback while reviewing the running app:**
+
+1. The archive action first shipped gated by a native `window.confirm(...)`
+   (to avoid adding a new kit component without sign-off). The owner
+   rejected it on sight — it looked like browser chrome, not part of the
+   app. Replaced with the new `ConfirmDialog` kit component above; verified
+   in-browser (screenshot) that the replacement matches the app's dialog
+   styling (scrim, panel, button colors).
+2. "Archive" first shipped as a standalone button next to "Record
+   repayment" in the A1 table row, and in the A2 header. The owner
+   rejected this placement too — it looked disconnected from the rest of
+   the UI, asked "don't you think" it belonged in the sidebar drawer
+   instead. Moved into a danger section inside the existing "Record
+   repayment" rail drawer, below the form, matching the pattern Assets
+   already uses for its Delete action in the Edit drawer (heading +
+   description + inline danger-colored link button, `asset-drawer.tsx`).
+   See ADR-85 for the full reasoning and exact structure.
+
+**Tests**: new `archive-customer.test.ts` (archive/unarchive happy path,
+idempotency, `NOT_FOUND`); `customers.test.ts` extended for
+`includeArchived` default-false and opt-in behavior;
+`admin-customers.screen.test.tsx` extended for the KPI strip, the archive
+toggle, the Unarchive row/header action, and Archive — opening the
+repayment drawer, clicking "Archive this customer…" inside it, then
+confirming/cancelling the `ConfirmDialog`. Updated four existing test
+files' `CustomerListRow`/`Customer` fixture literals for the new
+`archivedAt` field (`cashier-customers.screen.test.tsx`,
+`cashier-orders.screen.test.tsx`, `financials.screen.test.tsx`,
+`new-order-client.tsx`'s quick-create).
+
+**Gate**: `pnpm typecheck` green. `pnpm test` green (162 files / 1399
+tests, after both corrections above). `pnpm build` green (initial pass;
+not rerun after the archive-relocation correction, which touched no new
+files — typecheck stayed clean). Manually verified in-browser
+(Playwright): add customer, KPI strip figures update, archive from inside
+the repayment drawer via the on-brand `ConfirmDialog` (toast + list/KPI
+update, drawer closes), "Include archived" toggle reveals the archived row
+with its tag, unarchive restores it, and `GET /api/customers` with vs.
+without `includeArchived=true` confirms the cashier credit-order picker's
+default call excludes the archived customer.
+
+---
+
 ## Feature: KPI strip + shared date-range control on Sales (2026-09-17) — DONE
 
 Client feedback: wanted "some stats or a KPI strip" on the Sales page

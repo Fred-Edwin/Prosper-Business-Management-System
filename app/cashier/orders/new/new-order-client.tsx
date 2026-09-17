@@ -662,6 +662,8 @@ function CustomerAttachSheet({
   onAttach: (c: CustomerListRow) => void;
 }) {
   const [search, setSearch] = React.useState("");
+  // `includeArchived` defaults to false — an archived customer can't be
+  // attached to new credit (they're hidden from this picker on purpose).
   const { customers, loading, createCustomer } = useCustomers({ search });
   const [nameOverride, setNameOverride] = React.useState<string | null>(null);
   const [phone, setPhone] = React.useState("");
@@ -705,6 +707,7 @@ function CustomerAttachSheet({
         name: created.name,
         phone: created.phone,
         balance: "0.00",
+        archivedAt: null,
         lastActivityAt: null,
         oldestDebtAt: null,
       });

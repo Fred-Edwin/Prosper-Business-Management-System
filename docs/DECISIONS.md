@@ -4872,3 +4872,136 @@ computation.
   touching `use-financials.ts`/`use-handovers.ts`, the API routes, AND
   the domain filters for no behavioural difference the client would
   notice.
+
+---
+
+## ADR-85: Customers get a KPI strip and archive-only removal — no hard-delete path (Client feedback, 2026-09-17)
+
+**Status:** DECIDED (maintenance — client feedback, 2026-09-17).
+
+**Context.** The client asked for two things on the Customers & Credit
+register (`app/admin/customers`): a KPI strip like the ones now on
+Sales/Financials, and a way to remove a customer they no longer deal
+with — "delete or archive."
+
+`Customer` had no `deletedAt`/`active` field (unlike `Product`/`Asset`,
+which use `deletedAt`), and is FK-linked from three tables: `Order`,
+`Debt`, `Repayment`. Per the existing hard-delete guard convention
+(`hardDeleteProduct`), any customer with even one row in any of these
+tables can never be safely hard-deleted — and in practice almost every
+real customer has at least one order or debt.
+
+**Decision.**
+
+- **Archive-only, no hard-delete path for `Customer`.** Building a guarded
+  hard-delete (mirroring Products') would add real UI surface —
+  `FrictionDeleteDialog`'s retype-to-confirm flow — for a path that would
+  essentially never succeed for a real customer. `lib/domain/customers`
+  gets `archiveCustomer`/`unarchiveCustomer` only, mirroring
+  `archiveProduct`/`unarchiveProduct`'s shape (idempotent, `NOT_FOUND` if
+  missing) with no `hardDelete*` counterpart. `Customer.deletedAt` is a
+  new nullable, additive column (migration
+  `20260917054302_add_customer_archive`) — same widening-only style as
+  `Asset.quantity`/`category` (ADR-78).
+- **`listCustomers` gains `includeArchived` (defaults to `false`).**
+  Archived customers are excluded everywhere by default — the admin
+  register (toggle to reveal them, matching Products' "Include archived"
+  pattern) and, more importantly, the cashier's credit-order customer
+  picker (`CustomerAttachSheet` in `new-order-client.tsx`), which never
+  opts in. This means an Admin archiving a customer immediately stops
+  them from being attached to new credit, with no separate flag needed.
+  `getCustomerLedger` is deliberately **not** filtered by `deletedAt` — an
+  archived customer's ledger stays reachable by direct link; only the
+  active-register listing and the picker are gated.
+- **New kit component: `ConfirmDialog`** (`components/kit/confirm-dialog.tsx`).
+  `components/kit/*` had only `FrictionDeleteDialog`, built entirely around
+  the retype-to-confirm hard-delete flow (danger-red "Permanent
+  irreversible action" banner) — the wrong shape for a reversible archive.
+  The first pass used a plain `window.confirm(...)` instead (following the
+  existing precedent in `app/canteen/hub-client.tsx`'s `onDeleteCount`) to
+  avoid an in-session kit addition — per the project's "the kit is frozen"
+  rule, a new kit dialog pattern is normally an owner conversation, not a
+  developer call. **The owner reviewed the native `window.confirm` mid-session
+  and explicitly rejected it** — it looks like a browser chrome element,
+  not part of the app — and asked for a proper on-brand dialog instead,
+  which is exactly the sign-off that rule requires. `ConfirmDialog` reuses
+  `FrictionDeleteDialog`'s shared overlay machinery (portal, focus-trap,
+  scroll-lock, background-inert, single-overlay guard, Esc-to-close —
+  `components/kit/internal/overlay.ts`) but drops the retype-to-confirm
+  field and the danger framing: title + plain body copy + Cancel/Confirm
+  `<Button>`s (`variant="primary"` for confirm, not `"destructive"` — an
+  archive is reversible, not a permanent delete). Used by both
+  `customers-client.tsx` and `customer-detail-client.tsx` — see the next
+  point for where its trigger lives on each screen.
+- **Archive lives inside the "Record repayment" rail drawer, not as a
+  loose row/header button.** The first pass put "Archive" as a standalone
+  action next to "Record repayment" in the table row (A1) and in the A2
+  header. The owner reviewed this running and rejected the placement too —
+  it read as disconnected from the rest of the UI. Moved to match Assets'
+  Edit-drawer "danger section" pattern (`app/admin/assets/asset-drawer.tsx`,
+  ADR-46 §5): inside the drawer body, below the form and its own
+  Cancel/Record-repayment footer, a bordered-off block with a caption
+  heading ("Archive this customer"), one line of description, and an
+  inline danger-colored link-style button ("Archive this customer…") that
+  opens the `ConfirmDialog`. `RepaymentForm` itself (shared with C6's
+  cashier bottom sheet) was **not** touched — the danger section is a
+  sibling rendered after `<RepaymentForm />` inside each Admin drawer, so
+  a Cashier using C6 never sees an Archive affordance. On A1 confirming
+  archive also closes the repayment drawer; on A2 the repayment drawer
+  closes before the `ConfirmDialog` opens (avoids stacking two overlays,
+  though the shared single-active-overlay guard would have made that safe
+  regardless).
+- **`DELETE /api/customers/:id`** (archive) and
+  **`POST /api/customers/:id?mode=unarchive`** are **Admin only**
+  (`requireApiRole("admin")`) — unlike the list/create/repayment routes on
+  this resource, which are Admin **and** Cashier (PRD §4.6). Archiving is
+  a destructive-adjacent action; a Cashier keeps read/repayment access
+  only.
+- **KPI strip is client-derived, no new endpoint** —
+  `app/admin/customers/kpi-strip.tsx`, adapted directly from
+  `app/admin/sales/kpi-strip.tsx` (itself adapted from the house pattern,
+  `app/admin/financials/kpi-strip.tsx`). Purely informational, no scope
+  selector (Customers has no Restaurant/Canteen-style split to pick
+  between). Four tiles, computed via `React.useMemo` over the
+  `CustomerListRow[]` the register already holds: **Total Outstanding**
+  (Σ balance where `balance > 0`), **Customers Owing** (count), **Credit
+  in Hand** (Σ `-balance` where `balance < 0`, i.e. overpayments), and
+  **Oldest Unpaid Debt** (min `oldestDebtAt` among owing customers,
+  rendered as elapsed days + the customer's name). The strip only renders
+  when the register's own list fetch has not errored — it was originally
+  given its own `error`/`onRetry` props mirroring the Sales strip, but
+  that produced two `role="alert"` `ErrorState`s on screen simultaneously
+  (the register's existing page-level one, plus the strip's), which broke
+  a screen test; the strip now takes only `customers` and the parent
+  screen gates it with `{!error && <CustomersKpiStrip .../>}`.
+
+**Consequences.**
+- A customer with zero orders/debts/repayments (e.g. added by mistake)
+  has no faster removal path than archive — this is accepted as fine
+  since such a customer costs nothing to leave archived, and a true
+  hard-delete UI would be dead weight for the near-100% case where it
+  cannot succeed anyway.
+- If the owner later wants a genuine hard-delete for the rare
+  zero-history customer, `hardDeleteProduct`'s reference-count-then-delete
+  shape is the template to follow — this ADR does not preclude adding it,
+  it only declines to build it now for a case this thin.
+
+**Alternatives considered.**
+- *Guarded hard-delete with fallback to archive, full `FrictionDeleteDialog`
+  parity with Products.* Rejected — see Decision above; the success path
+  is unreachable for virtually every real customer.
+- *Keep `window.confirm`.* This was the first pass, made to avoid an
+  in-session kit addition without owner sign-off. Superseded mid-session —
+  the owner reviewed it live and rejected it on sight ("looks like a
+  pop-up... coming from the browser, not from the app"), which is the
+  sign-off the "kit is frozen" rule asks for. `ConfirmDialog` replaced it
+  before this ADR was finalized.
+- *Reuse `FrictionDeleteDialog` as-is, just with different copy.* Rejected
+  — its retype-to-confirm field and danger-red "Permanent irreversible
+  action" banner are semantically wrong for a reversible archive; softening
+  the copy without removing that machinery would still visually announce
+  a permanent delete.
+- *KPI strip as a dedicated multi-fetch hook (the Financials pattern).*
+  Rejected — `useCustomers` already holds the full `CustomerListRow[]` in
+  memory with everything the four tiles need; a new endpoint or extra
+  fetches would duplicate data the screen already has.

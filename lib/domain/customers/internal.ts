@@ -6,6 +6,7 @@ export function toCustomerView(row: {
   id: string;
   name: string;
   phone: string;
+  deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }): Customer {
@@ -13,6 +14,7 @@ export function toCustomerView(row: {
     id: row.id,
     name: row.name,
     phone: row.phone,
+    archivedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

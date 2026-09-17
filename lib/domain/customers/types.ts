@@ -18,6 +18,8 @@ export type Customer = {
   id: string;
   name: string;
   phone: string;
+  /** ISO timestamp the customer was archived at, or `null` if active. */
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -34,6 +36,14 @@ export type ListCustomersFilter = {
    * both are set.
    */
   owingOnly?: boolean;
+  /**
+   * When true, includes archived customers (`deletedAt` set) in the
+   * result. Defaults to false — archived customers are hidden from every
+   * caller (admin register, cashier credit-order picker) unless this is
+   * explicitly set, so a customer marked inactive can't be attached to
+   * new credit by accident.
+   */
+  includeArchived?: boolean;
 };
 
 export type CustomerListRow = {
@@ -42,6 +52,8 @@ export type CustomerListRow = {
   phone: string;
   /** Derived: `Σ debts − Σ repayments`, as a decimal string. */
   balance: string;
+  /** ISO timestamp the customer was archived at, or `null` if active. */
+  archivedAt: string | null;
   /** Max of the customer's debt/repayment `occurredAt` (ISO), or null. */
   lastActivityAt: string | null;
   /**

@@ -58,6 +58,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export type CustomersListFilter = {
   search?: string;
   hasBalance?: boolean;
+  /** Defaults to false — archived customers hidden unless opted in. */
+  includeArchived?: boolean;
 };
 
 export type RecordRepaymentArgs = {
@@ -82,7 +84,7 @@ export function useCustomers(filter: CustomersListFilter) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  const { search, hasBalance } = filter;
+  const { search, hasBalance, includeArchived } = filter;
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -91,6 +93,7 @@ export function useCustomers(filter: CustomersListFilter) {
       const params = new URLSearchParams();
       if (search && search.trim() !== "") params.set("search", search.trim());
       if (hasBalance) params.set("hasBalance", "true");
+      if (includeArchived) params.set("includeArchived", "true");
       const rows = await request<CustomerListRow[]>(
         `/api/customers?${params.toString()}`,
       );
@@ -100,7 +103,7 @@ export function useCustomers(filter: CustomersListFilter) {
     } finally {
       setLoading(false);
     }
-  }, [search, hasBalance]);
+  }, [search, hasBalance, includeArchived]);
 
   React.useEffect(() => {
     void refresh();
@@ -129,6 +132,26 @@ export function useCustomers(filter: CustomersListFilter) {
     [refresh],
   );
 
+  const archiveCustomer = React.useCallback(
+    async (customerId: string) => {
+      await request<unknown>(`/api/customers/${customerId}`, {
+        method: "DELETE",
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const unarchiveCustomer = React.useCallback(
+    async (customerId: string) => {
+      await request<unknown>(`/api/customers/${customerId}?mode=unarchive`, {
+        method: "POST",
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
   return {
     customers,
     loading,
@@ -136,6 +159,8 @@ export function useCustomers(filter: CustomersListFilter) {
     refresh,
     createCustomer,
     recordRepayment,
+    archiveCustomer,
+    unarchiveCustomer,
   };
 }
 
@@ -206,6 +231,22 @@ export function useCustomerLedger(customerId: string | null) {
     [refresh],
   );
 
+  const archiveCustomer = React.useCallback(async () => {
+    if (!customerId) return;
+    await request<unknown>(`/api/customers/${customerId}`, {
+      method: "DELETE",
+    });
+    await refresh();
+  }, [customerId, refresh]);
+
+  const unarchiveCustomer = React.useCallback(async () => {
+    if (!customerId) return;
+    await request<unknown>(`/api/customers/${customerId}?mode=unarchive`, {
+      method: "POST",
+    });
+    await refresh();
+  }, [customerId, refresh]);
+
   return {
     ledger,
     loading,
@@ -214,5 +255,7 @@ export function useCustomerLedger(customerId: string | null) {
     recordRepayment,
     correctRepayment,
     voidRepayment,
+    archiveCustomer,
+    unarchiveCustomer,
   };
 }

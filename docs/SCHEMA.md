@@ -375,6 +375,7 @@ Writes a `MoneyMovement` row per account for the received amounts.
 |---|---|
 | name | |
 | phone | |
+| deleted_at | Nullable — archive timestamp (ADR-85). No hard-delete path. |
 
 Running balance is derived: sum of `Debt.amount` minus sum of
 `Repayment.amount` for that customer — never a stored column (ADR-17).
@@ -382,6 +383,15 @@ Running balance is derived: sum of `Debt.amount` minus sum of
 sums), `getCustomerLedger` interleaves the two tables with a running
 balance. Overpayment is allowed, so the balance may be negative (credit
 in hand). No phone format or uniqueness constraint.
+
+`deleted_at` (ADR-85): soft-delete only, same shape as `Product`/`Asset`.
+`Customer` has FK history via `Order`/`Debt`/`Repayment`, so a hard-delete
+guard (à la `hardDeleteProduct`) would essentially never clear for a real
+customer — there is no `hardDeleteCustomer`. `listCustomers` excludes
+archived customers by default (`includeArchived` opts in); the cashier's
+credit-order customer picker never opts in, so an archived customer can't
+be attached to new debt. `getCustomerLedger` is unaffected — an archived
+customer's ledger stays reachable by direct link.
 
 ### `Debt`
 | Column | Notes |

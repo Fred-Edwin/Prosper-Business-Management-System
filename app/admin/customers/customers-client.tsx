@@ -29,10 +29,12 @@ import { Button } from "@/components/kit/button";
 import { TextInput } from "@/components/kit/text-input";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
+import { ConfirmDialog } from "@/components/kit/confirm-dialog";
 import { useToast } from "@/components/kit/toast";
 import type { CustomerListRow } from "@/lib/domain/customers";
 import { useCustomers } from "./use-customers";
 import { RepaymentForm, fmtMoney } from "./repayment-form";
+import { CustomersKpiStrip } from "./kpi-strip";
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -64,9 +66,18 @@ type DrawerMode = "repayment" | "add-customer" | null;
 export function CustomersClient() {
   const [search, setSearch] = React.useState("");
   const [hasBalance, setHasBalance] = React.useState(false);
+  const [includeArchived, setIncludeArchived] = React.useState(false);
 
-  const { customers, loading, error, refresh, createCustomer, recordRepayment } =
-    useCustomers({ search, hasBalance });
+  const {
+    customers,
+    loading,
+    error,
+    refresh,
+    createCustomer,
+    recordRepayment,
+    archiveCustomer,
+    unarchiveCustomer,
+  } = useCustomers({ search, hasBalance, includeArchived });
   const { toast } = useToast();
 
   const [drawerMode, setDrawerMode] = React.useState<DrawerMode>(null);
@@ -105,10 +116,44 @@ export function CustomersClient() {
     }
   }
 
-  const filtered = search.trim() !== "" || hasBalance;
+  const filtered = search.trim() !== "" || hasBalance || includeArchived;
   function clearFilters() {
     setSearch("");
     setHasBalance(false);
+    setIncludeArchived(false);
+  }
+
+  const [archiving, setArchiving] = React.useState<CustomerListRow | null>(
+    null,
+  );
+  const [archiveSubmitting, setArchiveSubmitting] = React.useState(false);
+
+  async function confirmArchive() {
+    if (!archiving || archiveSubmitting) return;
+    setArchiveSubmitting(true);
+    try {
+      await archiveCustomer(archiving.id);
+      toast("Customer archived", { tone: "success" });
+      setArchiving(null);
+      closeDrawer();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not archive the customer.", {
+        tone: "danger",
+      });
+    } finally {
+      setArchiveSubmitting(false);
+    }
+  }
+
+  async function handleUnarchive(row: CustomerListRow) {
+    try {
+      await unarchiveCustomer(row.id);
+      toast("Customer restored", { tone: "success" });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not restore the customer.", {
+        tone: "danger",
+      });
+    }
   }
 
   const filterControls: FilterControl[] = [
@@ -117,6 +162,13 @@ export function CustomersClient() {
       label: "Has balance",
       kind: "toggle",
       value: hasBalance,
+      default: false,
+    },
+    {
+      id: "includeArchived",
+      label: "Include archived",
+      kind: "toggle",
+      value: includeArchived,
       default: false,
     },
   ];
@@ -131,9 +183,16 @@ export function CustomersClient() {
         <Link
           href={`/admin/customers/${r.id}`}
           onClick={(e) => e.stopPropagation()}
-          className="kit-focus-ring rounded-sm"
+          className={`kit-focus-ring rounded-sm inline-flex items-center gap-(--sp-3) ${
+            r.archivedAt ? "opacity-60" : ""
+          }`}
         >
           {r.name}
+          {r.archivedAt && (
+            <span className="font-ui font-(--weight-semibold) uppercase [letter-spacing:0.03em] text-micro/micro [color:var(--text-tertiary)] px-[6px] py-[2px] rounded-sm border border-solid [border-color:var(--border-subtle)]">
+              Archived
+            </span>
+          )}
         </Link>
       ),
     },
@@ -162,19 +221,32 @@ export function CustomersClient() {
       header: "",
       width: "w-[150px]",
       align: "right",
-      render: (r) => (
-        <button
-          type="button"
-          aria-label={`Record repayment for ${r.name}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            openRepayment(r);
-          }}
-          className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
-        >
-          Record repayment
-        </button>
-      ),
+      render: (r) =>
+        r.archivedAt ? (
+          <button
+            type="button"
+            aria-label={`Unarchive ${r.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleUnarchive(r);
+            }}
+            className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
+          >
+            Unarchive
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label={`Record repayment for ${r.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openRepayment(r);
+            }}
+            className="font-ui font-(--weight-medium) text-accent text-sm/micro kit-focus-ring rounded-sm"
+          >
+            Record repayment
+          </button>
+        ),
     },
   ];
 
@@ -192,6 +264,10 @@ export function CustomersClient() {
         }
       />
       <div className="flex flex-col grow gap-(--sp-6)">
+        {!error && (
+          <CustomersKpiStrip customers={customers.filter((c) => !c.archivedAt)} />
+        )}
+
         <FilterToolbar
           aria-label="Filter customers"
           search={
@@ -205,6 +281,7 @@ export function CustomersClient() {
           controls={filterControls}
           onChange={(id, value) => {
             if (id === "hasBalance") setHasBalance(Boolean(value));
+            if (id === "includeArchived") setIncludeArchived(Boolean(value));
           }}
           onReset={clearFilters}
           resultCount={customers.length}
@@ -225,8 +302,12 @@ export function CustomersClient() {
                 columns={columns}
                 rows={customers}
                 rowKey={(r) => r.id}
-                onRowClick={openRepayment}
-                rowLabel={(r) => `Record repayment for ${r.name}`}
+                onRowClick={(r) => {
+                  if (!r.archivedAt) openRepayment(r);
+                }}
+                rowLabel={(r) =>
+                  r.archivedAt ? r.name : `Record repayment for ${r.name}`
+                }
                 rowChevron
                 /* DU2-0 draws a trailing › on every clickable row (M2 6b). */
                 loading={loading && customers.length === 0}
@@ -270,27 +351,51 @@ export function CustomersClient() {
                   }
                 />
               ) : (
-                customers.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    aria-label={`Record repayment for ${c.name}`}
-                    onClick={() => openRepayment(c)}
-                    className="flex items-center justify-between w-full py-(--sp-5) gap-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)] kit-row kit-focus-ring text-left"
-                  >
-                    <div className="flex flex-col gap-[2px] min-w-0">
-                      <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/sm truncate">
-                        {c.name}
+                customers.map((c) =>
+                  c.archivedAt ? (
+                    <Link
+                      key={c.id}
+                      href={`/admin/customers/${c.id}`}
+                      aria-label={`${c.name}, archived`}
+                      className="flex items-center justify-between w-full py-(--sp-5) gap-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)] kit-row kit-focus-ring text-left opacity-60"
+                    >
+                      <div className="flex flex-col gap-[2px] min-w-0">
+                        <span className="flex items-center gap-(--sp-3) font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/sm truncate">
+                          {c.name}
+                          <span className="font-ui font-(--weight-semibold) uppercase [letter-spacing:0.03em] text-micro/micro [color:var(--text-tertiary)] px-[6px] py-[2px] rounded-sm border border-solid [border-color:var(--border-subtle)]">
+                            Archived
+                          </span>
+                        </span>
+                        <span className="font-ui [color:var(--text-secondary)] text-sm/micro truncate">
+                          {c.phone}
+                        </span>
+                      </div>
+                      <span className="font-mono text-sm/sm shrink-0">
+                        <BalanceCell balance={c.balance} />
                       </span>
-                      <span className="font-ui [color:var(--text-secondary)] text-sm/micro truncate">
-                        {c.phone}
+                    </Link>
+                  ) : (
+                    <button
+                      key={c.id}
+                      type="button"
+                      aria-label={`Record repayment for ${c.name}`}
+                      onClick={() => openRepayment(c)}
+                      className="flex items-center justify-between w-full py-(--sp-5) gap-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)] kit-row kit-focus-ring text-left"
+                    >
+                      <div className="flex flex-col gap-[2px] min-w-0">
+                        <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/sm truncate">
+                          {c.name}
+                        </span>
+                        <span className="font-ui [color:var(--text-secondary)] text-sm/micro truncate">
+                          {c.phone}
+                        </span>
+                      </div>
+                      <span className="font-mono text-sm/sm shrink-0">
+                        <BalanceCell balance={c.balance} />
                       </span>
-                    </div>
-                    <span className="font-mono text-sm/sm shrink-0">
-                      <BalanceCell balance={c.balance} />
-                    </span>
-                  </button>
-                ))
+                    </button>
+                  ),
+                )
               )}
             </div>
           </>
@@ -309,24 +414,77 @@ export function CustomersClient() {
         footer={null}
       >
         {selected && (
-          <RepaymentForm
-            customerId={selected.id}
-            balance={selected.balance}
-            withNote
-            onSubmit={recordRepayment}
-            onDone={() => {
-              toast("Repayment recorded", { tone: "success" });
-              closeDrawer();
-            }}
-            renderFooter={(node) => (
-              <div className="flex items-center justify-end gap-(--sp-4) pt-(--sp-4)">
-                <Button variant="secondary" onClick={closeDrawer}>
-                  Cancel
-                </Button>
-                {node}
+          <>
+            <RepaymentForm
+              customerId={selected.id}
+              balance={selected.balance}
+              withNote
+              onSubmit={recordRepayment}
+              onDone={() => {
+                toast("Repayment recorded", { tone: "success" });
+                closeDrawer();
+              }}
+              renderFooter={(node) => (
+                <div className="flex items-center justify-end gap-(--sp-4) pt-(--sp-4)">
+                  <Button variant="secondary" onClick={closeDrawer}>
+                    Cancel
+                  </Button>
+                  {node}
+                </div>
+              )}
+            />
+
+            {/* Archive section — Assets' Edit-drawer danger-section pattern
+                (heading + description + inline destructive action below a
+                divider), the only place this action lives (moved out of the
+                table row per owner feedback). */}
+            <div className="flex flex-col mt-[4px] pt-[20px] gap-[8px] border-t border-t-solid [border-top-color:var(--border-subtle)]">
+              <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:0.04em] [color:var(--text-tertiary)] text-caption/micro">
+                Archive this customer
               </div>
-            )}
-          />
+              <div className="font-ui [color:var(--text-secondary)] text-sm/sm">
+                Hides them from the active list and blocks new credit orders.
+                Their history stays intact and they can be unarchived later.
+              </div>
+              <button
+                type="button"
+                onClick={() => setArchiving(selected)}
+                className="kit-interactive kit-focus-ring inline-flex self-start items-center h-[32px] mt-[2px] px-[4px] gap-[6px] shrink-0 rounded-sm"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
+                  <path
+                    d="M21 8v13H3V8"
+                    fill="none"
+                    stroke="var(--color-danger)"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M1 3h22v5H1z"
+                    fill="none"
+                    stroke="var(--color-danger)"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <line
+                    x1="10"
+                    y1="12"
+                    x2="14"
+                    y2="12"
+                    stroke="var(--color-danger)"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span className="font-ui font-(--weight-medium) text-danger text-sm/sm">
+                  Archive this customer…
+                </span>
+              </button>
+            </div>
+          </>
         )}
       </Drawer>
 
@@ -371,6 +529,22 @@ export function CustomersClient() {
           </div>
         )}
       </Drawer>
+
+      <ConfirmDialog
+        open={archiving !== null}
+        onClose={() => setArchiving(null)}
+        onConfirm={confirmArchive}
+        title="Archive customer"
+        bodyCopy={
+          archiving
+            ? `Archive ${archiving.name}? They'll be hidden from the active ` +
+              `list and can't be added to new credit orders. You can ` +
+              `unarchive them later.`
+            : ""
+        }
+        confirmLabel="Archive"
+        submitting={archiveSubmitting}
+      />
     </PageShell>
   );
 }

@@ -35,6 +35,12 @@ export const listCustomersQuerySchema = z.object({
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
+  // Defaults to false — archived customers are excluded unless the
+  // caller opts in (the admin register's "Include archived" toggle).
+  includeArchived: z
+    .union([z.literal("true"), z.literal("false")])
+    .optional()
+    .transform((v) => v === "true"),
 });
 
 export const recordRepaymentSchema = z.object({

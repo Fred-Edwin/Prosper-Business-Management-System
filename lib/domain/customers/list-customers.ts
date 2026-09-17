@@ -22,6 +22,11 @@ import type { CustomerListRow, ListCustomersFilter } from "./types";
  * not the full credit register `hasBalance` serves. `owingOnly` implies
  * `hasBalance`'s effect and the two are not meant to be combined.
  *
+ * `includeArchived` defaults to false — archived customers (`deletedAt`
+ * set) are excluded from every caller by default, including the cashier's
+ * credit-order customer picker, so a customer marked inactive by the
+ * Admin can't be attached to new debt without deliberately opting in.
+ *
  * `oldestDebtAt` (present only when the row has at least one `Debt`) is
  * the earliest `Debt.occurredAt` for that customer — labelled "oldest
  * unpaid" on the v2 card. **This is a simplification, not a true
@@ -42,15 +47,17 @@ export async function listCustomers(
   // per-cashier (a Cashier sees the full list — plan §7).
 ): Promise<CustomerListRow[]> {
   const search = filter.search?.trim();
-  const where: Prisma.CustomerWhereInput =
-    search && search.length > 0
+  const where: Prisma.CustomerWhereInput = {
+    ...(filter.includeArchived ? {} : { deletedAt: null }),
+    ...(search && search.length > 0
       ? {
           OR: [
             { name: { contains: search, mode: "insensitive" } },
             { phone: { contains: search, mode: "insensitive" } },
           ],
         }
-      : {};
+      : {}),
+  };
 
   const customers = await prisma.customer.findMany({
     where,
@@ -119,6 +126,7 @@ export async function listCustomers(
       name: c.name,
       phone: c.phone,
       balance: moneyString(balance),
+      archivedAt: c.deletedAt ? c.deletedAt.toISOString() : null,
       lastActivityAt: last ? last.toISOString() : null,
       oldestDebtAt: oldestDebtAt ? oldestDebtAt.toISOString() : null,
       _balanceDec: balance,

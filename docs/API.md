@@ -737,10 +737,14 @@ Roles: Admin, Cashier. Query: `?search=` (case-insensitive contains on
 balance ≠ 0, either sign), `?owingOnly=true` (added M5 "Dashboard &
 Financials v2" Session A — only customers whose derived balance is
 **strictly positive**, i.e. they owe the business; takes precedence over
-`hasBalance` if both are passed). Returns `{ data: CustomerListRow[] }`.
-Each item: `{ id, name, phone, balance, lastActivityAt, oldestDebtAt }` —
+`hasBalance` if both are passed), `?includeArchived=true` (added ADR-85 —
+defaults to `false`; when omitted, archived customers — `deletedAt` set —
+are excluded, including from the cashier's credit-order customer picker).
+Returns `{ data: CustomerListRow[] }`. Each item:
+`{ id, name, phone, balance, archivedAt, lastActivityAt, oldestDebtAt }` —
 `balance` is a signed decimal string (negative = overpaid / credit in
-hand); `lastActivityAt` is the ISO max of the customer's debt/repayment
+hand); `archivedAt` is the ISO archive timestamp, or `null` if active;
+`lastActivityAt` is the ISO max of the customer's debt/repayment
 `occurredAt`, or `null`; `oldestDebtAt` is the ISO **earliest**
 `Debt.occurredAt` for that customer, or `null` if they have never had a
 debt.
@@ -766,8 +770,9 @@ debt.
 ### `POST /api/customers`
 Roles: Admin, Cashier. Body: `{ "name": "...", "phone": "..." }` (both
 trimmed, non-empty; phone kept lenient — no format or uniqueness check).
-Returns `{ data: Customer }` (`{ id, name, phone, createdAt, updatedAt }`),
-`201`. Writes an `AuditLog` row.
+Returns `{ data: Customer }`
+(`{ id, name, phone, archivedAt, createdAt, updatedAt }`), `201`. Writes an
+`AuditLog` row.
 
 ### `GET /api/customers/:id`
 Roles: Admin, Cashier. Returns `{ data: { customer, entries, balance } }`
@@ -799,6 +804,21 @@ account), and two `AuditLog` rows. `occurredAt` defaults to now and is not
 day-gated in M2 (no Day Close). Returns
 `{ data: { id, customerId, amount, account, occurredAt, createdAt } }`,
 `201`. `404 NOT_FOUND` for an unknown customer.
+
+### `DELETE /api/customers/:id`
+**Roles: Admin only** (client feedback, 2026-09-17 — ADR-85). Archives
+(soft-deletes) the customer: sets `deletedAt = now()`. Idempotent — already
+archived is a no-op success. No hard-delete path exists for `Customer`
+(unlike `Product`/`Asset`) — FK history (`Order`/`Debt`/`Repayment`) makes
+it practically unreachable for any real customer, so this is the only
+removal path; no `?mode=` or body needed. Returns
+`{ data: { archived: true } }`. `404 NOT_FOUND` if the customer doesn't
+exist.
+
+### `POST /api/customers/:id?mode=unarchive`
+**Roles: Admin only.** Restores an archived customer — clears
+`deletedAt`. Idempotent. Returns `{ data: { archived: false } }`.
+`404 NOT_FOUND` if the customer doesn't exist.
 
 ---
 

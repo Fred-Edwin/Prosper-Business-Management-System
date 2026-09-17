@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
     search: sp.get("search") ?? undefined,
     hasBalance: sp.get("hasBalance") ?? undefined,
     owingOnly: sp.get("owingOnly") ?? undefined,
+    includeArchived: sp.get("includeArchived") ?? undefined,
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];

@@ -25,6 +25,7 @@ const ROWS: CustomerListRow[] = [
     name: "Grace Wanjiru",
     phone: "0722000111",
     balance: "1200.00",
+    archivedAt: null,
     lastActivityAt: "2026-08-28T09:00:00.000Z",
     oldestDebtAt: "2026-08-20T09:00:00.000Z",
   },
@@ -33,6 +34,7 @@ const ROWS: CustomerListRow[] = [
     name: "John Otieno",
     phone: "0733222444",
     balance: "0.00",
+    archivedAt: null,
     lastActivityAt: null,
     oldestDebtAt: null,
   },
@@ -43,6 +45,7 @@ const LEDGER: CustomerLedger = {
     id: "c1",
     name: "Grace Wanjiru",
     phone: "0722000111",
+    archivedAt: null,
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-28T09:00:00.000Z",
   },
@@ -73,6 +76,8 @@ const listState = {
   error: null as string | null,
   createCustomer: vi.fn().mockResolvedValue(undefined),
   recordRepayment: vi.fn().mockResolvedValue(undefined),
+  archiveCustomer: vi.fn().mockResolvedValue(undefined),
+  unarchiveCustomer: vi.fn().mockResolvedValue(undefined),
 };
 const ledgerState = {
   ledger: LEDGER as CustomerLedger | null,
@@ -81,6 +86,8 @@ const ledgerState = {
   recordRepayment: vi.fn().mockResolvedValue(undefined),
   correctRepayment: vi.fn().mockResolvedValue(undefined),
   voidRepayment: vi.fn().mockResolvedValue(undefined),
+  archiveCustomer: vi.fn().mockResolvedValue(undefined),
+  unarchiveCustomer: vi.fn().mockResolvedValue(undefined),
 };
 
 vi.mock("@/app/admin/customers/use-customers", async () => {
@@ -96,6 +103,8 @@ vi.mock("@/app/admin/customers/use-customers", async () => {
       refresh: vi.fn(),
       createCustomer: listState.createCustomer,
       recordRepayment: listState.recordRepayment,
+      archiveCustomer: listState.archiveCustomer,
+      unarchiveCustomer: listState.unarchiveCustomer,
     }),
     useCustomerLedger: () => ({
       ledger: ledgerState.ledger,
@@ -105,6 +114,8 @@ vi.mock("@/app/admin/customers/use-customers", async () => {
       recordRepayment: ledgerState.recordRepayment,
       correctRepayment: ledgerState.correctRepayment,
       voidRepayment: ledgerState.voidRepayment,
+      archiveCustomer: ledgerState.archiveCustomer,
+      unarchiveCustomer: ledgerState.unarchiveCustomer,
     }),
   };
 });
@@ -265,6 +276,113 @@ describe("A1 — Customers & Credit register", () => {
   });
 });
 
+describe("A1 — KPI strip", () => {
+  it("shows Total Outstanding, Customers Owing, Credit in Hand, and Oldest Unpaid Debt derived from the loaded rows", () => {
+    renderA1();
+    // jsdom applies no CSS, so both the strip's desktop and mobile
+    // variants render — assert at least one of each (the A2 empty-history
+    // test above uses the same pattern).
+    expect(screen.getAllByText("Total Outstanding").length).toBeGreaterThan(0);
+    // Only Grace Wanjiru owes (1200.00); John Otieno is settled (0.00). The
+    // figure also appears in the table's balance column, so just assert
+    // it's present at least twice (strip + table), not an exact count.
+    expect(screen.getAllByText("KES 1,200.00").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("Customers Owing").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("of 2 total").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Credit in Hand").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Oldest Unpaid Debt").length).toBeGreaterThan(0);
+  });
+
+  it("does not render the KPI strip when the customer list failed to load, avoiding a duplicate alert", () => {
+    listState.error = "Failed to load customers.";
+    renderA1();
+    expect(screen.queryByText("Total Outstanding")).not.toBeInTheDocument();
+    // Exactly one alert — the page-level ErrorState, not a second one from the strip.
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+});
+
+describe("A1 — archive / unarchive", () => {
+  it("Include archived toggle exists alongside Has balance, defaulting off", () => {
+    renderA1();
+    const toolbar = within(screen.getByRole("search", { name: "Filter customers" }));
+    expect(
+      toolbar.getByRole("switch", { name: "Include archived" }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
+  // Archive lives inside the Record repayment rail Drawer, as a danger
+  // section below the form (Assets' Edit-drawer pattern) — not a standalone
+  // row button, per owner feedback that a loose row-level button read as
+  // out of place.
+  async function openArchiveSectionFromRow(
+    user: ReturnType<typeof userEvent.setup>,
+  ) {
+    await user.click(
+      within(screen.getByRole("table")).getByRole("button", {
+        name: "Record repayment for Grace Wanjiru",
+      }),
+    );
+    const drawer = await screen.findByRole("dialog");
+    await user.click(
+      within(drawer).getByRole("button", { name: /Archive this customer/ }),
+    );
+    return screen.findByRole("alertdialog");
+  }
+
+  it("Archive lives inside the repayment drawer and opens an on-brand ConfirmDialog (not a native confirm)", async () => {
+    renderA1();
+    const user = userEvent.setup();
+    const dialog = await openArchiveSectionFromRow(user);
+
+    expect(
+      within(dialog).getByText(/Archive Grace Wanjiru\?/),
+    ).toBeInTheDocument();
+    expect(listState.archiveCustomer).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: "Archive" }));
+
+    expect(listState.archiveCustomer).toHaveBeenCalledWith("c1");
+    expect(await screen.findByText("Customer archived")).toBeInTheDocument();
+  });
+
+  it("Cancel on the archive ConfirmDialog does not call archiveCustomer", async () => {
+    renderA1();
+    const user = userEvent.setup();
+    const dialog = await openArchiveSectionFromRow(user);
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(listState.archiveCustomer).not.toHaveBeenCalled();
+    // The dialog plays an exit transition (data-state="closing") before
+    // unmounting on `transitionend`, which jsdom never fires — a fallback
+    // timer clears it, so wait for that rather than asserting synchronously.
+    await waitFor(
+      () => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+      { timeout: 1000 },
+    );
+  });
+
+  it("an archived row shows an Archived tag and an Unarchive action, and calls unarchiveCustomer", async () => {
+    listState.customers = [
+      { ...ROWS[0], archivedAt: "2026-09-01T00:00:00.000Z" },
+    ];
+    renderA1();
+    const user = userEvent.setup();
+    const table = screen.getByRole("table");
+
+    expect(within(table).getByText("Archived")).toBeInTheDocument();
+    expect(
+      within(table).queryByRole("button", { name: /Record repayment/ }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      within(table).getByRole("button", { name: "Unarchive Grace Wanjiru" }),
+    );
+    expect(listState.unarchiveCustomer).toHaveBeenCalledWith("c1");
+    expect(await screen.findByText("Customer restored")).toBeInTheDocument();
+  });
+});
+
 describe("A2 — Customer detail", () => {
   it("renders the interleaved debt/repayment ledger with a running balance", () => {
     renderA2();
@@ -325,6 +443,47 @@ describe("A2 — Customer detail", () => {
     );
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByLabelText(/Amount/)).toBeInTheDocument();
+  });
+
+  it("Archive lives inside the repayment drawer and opens an on-brand ConfirmDialog", async () => {
+    renderA2();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: "Record repayment" }),
+    );
+    const drawer = await screen.findByRole("dialog");
+    await user.click(
+      within(drawer).getByRole("button", { name: /Archive this customer/ }),
+    );
+
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Archive customer",
+    });
+    expect(
+      within(dialog).getByText(/Archive Grace Wanjiru\?/),
+    ).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Archive" }));
+    expect(ledgerState.archiveCustomer).toHaveBeenCalled();
+    expect(await screen.findByText("Customer archived")).toBeInTheDocument();
+  });
+
+  it("shows an Archived tag and an Unarchive action when the customer is archived", async () => {
+    ledgerState.ledger = {
+      ...LEDGER,
+      customer: { ...LEDGER.customer, archivedAt: "2026-09-01T00:00:00.000Z" },
+    };
+    renderA2();
+    const user = userEvent.setup();
+
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Record repayment" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Unarchive" }));
+    expect(ledgerState.unarchiveCustomer).toHaveBeenCalled();
+    expect(await screen.findByText("Customer restored")).toBeInTheDocument();
   });
 });
 
