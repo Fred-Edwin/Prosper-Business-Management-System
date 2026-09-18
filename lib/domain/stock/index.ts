@@ -40,6 +40,7 @@ export {
   type RecordTransferBatchInput,
 } from "./transfer";
 export { correctMovement } from "./correct-movement";
+export { correctStockBalance } from "./correct-stock-balance";
 export {
   correctPurchasePayment,
   voidPurchasePayment,

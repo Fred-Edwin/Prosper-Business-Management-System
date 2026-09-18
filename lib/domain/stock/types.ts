@@ -298,6 +298,24 @@ export type CorrectMovementInput = {
 };
 
 /**
+ * Correct a product/location's whole DERIVED balance to a stated final value
+ * (ADR-72 shape). Unlike `CorrectMovementInput`, this doesn't target one
+ * existing row — there is no single "original" to restate — it targets the
+ * running sum. The domain computes `delta = correctedBalance -
+ * currentDerivedBalance` and writes one new `variance` row for the delta.
+ * Admin-only, never day-close gated (an Admin correction row is always
+ * allowed, any day).
+ */
+export type CorrectStockBalanceInput = {
+  productId: string;
+  locationId: string;
+  /** The corrected FINAL balance — signed decimal string. Server computes the delta. */
+  correctedBalance: string;
+  note?: string | null;
+  recordedById: string;
+};
+
+/**
  * Correct a `purchase_payment` row (ADR-15). Carries the **corrected final**
  * values of the payment; the domain computes the cost delta and writes an
  * append-only correction row + a paired `MoneyMovement` delta. Not

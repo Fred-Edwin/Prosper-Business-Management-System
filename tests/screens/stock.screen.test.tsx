@@ -71,6 +71,10 @@ const setOpeningStockFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 const recordCompletedTransferFn = vi.hoisted(() =>
   vi.fn().mockResolvedValue({}),
 );
+const correctBalanceFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+const balancesFn = vi.hoisted(() =>
+  vi.fn().mockResolvedValue([{ productId: "prod-1", locationId: "loc-store", quantity: "75.0000" }]),
+);
 
 vi.mock("@/app/admin/stock/use-stock", async () => {
   const actual = await vi.importActual<
@@ -87,6 +91,8 @@ vi.mock("@/app/admin/stock/use-stock", async () => {
       recordNonSaleConsumption: recordNonSaleFn,
       setOpeningStock: setOpeningStockFn,
       recordCompletedTransfer: recordCompletedTransferFn,
+      correctBalance: correctBalanceFn,
+      balances: balancesFn,
     },
   };
 });
@@ -269,6 +275,42 @@ describe("/admin/stock — kit composition", () => {
 
     await waitFor(() => expect(correctFn).toHaveBeenCalledOnce());
     expect(await screen.findByText("Correction saved")).toBeInTheDocument();
+  });
+
+  it("clicking the Closing cell opens the balance-correction Drawer and toasts on save", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+
+    // The closing cell is a button labelled "Correct Closing for Beef Fillet (kg)".
+    const cell = screen.getByRole("button", { name: /Correct Closing for Beef Fillet/ });
+    await user.click(cell);
+
+    await waitFor(() => expect(balancesFn).toHaveBeenCalledWith(["prod-1"], "loc-store"));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Correct Stock Balance")).toBeInTheDocument();
+    expect(within(dialog).getByText("Current balance")).toBeInTheDocument();
+    expect(within(dialog).getAllByText(/75\.0/).length).toBeGreaterThan(0);
+
+    const field = within(dialog).getByLabelText(/Corrected balance/);
+    await user.type(field, "0");
+    const reason = within(dialog).getByLabelText(/Reason for correction/);
+    await user.type(reason, "Client requested reset to zero");
+    await user.click(
+      within(dialog).getByRole("button", { name: /Confirm & Save Correction/ }),
+    );
+
+    await waitFor(() =>
+      expect(correctBalanceFn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          productId: "prod-1",
+          locationId: "loc-store",
+          correctedBalance: "0",
+          note: "Client requested reset to zero",
+        }),
+      ),
+    );
+    expect(await screen.findByText("Balance corrected")).toBeInTheDocument();
   });
 
   it("clicking a BLANK movement cell opens the record-entry drawer, not the correction drawer", async () => {

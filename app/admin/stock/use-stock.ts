@@ -100,6 +100,14 @@ export type CorrectionInput = {
   note?: string;
 };
 
+export type CorrectStockBalanceInput = {
+  productId: string;
+  locationId: string;
+  /** The corrected FINAL derived balance (signed decimal string). Never a delta. */
+  correctedBalance: string;
+  note?: string;
+};
+
 export type CorrectPurchasePaymentInput = {
   movementId: string;
   /** Corrected FINAL values of the payment. Never a delta. */
@@ -213,6 +221,23 @@ export const stockApi = {
         }),
       },
     );
+  },
+
+  /**
+   * Correct a product/location's whole derived balance to a stated final
+   * value (Admin). Unlike `correct`, this targets no single `movementId` —
+   * there is no one row to restate, only the running sum.
+   */
+  correctBalance(input: CorrectStockBalanceInput): Promise<StockMovementView> {
+    return request<StockMovementView>(`/api/stock-movements/correct-balance`, {
+      method: "POST",
+      body: JSON.stringify({
+        productId: input.productId,
+        locationId: input.locationId,
+        correctedBalance: input.correctedBalance,
+        note: input.note && input.note.trim() !== "" ? input.note.trim() : undefined,
+      }),
+    });
   },
 
   /** Correct a `purchase_payment` row to new final values (Admin). */

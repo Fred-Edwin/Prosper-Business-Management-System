@@ -16,6 +16,80 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature: Correct Stock Balance — whole-balance stock correction, Admin-only (2026-09-18) — DONE
+
+Client request: "reduce Pudding and Rice Stew to 0 stock," without it
+reading as consumption/wastage (the existing `non_sale_consumption` reason
+enum mislabels a pure record-was-wrong reset) and without falsifying a
+specific past row (`correctMovement` restates ONE row; there was no single
+row to blame for the drift — the balance itself was just wrong).
+
+1. **New domain function `correctStockBalance`** (ADR-72 shape: Admin-only,
+   never day-close gated, paired `oldValue`/`newValue` AuditLog — not the
+   older `setOpeningStock`/`correctMovement` staff-or-admin/gated shape).
+   Takes a product/location + the corrected FINAL balance; computes
+   `delta = corrected − currentDerivedBalance` (via the existing
+   `derivedBalanceOnTx`) and writes ONE new `variance`-type `StockMovement`
+   row for the delta, dated to now. Reuses the `variance` MovementType
+   (already in the schema, previously written only for transfer
+   shortfalls) rather than a new enum value/migration.
+2. **Ledger display fix, same PR:** `variance` was unconditionally routed
+   to the "Kitchen (-)" column (`COLUMN_FOR_TYPE`), which made a balance
+   correction look like a false kitchen issue on the grid (client caught
+   this after a manual SQL test on prod). Fixed by keying the route off
+   `transferCounterpartLocationId` (set only on a real transfer-shortfall
+   row, never on a balance correction) — a balance correction now routes
+   to `null` and folds into the derived Opening/Closing figures instead,
+   same as `opening`/`stock_count` already do. Fixed in all three
+   independent copies of this routing table (`derive-ledger.ts`,
+   `derive-period-summary.ts`, `derive-product-days.ts` — deliberately not
+   shared, see their own comments).
+3. **UI:** the ledger's `Closing` cell (previously excluded from
+   `CORRECTABLE`, derived/cosmetic everywhere else) is now clickable —
+   opens a new rail drawer (`BalanceCorrectionDrawer`), composed from the
+   same kit primitives as the existing `CorrectionDrawer` (`Drawer` +
+   `FormField` + `CalculatedImpactBanner` + `Textarea` + `Button` +
+   `useToast`, no kit changes). Shows the live current balance, takes the
+   corrected FINAL value + a required reason, previews the delta with an
+   explicit "does not affect cash, M-Pesa, or any financial figures" line.
+   Mobile gets a sibling "Balance" button next to the existing "Adjust" one.
+4. Confirmed live (manual browser walkthrough + code read) that this never
+   writes a `MoneyMovement` — only `StockMovement` — so cash/M-Pesa are
+   provably untouched. COGS is derived from stock quantities too
+   (`cogsByLocationSweep`), so it DOES react to a balance correction in
+   general — but dishes (`kind: "dish"`, which both Pudding and Rice Stew
+   are) are always valued at 0 in that sweep, so this specific correction
+   has zero currency effect for them.
+
+**Backend:** `lib/domain/stock/correct-stock-balance.ts` (new),
+`lib/domain/stock/types.ts` (+`CorrectStockBalanceInput`),
+`lib/domain/stock/index.ts` (export), `lib/validation/stock.ts`
+(+`correctStockBalanceSchema`), `app/api/stock-movements/correct-balance/route.ts`
+(new, Admin-only via `requireApiRole`).
+
+**Frontend:** `app/admin/stock/balance-correction-drawer.tsx` (new),
+`app/admin/stock/use-stock.ts` (+`stockApi.correctBalance`), `app/admin/stock/stock-client.tsx`
+(closing-cell click wiring, `balanceTarget` state, mobile button),
+`app/admin/stock/derive-ledger.ts` / `derive-period-summary.ts` /
+`derive-product-days.ts` (variance column-routing fix).
+
+**Tests:** `lib/domain/stock/correct-stock-balance.test.ts` (new — FORBIDDEN
+for non-admin, happy path, no-op rejection, idempotent repeat, works on a
+closed day). `tests/screens/stock.screen.test.tsx` — new case: click
+Closing → drawer opens → fill + submit → toast.
+
+**Gate:** `pnpm typecheck` clean. `pnpm test` — full suite, 168 files /
+1468 tests, all green. `pnpm build` clean. Manually verified end-to-end in
+the browser (Playwright) both before and after the column-routing fix.
+
+**Not done in this PR:** no separate `voidStockBalance` — per ADR-72, a
+void is only needed where a distinct one-click undo earns its keep; calling
+`correctStockBalance` again with any target (including the pre-correction
+value) is already the full undo, same as `setOpeningStock` has never needed
+one.
+
+---
+
 ## Fix: Void UX polish — on-brand confirm dialogs, hide dead Correct action (2026-09-18) — DONE
 
 Client feedback after walking through the previous session's void feature
