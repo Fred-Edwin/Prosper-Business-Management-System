@@ -309,15 +309,21 @@ export function TransactionsTab({
       header: "",
       width: "w-[100px] shrink-0",
       align: "right",
-      render: (m) => (
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setCorrectTarget(m)}
-        >
-          Correct
-        </Button>
-      ),
+      // A voided payment has nothing left to correct — the domain would
+      // still technically accept a non-zero correction as an "un-void",
+      // but surfacing that as a live action reads as though the row is
+      // still an active payment. Void is already hidden the same way on
+      // the Deliveries columns below (client feedback, 2026-09-18).
+      render: (m) =>
+        m.voided ? null : (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setCorrectTarget(m)}
+          >
+            Correct
+          </Button>
+        ),
     },
   ];
 
@@ -625,13 +631,15 @@ function MobilePurchaseCards({
             </div>
             <div className="flex items-center justify-between gap-(--sp-4)">
               <StatusChip variant={s.variant}>{s.label}</StatusChip>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => onCorrect(m)}
-              >
-                Correct
-              </Button>
+              {!m.voided && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => onCorrect(m)}
+                >
+                  Correct
+                </Button>
+              )}
             </div>
           </div>
         );

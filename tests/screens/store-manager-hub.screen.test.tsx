@@ -304,7 +304,7 @@ describe("/store-manager hub — kit composition", () => {
     expect(screen.queryByText("Today's deliveries")).not.toBeInTheDocument();
   });
 
-  it("lists today's receipts and voids one on confirm", async () => {
+  it("lists today's receipts and voids one via the on-brand confirm dialog", async () => {
     hook.data.movements = [
       mv({
         id: "rcpt-1",
@@ -313,22 +313,25 @@ describe("/store-manager hub — kit composition", () => {
         occurredAt: "2026-08-28T09:00:00Z",
       }),
     ];
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderScreen();
     const user = userEvent.setup();
 
     expect(screen.getByText("Today’s deliveries")).toBeInTheDocument();
     expect(screen.getByText(/10 pcs received/)).toBeInTheDocument();
 
+    // Opening tap — no native window.confirm; a kit ConfirmDialog opens.
     await user.click(screen.getByRole("button", { name: "Void delivery" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Void delivery" });
+    expect(voidReceiptFn).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: "Void delivery" }));
 
     await waitFor(() => expect(voidReceiptFn).toHaveBeenCalledWith("rcpt-1"));
     expect(hook.refresh).toHaveBeenCalled();
     expect(await screen.findByText(/Delivery voided/)).toBeInTheDocument();
-    confirmSpy.mockRestore();
   });
 
-  it("declining the confirm dialog does not call the API", async () => {
+  it("cancelling the confirm dialog does not call the API", async () => {
     hook.data.movements = [
       mv({
         id: "rcpt-1",
@@ -337,14 +340,14 @@ describe("/store-manager hub — kit composition", () => {
         occurredAt: "2026-08-28T09:00:00Z",
       }),
     ];
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderScreen();
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "Void delivery" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Void delivery" });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(voidReceiptFn).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   it("a correction row (already-voided receipt) is not listed again", () => {

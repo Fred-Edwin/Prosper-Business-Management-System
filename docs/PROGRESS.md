@@ -16,6 +16,50 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: Void UX polish — on-brand confirm dialogs, hide dead Correct action (2026-09-18) — DONE
+
+Client feedback after walking through the previous session's void feature
+in the browser (screenshot: Store Manager's "Void delivery" tap showed a
+native Chrome `window.confirm()` popup, visibly off-brand):
+
+1. **Native `window.confirm()` replaced with the kit's `<ConfirmDialog>`**
+   on both staff hubs, for both confirms that used it: Store Manager /
+   Canteen "Void delivery", and the Canteen's pre-existing "Delete
+   today's count" (same problem, same file, fixed alongside since it was
+   the identical pattern sitting right next to the one flagged). The kit
+   component already existed (`components/kit/confirm-dialog.tsx`, built
+   for this exact complaint on the Customers archive action, 2026-09-17)
+   — this session's fix was wiring it into two more call sites, not
+   building anything new. Each hub now holds the click target as state
+   (`voidReceiptTarget` / `deleteCountTarget`) instead of resolving the
+   confirmation synchronously inside the click handler.
+2. **The Correct action is hidden on an already-voided payment**
+   (Admin Stock Purchases table, desktop + mobile) — a dead row offering
+   an active "Correct" button read as though it were still live. Void
+   was already hidden the same way for a voided row; Correct gets the
+   identical treatment now (`m.voided` check in both render paths).
+
+**Frontend:**
+- `app/store-manager/hub-client.tsx` / `app/canteen/hub-client.tsx` —
+  `onVoidReceipt` split into an "open the dialog" click handler
+  (`setVoidReceiptTarget`) and a `confirmVoidReceipt` that the dialog's
+  `onConfirm` calls. Canteen's `onDeleteCount` got the same treatment
+  (`deleteCountTarget` / `confirmDeleteCount`).
+- `app/admin/financials/transactions-tab.tsx` — the Stock Purchases
+  `action` column (desktop `SimpleTableColumn` + `MobilePurchaseCards`)
+  renders `null` for Correct when `m.voided`.
+
+**Tests:** `store-manager-hub` / `canteen-hub` screen tests updated —
+`vi.spyOn(window, "confirm")` replaced with finding the
+`role="alertdialog"` by its title and clicking its own Confirm/Cancel
+button; `financials.screen.test.tsx` gained an assertion that a voided
+payment's row has no Correct button.
+
+**Gate:** `pnpm typecheck` clean. `pnpm test` — full suite, 167 files /
+1462 tests, all green. `pnpm build` clean.
+
+---
+
 ## Fix: Purchase payment/delivery matching — void deadlock + staff cancel UX (2026-09-17) — DONE
 
 Session audit of the two-way purchase-payment/delivery pipeline (either
