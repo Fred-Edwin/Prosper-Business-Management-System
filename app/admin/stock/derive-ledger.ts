@@ -64,13 +64,25 @@ const COLUMN_FOR_TYPE: Record<MovementType, ColumnRoute> = {
   non_sale_consumption: "nonSale",
   stock_count: null, // ditto: an adjusting count lands in Opening, not a column
   closing: null,
-  // F6 (owner decision 2026-09-02): stock that left on a transfer and never
-  // arrived. It reads as an outflow alongside issues so the TOTAL closing
-  // reconciles and the loss is visible on the grid. A column of its own is
-  // a separate, not-yet-raised owner decision (unlike nonSale above) —
-  // left as-is.
+  // `variance` is two different events sharing one MovementType (no
+  // migration for either — see routeVariance below for how they're told
+  // apart): a transfer shortfall routes to "issues" (F6); a whole-balance
+  // correction (correctStockBalance) routes to null, same as opening/
+  // stock_count, since it isn't a Kitchen draw and showing it there
+  // mislabels what happened (client report 2026-09-18).
   variance: "issues",
 };
+
+/**
+ * `variance`'s real column route — overrides the static COLUMN_FOR_TYPE
+ * entry above, which can't see the row itself. A transfer-shortfall
+ * `variance` row always carries `transferCounterpartLocationId` (paired
+ * transfer receipt, ADR F6); a `correctStockBalance` row never does (there
+ * is no counterpart leg) — that field is what tells the two apart.
+ */
+function routeVariance(m: StockMovementView): ColumnRoute {
+  return m.transferCounterpartLocationId ? "issues" : null;
+}
 
 type LedgerColumnSums = {
   purchases: number;
@@ -204,7 +216,8 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
     const perCell: Partial<Record<string, string[]>> = {};
 
     for (const m of rowMovements) {
-      const target = COLUMN_FOR_TYPE[m.movementType];
+      const target =
+        m.movementType === "variance" ? routeVariance(m) : COLUMN_FOR_TYPE[m.movementType];
       if (!target) continue;
       const q = num(m.quantity); // already signed from this location's POV
       let columnKey: keyof LedgerColumnSums;

@@ -34,6 +34,11 @@ const COLUMN_FOR_TYPE: Record<MovementType, ColumnRoute> = {
   variance: "issues",
 };
 
+/** Same override as derive-ledger.ts's routeVariance — deliberately not shared, see its comment. */
+function routeVariance(m: StockMovementView): ColumnRoute {
+  return m.transferCounterpartLocationId ? "issues" : null;
+}
+
 type LedgerColumnSums = {
   purchases: number;
   issues: number;
@@ -136,7 +141,8 @@ export function deriveProductDayRows(input: DeriveProductDaysInput): {
     const correctedCols = new Set<string>();
     const perCell: Partial<Record<string, string[]>> = {};
     for (const m of dayMovements) {
-      const target = COLUMN_FOR_TYPE[m.movementType];
+      const target =
+        m.movementType === "variance" ? routeVariance(m) : COLUMN_FOR_TYPE[m.movementType];
       if (!target) continue;
       const q = num(m.quantity);
       const columnKey: keyof LedgerColumnSums =

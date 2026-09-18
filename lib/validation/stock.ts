@@ -232,6 +232,21 @@ export const correctMovementSchema = z.object({
   note: z.string().trim().min(1).nullable().optional(),
 });
 
+// POST /api/stock-movements/correct-balance — the corrected FINAL derived
+// balance for a product/location pair (Admin). The domain computes the
+// delta against the current derived balance and writes one append-only
+// `variance` row. Not `correctMovementSchema` — there is no single
+// `movementId` to target; this corrects the running sum.
+export const correctStockBalanceSchema = z.object({
+  productId: z.string(),
+  locationId: z.string(),
+  correctedBalance: signedQuantityString,
+  note: z.string().trim().min(1).nullable().optional(),
+});
+export type CorrectStockBalanceBody = z.infer<
+  typeof correctStockBalanceSchema
+>;
+
 // POST /api/stock-movements/:id/correct-purchase — the corrected FINAL
 // values of a `purchase_payment` row (Admin). The domain computes the cost
 // delta and writes an append-only correction row + a paired MoneyMovement.

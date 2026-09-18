@@ -37,7 +37,7 @@ import { DenseLedger, type LedgerRow } from "@/components/kit/dense-ledger";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
 import { SearchInput } from "@/components/kit/search-input";
-import { useLedger, usePeriodLedger, useProductDayLedger } from "./use-stock";
+import { useLedger, usePeriodLedger, useProductDayLedger, stockApi } from "./use-stock";
 import { deriveLedgerRows } from "./derive-ledger";
 import { derivePeriodSummaryRows } from "./derive-period-summary";
 import { deriveProductDayRows } from "./derive-product-days";
@@ -66,6 +66,10 @@ import {
   type RecordEntryTarget,
   type RecordEntryKind,
 } from "./record-entry-drawer";
+import {
+  BalanceCorrectionDrawer,
+  type BalanceCorrectionTarget,
+} from "./balance-correction-drawer";
 
 // Human labels for the ledger's movement columns (correction-drawer field label).
 const COLUMN_LABEL: Record<string, string> = {
@@ -303,6 +307,9 @@ export function StockClient() {
     null,
   );
   const [recordTarget, setRecordTarget] = React.useState<RecordEntryTarget | null>(
+    null,
+  );
+  const [balanceTarget, setBalanceTarget] = React.useState<BalanceCorrectionTarget | null>(
     null,
   );
   const [cellNote, setCellNote] = React.useState<string | null>(null);
@@ -671,6 +678,26 @@ export function StockClient() {
       return;
     }
 
+    // Closing is the live derived balance — a whole-balance correction, not
+    // a single-movement one (there's no one row to point at). Handled ahead
+    // of the CORRECTABLE gate since "closing" is deliberately excluded from
+    // that set (derived/cosmetic everywhere else on the grid).
+    if (columnKey === "closing") {
+      const [productId, rowLocationId] = rowId.split("@");
+      const { subtitle, unit } = rowContext(rowId);
+      stockApi.balances([productId], rowLocationId).then((balances) => {
+        const currentBalance = balances[0]?.quantity ?? "0";
+        setBalanceTarget({
+          productId,
+          locationId: rowLocationId,
+          currentBalance,
+          subtitle: subtitle.replace(` · ${shortDate(date)}`, ""),
+          unit,
+        });
+      });
+      return;
+    }
+
     if (!CORRECTABLE.has(columnKey)) return;
 
     // Opening always has a value (even 0) and no backing movement id in
@@ -771,6 +798,25 @@ export function StockClient() {
       setCellNote(
         "Sales are recorded through Orders or Canteen stock counts, not the ledger. Correct a wrong sale from the Sales screen.",
       );
+      return;
+    }
+
+    // Same live-balance branch as onCellClick above — the drill-in's
+    // product/location are already fixed to `drillIn`, so no id-parsing
+    // needed here.
+    if (columnKey === "closing") {
+      stockApi
+        .balances([drillIn.productId], drillIn.locationId)
+        .then((balances) => {
+          const currentBalance = balances[0]?.quantity ?? "0";
+          setBalanceTarget({
+            productId: drillIn.productId,
+            locationId: drillIn.locationId,
+            currentBalance,
+            subtitle: `${drillIn.locationLabel} · ${productLabel}`,
+            unit,
+          });
+        });
       return;
     }
 
@@ -1233,6 +1279,14 @@ export function StockClient() {
           onRecorded={refreshAfterEdit}
         />
       )}
+
+      {balanceTarget && (
+        <BalanceCorrectionDrawer
+          target={balanceTarget}
+          onClose={() => setBalanceTarget(null)}
+          onCorrected={refreshAfterEdit}
+        />
+      )}
     </PageShell>
   );
 }
@@ -1641,6 +1695,15 @@ function MobileSingleDayRow({
   return (
     <div className="flex flex-col [width:100%] py-(--sp-5) px-(--sp-6) gap-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]">
       <MobileRowHeader product={row.product} location={row.location}>
+        <button
+          type="button"
+          onClick={() => onCellClick(row.id, "closing")}
+          className="flex items-center justify-center h-[28px] shrink-0 px-(--sp-5) rounded-sm [background-color:var(--surface-subtle)] kit-focus-ring"
+        >
+          <span className="font-ui font-(--weight-medium) w-max shrink-0 [color:var(--text-secondary)] text-sm/[16px]">
+            Balance
+          </span>
+        </button>
         <button
           type="button"
           onClick={() => onAdjustRow(row.id)}
