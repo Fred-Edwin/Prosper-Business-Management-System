@@ -34,6 +34,7 @@ import { ActivityTimeline } from "@/components/kit/activity-timeline";
 import { InstructionalBanner } from "@/components/kit/instructional-banner";
 import { PurchaseDeliveryBanner } from "@/components/kit/banner";
 import { Button } from "@/components/kit/button";
+import { ConfirmDialog } from "@/components/kit/confirm-dialog";
 import { ErrorState } from "@/components/kit/error-state";
 import { useToast } from "@/components/kit/toast";
 import {
@@ -75,29 +76,32 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
   });
   const { voidStockCount } = useStockCountActions();
   const [voidingId, setVoidingId] = React.useState<string | null>(null);
+  // The kit <ConfirmDialog> (on-brand, replaces a native window.confirm —
+  // client feedback 2026-09-18) needs the target row to render its body
+  // copy, not just a boolean.
+  const [deleteCountTarget, setDeleteCountTarget] = React.useState<
+    { stockCountId: string; productName: string; unitsSold: string | null } | null
+  >(null);
   // Today's own deliveries, with a "Void" recovery path (F-1 fix, 2026-09-
   // 17) — same reachable-minimum shape as "Delete today's count" below.
   const [voidingReceiptId, setVoidingReceiptId] = React.useState<string | null>(
     null,
   );
+  const [voidReceiptTarget, setVoidReceiptTarget] =
+    React.useState<StockMovementView | null>(null);
 
   const todaysCounts = derivedToday.filter(
     (r) => r.stockCountId != null && r.lastCountedAt != null,
   );
 
-  async function onDeleteCount(row: (typeof todaysCounts)[number]) {
-    if (!row.stockCountId) return;
-    const ok = window.confirm(
-      `Delete today's count for ${row.productName}? ` +
-        `The stock count and the sale it created (${trimQty(
-          row.unitsSold ?? "0",
-        )} sold) will be removed. Do a fresh count to replace it.`,
-    );
-    if (!ok) return;
-    setVoidingId(row.stockCountId);
+  async function confirmDeleteCount() {
+    if (!deleteCountTarget) return;
+    const { stockCountId, productName: countProductName } = deleteCountTarget;
+    setVoidingId(stockCountId);
     try {
-      await voidStockCount(row.stockCountId);
-      toast(`Count deleted · ${row.productName} sale removed`, { tone: "info" });
+      await voidStockCount(stockCountId);
+      toast(`Count deleted · ${countProductName} sale removed`, { tone: "info" });
+      setDeleteCountTarget(null);
       await Promise.all([refresh(), refreshDerived()]);
     } catch (e) {
       toast(
@@ -137,21 +141,16 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
   const productUnit = (id: string) =>
     data.products.find((p) => p.id === id)?.unitLabel ?? "";
 
-  async function onVoidReceipt(receipt: StockMovementView) {
-    const qty = trimQty(receipt.quantity).replace("-", "");
-    const unit = productUnit(receipt.productId);
-    const ok = window.confirm(
-      `Void today's delivery of ${qty} ${unit} ${productName(
-        receipt.productId,
-      )}? This removes it from stock. Do a fresh receipt to replace it.`,
-    );
-    if (!ok) return;
+  async function confirmVoidReceipt() {
+    if (!voidReceiptTarget) return;
+    const receipt = voidReceiptTarget;
     setVoidingReceiptId(receipt.id);
     try {
       await stockApi.voidPurchaseReceipt(receipt.id);
       toast(`Delivery voided · ${productName(receipt.productId)}`, {
         tone: "info",
       });
+      setVoidReceiptTarget(null);
       await refresh();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Couldn't void the delivery.", {
@@ -283,7 +282,7 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => onVoidReceipt(r)}
+                  onClick={() => setVoidReceiptTarget(r)}
                   disabled={voidingReceiptId === r.id}
                   className="font-ui font-(--weight-medium) text-danger text-caption/micro kit-focus-ring rounded-sm shrink-0 disabled:opacity-50"
                 >
@@ -317,7 +316,14 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => onDeleteCount(row)}
+                  onClick={() =>
+                    row.stockCountId &&
+                    setDeleteCountTarget({
+                      stockCountId: row.stockCountId,
+                      productName: row.productName,
+                      unitsSold: row.unitsSold,
+                    })
+                  }
                   disabled={voidingId === row.stockCountId}
                   className="font-ui font-(--weight-medium) text-danger text-caption/micro kit-focus-ring rounded-sm shrink-0 disabled:opacity-50"
                 >
@@ -351,6 +357,39 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
           />
         )}
       </div>
+
+      <ConfirmDialog
+        open={voidReceiptTarget !== null}
+        onClose={() => setVoidReceiptTarget(null)}
+        onConfirm={confirmVoidReceipt}
+        title="Void delivery"
+        bodyCopy={
+          voidReceiptTarget
+            ? `Void today's delivery of ${trimQty(voidReceiptTarget.quantity).replace("-", "")} ` +
+              `${productUnit(voidReceiptTarget.productId)} ${productName(voidReceiptTarget.productId)}? ` +
+              `This removes it from stock. Do a fresh receipt to replace it.`
+            : ""
+        }
+        confirmLabel="Void delivery"
+        submitting={voidingReceiptId === voidReceiptTarget?.id}
+      />
+
+      <ConfirmDialog
+        open={deleteCountTarget !== null}
+        onClose={() => setDeleteCountTarget(null)}
+        onConfirm={confirmDeleteCount}
+        title="Delete today's count"
+        bodyCopy={
+          deleteCountTarget
+            ? `Delete today's count for ${deleteCountTarget.productName}? ` +
+              `The stock count and the sale it created (${trimQty(
+                deleteCountTarget.unitsSold ?? "0",
+              )} sold) will be removed. Do a fresh count to replace it.`
+            : ""
+        }
+        confirmLabel="Delete count"
+        submitting={voidingId === deleteCountTarget?.stockCountId}
+      />
     </div>
   );
 }

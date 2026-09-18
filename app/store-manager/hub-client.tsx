@@ -27,6 +27,7 @@ import { ActionTileGrid, type ActionTile } from "@/components/kit/action-tile-gr
 import { ActivityTimeline } from "@/components/kit/activity-timeline";
 import { TransferBanner, PurchaseDeliveryBanner } from "@/components/kit/banner";
 import { MatchCard } from "@/components/kit/match-card";
+import { ConfirmDialog } from "@/components/kit/confirm-dialog";
 import { ErrorState } from "@/components/kit/error-state";
 import { useToast } from "@/components/kit/toast";
 import {
@@ -61,6 +62,11 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
   const [voidingReceiptId, setVoidingReceiptId] = React.useState<string | null>(
     null,
   );
+  // The kit <ConfirmDialog> (on-brand, replaces a native window.confirm —
+  // client feedback 2026-09-18) needs the target row to render its body
+  // copy, not just a boolean.
+  const [voidReceiptTarget, setVoidReceiptTarget] =
+    React.useState<StockMovementView | null>(null);
 
   // The Store's own locationId — resolved from any movement row at this
   // location (the list is already scoped to it server-side).
@@ -87,21 +93,16 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
   const productUnit = (id: string) =>
     data.products.find((p) => p.id === id)?.unitLabel ?? "";
 
-  async function onVoidReceipt(receipt: StockMovementView) {
-    const qty = trimQty(receipt.quantity).replace("-", "");
-    const unit = productUnit(receipt.productId);
-    const ok = window.confirm(
-      `Void today's delivery of ${qty} ${unit} ${productName(
-        receipt.productId,
-      )}? This removes it from stock. Do a fresh receipt to replace it.`,
-    );
-    if (!ok) return;
+  async function confirmVoidReceipt() {
+    if (!voidReceiptTarget) return;
+    const receipt = voidReceiptTarget;
     setVoidingReceiptId(receipt.id);
     try {
       await stockApi.voidPurchaseReceipt(receipt.id);
       toast(`Delivery voided · ${productName(receipt.productId)}`, {
         tone: "info",
       });
+      setVoidReceiptTarget(null);
       await refresh();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Couldn't void the delivery.", {
@@ -279,7 +280,7 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
                 </div>
                 <button
                   type="button"
-                  onClick={() => onVoidReceipt(r)}
+                  onClick={() => setVoidReceiptTarget(r)}
                   disabled={voidingReceiptId === r.id}
                   className="font-ui font-(--weight-medium) text-danger text-caption/micro kit-focus-ring rounded-sm shrink-0 disabled:opacity-50"
                 >
@@ -312,6 +313,22 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
           />
         )}
       </div>
+
+      <ConfirmDialog
+        open={voidReceiptTarget !== null}
+        onClose={() => setVoidReceiptTarget(null)}
+        onConfirm={confirmVoidReceipt}
+        title="Void delivery"
+        bodyCopy={
+          voidReceiptTarget
+            ? `Void today's delivery of ${trimQty(voidReceiptTarget.quantity).replace("-", "")} ` +
+              `${productUnit(voidReceiptTarget.productId)} ${productName(voidReceiptTarget.productId)}? ` +
+              `This removes it from stock. Do a fresh receipt to replace it.`
+            : ""
+        }
+        confirmLabel="Void delivery"
+        submitting={voidingReceiptId === voidReceiptTarget?.id}
+      />
     </div>
   );
 }

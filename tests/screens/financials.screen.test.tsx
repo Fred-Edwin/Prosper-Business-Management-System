@@ -482,6 +482,10 @@ describe("/admin/financials — Stock Purchases tab", () => {
     const table = await screen.findByRole("table");
     expect(within(table).getByText("Voided")).toBeInTheDocument();
     expect(within(table).queryByText("Delivered")).not.toBeInTheDocument();
+    // A voided payment has nothing left to correct — client feedback,
+    // 2026-09-18: showing an active Correct button on a dead row read as
+    // though it were still a live payment.
+    expect(within(table).queryByRole("button", { name: "Correct" })).not.toBeInTheDocument();
   });
 
   it("a payment row has a Correct action that opens a drawer prefilled with the current values and submits the corrected values", async () => {

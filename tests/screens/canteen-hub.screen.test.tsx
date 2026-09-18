@@ -207,7 +207,7 @@ describe("/canteen hub — kit composition", () => {
     expect(screen.queryByText(/Today.s stock counts/)).not.toBeInTheDocument();
   });
 
-  it("F7-3: today's count lists with 'Delete today's count' → confirm → voidStockCount + toast + refresh", async () => {
+  it("F7-3: today's count lists with 'Delete today's count' → on-brand confirm dialog → voidStockCount + toast + refresh", async () => {
     derivedHook.rows = [
       {
         productId: "prod-rice",
@@ -220,7 +220,6 @@ describe("/canteen hub — kit composition", () => {
         stockCountId: "count-abc",
       },
     ];
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderScreen();
     const user = userEvent.setup();
 
@@ -228,16 +227,22 @@ describe("/canteen hub — kit composition", () => {
     await user.click(
       screen.getByRole("button", { name: /Delete today.s count/ }),
     );
+    // No native window.confirm — a kit ConfirmDialog opens instead.
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Delete today's count",
+    });
+    expect(voidCountFn).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Delete count" }));
+
     await waitFor(() => expect(voidCountFn).toHaveBeenCalledWith("count-abc"));
     expect(derivedHook.refresh).toHaveBeenCalled();
     expect(hook.refresh).toHaveBeenCalled();
     expect(
       await screen.findByText(/Count deleted · Rice Basmati/),
     ).toBeInTheDocument();
-    confirmSpy.mockRestore();
   });
 
-  it("F7-3: cancelling the confirm does not call voidStockCount", async () => {
+  it("F7-3: cancelling the confirm dialog does not call voidStockCount", async () => {
     derivedHook.rows = [
       {
         productId: "prod-rice",
@@ -250,14 +255,16 @@ describe("/canteen hub — kit composition", () => {
         stockCountId: "count-abc",
       },
     ];
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderScreen();
     const user = userEvent.setup();
     await user.click(
       screen.getByRole("button", { name: /Delete today.s count/ }),
     );
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Delete today's count",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(voidCountFn).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   // ── F7-7: the derived-sale row is revenue-in, not stock-out ──────────
@@ -396,7 +403,7 @@ describe("/canteen hub — kit composition", () => {
     expect(screen.queryByText("Today's deliveries")).not.toBeInTheDocument();
   });
 
-  it("lists today's receipts and voids one on confirm", async () => {
+  it("lists today's receipts and voids one via the on-brand confirm dialog", async () => {
     hook.data.movements = [
       mv({
         id: "rcpt-1",
@@ -405,22 +412,25 @@ describe("/canteen hub — kit composition", () => {
         occurredAt: "2026-08-28T09:00:00Z",
       }),
     ];
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderScreen();
     const user = userEvent.setup();
 
     expect(screen.getByText("Today’s deliveries")).toBeInTheDocument();
     expect(screen.getByText(/6 kg received/)).toBeInTheDocument();
 
+    // Opening tap — no native window.confirm; a kit ConfirmDialog opens.
     await user.click(screen.getByRole("button", { name: "Void delivery" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Void delivery" });
+    expect(voidReceiptFn).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: "Void delivery" }));
 
     await waitFor(() => expect(voidReceiptFn).toHaveBeenCalledWith("rcpt-1"));
     expect(hook.refresh).toHaveBeenCalled();
     expect(await screen.findByText(/Delivery voided/)).toBeInTheDocument();
-    confirmSpy.mockRestore();
   });
 
-  it("declining the confirm dialog does not call the API", async () => {
+  it("cancelling the confirm dialog does not call the API", async () => {
     hook.data.movements = [
       mv({
         id: "rcpt-1",
@@ -429,13 +439,13 @@ describe("/canteen hub — kit composition", () => {
         occurredAt: "2026-08-28T09:00:00Z",
       }),
     ];
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderScreen();
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "Void delivery" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Void delivery" });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(voidReceiptFn).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 });
