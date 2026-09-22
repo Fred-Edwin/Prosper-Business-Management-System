@@ -16,6 +16,68 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: Dashboard / Canteen Sales / Customer History UX batch (2026-09-22) — DONE
+
+Client feedback session (7 items triaged live against prod via Chrome
+DevTools MCP + code read). Three small, self-contained items batched into
+one PR; the other four (handover Expenses/Unpaid declared options,
+custom non-sale item entry, canteen credit sales, cash flow statement)
+scoped but deferred to their own sessions — each changes a contract
+(schema/ledger shape) or reverses a deliberate design decision (canteen
+credit was explicitly out per PRD §4.4) and needs its own design pass /
+client confirmation.
+
+1. **Canteen Derived sales — "dates not lining up."** Not a bug: each
+   product's "Period covered" runs from its own last stock count to its
+   most recent one (PRD §4.4), so rows legitimately show different date
+   ranges. Added a one-line caption above the table
+   (`app/admin/sales/derived-tab.tsx`) explaining this so it stops
+   reading as broken.
+2. **Customer detail — period filter for account history.** Added the
+   existing `<AdminDateRangeControl>` (Today/Week/Month/Custom) to
+   `app/admin/customers/[id]/customer-detail-client.tsx`. The ledger's
+   running balance still derives from the customer's WHOLE history
+   (ADR-17 — no stored total) — the range only narrows which rows are
+   *displayed*, never re-derives the balance from a truncated window.
+   Defaults to "This month" (not the usual "Today") since credit
+   activity is sparse/long-tailed per customer — seeded via
+   `useAdminDateRange`'s `initialRange` param. Updated
+   `tests/screens/admin-customers.screen.test.tsx` to pin the fake clock
+   into the fixture's month (mirrors `canteen-hub.screen.test.tsx`) so
+   the suite doesn't silently rot outside that month.
+3. **Dashboard — net profit value on the daily bar chart.** Added a
+   compact KES label (`moneyCompact`, `Intl.NumberFormat` compact
+   notation) above each bar in the 7-bar "Net profit per day" card
+   (`app/admin/dashboard-client.tsx`, `Bar` component). Left the 30-day
+   trend chart unlabeled — 30 value labels at that width would be
+   unreadable; deliberately scoped to the small chart only.
+
+No schema, domain, or API changes — all three are presentational or
+client-side filtering only.
+
+**Gate:** `pnpm test` (1468 passed, 0 failed) / `pnpm typecheck` (clean) /
+`pnpm build` (clean).
+
+**Deferred, scoped for their own sessions:**
+- Handover: add "Expenses" / "Unpaid" declared options — held pending
+  client confirmation (may overlap with canteen credit's "Unpaid" below).
+- Non-sale consumption: custom (non-catalog) item entry — held pending
+  client confirmation; ledger-integrity question (movements are always
+  against a real `Product`) needs a design decision, likely a
+  note-only/no-stock-effect entry rather than a fake stock movement.
+- Canteen goods sold on credit — own dedicated session. Canteen sales are
+  stock-count-derived (no per-transaction cashier flow), so this isn't a
+  field addition — it needs a new "record credit sale" flow that records
+  an individual transaction at time of sale, coexisting with the
+  count-derived cash-sale path.
+- Cash Flow Statement — own dedicated session. New tab inside the
+  existing Financials page (not a new route), backed by a new
+  aggregation read over existing `MoneyMovement` rows (chronological,
+  inflow/outflow tagged, running balance, Cash vs M-Pesa/Bank split). No
+  schema change, no new domain-writing logic.
+
+---
+
 ## Feature: Correct Stock Balance — whole-balance stock correction, Admin-only (2026-09-18) — DONE
 
 Client request: "reduce Pudding and Rice Stew to 0 stock," without it

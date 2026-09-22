@@ -178,6 +178,11 @@ export function DerivedTab({ range }: { range: AdminDateRange }) {
 
   return (
     <div className="flex flex-col w-full pt-(--sp-6)">
+      <p className="font-ui [color:var(--text-disabled)] text-caption/micro px-(--sp-6) pb-(--sp-3) md:px-0">
+        Each product&rsquo;s period runs from its own last count to its most
+        recent one — since products aren&rsquo;t all counted on the same day,
+        periods differ row to row.
+      </p>
       <FilterToolbar
         aria-label="Filter derived sales"
         search={

@@ -11,6 +11,9 @@ import * as React from "react";
 import { PageShell } from "@/components/kit/page-shell";
 import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { Breadcrumb } from "@/components/kit/breadcrumb";
+import { AdminDateRangeControl } from "@/app/admin/date-range-control";
+import { useAdminDateRange, resolvePreset } from "@/app/admin/use-date-range";
+import { businessDateStartUtc, businessDateEndUtc, nairobiToday } from "@/lib/time";
 import { SimpleTable, type SimpleTableColumn } from "@/components/kit/simple-table";
 import { Drawer } from "@/components/kit/drawer";
 import { Button } from "@/components/kit/button";
@@ -98,6 +101,33 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
   const balance = ledger?.balance ?? "0.00";
   const owes = Number(balance) > 0;
 
+  // Client feedback 2026-09-22: "view transactions over a period (e.g. at
+  // least 1 month)". The ledger's running balance must accumulate over
+  // the customer's WHOLE history to stay correct (ADR-17 — no stored
+  // total, always derived from account opening), so the range only
+  // narrows which rows are DISPLAYED — never re-derives the balance from
+  // a truncated window. Defaults to "This month" rather than the usual
+  // "Today" (every other <AdminDateRangeControl> screen's default) —
+  // credit activity is sparse/long-tailed per customer, so "Today" would
+  // read as empty for almost everyone on first load.
+  const { range, setPreset, setCustomDay, setCustomRange, today } =
+    useAdminDateRange(
+      React.useMemo(() => {
+        const t = nairobiToday();
+        return { preset: "month" as const, ...resolvePreset("month", t) };
+      }, []),
+    );
+  const rangeStartMs = businessDateStartUtc(range.from).getTime();
+  const rangeEndMs = businessDateEndUtc(range.to).getTime();
+  const visibleEntries = React.useMemo(
+    () =>
+      (ledger?.entries ?? []).filter((r) => {
+        const t = new Date(r.occurredAt).getTime();
+        return t >= rangeStartMs && t < rangeEndMs;
+      }),
+    [ledger, rangeStartMs, rangeEndMs],
+  );
+
   const columns: SimpleTableColumn<CustomerLedgerEntry>[] = [
     {
       key: "date",
@@ -183,6 +213,15 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
             ]}
           />
         }
+        actions={
+          <AdminDateRangeControl
+            range={range}
+            today={today}
+            onPreset={setPreset}
+            onCustomDay={setCustomDay}
+            onCustomRange={setCustomRange}
+          />
+        }
       />
       {error ? (
         <ErrorState
@@ -239,15 +278,23 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
 
           {/* Ledger — desktop table (≥ --bp-md), artboard ER9-0 */}
           <div className="hidden md:block">
-            {!loading && ledger && ledger.entries.length === 0 ? (
+            {!loading && ledger && visibleEntries.length === 0 ? (
               <EmptyState
-                title="No credit history for this customer"
-                description="Debts and repayments will appear here once the customer takes a credit order or pays."
+                title={
+                  ledger.entries.length === 0
+                    ? "No credit history for this customer"
+                    : "No activity in this range"
+                }
+                description={
+                  ledger.entries.length === 0
+                    ? "Debts and repayments will appear here once the customer takes a credit order or pays."
+                    : "Try a wider date range to see earlier activity."
+                }
               />
             ) : (
               <SimpleTable
                 columns={columns}
-                rows={ledger?.entries ?? []}
+                rows={visibleEntries}
                 rowKey={(r) => `${r.kind}-${r.occurredAt}-${r.runningBalance}`}
                 loading={loading && !ledger}
                 emptyState={{
@@ -273,13 +320,21 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
                   <div className="kit-skeleton h-[14px] w-2/3" />
                 </div>
               ))
-            ) : !ledger || ledger.entries.length === 0 ? (
+            ) : !ledger || visibleEntries.length === 0 ? (
               <EmptyState
-                title="No credit history for this customer"
-                description="Debts and repayments will appear here once the customer takes a credit order or pays."
+                title={
+                  !ledger || ledger.entries.length === 0
+                    ? "No credit history for this customer"
+                    : "No activity in this range"
+                }
+                description={
+                  !ledger || ledger.entries.length === 0
+                    ? "Debts and repayments will appear here once the customer takes a credit order or pays."
+                    : "Try a wider date range to see earlier activity."
+                }
               />
             ) : (
-              ledger.entries.map((r) => (
+              visibleEntries.map((r) => (
                 <div
                   key={`${r.kind}-${r.occurredAt}-${r.runningBalance}`}
                   className="flex flex-col gap-[2px] py-(--sp-5) border-b border-b-solid [border-bottom-color:var(--border-subtle)]"

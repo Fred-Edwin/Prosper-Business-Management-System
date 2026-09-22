@@ -4,7 +4,7 @@
 // surface (search -> filtered EmptyState, Has-balance toggle, repayment
 // rail Drawer open + Esc-restore + toast, add-customer Drawer, A2 ledger
 // + zero-history) with the feature hook mocked. No server / DB.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "@/components/kit/toast";
@@ -137,6 +137,19 @@ function renderA2() {
     </ToastProvider>,
   );
 }
+
+// A2 defaults its date-range filter to "This month" (client feedback
+// 2026-09-22 — period-scoped account history). LEDGER's fixture entries
+// are fixed to Aug 2026, so "now" is pinned inside that same month —
+// otherwise this suite silently rots whenever it runs in a different
+// calendar month than the fixture dates. Mirrors canteen-hub.screen.test.tsx.
+beforeAll(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date("2026-08-28T12:00:00+03:00"));
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   listState.customers = [...ROWS];

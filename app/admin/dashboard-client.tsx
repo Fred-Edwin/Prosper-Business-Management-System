@@ -70,6 +70,16 @@ function money(dec: string): string {
       })
     : dec;
 }
+/** Compact KES for a bar-top label (e.g. "925", "47.9K") — full 2dp money
+ *  doesn't fit above a 26px bar. */
+function moneyCompact(dec: string): string {
+  const n = Number(dec);
+  if (!Number.isFinite(n)) return dec;
+  return n.toLocaleString("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  });
+}
 /** "2026-09-03" → "Wed, 3 Sep 2026". */
 function longDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -506,12 +516,21 @@ function Bar({ net, maxAbs, width }: { net: string | null; maxAbs: number; width
   const pct = maxAbs > 0 ? Math.abs(n) / maxAbs : 0;
   const h = Math.max(4, Math.round(pct * 72));
   return (
-    <div
-      className={`shrink-0 rounded-[2px] ${width} ${
-        n < 0 ? "[background-color:var(--color-danger)]" : "[background-color:var(--color-success)]"
-      }`}
-      style={{ height: h }}
-    />
+    <div className="flex flex-col items-center justify-end gap-(--sp-1)">
+      <span
+        className={`font-mono text-[10px]/[12px] whitespace-nowrap ${
+          n < 0 ? "text-danger" : "text-success"
+        }`}
+      >
+        {n < 0 ? "−" : ""}{moneyCompact(String(Math.abs(n)))}
+      </span>
+      <div
+        className={`shrink-0 rounded-[2px] ${width} ${
+          n < 0 ? "[background-color:var(--color-danger)]" : "[background-color:var(--color-success)]"
+        }`}
+        style={{ height: h }}
+      />
+    </div>
   );
 }
 
