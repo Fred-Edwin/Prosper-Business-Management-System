@@ -28,6 +28,8 @@ import {
   Boxes,
   Trash2,
   PackagePlus,
+  CreditCard,
+  Users,
 } from "lucide-react";
 import { ActionTileGrid, type ActionTile } from "@/components/kit/action-tile-grid";
 import { ActivityTimeline } from "@/components/kit/activity-timeline";
@@ -53,6 +55,7 @@ import {
   useDerivedSales,
   useStockCountActions,
 } from "@/app/canteen/use-stock-count";
+import { useCreditSales, useCreditSaleActions } from "@/app/canteen/use-credit-sale";
 import { nairobiBusinessDate } from "@/app/cashier/use-orders";
 
 const TILE_ICON_PROPS = { width: 20, height: 20, strokeWidth: 1.5, "aria-hidden": true } as const;
@@ -93,6 +96,37 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
   const todaysCounts = derivedToday.filter(
     (r) => r.stockCountId != null && r.lastCountedAt != null,
   );
+
+  // ADR-91 — today's canteen credit sales, with the same same-day void
+  // recovery pattern as stock counts.
+  const { rows: todaysCreditSales, refresh: refreshCreditSales } =
+    useCreditSales({ date: today });
+  const { voidCreditSale } = useCreditSaleActions();
+  const [voidingCreditSaleId, setVoidingCreditSaleId] = React.useState<
+    string | null
+  >(null);
+  const [voidCreditSaleTarget, setVoidCreditSaleTarget] = React.useState<
+    { stockMovementId: string; productName: string; customerName: string; total: string } | null
+  >(null);
+
+  async function confirmVoidCreditSale() {
+    if (!voidCreditSaleTarget) return;
+    const { stockMovementId, productName: soldProductName } = voidCreditSaleTarget;
+    setVoidingCreditSaleId(stockMovementId);
+    try {
+      await voidCreditSale(stockMovementId);
+      toast(`Credit sale voided · ${soldProductName}`, { tone: "info" });
+      setVoidCreditSaleTarget(null);
+      await Promise.all([refresh(), refreshCreditSales()]);
+    } catch (e) {
+      toast(
+        e instanceof Error ? e.message : "Couldn't void the credit sale.",
+        { tone: "danger" },
+      );
+    } finally {
+      setVoidingCreditSaleId(null);
+    }
+  }
 
   async function confirmDeleteCount() {
     if (!deleteCountTarget) return;
@@ -207,6 +241,22 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
       label: "Non-sale",
       subLabel: "Spoilage & staff meals",
       onClick: () => router.push("/canteen/flows/non-sale"),
+    },
+    {
+      // ADR-91 — a discrete, real-time transaction alongside the
+      // stock-count-derived cash flow: sell now, customer pays later.
+      icon: <CreditCard {...TILE_ICON_PROPS} stroke="var(--color-danger)" />,
+      label: "Credit Sale",
+      subLabel: "Sell now, pay later",
+      onClick: () => router.push("/canteen/flows/credit-sale"),
+    },
+    {
+      // ADR-91 follow-up — collect a repayment against a canteen credit
+      // sale's debt, the same way the Cashier's C6 screen does.
+      icon: <Users {...TILE_ICON_PROPS} stroke="var(--color-accent)" />,
+      label: "Customers",
+      subLabel: "Balances & repayments",
+      onClick: () => router.push("/canteen/customers"),
     },
   ];
 
@@ -337,6 +387,50 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
         </div>
       )}
 
+      {todaysCreditSales.length > 0 && (
+        <div className="flex flex-col gap-(--sp-4)">
+          <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-caption/micro">
+            Today&rsquo;s credit sales
+          </div>
+          <ul className="flex flex-col rounded-md border border-solid [border-color:var(--border-subtle)] overflow-hidden">
+            {todaysCreditSales.map((row) => (
+              <li
+                key={row.stockMovementId}
+                className="flex items-center justify-between gap-(--sp-4) px-(--sp-5) py-(--sp-4) border-b border-b-solid [border-bottom-color:var(--border-subtle)] last:border-b-0"
+              >
+                <div className="flex flex-col gap-px min-w-0">
+                  <span className="font-ui font-(--weight-medium) [color:var(--text-primary)] text-body/sm">
+                    {row.productName}
+                  </span>
+                  <span className="font-ui [color:var(--text-secondary)] text-caption/micro">
+                    {trimQty(row.quantity)} to {row.customerName} · KES {row.total}
+                  </span>
+                </div>
+                {row.voidable && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVoidCreditSaleTarget({
+                        stockMovementId: row.stockMovementId,
+                        productName: row.productName,
+                        customerName: row.customerName,
+                        total: row.total,
+                      })
+                    }
+                    disabled={voidingCreditSaleId === row.stockMovementId}
+                    className="font-ui font-(--weight-medium) text-danger text-caption/micro kit-focus-ring rounded-sm shrink-0 disabled:opacity-50"
+                  >
+                    {voidingCreditSaleId === row.stockMovementId
+                      ? "Voiding…"
+                      : "Void"}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="flex flex-col gap-(--sp-4)">
         <div className="font-ui font-(--weight-semibold) uppercase [letter-spacing:var(--tracking-caps)] [color:var(--text-tertiary)] text-caption/micro">
           Today&rsquo;s canteen log
@@ -389,6 +483,22 @@ export function CanteenHubClient({ locationLabel }: { locationLabel: string }) {
         }
         confirmLabel="Delete count"
         submitting={voidingId === deleteCountTarget?.stockCountId}
+      />
+
+      <ConfirmDialog
+        open={voidCreditSaleTarget !== null}
+        onClose={() => setVoidCreditSaleTarget(null)}
+        onConfirm={confirmVoidCreditSale}
+        title="Void credit sale"
+        bodyCopy={
+          voidCreditSaleTarget
+            ? `Void today's credit sale of ${voidCreditSaleTarget.productName} to ` +
+              `${voidCreditSaleTarget.customerName}? The stock returns and the ` +
+              `KES ${voidCreditSaleTarget.total} debt is cleared.`
+            : ""
+        }
+        confirmLabel="Void credit sale"
+        submitting={voidingCreditSaleId === voidCreditSaleTarget?.stockMovementId}
       />
     </div>
   );

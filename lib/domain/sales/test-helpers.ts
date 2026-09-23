@@ -265,7 +265,7 @@ export async function seedMovement(
 
 /** Create a customer namespaced to this suite. */
 export async function makeCustomer(
-  ctx: SalesTestCtx,
+  ctx: SalesTestCtx | CanteenTestCtx,
   name = "Credit Cust",
   phone = "0700000000",
 ): Promise<string> {

@@ -642,9 +642,13 @@ Returns `201` with the correcting `OrderView`.
 > (`sold × canteen sellingPrice`, `account: "cash"`,
 > `sourceType: "canteen_sale"`, `sourceId` = the count id). Closing stock
 > is **not** a stored row (ADR-11): after the `sale` row the derived
-> balance at the count's instant equals `countedQuantity`. **No credit
-> and no M-Pesa at the canteen** (PRD §4.4) — no `Debt`, no
-> `paymentMethod`, `account` is always `cash`.
+> balance at the count's instant equals `countedQuantity`. **No M-Pesa at
+> the canteen** — the count's revenue `MoneyMovement` `account` is always
+> `cash`. **Canteen credit sales** (ADR-91, below) are a separate,
+> discrete, real-time transaction alongside this derived flow — the
+> attendant sells a product to a customer on credit, right now; stock
+> reduces immediately and a `Debt` is created instead of a
+> `MoneyMovement`.
 
 ### `POST /api/canteen/stock-counts`
 Roles: **Canteen Attendant only** (`403` otherwise; `403` too if the
@@ -726,6 +730,87 @@ Roles: **Admin** (all canteens or `?locationId=`), **Canteen Attendant** (their 
 Returns `{ data: CanteenProductItem[] }` containing active canteen products:
 `{ id, name, unitLabel, category, kind, sellingPrice, locationId }`. Used by K1
 Stock Count product picker and inventory overview.
+
+### Canteen credit sales (ADR-91)
+
+A discrete, real-time transaction alongside the derived-sales flow above
+— the attendant picks a product, a quantity, and an existing `Customer`
+at the moment the sale happens. Stock reduces immediately (a real `sale`
+`StockMovement`, `customerId` set, **no** `stockCountId` — that's what
+distinguishes it from a count-derived sale row) and a `Debt` is created
+(**no** `MoneyMovement` — nothing has been paid yet). Folded into
+`GET /api/canteen/stock-counts`'s `unitsSold`/`revenue` for the period it
+falls within (see that route's blockquote for the resulting semantic —
+`revenue` there now blends cash collected with credit value owed).
+
+### `POST /api/canteen/credit-sales`
+Roles: **Canteen Attendant only** (`403` otherwise; `403` too if the
+attendant's `Staff` link has no location). Body:
+`{ "productId": "...", "customerId": "...", "quantity": "3", "occurredAt"?: ISO }`.
+`quantity` must parse to a decimal `> 0` (`400 VALIDATION_ERROR`, field
+`"quantity"`). The product must have an active canteen `ProductLocation`
+with a non-null `sellingPrice` (`400`, field `"productId"`). The customer
+must exist (`404 NOT_FOUND`, field `"customerId"`) — no archived-customer
+guard, matching the existing Restaurant credit-order path. `quantity`
+must not exceed the canteen's current derived stock for the product
+(`400 VALIDATION_ERROR`, field `"quantity"`, "Not enough Canteen stock:
+... Reduce the quantity."). `occurredAt` defaults to now and must be
+today for a non-admin (ADR-53); the day must be open (ADR-52).
+
+Returns `201` with `{ data: RecordCanteenCreditSaleResult }`:
+`{ stockMovement: { id, productId, locationId, quantity, occurredAt }, debt: { id, customerId, amount, occurredAt }, productName, unitPrice, total }`
+— `unitPrice` is the snapshotted canteen selling price (2dp string),
+`total = quantity × unitPrice` (2dp string, also `debt.amount`).
+
+Writes an `AuditLog` row (`action: "create"`, `entityType:
+"canteen_credit_sale"`, `entityId` = the `StockMovement.id`, `newValue: {
+productId, customerId, quantity, unitPrice, total }` — `unitPrice` here
+is what a later correction reads back to hold the price stable).
+
+### `GET /api/canteen/credit-sales`
+Roles: Admin (every canteen), Canteen Attendant (their own canteen only).
+Query: `?date=YYYY-MM-DD` (business date, defaults to today). Backs the
+attendant hub's "today's credit sales" recap. Returns
+`{ data: CanteenCreditSaleListItem[] }`:
+`{ stockMovementId, productId, productName, customerId, customerName, quantity, total, occurredAt, voidable }`
+— `quantity`/`total` are the CURRENT derived values (fold in any
+correction/void deltas); a row voided to zero is dropped from the list.
+`voidable` is true only for the caller's own same-day row (a UX hint —
+the actual void call still re-checks ownership/day-open).
+
+### `DELETE /api/canteen/credit-sales/:id`
+Roles: **Canteen Attendant only.** Undo a credit sale **the caller
+recorded today** (Africa/Nairobi) — always a correction-to-zero (never a
+hard delete, unlike stock-count void: a `Repayment` may already reference
+the customer's balance by void time). Writes one reversing `StockMovement`
+(`correctsMovementId` set, returns the stock) and one reversing `Debt`
+row (zeroes the amount owed), in one transaction. `403 FORBIDDEN` for
+another attendant's sale, or once its business day has rolled ("ask an
+administrator to correct this credit sale" — see the `/correct` route
+below). `404 NOT_FOUND` for an unknown id or one that isn't a credit-sale
+row. `400 VALIDATION_ERROR` ("This credit sale is already voided.") if
+called twice. Returns `{ data: { voided: true } }`. Writes a
+`soft_delete` `AuditLog` row.
+
+### `POST /api/canteen/credit-sales/:id/correct`
+Roles: **Admin only** (`403` otherwise). Not day-close gated — an Admin
+correction row may always be written (ADR-72). Body: `{ "quantity": "5" }`
+— the corrected **final** quantity. `:id` must be an original credit-sale
+`StockMovement` (`404 NOT_FOUND` otherwise); correcting a correction is
+rejected (`400 VALIDATION_ERROR`, "This row is itself a correction.").
+A zero-delta correction (same as current) is rejected (`400
+VALIDATION_ERROR`, idempotent). The corrected amount uses the **original
+sale's per-unit price** — never re-priced at today's canteen selling
+price. If the delta increases the sale, the canteen's current stock is
+re-checked (`400 VALIDATION_ERROR`, same "Not enough Canteen stock..."
+message as `POST`).
+
+Returns `201` with `{ data: CorrectCanteenCreditSaleResult }`:
+`{ stockMovementId, quantity, total }` — the correction row's id and the
+new CURRENT derived quantity/total. Writes an `AuditLog` row (`action:
+"correct"`, `entityType: "canteen_credit_sale"`, `oldValue`/`newValue`
+sharing `{ quantity, total }` keys — a real Field·Was·Now table, per
+ADR-72).
 
 ---
 

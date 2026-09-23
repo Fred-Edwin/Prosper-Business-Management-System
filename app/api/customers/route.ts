@@ -18,8 +18,16 @@ import {
 // plan §7). Nothing customer-side is per-cashier.
 const CUSTOMER_ROLES: readonly Role[] = ["admin", "cashier"];
 
+// GET (search) and POST (create/quick-create) also open to
+// canteen_attendant (ADR-91) — the canteen credit-sale flow needs to find
+// or quick-create a customer to attach, the same way the Cashier's C5
+// sheet does. Everything else on this resource — the ledger, repayments,
+// archive/unarchive — stays Admin/Cashier-only; an attendant never needs
+// to view or edit a customer beyond picking one for a sale.
+const CUSTOMER_LOOKUP_ROLES: readonly Role[] = ["admin", "cashier", "canteen_attendant"];
+
 export async function GET(req: NextRequest) {
-  const auth = await requireApiRoleIn(CUSTOMER_ROLES);
+  const auth = await requireApiRoleIn(CUSTOMER_LOOKUP_ROLES);
   if (auth instanceof NextResponse) return auth;
 
   const sp = req.nextUrl.searchParams;
@@ -43,7 +51,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireApiRoleIn(CUSTOMER_ROLES);
+  const auth = await requireApiRoleIn(CUSTOMER_LOOKUP_ROLES);
   if (auth instanceof NextResponse) return auth;
 
   let body: unknown;

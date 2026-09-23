@@ -14,14 +14,25 @@ import { moneyString, quantityString } from "./internal";
  * Admin, I can see, per product, when it was last counted and what
  * period a derived sales figure covers").
  *
- * Everything is derived from `StockCount` + `StockMovement` +
+ * Everything is derived from `StockCount` + `StockMovement` + `Debt` +
  * `MoneyMovement` rows — nothing is stored. For a product's most recent
- * count we join:
- *   - its `sale` `StockMovement` via `stockCountId` → `unitsSold`
- *     (the row's `quantity` is negative; `unitsSold` is its magnitude),
- *   - its `canteen_sale` `MoneyMovement` via `sourceId` → `revenue`
- *     (absent when `sold === 0`, in which case `revenue` is `"0.00"`),
- *   - the previous count's `occurredAt` → `periodStart`.
+ * count's period `(prev.occurredAt, latest.occurredAt]` we fold TWO
+ * sources into `unitsSold`/`revenue` (ADR-91):
+ *   - the count-derived cash sale: its `sale` `StockMovement` via
+ *     `stockCountId` (the row's `quantity` is negative; magnitude is
+ *     units sold) and its `canteen_sale` `MoneyMovement` via `sourceId`
+ *     (revenue collected in cash);
+ *   - any discrete canteen credit sales in the same period: `sale`
+ *     `StockMovement` rows with `customerId` set and NO `stockCountId`
+ *     (this is what tells the two apart), summed (a plain sum nets out
+ *     any corrections/voids since those are signed rows too) — their
+ *     revenue isn't a `MoneyMovement` (nothing paid yet, it's owed), so
+ *     it's read from the linked `Debt.amount` instead.
+ *
+ * **Semantic note**: `revenue` on this report therefore blends cash
+ * collected (from counts) with credit sales value (owed, not yet
+ * collected) — it is "sales value for the period," not pure cash. Debt
+ * collection is tracked separately via the Customer ledger.
  *
  * Role scope (mirrors `stock/list-movements.ts`):
  *   - `admin` → every canteen;
@@ -79,7 +90,7 @@ async function viewForProduct(
   const latest = counts[0];
   const prev = counts[1] ?? null;
 
-  const [saleMovement, revenueMovement] = await Promise.all([
+  const [saleMovement, revenueMovement, creditSaleAgg] = await Promise.all([
     prisma.stockMovement.findFirst({
       where: { stockCountId: latest.id, movementType: "sale" },
       select: { quantity: true },
@@ -88,14 +99,55 @@ async function viewForProduct(
       where: { sourceType: "canteen_sale", sourceId: latest.id },
       select: { amount: true },
     }),
+    prisma.stockMovement.aggregate({
+      _sum: { quantity: true },
+      where: {
+        productId,
+        locationId: canteenLocationId,
+        movementType: "sale",
+        customerId: { not: null },
+        stockCountId: null,
+        occurredAt: { ...(prev ? { gt: prev.occurredAt } : {}), lte: latest.occurredAt },
+      },
+    }),
   ]);
 
-  const unitsSold = saleMovement
+  const countUnitsSold = saleMovement
     ? saleMovement.quantity.negated()
     : new Prisma.Decimal(0);
-  const revenue = revenueMovement
+  const countRevenue = revenueMovement
     ? revenueMovement.amount
     : new Prisma.Decimal(0);
+
+  const creditUnitsSold = (creditSaleAgg._sum.quantity ?? new Prisma.Decimal(0)).negated();
+  let creditRevenue = new Prisma.Decimal(0);
+  if (!creditUnitsSold.isZero()) {
+    const creditMovementIds = await prisma.stockMovement.findMany({
+      where: {
+        productId,
+        locationId: canteenLocationId,
+        movementType: "sale",
+        customerId: { not: null },
+        stockCountId: null,
+        correctsMovementId: null,
+        occurredAt: { ...(prev ? { gt: prev.occurredAt } : {}), lte: latest.occurredAt },
+      },
+      select: { id: true },
+    });
+    if (creditMovementIds.length > 0) {
+      const debtAgg = await prisma.debt.aggregate({
+        _sum: { amount: true },
+        where: {
+          sourceType: "canteen_credit_sale",
+          sourceId: { in: creditMovementIds.map((m) => m.id) },
+        },
+      });
+      creditRevenue = debtAgg._sum.amount ?? new Prisma.Decimal(0);
+    }
+  }
+
+  const unitsSold = countUnitsSold.add(creditUnitsSold);
+  const revenue = countRevenue.add(creditRevenue);
 
   return {
     productId,

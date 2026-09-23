@@ -209,6 +209,21 @@ describe("A1 — Customers & Credit register", () => {
     await waitFor(() => expect(opener).toHaveFocus());
   });
 
+  it("the repayment Drawer links to the customer's full ledger history (mobile row list has no other path there)", async () => {
+    renderA1();
+    const user = userEvent.setup();
+    await user.click(
+      within(screen.getByRole("table")).getAllByRole("button", {
+        name: /Record repayment for Grace Wanjiru/,
+      })[0],
+    );
+    const dialog = await screen.findByRole("dialog");
+    const historyLink = within(dialog).getByRole("link", {
+      name: /View full history/,
+    });
+    expect(historyLink).toHaveAttribute("href", "/admin/customers/c1");
+  });
+
   it("records a repayment and fires a success toast", async () => {
     renderA1();
     const user = userEvent.setup();

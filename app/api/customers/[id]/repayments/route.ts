@@ -6,14 +6,22 @@ import { ok, fail } from "@/lib/api/response";
 import { recordRepaymentSchema } from "@/lib/validation/customers";
 import { DomainError, recordRepayment } from "@/lib/domain/customers";
 
-const CUSTOMER_ROLES: readonly Role[] = ["admin", "cashier"];
+// Admin/Cashier (PRD §4.6), plus canteen_attendant (ADR-91 follow-up,
+// 2026-09-23) — a canteen credit sale creates a Debt an attendant needs
+// to be able to collect against later, the same as a Cashier does for a
+// Restaurant credit order. `recordRepayment` books a plain `cash` /
+// `mpesa_bank` MoneyMovement regardless of caller — canteen cash already
+// shares that same global account (the stock-count revenue path books
+// there too), so this introduces no new money-account model.
+const CUSTOMER_ROLES: readonly Role[] = ["admin", "cashier", "canteen_attendant"];
 
 type Ctx = { params: Promise<{ id: string }> };
 
 /**
- * `POST /api/customers/:id/repayments` — record a debt repayment. Admin or
- * Cashier. Writes a `Repayment` + a `+amount` `MoneyMovement` + audit rows
- * in one transaction. Overpayment is allowed (drives the balance negative).
+ * `POST /api/customers/:id/repayments` — record a debt repayment. Admin,
+ * Cashier, or Canteen Attendant. Writes a `Repayment` + a `+amount`
+ * `MoneyMovement` + audit rows in one transaction. Overpayment is allowed
+ * (drives the balance negative).
  */
 export async function POST(req: NextRequest, ctx: Ctx) {
   const auth = await requireApiRoleIn(CUSTOMER_ROLES);

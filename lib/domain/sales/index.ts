@@ -6,6 +6,8 @@
 // reporting model):
 //   - Restaurant orders (M2-F1, S4): create / edit-own / correct / list.
 //   - Canteen derived sales (M2-F3, S5): recordStockCount + derivation.
+//   - Canteen credit sales (ADR-91): recordCanteenCreditSale + its
+//     correct/void pair — a discrete transaction alongside the derived flow.
 
 export { DomainError } from "./errors";
 export * from "./types";
@@ -25,3 +27,7 @@ export {
   getDerivedSalesForProduct,
   listDerivedSales,
 } from "./derived-sales";
+export { recordCanteenCreditSale } from "./record-canteen-credit-sale";
+export { voidCanteenCreditSale } from "./void-canteen-credit-sale";
+export { correctCanteenCreditSale } from "./correct-canteen-credit-sale";
+export { listCanteenCreditSales } from "./list-canteen-credit-sales";

@@ -3,9 +3,13 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 
 // Role-access contract for the Customers & Credit routes (plan guardrail 6):
-// admin + cashier on every customer verb; store_manager / canteen_attendant
-// refused; unauthenticated → 401. `/api/money/balances` is admin-only and
-// is covered in app/api/money/balances/route.test.ts.
+// admin + cashier on every customer verb. GET/POST on this collection
+// route (search + create) also open to canteen_attendant (ADR-91 — the
+// canteen credit-sale flow needs to find/quick-create a customer); every
+// other customer route (`[id]`, `[id]/repayments`, archive/unarchive)
+// stays admin + cashier only. store_manager refused everywhere;
+// unauthenticated → 401. `/api/money/balances` is admin-only and is
+// covered in app/api/money/balances/route.test.ts.
 
 const mockSession = vi.hoisted(() => ({ current: null as unknown }));
 
@@ -50,6 +54,7 @@ describe("/api/customers — role access", () => {
   let adminId: string;
   let cashierId: string;
   let managerId: string;
+  let attendantId: string;
 
   beforeAll(async () => {
     const admin = await prisma.user.create({
@@ -71,9 +76,18 @@ describe("/api/customers — role access", () => {
         active: true,
       },
     });
+    const attendant = await prisma.user.create({
+      data: {
+        name: `${PREFIX} Attendant`,
+        pinHash: "x",
+        role: "canteen_attendant",
+        active: true,
+      },
+    });
     adminId = admin.id;
     cashierId = cashier.id;
     managerId = manager.id;
+    attendantId = attendant.id;
   });
 
   afterAll(async () => {
@@ -142,6 +156,18 @@ describe("/api/customers — role access", () => {
     expect(
       (await createCustomer({ name: `${PREFIX}x`, phone: "07" })).status,
     ).toBe(403);
+  });
+
+  it("canteen_attendant: GET list → 200, POST create → 201 (ADR-91 credit-sale flow)", async () => {
+    mockSession.current = sessionFor("canteen_attendant", attendantId);
+    expect((await listCustomers(`${PREFIX}none`)).status).toBe(200);
+
+    const { status, body } = await createCustomer({
+      name: `${PREFIX} Kamau`,
+      phone: "0722334455",
+    });
+    expect(status).toBe(201);
+    expect(body.data.name).toBe(`${PREFIX} Kamau`);
   });
 
   it("unauthenticated → 401", async () => {

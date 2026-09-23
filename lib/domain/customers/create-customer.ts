@@ -4,8 +4,9 @@ import { toCustomerView } from "./internal";
 import type { CreateCustomerInput, Customer, CustomerContext } from "./types";
 
 /**
- * Create a customer record (ADR-19). Admin or Cashier — enforced at the
- * route.
+ * Create a customer record (ADR-19). Admin, Cashier, or Canteen Attendant
+ * (ADR-91 — the canteen credit-sale flow's quick-create) — enforced at
+ * the route.
  *
  * `name` and `phone` are trimmed and must be non-empty. Phone is kept
  * lenient on purpose — Kenyan numbers vary in format (07…, +2547…, 01…)

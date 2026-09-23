@@ -71,10 +71,14 @@ export type CustomerLedgerEntry = {
   /** Positive magnitude, decimal string. */
   amount: string;
   occurredAt: string;
-  /** Present only for `kind: "debt"` — the order that created it. */
+  /** Present only for `kind: "debt"` sourced from an Order — the order that created it. */
   orderId?: string;
-  /** Present only for `kind: "debt"` — that order's human number ("#1043"). */
+  /** Present only for `kind: "debt"` sourced from an Order — that order's human number ("#1043"). */
   orderNumber?: number;
+  /** Present only for `kind: "debt"` — which path created it (ADR-91). */
+  debtSourceType?: "order" | "canteen_credit_sale";
+  /** Present only for a canteen-credit-sourced debt — the product sold. */
+  canteenProductName?: string;
   /** Present only for `kind: "repayment"` — the account it landed in. */
   account?: MoneyAccount;
   /** Present only for `kind: "repayment"` — the optional free-text note. */
@@ -131,16 +135,27 @@ export type CorrectRepaymentInput = {
 };
 
 /**
- * Internal helper input — a `Debt` row is written by `createOrder` (S4)
- * for a credit order, inside its transaction. This module only provides
- * the write helper + the reads; it never originates a debt itself.
+ * Internal helper input — a `Debt` row is written by `createOrder` (S4,
+ * Order-sourced) or `recordCanteenCreditSale` (ADR-91, canteen-sourced),
+ * inside their own transaction. This module only provides the write
+ * helper + the reads; it never originates a debt itself. Exactly one of
+ * `orderId` or `{sourceType, sourceId}` must be given — see `Debt`'s
+ * schema comment for why the two source shapes aren't symmetric.
  */
-export type RecordDebtInput = {
-  customerId: string;
-  orderId: string;
-  amount: Prisma.Decimal;
-  occurredAt: Date;
-};
+export type RecordDebtInput =
+  | {
+      customerId: string;
+      orderId: string;
+      amount: Prisma.Decimal;
+      occurredAt: Date;
+    }
+  | {
+      customerId: string;
+      sourceType: "canteen_credit_sale";
+      sourceId: string;
+      amount: Prisma.Decimal;
+      occurredAt: Date;
+    };
 
 /** Acting-user context for customer mutations. */
 export type CustomerContext = {

@@ -159,6 +159,83 @@ export type DerivedSaleView = {
   stockCountId: string | null;
 };
 
+/**
+ * A canteen credit sale (ADR-91) — a discrete, real-time transaction
+ * alongside the stock-count-derived cash-sale flow. The attendant picks a
+ * product, quantity, and customer; stock reduces immediately and a `Debt`
+ * is created (no `MoneyMovement` — nothing has been paid yet).
+ */
+export type RecordCanteenCreditSaleInput = {
+  productId: string;
+  customerId: string;
+  /** Decimal string; must be > 0. */
+  quantity: string;
+  /** Defaults to now. */
+  occurredAt?: Date;
+};
+
+export type RecordCanteenCreditSaleResult = {
+  stockMovement: {
+    id: string;
+    productId: string;
+    locationId: string;
+    /** Decimal string (4dp) — the positive quantity sold. */
+    quantity: string;
+    occurredAt: string;
+  };
+  debt: {
+    id: string;
+    customerId: string;
+    /** Decimal string (2dp). */
+    amount: string;
+    occurredAt: string;
+  };
+  productName: string;
+  /** Decimal string (2dp) — the snapshotted canteen selling price. */
+  unitPrice: string;
+  /** Decimal string (2dp) — `quantity × unitPrice`. */
+  total: string;
+};
+
+/** Corrected FINAL quantity for a canteen credit sale (ADR-72/ADR-91), Admin-only. */
+export type CorrectCanteenCreditSaleInput = {
+  /** The original `sale` `StockMovement.id`. */
+  stockMovementId: string;
+  /** Decimal string; must be > 0. */
+  quantity: string;
+};
+
+export type CorrectCanteenCreditSaleResult = {
+  /** The correction `StockMovement.id` written. */
+  stockMovementId: string;
+  /** Decimal string (4dp) — the new current derived quantity. */
+  quantity: string;
+  /** Decimal string (2dp) — the new current derived debt amount. */
+  total: string;
+};
+
+/** One canteen credit sale, for the attendant's "today's credit sales" list. */
+export type CanteenCreditSaleListItem = {
+  /** The original `sale` `StockMovement.id`. */
+  stockMovementId: string;
+  productId: string;
+  productName: string;
+  customerId: string;
+  customerName: string;
+  /** Decimal string (4dp) — current derived quantity (folds corrections). */
+  quantity: string;
+  /** Decimal string (2dp) — current derived debt amount. */
+  total: string;
+  occurredAt: string;
+  /** Whether this row can still be voided by the attendant who recorded it (today, own row). */
+  voidable: boolean;
+};
+
+export type ListCanteenCreditSalesFilter = {
+  /** A business date (`YYYY-MM-DD`); defaults to today. */
+  date?: string;
+};
+
 export type ListDerivedSalesFilter = {
   productId?: string;
   /** A business date (`YYYY-MM-DD`) — windows on the count's `occurredAt`.

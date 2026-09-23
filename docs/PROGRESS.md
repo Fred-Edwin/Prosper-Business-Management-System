@@ -16,6 +16,106 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: Canteen Attendant can search/create customers and record repayments (2026-09-23) — DONE
+
+Follow-up from manual QA of the canteen-credit-sale feature (same session,
+ADR-91): the Attendant's credit-sale screen needs to search/quick-create a
+customer, and needs a way to later collect cash/M-Pesa against the debt
+that credit sale created — neither was open to `canteen_attendant`.
+
+- `app/api/customers/route.ts` — `GET`/`POST` (search + create) now also
+  allow `canteen_attendant`; `[id]`, `repayments/:id/correct`, archive/
+  unarchive stay Admin/Cashier-only (no reason for an attendant to reach
+  those). `lib/domain/customers/create-customer.ts` doc comment updated.
+- `app/api/customers/[id]/repayments/route.ts` — `POST` now also allows
+  `canteen_attendant`. Repayments book to the same global `cash`/
+  `mpesa_bank` account canteen stock-count revenue already uses — no new
+  money-account model. `record-repayment.ts` doc comment updated.
+- **Screen** — new `app/canteen/customers/` (list + repayment
+  `BottomSheet`), a straight reuse of the Cashier's C6 screen
+  (`customers-client.tsx`, `RepaymentForm`, `useCustomers`) — nothing
+  canteen-specific beyond who can reach it. New "Customers" hub tile.
+- **Tests** — extended `app/api/customers/route.test.ts` and
+  `app/api/customers/[id]/repayments/route.test.ts` with a
+  `canteen_attendant` case each; new `tests/screens/canteen-customers.screen.test.tsx`.
+- **Gates** — `pnpm typecheck`: clean. `pnpm test`: 179 files / 1517
+  tests, all green.
+
+## Fix: Admin — mobile customer row has no path to the ledger detail screen (2026-09-23) — DONE
+
+Owner-reported gap during manual QA: on the Admin Customers screen, the
+desktop table links a customer's **name** straight to
+`/admin/customers/[id]` (the interleaved debt/repayment ledger), but the
+mobile card-row list (`< --bp-md`) only opens the repayment `BottomSheet`
+— there was no path to the ledger detail screen at all below the `md`
+breakpoint (this is a mobile-first system).
+
+- `app/admin/customers/customers-client.tsx` — added a **"View full
+  history →"** link at the top of the repayment rail `Drawer` (above
+  "Current balance"), pointing at `/admin/customers/${selected.id}`.
+  Reachable from both the mobile drawer and the desktop table's row-click
+  drawer — doesn't touch the existing row-tap-opens-drawer behavior on
+  either breakpoint.
+- **Tests** — extended `tests/screens/admin-customers.screen.test.tsx`
+  with a case asserting the link's `href`.
+- **Gates** — `pnpm typecheck`: clean. `pnpm test`: 179 files / 1517
+  tests, all green. Verified live in-browser (mobile viewport) — the
+  link renders in the drawer and navigates to the ledger.
+
+## Feature: Canteen goods sold on credit (2026-09-23) — DONE
+
+Client feedback item #4: the Canteen Attendant can now let a customer
+take goods now and pay later, tracked against the customer's account —
+mirroring the Restaurant Cashier's credit-order flow. Overrides PRD
+§4.4's former "no credit sales are supported at the canteen" rule
+(deliberate, owner-approved). Scoped separately from item #2 ("Unpaid" at
+handover) — confirmed a genuinely different concept; handover code
+untouched. ADR-91.
+
+- **Schema** — migration `20260923094803_add_canteen_credit_sales`:
+  `Debt.orderId` now nullable; added `Debt.sourceType`
+  (`DebtSourceType`: `order` | `canteen_credit_sale`, default `order`)
+  and `Debt.sourceId` (untyped, points at a `StockMovement.id` for a
+  canteen-sourced debt); added nullable `StockMovement.customerId`
+  (marks a `sale` movement as a canteen credit sale — no `CanteenCreditSale`
+  table needed).
+- **Domain** — `lib/domain/sales/record-canteen-credit-sale.ts`
+  (`recordCanteenCreditSale` — writes the `sale` `StockMovement` + `Debt`
+  in one tx, no `MoneyMovement`), `void-canteen-credit-sale.ts`
+  (attendant-facing, same-day-only, always a correction-to-zero — never a
+  hard delete), `correct-canteen-credit-sale.ts` (Admin-only, not
+  day-close gated, holds the original per-unit price stable),
+  `list-canteen-credit-sales.ts` (today's-sales read, folds correction
+  deltas). `lib/domain/customers/record-debt.ts`: `RecordDebtInput` is
+  now a union (Order-sourced | canteen-sourced). New
+  `correct-canteen-debt.ts` (`correctCanteenDebt`/`voidCanteenDebt`).
+  `get-customer-ledger.ts` resolves a canteen-sourced debt's product name
+  for display (still reads from the one `Debt` table). `derived-sales.ts`
+  folds credit-sale units/revenue into the per-product report for the
+  period they fall within — `revenue` there now blends cash collected
+  with credit value owed (documented in the doc comment + PRD §4.4).
+- **API** — `app/api/canteen/credit-sales/route.ts` (`POST`/`GET`),
+  `[id]/route.ts` (`DELETE`, attendant void), `[id]/correct/route.ts`
+  (`POST`, admin correction). `lib/validation/canteen.ts` gains the three
+  schemas.
+- **Screen** — `app/canteen/flows/credit-sale/` (product picker mirrors
+  the K1 stock-count screen's pattern; customer attach mirrors the
+  Cashier's C5 sheet, duplicated per-screen per existing convention).
+  `app/canteen/use-credit-sale.ts` hook. Hub gains a "Credit Sale" tile
+  and a "Today's credit sales" recap + void (`app/canteen/hub-client.tsx`).
+- **Tests** — `record-canteen-credit-sale.test.ts`,
+  `void-canteen-credit-sale.test.ts`, `correct-canteen-credit-sale.test.ts`,
+  `list-canteen-credit-sales.test.ts`, extended `derived-sales.test.ts`
+  (fold-in, void nets out, post-latest-count edge case),
+  `record-debt.test.ts` / `customers.test.ts` (canteen-sourced debt +
+  mixed-source ledger interleaving), `app/api/canteen/credit-sales/route.test.ts`,
+  `tests/screens/canteen-credit-sale.screen.test.tsx`.
+- **Docs** — `docs/PRD.md` §4.4 rewritten; `docs/DECISIONS.md` ADR-91;
+  `docs/API.md` and `docs/SCHEMA.md` updated.
+- **Gates** — `pnpm test` (full suite, 178 files / 1511 tests): green.
+  `pnpm typecheck`: clean. `pnpm build`: pending final confirmation this
+  session.
+
 ## Feature: `daily_entry` pay model removed; `bonus` replaces it (2026-09-23) — DONE
 
 Client feedback: she couldn't make sense of switching a staff member to

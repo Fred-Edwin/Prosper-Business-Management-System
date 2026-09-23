@@ -283,8 +283,55 @@ correction path (a new `StockCount` + offsetting rows, ADR-15) is a later
 session. **There is no `corrects_stock_count_id` column today**; adding
 that correction path needs a migration.
 
-**No credit and no M-Pesa at the Canteen** (PRD §4.4) — no `Debt`, no
-`payment_method`; the money row's `account` is always `cash`.
+**No M-Pesa at the Canteen** — the count's revenue `MoneyMovement`
+`account` is always `cash`. Credit sales (below) are the one canteen path
+that writes a `Debt` instead of a `MoneyMovement`.
+
+### Canteen credit sales (ADR-91)
+
+A **discrete, real-time transaction** alongside the derived stock-count
+flow above — the Canteen Attendant picks a product, a quantity, and an
+existing `Customer` at the moment the sale happens
+(`recordCanteenCreditSale`, `lib/domain/sales`). No new table: it reuses
+`StockMovement` (`movement_type = sale`, `quantity` negative, immediate
+`occurred_at` — stock leaves NOW, not waiting for the next count) plus a
+`Debt` (`source_type = canteen_credit_sale`, `source_id` = the
+`StockMovement.id`). **No `MoneyMovement`** — nothing has been paid yet.
+
+**Telling the two `sale` movement kinds apart** — this distinction is
+load-bearing for the derived-sales report below:
+| | count-derived cash sale | canteen credit sale |
+|---|---|---|
+| `stock_count_id` | set | **null** |
+| `customer_id` | null | **set** |
+| money effect | `canteen_sale` `MoneyMovement` | `Debt` (via `source_id`) |
+
+Immediate write is safe: `deriveStockCount`'s `expectedRemaining` sums
+*every* `StockMovement` for (product, canteen) up to the count's
+`occurred_at`, so a credit sale's row nets in correctly on the next count
+— never double-counted as "missing" stock, the same way a transfer or
+non-sale-consumption row already isn't.
+
+**Correction/void (ADR-72).** `Debt` has no `corrects_debt_id`
+self-relation — a canteen-sourced correction writes another signed `Debt`
+row sharing the same `source_id` (summed like `correctDebt` already does
+for order-sourced debts), paired with a signed correction `StockMovement`
+(`corrects_movement_id` set). **Void** (`voidCanteenCreditSale`) is
+**attendant-facing, same-day only** — always a correction-to-zero, never a
+hard delete (unlike `voidStockCount`) since a `Repayment` may already
+reference the customer's balance by void time. **Correction** (a quantity
+change after the fact, `correctCanteenCreditSale`) is **Admin-only**, not
+day-close gated, and holds the **original sale's per-unit price** stable
+(recovered from the create `AuditLog.newValue.unitPrice`) — a correction
+restates what happened, it never re-prices at today's canteen rate.
+
+**Reporting fold-in.** `derived-sales.ts`'s per-product "units sold" /
+"revenue" for a count's period now sums the count-linked `sale` movement
+AND any credit-sale movements (`customer_id` set, `stock_count_id` null)
+falling in that same window — credit-sale revenue is read from the linked
+`Debt.amount` (there's no `canteen_sale` `MoneyMovement` for it). This
+means the report's "revenue" blends cash collected with credit sales
+value owed, not collected — read it as "sales value for the period."
 
 ---
 
@@ -403,13 +450,25 @@ customer's ledger stays reachable by direct link.
 | Column | Notes |
 |---|---|
 | customer_id | FK → `Customer` |
-| order_id | FK → `Order` — created automatically on a Credit order |
+| order_id | Nullable FK → `Order` — set only when `source_type = order` |
+| source_type | `DebtSourceType`: `order` \| `canteen_credit_sale`. Default `order` (ADR-91). |
+| source_id | Nullable, untyped string — set only when `source_type = canteen_credit_sale`, pointing at the originating `StockMovement.id`. Null for an order-sourced debt (deliberately asymmetric — `order_id` already carries that reference; don't backfill `source_id` for it too). |
 | amount | NUMERIC |
 | occurred_at | |
 
-Written only by `createOrder` (S4) for a `credit` order, inside its
-transaction. S3 ships a tx-only `lib/domain/customers.recordDebt` helper
-for S4 to call; S3 itself only reads `Debt` (for balances / the ledger).
+Written by `createOrder` (S4) for a `credit` order (`source_type: order`,
+`order_id` set), or by `recordCanteenCreditSale` (ADR-91, `source_type:
+canteen_credit_sale`, `source_id` = the credit sale's `StockMovement.id`)
+— both inside their own transaction, via the shared tx-only
+`lib/domain/customers.recordDebt` helper. One `Debt` table is the single
+source of truth for "what a customer owes" regardless of source;
+`getCustomerLedger` resolves a canteen-sourced row's product name for
+display via a second, display-only query (never a second source of what's
+owed). No `corrects_debt_id` self-relation exists — an order-sourced
+correction is a whole new `Order` + its own offsetting `Debt` (ADR-15); a
+canteen-sourced correction/void (`correctCanteenDebt`/`voidCanteenDebt`)
+writes another signed `Debt` row sharing the same `source_id`, summed like
+any other.
 
 ### `Repayment`
 | Column | Notes |

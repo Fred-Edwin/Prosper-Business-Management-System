@@ -63,3 +63,38 @@ export type RecordStockCountBatchBody = z.infer<
 >;
 export type PreviewStockCountQuery = z.infer<typeof previewStockCountQuerySchema>;
 export type ListDerivedSalesQuery = z.infer<typeof listDerivedSalesQuerySchema>;
+
+/**
+ * Zod schemas for the canteen credit-sale routes (ADR-91) — same "shape
+ * only" split as above; the domain enforces product-sold-at-canteen,
+ * stock-availability, day-open/staff-today, and the correction rules.
+ */
+const positiveQuantityString = quantityString.refine(
+  (v) => Number(v) > 0,
+  "Quantity must be greater than zero",
+);
+
+export const recordCanteenCreditSaleSchema = z.object({
+  productId: z.string().min(1, "Product is required"),
+  customerId: z.string().min(1, "Customer is required"),
+  quantity: positiveQuantityString,
+  occurredAt: z.string().datetime().optional(),
+});
+
+export const correctCanteenCreditSaleSchema = z.object({
+  quantity: positiveQuantityString,
+});
+
+export const listCanteenCreditSalesQuerySchema = z.object({
+  date: derivedSalesBusinessDate.optional(),
+});
+
+export type RecordCanteenCreditSaleBody = z.infer<
+  typeof recordCanteenCreditSaleSchema
+>;
+export type CorrectCanteenCreditSaleBody = z.infer<
+  typeof correctCanteenCreditSaleSchema
+>;
+export type ListCanteenCreditSalesQuery = z.infer<
+  typeof listCanteenCreditSalesQuerySchema
+>;

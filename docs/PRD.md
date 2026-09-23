@@ -186,11 +186,13 @@ cylinders, tables, POS phones) — distinct from stock; never sold or consumed.
 - As a Cashier, I cannot see orders recorded by the other cashier.
 - As a Cashier, I cannot see buying prices, unit costs, or margins.
 
-### 4.4 Canteen Sales (Derived)
+### 4.4 Canteen Sales (Derived + Credit)
 - As the Canteen Attendant, I can perform a stock count for any product at any time — there is no fixed daily requirement per product.
 - As the system, given a stock count, I calculate units sold and revenue for the period since that product's last count, as: `opening + received (transfers/production) − non-sale consumption − counted remaining = sold`, and set closing stock to the counted remaining value.
-- As the Canteen Attendant, no credit sales are supported at the canteen.
-- As the Admin, I can see, per product, when it was last counted and what period any derived sales figure covers.
+- As the Canteen Attendant, I can record a canteen credit sale — a product, a quantity, and an existing customer — at the moment the sale happens (ADR-91). Stock reduces immediately (a real, discrete stock movement, not waiting for the next count) and a debt is created against the customer, the same way a Restaurant Cashier's credit order works. This is a separate, real-time transaction alongside the periodic stock-count flow, which is unchanged for cash sales.
+- As the Canteen Attendant, I can undo a credit sale I recorded **today** — it reverses the stock movement and clears the debt.
+- As the Admin, I can correct a canteen credit sale's quantity after the fact; the corrected amount uses the sale's original per-unit price, not today's price.
+- As the Admin, I can see, per product, when it was last counted and what period any derived sales figure covers — that figure now includes any canteen credit sales that fell within the period, so "units sold" and "revenue" reflect both cash and credit sales (credit sales contribute value owed, not cash collected).
 
 ### 4.5 Handover & Reconciliation
 - As a Cashier or Canteen Attendant, at day end I record a handover: cash amount and M-Pesa amount I am giving to the Admin.

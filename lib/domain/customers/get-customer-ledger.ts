@@ -33,6 +33,24 @@ export async function getCustomerLedger(
     prisma.repayment.findMany({ where: { customerId } }),
   ]);
 
+  // Canteen-sourced debts (ADR-91) have no typed FK to join — resolve the
+  // product name via their `sourceId` (a `StockMovement.id`) in a second
+  // query, display-only. This does not change what's owed: `debts` above
+  // already has the full, correct `Σ amount` for every row regardless of
+  // source.
+  const canteenSourceIds = debts
+    .filter((d) => d.sourceType === "canteen_credit_sale" && d.sourceId)
+    .map((d) => d.sourceId as string);
+  const canteenMovements = canteenSourceIds.length
+    ? await prisma.stockMovement.findMany({
+        where: { id: { in: canteenSourceIds } },
+        select: { id: true, product: { select: { name: true } } },
+      })
+    : [];
+  const canteenProductNameBySourceId = new Map(
+    canteenMovements.map((m) => [m.id, m.product.name]),
+  );
+
   // Repayment corrections (ADR-15 / ADR-72): a correction is a signed
   // `Repayment` row (`correctsRepaymentId` set) carrying the delta. The
   // ledger shows one line per repayment with its CURRENT derived amount —
@@ -62,6 +80,8 @@ export async function getCustomerLedger(
     createdAt: Date;
     orderId?: string;
     orderNumber?: number;
+    debtSourceType?: "order" | "canteen_credit_sale";
+    canteenProductName?: string;
     account?: "cash" | "mpesa_bank";
     note?: string;
     repaymentId?: string;
@@ -73,8 +93,13 @@ export async function getCustomerLedger(
       amount: d.amount,
       occurredAt: d.occurredAt,
       createdAt: d.createdAt,
-      orderId: d.orderId,
+      orderId: d.orderId ?? undefined,
       orderNumber: d.order?.number,
+      debtSourceType: d.sourceType,
+      canteenProductName:
+        d.sourceType === "canteen_credit_sale" && d.sourceId
+          ? canteenProductNameBySourceId.get(d.sourceId)
+          : undefined,
     })),
     ...repayments.map((r) => ({
       kind: "repayment" as const,
@@ -103,6 +128,10 @@ export async function getCustomerLedger(
       occurredAt: e.occurredAt.toISOString(),
       ...(e.orderId ? { orderId: e.orderId } : {}),
       ...(e.orderNumber != null ? { orderNumber: e.orderNumber } : {}),
+      ...(e.debtSourceType ? { debtSourceType: e.debtSourceType } : {}),
+      ...(e.canteenProductName
+        ? { canteenProductName: e.canteenProductName }
+        : {}),
       ...(e.account ? { account: e.account } : {}),
       ...(e.note ? { note: e.note } : {}),
       ...(e.repaymentId ? { repaymentId: e.repaymentId } : {}),

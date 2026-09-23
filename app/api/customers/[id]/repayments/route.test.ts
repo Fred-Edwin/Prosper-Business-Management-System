@@ -36,6 +36,7 @@ async function postRepayment(customerId: string, payload: unknown) {
 describe("POST /api/customers/:id/repayments", () => {
   let cashierId: string;
   let managerId: string;
+  let attendantId: string;
   let customerId: string;
 
   beforeAll(async () => {
@@ -55,11 +56,20 @@ describe("POST /api/customers/:id/repayments", () => {
         active: true,
       },
     });
+    const attendant = await prisma.user.create({
+      data: {
+        name: `${PREFIX} Attendant`,
+        pinHash: "x",
+        role: "canteen_attendant",
+        active: true,
+      },
+    });
     const customer = await prisma.customer.create({
       data: { name: `${PREFIX} Otieno`, phone: "0700111222" },
     });
     cashierId = cashier.id;
     managerId = manager.id;
+    attendantId = attendant.id;
     customerId = customer.id;
   });
 
@@ -118,6 +128,16 @@ describe("POST /api/customers/:id/repayments", () => {
     });
     expect(status).toBe(404);
     expect(body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("canteen_attendant → 201 (ADR-91 follow-up — collecting on a credit sale's debt)", async () => {
+    mockSession.current = sessionFor("canteen_attendant", attendantId);
+    const { status, body } = await postRepayment(customerId, {
+      amount: "150.00",
+      account: "cash",
+    });
+    expect(status).toBe(201);
+    expect(body.data.amount).toBe("150.00");
   });
 
   it("store_manager → 403", async () => {

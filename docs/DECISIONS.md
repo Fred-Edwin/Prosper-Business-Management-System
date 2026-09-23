@@ -5541,3 +5541,127 @@ which was the bulk of the diff.
   owner), so there was nothing in production to preserve; building a
   migration path for data that didn't need migrating would have been
   speculative work.
+
+## ADR-91: Canteen goods sold on credit — `Debt` gains a generic source, no new `CanteenCreditSale` table (Client feedback item #4, 2026-09-23)
+
+**Status:** RATIFIED (owner request).
+
+**Context.** PRD §4.4 stated flatly "no credit sales are supported at the
+canteen" — a deliberate M2 scope cut, not an oversight. The client asked
+for it: a Canteen Attendant should be able to let a customer take goods
+now and pay later, tracked against their account, the way a Restaurant
+Cashier's credit order works today (`createOrder` → `recordDebt`). This
+is scoped **separately** from client feedback item #2 ("Unpaid" at
+handover) — confirmed with the owner as a genuinely different concept;
+this ADR does not touch handover/reconciliation code.
+
+The canteen has no discrete-transaction concept at all before this
+change — sales are entirely *derived* from periodic stock counts
+(`opening + received − non-sale consumption − counted remaining = sold`,
+PRD §4.4). A credit sale is inherently a discrete, real-time event (a
+specific customer took specific goods at a specific moment), which the
+derived model has no way to represent.
+
+**Decision — `Debt` becomes source-generic.** `Debt.orderId` is now
+nullable; two new columns, `sourceType` (`DebtSourceType`: `order` |
+`canteen_credit_sale`, default `order`) and `sourceId` (untyped, nullable
+string), mirror the pattern `MoneyMovement.sourceType`/`sourceId` already
+uses elsewhere in the schema. An Order-sourced debt keeps using the typed
+`orderId` FK and leaves `sourceId` null; a canteen-sourced debt sets
+`sourceType: "canteen_credit_sale"` and points `sourceId` at the
+originating `StockMovement.id` — deliberately asymmetric, so a future
+reader doesn't "fix" it by backfilling `sourceId` for order debts too.
+One `Debt` table remains the single source of truth for "what a customer
+owes" (`getCustomerLedger` reads one table, not two); a canteen-sourced
+row's product name is resolved for display via a second, display-only
+query (`get-customer-ledger.ts`), never changing what's summed.
+
+**Decision — no new `CanteenCreditSale` model.** `StockMovement` already
+has everything a discrete sale record needs (`productId`, `locationId`,
+`quantity`, `occurredAt`, `recordedById`, its own `correctsMovementId`
+self-relation) and must exist anyway — stock reduces **immediately** at
+sale time (a real `sale` `StockMovement`, not waiting for the next
+count). A nullable `StockMovement.customerId` (mirroring its existing
+nullable `orderId`/`stockCountId` pattern) marks "this `sale` row is a
+canteen credit sale, for this customer" — and, critically, is what lets
+`derived-sales.ts` tell a credit-sale movement apart from a
+count-derived one (which carries `stockCountId` instead). A wrapper
+table would just be a redundant header row pointing at the `StockMovement`
+that already carries every fact needed.
+
+**Immediate stock reduction is safe.** `deriveStockCount`'s math sums
+*every* `StockMovement` row for `(productId, locationId)` with
+`occurredAt <= this count's occurredAt` to get `expectedRemaining`. A
+credit sale's `StockMovement`, written the moment the sale happens, is
+picked up by that same aggregate on the next count and nets in
+correctly — it is never double-counted as "missing" stock, the same way
+a transfer or non-sale-consumption movement already isn't.
+
+**Reporting fold-in, and the semantic shift it introduces.**
+`derived-sales.ts`'s per-product "units sold"/"revenue" view now sums
+BOTH the count-linked `sale` movement (cash, from the periodic count) and
+any credit-sale movements (`customerId` set, no `stockCountId`) that fall
+within the same period window, with credit-sale revenue read from the
+linked `Debt.amount` (there is no `MoneyMovement` for a credit sale —
+nothing has been paid yet). **This means the report's "revenue" figure
+now blends cash collected with credit sales value (owed, not collected)**
+— it reads as "sales value for the period," not "cash in." Debt
+collection is still tracked separately, via the Customer ledger. A credit
+sale that happens after the most recent count is invisible to this
+report until the *next* count closes a period — consistent with the
+existing model (nothing is reported until a count closes the window);
+its `StockMovement` still nets correctly into that next count's math
+regardless.
+
+**Correction path (ADR-72).** `Debt` has never had a correction chain of
+its own (an Order-level credit correction is a whole new `Order` + its
+own offsetting `Debt` — `record-debt.ts`'s existing doc comment). This is
+the first `Debt` correction path built from scratch, modeled on
+`correctRepayment`/`voidRepayment`'s shape (`lib/domain/customers/
+correct-repayment.ts`) — **not** `correctExpense`'s (this codebase's own
+ADR-72 section flags `correctExpense`'s audit-log shape, `newValue` only,
+as the wrong one to copy):
+- **Void is attendant-facing, same-day only** (`voidCanteenCreditSale`,
+  mirrors `voidStockCount`'s guard set: own row, today, day open). Unlike
+  `voidStockCount`, it can never hard-delete — a `Repayment` may already
+  reference the customer's balance this debt is part of by the time of a
+  void — so it is always a correction-to-zero: one reversing
+  `StockMovement` (`correctsMovementId` set) plus one reversing `Debt`
+  row (`correctCanteenDebt`/`voidCanteenDebt`, `lib/domain/customers`).
+- **Correction (a quantity change after the fact) is Admin-only, not
+  day-close gated** (`correctCanteenCreditSale`), matching
+  `correctRepayment`. The corrected amount uses the **original sale's
+  per-unit price** — stored in the create `AuditLog.newValue.unitPrice`
+  so it's recoverable without back-computing — never re-priced at
+  today's canteen selling price; a correction restates what happened on
+  the day it happened, it doesn't reflect a price change since.
+- `AuditLog` `action: "correct"` carries `oldValue`/`newValue` sharing
+  scalar keys (`quantity`, `total`) — the ADR-72-correct shape; a void
+  writes `action: "soft_delete"`.
+
+**Files.** Schema: `prisma/schema.prisma` (`Debt.orderId` nullable +
+`sourceType`/`sourceId` + `DebtSourceType`; `StockMovement.customerId`),
+migration `20260923094803_add_canteen_credit_sales`. Domain:
+`lib/domain/sales/record-canteen-credit-sale.ts`,
+`correct-canteen-credit-sale.ts`, `void-canteen-credit-sale.ts`,
+`list-canteen-credit-sales.ts`; `lib/domain/customers/record-debt.ts`
+(union `RecordDebtInput`), `correct-canteen-debt.ts`,
+`get-customer-ledger.ts` (display fold-in). API:
+`app/api/canteen/credit-sales/route.ts` (+`[id]/route.ts`,
+`[id]/correct/route.ts`). Screen:
+`app/canteen/flows/credit-sale/*`, hub tile + "today's credit sales"
+recap in `app/canteen/hub-client.tsx`.
+
+**Alternatives considered.**
+- *A separate `CanteenCreditSale` table, `Debt`/`Order` left untouched.*
+  Rejected — no migration to `Debt` today, but "what does this customer
+  owe" would then live in two tables forever, and every reader of a
+  customer's balance would need to remember to check both. The
+  unification cost is paid once; the fork cost recurs on every future
+  change that touches customer debt.
+- *Reuse `recordDebt`/`Order` by fabricating a synthetic `Order` row for
+  each canteen credit sale.* Rejected — pollutes the Restaurant order
+  sequence/number with rows that aren't Restaurant sales, and canteen
+  sales are explicitly NOT Order-based per PRD §4.4's existing derived
+  model; forcing them through `Order` would contradict that distinction
+  rather than resolve it.

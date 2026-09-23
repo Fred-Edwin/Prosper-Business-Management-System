@@ -9,8 +9,9 @@ import type { CustomerContext, RecordRepaymentInput, Repayment } from "./types";
 const ACCOUNTS = new Set(["cash", "mpesa_bank"]);
 
 /**
- * Record a customer debt repayment (ADR-19). Admin or Cashier — enforced
- * at the route.
+ * Record a customer debt repayment (ADR-19). Admin, Cashier, or Canteen
+ * Attendant (ADR-91 follow-up — collecting on a canteen credit sale) —
+ * enforced at the route.
  *
  * In **one transaction**:
  *   1. create the `Repayment` row,

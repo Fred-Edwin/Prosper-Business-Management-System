@@ -249,6 +249,50 @@ describe("customers domain", () => {
         code: "NOT_FOUND",
       });
     });
+
+    it("interleaves Order-sourced and canteen-sourced debts (ADR-91), with the product name resolved for the canteen one", async () => {
+      const c = await createCustomer(
+        { name: `${P}MixedDebt`, phone: "0700000009" },
+        { actorId: ctx.adminId },
+      );
+      await makeDebt(ctx, c.id, "300.00", new Date("2026-08-01T09:00:00Z"));
+
+      const product = await prisma.product.create({
+        data: { name: `${P}Soda`, kind: "goods", unitLabel: "unit" },
+      });
+      const movement = await prisma.stockMovement.create({
+        data: {
+          productId: product.id,
+          locationId: ctx.restaurantId,
+          movementType: "sale",
+          quantity: new Prisma.Decimal("-1"),
+          customerId: c.id,
+          recordedById: ctx.adminId,
+          occurredAt: new Date("2026-08-03T09:00:00Z"),
+        },
+      });
+      await prisma.debt.create({
+        data: {
+          customerId: c.id,
+          sourceType: "canteen_credit_sale",
+          sourceId: movement.id,
+          amount: new Prisma.Decimal("60.00"),
+          occurredAt: new Date("2026-08-03T09:00:00Z"),
+        },
+      });
+
+      const ledger = await getCustomerLedger(c.id);
+      expect(ledger.entries.map((e) => [e.kind, e.debtSourceType, e.runningBalance])).toEqual([
+        ["debt", "order", "300.00"],
+        ["debt", "canteen_credit_sale", "360.00"],
+      ]);
+      expect(ledger.entries[1].orderId).toBeUndefined();
+      expect(ledger.entries[1].canteenProductName).toBe(`${P}Soda`);
+
+      await prisma.debt.deleteMany({ where: { sourceId: movement.id } });
+      await prisma.stockMovement.delete({ where: { id: movement.id } });
+      await prisma.product.delete({ where: { id: product.id } });
+    });
   });
 
   describe("recordRepayment", () => {

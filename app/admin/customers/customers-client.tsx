@@ -415,6 +415,21 @@ export function CustomersClient() {
       >
         {selected && (
           <>
+            {/* View history — the only path into the ledger detail screen
+                from the mobile row list (< --bp-md), where the row itself
+                opens this drawer rather than the desktop table's separate
+                name link (owner-reported gap, 2026-09-23). Kept inside the
+                drawer rather than duplicating the row tap target. */}
+            <Link
+              href={`/admin/customers/${selected.id}`}
+              className="kit-focus-ring inline-flex items-center gap-(--sp-3) self-start mb-(--sp-5) font-ui font-(--weight-medium) text-accent text-sm/sm rounded-sm"
+            >
+              View full history
+              <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
+                <polyline points="9 6 15 12 9 18" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </Link>
+
             <RepaymentForm
               customerId={selected.id}
               balance={selected.balance}
