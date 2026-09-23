@@ -45,3 +45,26 @@ export function toPositiveAmount(value: string, field = "amount"): Prisma.Decima
 export function moneyString(value: Prisma.Decimal): string {
   return value.toFixed(2);
 }
+
+const BUSINESS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Validate an inclusive `{ from, to }` business-date range (shared by every range-scoped read). */
+export function assertRange(from: string, to: string): void {
+  if (!BUSINESS_DATE_RE.test(from)) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "from must be a YYYY-MM-DD business date.",
+      "from",
+    );
+  }
+  if (!BUSINESS_DATE_RE.test(to)) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "to must be a YYYY-MM-DD business date.",
+      "to",
+    );
+  }
+  if (from > to) {
+    throw new DomainError("VALIDATION_ERROR", "from must not be after to.", "from");
+  }
+}

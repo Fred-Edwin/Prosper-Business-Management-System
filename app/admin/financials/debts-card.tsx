@@ -35,6 +35,37 @@ import Link from "next/link";
 import type { CustomerListRow } from "@/lib/domain/customers";
 import { ErrorState } from "@/components/kit/error-state";
 
+// Collapsible (owner feedback 2026-09-23 — Financials felt crowded with
+// this table always open). A per-viewer UI convenience, not data, so the
+// collapsed/expanded choice persists in localStorage, mirroring
+// app/admin/admin-shell-client.tsx's COLLAPSE_KEY pattern exactly
+// (try/catch-wrapped, degrades to "expanded" when storage is unavailable).
+// The header's total stays visible either way — only the row table
+// collapses, so the number is never hidden.
+const COLLAPSE_KEY = "prosper.admin.debtsCardCollapsed";
+
+function readCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(COLLAPSE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeCollapsed(next: boolean): void {
+  try {
+    window.localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+  } catch {
+    // no-op: storage unavailable (private window, blocked site data)
+  }
+}
+
+const ICON_CHEVRON = (
+  <svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <polyline points="9 18 15 12 9 6" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -93,31 +124,61 @@ export function DebtsCard({
   error: string | null;
   onRetry: () => void;
 }) {
+  const [collapsed, setCollapsed] = React.useState(false);
+  // Read the persisted choice after mount only — SSR has no localStorage,
+  // and reading it during the initial client render would mismatch the
+  // server-rendered (always expanded) markup.
+  React.useEffect(() => {
+    setCollapsed(readCollapsed());
+  }, []);
+  const toggleCollapsed = React.useCallback(() => {
+    setCollapsed((c) => {
+      const next = !c;
+      writeCollapsed(next);
+      return next;
+    });
+  }, []);
+
   return (
     <section className="flex flex-col w-full rounded-lg overflow-clip border border-solid [border-color:var(--border-subtle)] [background-color:var(--surface-page)]">
-      {/* Header — title + mandatory "as of today" caption + the total. */}
+      {/* Header — title + mandatory "as of today" caption + the total.
+          The total stays visible whether collapsed or not — only the row
+          table below folds away. */}
       <div className="flex items-baseline justify-between gap-(--sp-5) pt-[16px] pb-[12px] px-[20px] md:px-[20px]">
-        <div className="flex flex-col gap-[2px] min-w-0">
-          <h2 className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-sm/sm">
-            Debts owed to the business
-          </h2>
-          <span className="font-ui font-(--weight-regular) [color:var(--text-disabled)] text-micro/[14px]">
-            <span className="hidden md:inline">
-              Unpaid customer credit, as of today — click a customer to see
-              their account
-            </span>
-            <span className="md:hidden">
-              Unpaid customer credit, as of today · tap a customer to see
-              their account
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          aria-expanded={!collapsed}
+          className="flex items-center gap-(--sp-3) min-w-0 kit-interactive kit-focus-ring rounded-sm text-left"
+        >
+          <span
+            className="flex shrink-0 transition-transform duration-150"
+            style={{ transform: collapsed ? "rotate(-90deg)" : "none" }}
+          >
+            {ICON_CHEVRON}
+          </span>
+          <span className="flex flex-col gap-[2px] min-w-0">
+            <h2 className="font-ui font-(--weight-semibold) [color:var(--text-primary)] text-sm/sm">
+              Debts owed to the business
+            </h2>
+            <span className="font-ui font-(--weight-regular) [color:var(--text-disabled)] text-micro/[14px]">
+              <span className="hidden md:inline">
+                Unpaid customer credit, as of today — click a customer to see
+                their account
+              </span>
+              <span className="md:hidden">
+                Unpaid customer credit, as of today · tap a customer to see
+                their account
+              </span>
             </span>
           </span>
-        </div>
+        </button>
         <span className="font-mono font-(--weight-semibold) [color:var(--text-primary)] text-h2/[22px] md:text-h1/[22px] shrink-0">
           {total != null ? `KES ${money(total)}` : "—"}
         </span>
       </div>
 
-      {error ? (
+      {collapsed ? null : error ? (
         <div className="px-[20px] pb-[16px]">
           <ErrorState
             title="Couldn't load customer debts"
@@ -194,16 +255,19 @@ export function DebtsCard({
         </>
       )}
 
-      {/* Trailing "view all" row — always present, even when nobody owes:
-          it is the way to the full credit register, not a row action. */}
-      <Link
-        href="/admin/customers"
-        className="flex justify-center md:justify-end py-[10px] px-[20px] no-underline [background-color:var(--surface-subtle)] border-t border-t-solid [border-top-color:var(--border-subtle)] kit-interactive kit-focus-ring"
-      >
-        <span className="font-ui font-(--weight-medium) [color:var(--color-accent)] text-caption/[16px]">
-          View all customer credit →
-        </span>
-      </Link>
+      {/* Trailing "view all" row — always present when expanded, even when
+          nobody owes: it is the way to the full credit register, not a row
+          action. Hidden along with everything else while collapsed. */}
+      {!collapsed && (
+        <Link
+          href="/admin/customers"
+          className="flex justify-center md:justify-end py-[10px] px-[20px] no-underline [background-color:var(--surface-subtle)] border-t border-t-solid [border-top-color:var(--border-subtle)] kit-interactive kit-focus-ring"
+        >
+          <span className="font-ui font-(--weight-medium) [color:var(--color-accent)] text-caption/[16px]">
+            View all customer credit →
+          </span>
+        </Link>
+      )}
     </section>
   );
 }

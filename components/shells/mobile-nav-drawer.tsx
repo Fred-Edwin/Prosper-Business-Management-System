@@ -147,6 +147,12 @@ export interface MobileNavDrawerProps {
   activeNavKey: string;
   /** Current `?tab=` value, used to light the right sub-item. */
   activeTabParam?: string | null;
+  /**
+   * Current pathname — only needed to disambiguate a section with more
+   * than one `tab: null` child (a standalone sub-page alongside the
+   * section's default screen, e.g. Financials' Cash Flow).
+   */
+  activePathname?: string;
   onNavigate: (href: string) => void;
   brandLabel: string;
   brandSubLabel: string;
@@ -280,6 +286,7 @@ export function MobileNavDrawer({
   onClose,
   activeNavKey,
   activeTabParam = null,
+  activePathname,
   onNavigate,
   brandLabel,
   brandSubLabel,
@@ -293,7 +300,7 @@ export function MobileNavDrawer({
   const panelRef = React.useRef<HTMLDivElement>(null);
   const brandId = React.useId();
 
-  const activeChild = activeChildKey(activeNavKey, activeTabParam);
+  const activeChild = activeChildKey(activeNavKey, activeTabParam, activePathname);
   const [expandedKey, setExpandedKey] = React.useState<string | null>(activeNavKey);
   React.useEffect(() => {
     const parent = ADMIN_NAV_ITEMS_FLAT.find((i) => i.key === activeNavKey);

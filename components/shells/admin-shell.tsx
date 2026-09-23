@@ -166,6 +166,12 @@ export interface AdminShellProps {
   activeNavKey: string;
   /** Current `?tab=` value, used to light the right sub-item. */
   activeTabParam?: string | null;
+  /**
+   * Current pathname — only needed to disambiguate a section with more
+   * than one `tab: null` child (a standalone sub-page alongside the
+   * section's default screen, e.g. Financials' Cash Flow).
+   */
+  activePathname?: string;
   onNavigate: (href: string) => void;
   accountName: string;
   accountRole: string;
@@ -317,6 +323,7 @@ function DesktopNavRow({
 export function AdminShell({
   activeNavKey,
   activeTabParam = null,
+  activePathname,
   onNavigate,
   accountName,
   accountRole,
@@ -338,7 +345,7 @@ export function AdminShell({
   // Accordion: which expandable section is open. One at a time; the section
   // containing the active route opens by default and re-opens whenever the
   // active route moves into a different section.
-  const activeChild = activeChildKey(activeNavKey, activeTabParam);
+  const activeChild = activeChildKey(activeNavKey, activeTabParam, activePathname);
   const [expandedKey, setExpandedKey] = React.useState<string | null>(activeNavKey);
   React.useEffect(() => {
     const parent = ADMIN_NAV_ITEMS_FLAT.find((i) => i.key === activeNavKey);

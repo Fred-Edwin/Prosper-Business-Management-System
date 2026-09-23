@@ -29,6 +29,12 @@ export interface MobileShellAdminProps {
   accountInitials: string;
   activeNavKey: string;
   activeTabParam?: string | null;
+  /**
+   * Current pathname — only needed to disambiguate a section with more
+   * than one `tab: null` child (a standalone sub-page alongside the
+   * section's default screen, e.g. Financials' Cash Flow).
+   */
+  activePathname?: string;
   onNavigate: (href: string) => void;
   brandLabel: string;
   brandSubLabel: string;
@@ -46,6 +52,7 @@ export function MobileShellAdmin({
   accountInitials,
   activeNavKey,
   activeTabParam = null,
+  activePathname,
   onNavigate,
   brandLabel,
   brandSubLabel,
@@ -112,6 +119,7 @@ export function MobileShellAdmin({
         onClose={() => setDrawerOpen(false)}
         activeNavKey={activeNavKey}
         activeTabParam={activeTabParam}
+        activePathname={activePathname}
         onNavigate={(href) => {
           setDrawerOpen(false);
           onNavigate(href);

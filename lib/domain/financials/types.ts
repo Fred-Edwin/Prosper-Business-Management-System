@@ -358,3 +358,35 @@ export type FinancialSummary = {
   };
   nonSaleConsumption: NonSaleConsumptionCost;
 };
+
+// ── Cash Flow report (client feedback item #7) ─────────────────────────
+
+/**
+ * One `MoneyMovement` row in the unified Cash Flow history (wire shape).
+ * `amount` is signed — positive = inflow, negative = outflow.
+ * `runningBalance` is that row's account balance immediately after it,
+ * within the period (seeded from the report's opening balance).
+ */
+export type CashFlowEntry = {
+  id: string;
+  occurredAt: string;
+  account: MoneyAccount;
+  sourceType: MoneySourceType;
+  amount: string;
+  runningBalance: string;
+  note: string | null;
+};
+
+/**
+ * The Cash Flow tab's report for a business-date range (ADR-57): a
+ * point-in-time opening/closing balance per account, plus every
+ * `MoneyMovement` in the range, oldest first, unified across both
+ * accounts. See `getCashFlow` for the exact balance/flow split.
+ */
+export type CashFlowReport = {
+  from: string;
+  to: string;
+  openingBalances: { cash: string; mpesaBank: string };
+  closingBalances: { cash: string; mpesaBank: string };
+  entries: CashFlowEntry[];
+};

@@ -35,6 +35,7 @@ export {
   getOpeningBalances,
 } from "./opening-balance";
 export { getFinancialSummary } from "./get-financial-summary";
+export { getCashFlow } from "./get-cash-flow";
 export {
   getDishWasteCostPercent,
   DEFAULT_DISH_WASTE_COST_PERCENT,
