@@ -1,17 +1,19 @@
-// NEW primitive (Session 10 Deliverable 3d) — needs owner review in Storybook.
-// NO Paper artboard — this has REAL layout decisions, surfaced for sign-off.
+// Owner review 2026-09-23 (client feedback, live on the Dashboard at a
+// ~1900px window): the original --content-max (1200px) cap — centered,
+// dead space either side on anything wider than a laptop — was explicitly
+// "flagged for owner review" when it shipped (DECISIONS.md, Session 10
+// Deliverable 3d) and never actually finalized. Reviewed now and
+// rejected: a page should fill and respond to the viewport, full stop —
+// not center in a fixed column because a Paper frame happened to be
+// 1200px. `wide` is kept as a no-op prop so the two call sites that
+// already pass it (`stock-client.tsx`, `opening-client.tsx`) keep
+// compiling unchanged; every screen now gets the same fill-the-viewport
+// behavior regardless of whether it passes `wide`.
 //
-// The bug it fixes: every screen hand-rolls its own `max-w` / page padding and
-// they diverge ("the stock body doesn't fill the viewport like catalog").
-// <PageShell> owns:
-//   - the content max width  → --content-max (1200px, the Paper admin Body frame)
-//   - the page padding       → --sp-8 inline, --sp-7 block (matches the catalog
-//                               reference screen's content region)
+// <PageShell> still owns:
+//   - the page padding → --sp-8 inline, --sp-7 block (matches the catalog
+//                         reference screen's content region)
 //   - an optional sticky toolbar row (title / actions), --z-sticky
-//
-// Screens adopt it next session (Session 11 rebuild). It renders no chrome of
-// its own beyond the width + padding + toolbar slot — the shells
-// (AdminShell / StaffShell) still own nav/header.
 "use client";
 
 import * as React from "react";
@@ -22,7 +24,8 @@ export interface PageShellProps {
   toolbar?: React.ReactNode;
   /** Remove the default inline/block page padding (edge-to-edge content). */
   flush?: boolean;
-  /** Widen past --content-max for genuinely full-bleed screens (wide ledgers). */
+  /** No-op — every screen fills the viewport now (owner review 2026-09-23).
+   *  Kept only so existing call sites don't need editing. */
   wide?: boolean;
   className?: string;
   children: React.ReactNode;
@@ -31,7 +34,6 @@ export interface PageShellProps {
 export function PageShell({
   toolbar,
   flush = false,
-  wide = false,
   className,
   children,
 }: PageShellProps) {
@@ -45,12 +47,7 @@ export function PageShell({
             flush ? "px-(--sp-6)" : "px-(--sp-6) md:px-(--sp-8)",
           )}
         >
-          <div
-            className={cn(
-              "flex items-center gap-(--sp-4) w-full",
-              !wide && "max-w-(--content-max) mx-auto",
-            )}
-          >
+          <div className="flex items-center gap-(--sp-4) w-full">
             {toolbar}
           </div>
         </div>
@@ -63,14 +60,7 @@ export function PageShell({
           !flush && "py-(--sp-7) px-(--sp-6) md:px-(--sp-8)",
         )}
       >
-        <div
-          className={cn(
-            "flex flex-col grow min-h-0 w-full",
-            !wide && "max-w-(--content-max) mx-auto",
-          )}
-        >
-          {children}
-        </div>
+        <div className="flex flex-col grow min-h-0 w-full">{children}</div>
       </div>
     </div>
   );

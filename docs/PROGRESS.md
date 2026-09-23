@@ -16,6 +16,48 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: dashboard chart tooltips + PageShell full-viewport layout (2026-09-23) — DONE
+
+Follow-up to the 2026-09-22 batch. Two client-reviewed changes:
+
+1. **New kit component: `<Tooltip>` / `<TooltipGroup>`** (`components/
+   kit/tooltip.tsx`) — the kit's first tooltip, built on `radix-ui`'s
+   Tooltip primitive (already a dependency, unused until now) for
+   collision-aware positioning and `role="tooltip"` semantics, styled
+   entirely from this project's own tokens (inverted `--color-gray-900`
+   chip, `--shadow-md`, `--dur-fast` + `--ease-standard` — no
+   bounce/spring, per tokens.css "§1 forbids bounce"). Enter/exit
+   keyframes added to `app/globals.css` alongside the existing
+   `.kit-skeleton` motion block, with a `prefers-reduced-motion`
+   opacity-only fallback.
+   - Wired into the Dashboard's 30-day net-profit bar chart
+     (`app/admin/dashboard-client.tsx`, `ThirtyDayTrendCard`) — hover
+     any bar for its date + KES value.
+   - First attempt pinned 3 "key" bars (min/max/today) permanently open
+     via Radix's `open` prop without hovering. Client feedback: hover
+     only, no pre-opened bars. Also surfaced a real bug at that stage —
+     an always-`open` Radix tooltip double-rendered under React
+     StrictMode's dev double-invoke (two live portal instances, one
+     visibly mispositioned). Removed the `open`/`instant` props from
+     `<Tooltip>` entirely rather than special-case around the bug —
+     hover/focus-only is both simpler and correct for this use case.
+2. **`PageShell` (`components/kit/page-shell.tsx`) drops its
+   `--content-max` (1200px) cap.** Owner review: every admin screen was
+   centering its content in a fixed 1200px column, leaving dead
+   whitespace on anything wider than a laptop — flagged as a real layout
+   decision needing sign-off when it shipped (DECISIONS.md, Session 10
+   Deliverable 3d) but never actually reviewed until now. Content fills
+   the viewport on all 13 screens using `PageShell`; `wide` kept as a
+   no-op prop so the two existing call sites (`stock-client.tsx`,
+   `opening-client.tsx`) don't need edits.
+
+**Gate:** `pnpm test` (1468 passed) / `pnpm typecheck` (clean) /
+`pnpm build` (clean). Verified live via Chrome DevTools MCP — hover
+tooltip (single DOM node, opens/closes cleanly), full-viewport layout at
+1900px on Dashboard and Customers.
+
+---
+
 ## Fix: Dashboard / Canteen Sales / Customer History UX batch (2026-09-22) — DONE
 
 Client feedback session (7 items triaged live against prod via Chrome

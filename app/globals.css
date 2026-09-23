@@ -370,6 +370,67 @@ body {
   }
 }
 
+/* --- Tooltip enter/exit --------------------------------------------------
+ * First tooltip in the kit (components/kit/tooltip.tsx). --dur-fast +
+ * --ease-standard, matching every other kit micro-interaction — no
+ * exception for "it's a tooltip". Scale starts at 0.96 (never 0 — nothing
+ * in the kit should look like it appears from nothing) + opacity, so a
+ * reduced-motion viewer still gets the fade with the scale removed. Exit
+ * mirrors entry at the same duration: a tooltip is a hint the pointer is
+ * about to move away from anyway, not a panel that needs a slower,
+ * more deliberate dismissal (unlike a drawer/dialog).
+ */
+@keyframes kit-tooltip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes kit-tooltip-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+.animate-kit-tooltip-in {
+  animation: kit-tooltip-in var(--dur-fast) var(--ease-standard);
+}
+.animate-kit-tooltip-out {
+  animation: kit-tooltip-out var(--dur-fast) var(--ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-kit-tooltip-in {
+    animation-name: kit-tooltip-in-fade;
+  }
+  .animate-kit-tooltip-out {
+    animation-name: kit-tooltip-out-fade;
+  }
+}
+@keyframes kit-tooltip-in-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes kit-tooltip-out-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
 /* --- Overlay backdrop  (Drawer / FrictionDeleteDialog / BottomSheet) -----
  * The missing primitive: one shared blurred, dimmed, correctly-stacked
  * scrim. The panel it wraps sits above it at --z-drawer / --z-dialog.

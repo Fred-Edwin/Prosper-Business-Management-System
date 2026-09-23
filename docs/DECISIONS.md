@@ -5436,3 +5436,51 @@ none of them did for a *void*.
   no other write path in the codebase changes isolation level; doing it
   only here would be inconsistent and a bigger, separately-reviewable
   change than the compare-and-swap hardening this session shipped.
+
+## ADR-89: `PageShell` drops its 1200px content cap; new `<Tooltip>` kit primitive (Client/owner review, 2026-09-23)
+
+**Status:** RATIFIED (owner review, live walkthrough at ~1900px viewport).
+
+**1. `PageShell`'s `--content-max` (1200px) cap is removed.** ADR-43 item
+3 shipped this cap explicitly "flagged for owner review" and it was never
+actually reviewed until now. On a wide monitor every one of the 13
+screens using `<PageShell>` centered its content in a fixed 1200px
+column, leaving large dead whitespace either side — reported by the
+owner as a real defect, not an accepted tradeoff: "no page should look
+like this... it should fill the viewport and be responsive." The cap and
+its `mx-auto` centering are removed from both the toolbar row and the
+body in `components/kit/page-shell.tsx`; content now grows to fill
+whatever width the shell (`AdminShell`/`StaffShell`) leaves it. `wide`
+is kept as a no-op prop — the two screens that already passed it
+(`stock-client.tsx`, `opening-client.tsx`) needed no edits, and every
+other screen now gets the same behavior `wide` used to opt into.
+
+**2. New kit primitive: `<Tooltip>` / `<TooltipGroup>`**
+(`components/kit/tooltip.tsx`) — first tooltip in the kit, requested for
+hover values on the Dashboard's 30-day net-profit bar chart. Built on
+`radix-ui`'s Tooltip primitive (already a dependency, previously
+unused) rather than hand-rolled collision/positioning math; styled
+entirely from this project's own design tokens (inverted
+`--color-gray-900` chip — the one place in the kit that inverts, since a
+tooltip must read against any background it lands on — `--shadow-md`,
+`--dur-fast` + `--ease-standard`, no bounce/overshoot per tokens.css's
+"§1 forbids bounce"). `<TooltipGroup>` wraps a chart once so sibling
+tooltips share Radix's `skipDelayDuration` (no repeated hover delay
+reading across a row of bars).
+
+**Alternatives considered.**
+- *Raise the cap instead of removing it* (e.g. 1600–1800px, so text
+  doesn't stretch edge-to-edge on an ultrawide monitor). Offered to the
+  owner; rejected in favor of filling the viewport outright — the admin
+  screens are data tables/grids, not prose, so there's no readability
+  argument for capping their width the way there would be for a text
+  column.
+- *A `<Tooltip>` prop to force one open without hovering*, for
+  highlighting a chart's min/max/latest bar out of the box. Built first,
+  then reverted: an always-`open` Radix tooltip double-rendered under
+  React StrictMode's dev double-invoke (two live portal instances, one
+  visibly mispositioned on screen) — a real bug, not a styling nit — and
+  the owner separately rejected pre-opened bars on UX grounds ("just
+  hover, no pre-opened tooltips"). The prop was removed from the
+  component entirely rather than fixed-and-kept unused; hover/focus-only
+  is the simpler, correct shape for this component's one real use case.

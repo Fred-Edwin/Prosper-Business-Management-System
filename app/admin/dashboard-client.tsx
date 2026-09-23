@@ -39,6 +39,7 @@ import Link from "next/link";
 import { PageShell } from "@/components/kit/page-shell";
 import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { ErrorState } from "@/components/kit/error-state";
+import { Tooltip, TooltipGroup } from "@/components/kit/tooltip";
 import type {
   DashboardView,
   DashboardNeedsAttention,
@@ -665,6 +666,11 @@ function PeriodTrendCard({
   );
 }
 
+// Client feedback 2026-09-23: hover values on the 30-day bar chart — every
+// bar, hover-only (no bar pre-opened; a11y tree + Radix portal duplicate
+// under React StrictMode's dev double-render when a Tooltip is forced
+// open — a hover-triggered tooltip only ever has one open at a time, so
+// that class of bug doesn't apply here).
 function ThirtyDayTrendCard({ trend }: { trend: DashboardView["trend"] }) {
   const total = Number(trend.net30Total);
   const maxAbs = Math.max(1, ...trend.dailyNet.map((d) => Math.abs(Number(d.net))));
@@ -685,22 +691,36 @@ function ThirtyDayTrendCard({ trend }: { trend: DashboardView["trend"] }) {
           {total < 0 ? "− " : "+ "}KES {money(Math.abs(total).toFixed(2))}
         </span>
       </div>
-      <div className="flex items-end gap-[3px] h-[70px] md:h-[120px] shrink-0 [--bar-scale:62px] md:[--bar-scale:84px] md:pt-(--sp-4) md:border-b md:border-b-solid md:[border-bottom-color:var(--border-strong)]">
-        {trend.dailyNet.map((d) => (
-          <div
-            key={d.date}
-            className={`grow basis-0 rounded-[1px] ${
-              Number(d.net) < 0 ? "[background-color:var(--color-danger)]" : "[background-color:var(--color-success)]"
-            }`}
-            // Desktop keeps its signed-off 84px scale; mobile's box is 70px
-            // (Paper), so the bar scale drops with it via a CSS var swapped
-            // at the md breakpoint rather than a second element.
-            style={{
-              height: `max(4px, calc(${(Math.abs(Number(d.net)) / maxAbs).toFixed(4)} * var(--bar-scale)))`,
-            }}
-          />
-        ))}
-      </div>
+      <TooltipGroup>
+        <div className="flex items-end gap-[3px] h-[70px] md:h-[120px] shrink-0 [--bar-scale:62px] md:[--bar-scale:84px] md:pt-(--sp-4) md:border-b md:border-b-solid md:[border-bottom-color:var(--border-strong)]">
+          {trend.dailyNet.map((d) => {
+            const n = Number(d.net);
+            return (
+              <Tooltip
+                key={d.date}
+                content={
+                  <>
+                    {dayMon(d.date)} · {n < 0 ? "−" : "+"}KES {moneyCompact(String(Math.abs(n)))}
+                  </>
+                }
+              >
+                <div
+                  className={`grow basis-0 rounded-[1px] ${
+                    n < 0 ? "[background-color:var(--color-danger)]" : "[background-color:var(--color-success)]"
+                  }`}
+                  // Desktop keeps its signed-off 84px scale; mobile's box
+                  // is 70px (Paper), so the bar scale drops with it via a
+                  // CSS var swapped at the md breakpoint rather than a
+                  // second element.
+                  style={{
+                    height: `max(4px, calc(${(Math.abs(n) / maxAbs).toFixed(4)} * var(--bar-scale)))`,
+                  }}
+                />
+              </Tooltip>
+            );
+          })}
+        </div>
+      </TooltipGroup>
       <div className="flex items-baseline justify-between [margin-top:2px] md:mt-0">
         <span className="font-ui [color:var(--text-disabled)] md:[color:var(--text-tertiary)] [font-size:11px] [line-height:14px] md:text-caption/caption">
           {first ? dayMon(first) : ""}
