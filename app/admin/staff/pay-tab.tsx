@@ -6,9 +6,9 @@
 // treatment + a DARK totals-footer row (same as the Financials sticky
 // footer) + the Location <PillFilter> + <Button>.
 //
-// KEY RULES (PRD §4.8):
+// KEY RULES (PRD §4.8, ADR-79):
 //   gross = dailyRate × daysPresent   (derived from Attendance)
-//   net   = gross − advances − deductions.  NOTHING ELSE.
+//   net   = gross − advances − deductions + bonuses.  NOTHING ELSE.
 //   netPay is NOT floored — it can be negative when advances exceed
 //   earnings; the row renders that honestly and the "Pay out" action is
 //   unavailable in that state.
@@ -31,8 +31,6 @@ import type { StaffPay } from "@/lib/domain/staff";
 import { money, negMoney, staffLabel } from "./format";
 import { monthLabel } from "./month-picker";
 import { AdvanceDrawer } from "./advance-drawer";
-import { LogDailyPayDrawer } from "./log-daily-pay-drawer";
-import { DailyPayDrawer } from "./daily-pay-drawer";
 import { PayoutDrawer } from "./payout-drawer";
 import { PayoutListDrawer } from "./payout-list-drawer";
 import { StaffAdjustmentsDrawer } from "./staff-adjustments-drawer";
@@ -55,9 +53,9 @@ function locationFilterOptions(
 }
 
 /**
- * The Advances / Deductions cell. Non-zero → a button that opens the
- * per-staff adjustments list (Correct / Void per row, ADR-72). Zero → an
- * inert em-dash.
+ * The Advances / Deductions / Bonuses cell. Non-zero → a button that opens
+ * the per-staff adjustments list (Correct / Void per row, ADR-72). Zero →
+ * an inert em-dash.
  */
 function AdjCell({
   row,
@@ -65,15 +63,20 @@ function AdjCell({
   onOpen,
 }: {
   row: StaffPay;
-  field: "advances" | "deductions";
+  field: "advances" | "deductions" | "bonuses";
   onOpen: (row: StaffPay) => void;
 }) {
   const value = row[field];
-  const hasAny = row.adjustments.some((a) =>
-    field === "advances" ? a.type === "advance" : a.type === "deduction",
-  );
+  const typeForField =
+    field === "advances"
+      ? "advance"
+      : field === "deductions"
+        ? "deduction"
+        : "bonus";
+  const hasAny = row.adjustments.some((a) => a.type === typeForField);
+  const display = field === "bonuses" ? money(value) : negMoney(value);
   if (!hasAny) {
-    return <span className="[color:var(--text-secondary)]">{negMoney(value)}</span>;
+    return <span className="[color:var(--text-secondary)]">{display}</span>;
   }
   return (
     <button
@@ -82,7 +85,7 @@ function AdjCell({
       className="font-mono [color:var(--text-secondary)] underline decoration-dotted underline-offset-2 hover:[color:var(--text-primary)] outline-none focus-visible:[outline:2px_solid_var(--focus-ring)]"
       aria-label={`Review ${field} for ${row.staffName}`}
     >
-      {negMoney(value)}
+      {display}
     </button>
   );
 }
@@ -179,7 +182,7 @@ export function PayTab({
   month: string;
   /** Africa/Nairobi today. */
   today: string;
-  /** Publishes the "open the advance/deduction drawer" trigger to the shell. */
+  /** Publishes the "open the advance/deduction/bonus drawer" trigger to the shell. */
   registerRecordAdjustment: (fn: () => void) => void;
 }) {
   const { toast } = useToast();
@@ -195,9 +198,6 @@ export function PayTab({
     recordAdjustment,
     correctAdjustment,
     voidAdjustment,
-    recordDailyPay,
-    correctDailyPay,
-    voidDailyPay,
     payOne,
     reversePayout,
     payAll,
@@ -208,19 +208,6 @@ export function PayTab({
     registerRecordAdjustment(() => setAdvanceOpen(true));
   }, [registerRecordAdjustment]);
 
-  // Daily-entry pay (ADR-76). `logDailyPay` is a staffId preselect or null
-  // for the generic "Log daily pay" action; `dailyPayDrawer` is the review
-  // list opened from a `daily_entry` row's Gross pay cell.
-  const [logDailyPayFor, setLogDailyPayFor] = React.useState<
-    string | null | undefined
-  >(undefined);
-  const [dailyPayDrawer, setDailyPayDrawer] = React.useState<StaffPay | null>(
-    null,
-  );
-  const hasDailyEntry = React.useMemo(
-    () => (payroll?.rows ?? []).some((r) => r.payModel === "daily_entry"),
-    [payroll],
-  );
   const { shortfalls, loading: sfLoading } = useMonthlyShortfalls(month);
   // The full roster: joins the role + location the design's row caption
   // needs (StaffPay carries neither), and drives the location filter.
@@ -263,16 +250,6 @@ export function PayTab({
           adjDrawer)
         : null,
     [adjDrawer, payroll],
-  );
-
-  // Same for the daily-pay review drawer.
-  const dailyPayRow = React.useMemo(
-    () =>
-      dailyPayDrawer
-        ? (payroll?.rows.find((r) => r.staffId === dailyPayDrawer.staffId) ??
-          dailyPayDrawer)
-        : null,
-    [dailyPayDrawer, payroll],
   );
 
   // And the payouts-this-month list, so a per-row Reverse re-renders the
@@ -339,16 +316,7 @@ export function PayTab({
       width: "w-[64px] shrink-0",
       align: "right",
       cell: "mono",
-      // Attendance is still recorded for daily-entry staff, but does not
-      // feed gross — show it in a muted tone so the row reads right.
-      render: (r) =>
-        r.payModel === "daily_entry" ? (
-          <span className="[color:var(--text-tertiary)]">
-            {r.daysPresent}
-          </span>
-        ) : (
-          String(r.daysPresent)
-        ),
+      render: (r) => String(r.daysPresent),
     },
     {
       key: "rate",
@@ -356,12 +324,7 @@ export function PayTab({
       width: "w-[92px] shrink-0",
       align: "right",
       cell: "mono",
-      render: (r) =>
-        r.payModel === "daily_entry" ? (
-          <span className="[color:var(--text-tertiary)]">daily entry</span>
-        ) : (
-          money(r.dailyRate)
-        ),
+      render: (r) => money(r.dailyRate),
     },
     {
       key: "gross",
@@ -369,19 +332,9 @@ export function PayTab({
       width: "w-[108px] shrink-0",
       align: "right",
       cell: "mono",
-      render: (r) =>
-        r.payModel === "daily_entry" ? (
-          <button
-            type="button"
-            onClick={() => setDailyPayDrawer(r)}
-            className="font-mono [color:var(--text-primary)] underline decoration-dotted underline-offset-2 hover:[color:var(--text-secondary)] outline-none focus-visible:[outline:2px_solid_var(--focus-ring)]"
-            aria-label={`Review daily pay for ${r.staffName}`}
-          >
-            {money(r.grossPay)}
-          </button>
-        ) : (
-          <span className="[color:var(--text-primary)]">{money(r.grossPay)}</span>
-        ),
+      render: (r) => (
+        <span className="[color:var(--text-primary)]">{money(r.grossPay)}</span>
+      ),
     },
     {
       key: "advances",
@@ -400,6 +353,14 @@ export function PayTab({
       render: (r) => (
         <AdjCell row={r} field="deductions" onOpen={setAdjDrawer} />
       ),
+    },
+    {
+      key: "bonuses",
+      header: "Bonuses",
+      width: "w-[100px] shrink-0",
+      align: "right",
+      cell: "mono",
+      render: (r) => <AdjCell row={r} field="bonuses" onOpen={setAdjDrawer} />,
     },
     {
       key: "net",
@@ -441,15 +402,6 @@ export function PayTab({
               } paid · KES ${money(totals.netUnpaid)} to pay`}
         </div>
         <div className="flex items-center gap-(--sp-4)">
-          {hasDailyEntry && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setLogDailyPayFor(null)}
-            >
-              Log daily pay
-            </Button>
-          )}
           <Button
             variant="secondary"
             size="sm"
@@ -517,6 +469,9 @@ export function PayTab({
                 <div className="w-[100px] shrink-0 text-right font-mono text-(--nav-text-subtle) text-sm/sm">
                   {negMoney(totals.deductions)}
                 </div>
+                <div className="w-[100px] shrink-0 text-right font-mono text-(--nav-text-subtle) text-sm/sm">
+                  {money(totals.bonuses)}
+                </div>
                 <div className="w-[116px] shrink-0 text-right font-mono font-(--weight-medium) text-(--nav-text-active) text-sm/sm">
                   {money(totals.netPay)}
                 </div>
@@ -567,29 +522,19 @@ export function PayTab({
                     {rowCaption(r)}
                   </div>
                   <div className="font-ui [color:var(--text-secondary)] text-caption/micro">
-                    {r.payModel === "daily_entry"
-                      ? `daily entry · gross ${money(r.grossPay)}`
-                      : `${r.daysPresent} days × ${money(
-                          r.dailyRate,
-                        )} = gross ${money(r.grossPay)}`}
+                    {`${r.daysPresent} days × ${money(
+                      r.dailyRate,
+                    )} = gross ${money(r.grossPay)}`}
                     {Number(r.advances) > 0
                       ? ` · advances ${negMoney(r.advances)}`
                       : ""}
                     {Number(r.deductions) > 0
                       ? ` · deductions ${negMoney(r.deductions)}`
                       : ""}
+                    {Number(r.bonuses) > 0
+                      ? ` · bonuses ${money(r.bonuses)}`
+                      : ""}
                   </div>
-                  {r.payModel === "daily_entry" && (
-                    <div className="pt-(--sp-1)">
-                      <Button
-                        variant="tertiary"
-                        size="sm"
-                        onClick={() => setDailyPayDrawer(r)}
-                      >
-                        Review daily pay
-                      </Button>
-                    </div>
-                  )}
                   {r.adjustments.length > 0 && (
                     <div className="pt-(--sp-1)">
                       <Button
@@ -597,7 +542,7 @@ export function PayTab({
                         size="sm"
                         onClick={() => setAdjDrawer(r)}
                       >
-                        Review advances / deductions
+                        Review advances / deductions / bonuses
                       </Button>
                     </div>
                   )}
@@ -643,30 +588,6 @@ export function PayTab({
         />
       )}
 
-      {logDailyPayFor !== undefined && (
-        <LogDailyPayDrawer
-          month={month}
-          today={today}
-          presetStaffId={logDailyPayFor ?? undefined}
-          onRecord={recordDailyPay}
-          onClose={() => setLogDailyPayFor(undefined)}
-        />
-      )}
-
-      {dailyPayRow && (
-        <DailyPayDrawer
-          pay={dailyPayRow}
-          month={month}
-          onLog={() => {
-            setLogDailyPayFor(dailyPayRow.staffId);
-            setDailyPayDrawer(null);
-          }}
-          onCorrect={correctDailyPay}
-          onVoid={voidDailyPay}
-          onClose={() => setDailyPayDrawer(null)}
-        />
-      )}
-
       {adjRow && (
         <StaffAdjustmentsDrawer
           pay={adjRow}
@@ -679,4 +600,3 @@ export function PayTab({
     </div>
   );
 }
-

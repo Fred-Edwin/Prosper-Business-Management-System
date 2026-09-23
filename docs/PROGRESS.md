@@ -16,6 +16,55 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature: `daily_entry` pay model removed; `bonus` replaces it (2026-09-23) — DONE
+
+Client feedback: she couldn't make sense of switching a staff member to
+"daily entry" pay and hand-typing each day's amount (ADR-76). What she
+actually wanted was simpler — every staff member paid `dailyRate ×
+daysPresent`, plus an arbitrary one-off top-up ("bonus") on any date.
+ADR-90.
+
+- **Schema** — migration `20260923120000_remove_daily_entry_pay_add_bonus`:
+  dropped `StaffPayModel` enum, `Staff.payModel`, and the `StaffDailyPay`
+  table (dev/seed rows only — no client production usage, confirmed with
+  the owner); added `bonus` to `StaffPayAdjustmentType`.
+- **Domain** — `lib/domain/staff/daily-pay.ts` (+ its test) deleted along
+  with `recordDailyPay`/`correctDailyPay`/`voidDailyPay`. `pay.ts`:
+  `PayAdjustmentType` gains `"bonus"`; `getStaffPay` / `getPayrollSummary`
+  now compute `netPay = grossPay − advances − deductions + bonuses`
+  (`StaffPay`/`PayrollSummary.totals` gain a `bonuses` field); gross pay
+  is unconditionally `dailyRate × daysPresent` (the `daily_entry` branch
+  removed). `correct-pay-adjustment.ts`'s `TYPE_DISPLAY` gains `bonus:
+  "Bonus"` — the correction/void path was already generic over `type` and
+  needed no other change. `create-staff.ts` / `update-staff.ts` /
+  `types.ts` / `internal.ts` / `test-helpers.ts` lost every `payModel`
+  reference.
+- **API** — `app/api/pay/daily-pay/*` routes deleted.
+  `recordPayAdjustmentSchema` accepts `"bonus"`; `createStaffSchema` /
+  `updateStaffSchema` lost `payModel`. Documented in `docs/API.md`.
+- **Screens** — `daily-pay-drawer.tsx`, `daily-pay-correction-drawer.tsx`,
+  `log-daily-pay-drawer.tsx` deleted. `pay-tab.tsx`: dropped every
+  `payModel`/`dailyPay` branch, added a Bonuses column (desktop table +
+  totals footer + mobile card). `advance-drawer.tsx`: `SegmentedControl`
+  gains a third "Bonus" option, hint text branches on sign.
+  `staff-adjustments-drawer.tsx` / `pay-adjustment-correction-drawer.tsx`:
+  type label and hint now cover `bonus` (the correction drawer's hardcoded
+  advance/deduction label was a real bug for a bonus row — fixed).
+  `payout-drawer.tsx`: reconciliation gains a Bonuses row. `staff-drawer.tsx`
+  lost the "Pay model" select entirely.
+- **Seed** — the roster-only "Cook" is back to plain `dailyRate`; one
+  `bonus`-typed `StaffPayAdjustment` seeded in its place so the feature is
+  visible in dev.
+- **Tests** — `lib/domain/staff/daily-pay.test.ts` deleted;
+  `pay.test.ts` / `payout.test.ts` daily-entry cases replaced with bonus
+  equivalents; `tests/screens/admin-staff.screen.test.tsx`'s "Pay —
+  daily-entry pay model" describe block replaced with "Pay — record a
+  bonus"; fixture types (`staff()`, `pay()`, `payroll()`) updated.
+- **Gates**: `pnpm typecheck` clean · `pnpm test` 172 files / 1474 tests
+  passing · `pnpm build` clean.
+
+---
+
 ## Feature: Cash Flow report, its own page on Financials (2026-09-23) — DONE
 
 Client feedback item #7 (`docs/client/2026-09-cash-flow-statement-scope.md`):

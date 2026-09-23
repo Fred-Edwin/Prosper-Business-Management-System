@@ -176,15 +176,11 @@ export function PayoutDrawer({
         </div>
       )}
 
-      {/* The reconciliation — Gross → − Advances → − Deductions → Net,
-          then − Already paid this month → Remaining. */}
+      {/* The reconciliation — Gross → − Advances → − Deductions → + Bonuses
+          → Net, then − Already paid this month → Remaining. */}
       <div className="flex flex-col rounded-sm overflow-clip border border-solid [border-color:var(--border-subtle)]">
         <ReconRow
-          label={
-            pay.payModel === "daily_entry"
-              ? "Gross pay · daily entries"
-              : `Gross pay · ${pay.daysPresent} days × ${money(pay.dailyRate)}`
-          }
+          label={`Gross pay · ${pay.daysPresent} days × ${money(pay.dailyRate)}`}
           value={money(pay.grossPay)}
         />
         <ReconRow
@@ -193,6 +189,7 @@ export function PayoutDrawer({
           value={money(pay.advances)}
         />
         <ReconRow label="Deductions" op="−" value={money(pay.deductions)} />
+        <ReconRow label="Bonuses" op="+" value={money(pay.bonuses)} />
         <ReconRow label="Net for the month" value={money(pay.netPay)} />
         <ReconRow
           label="Already paid this month"

@@ -29,9 +29,6 @@ const payAll = vi.fn();
 const recordAdjustment = vi.fn();
 const correctAdjustment = vi.fn();
 const voidAdjustment = vi.fn();
-const recordDailyPay = vi.fn();
-const correctDailyPay = vi.fn();
-const voidDailyPay = vi.fn();
 const changePin = vi.fn();
 
 let rosterState: { staff: StaffView[]; loading: boolean; error: string | null };
@@ -83,9 +80,6 @@ vi.mock("@/app/admin/staff/use-staff", async (importOriginal) => {
       recordAdjustment,
       correctAdjustment,
       voidAdjustment,
-      recordDailyPay,
-      correctDailyPay,
-      voidDailyPay,
       payOne,
       reversePayout,
       payAll,
@@ -113,7 +107,6 @@ function staff(over: Partial<StaffView> = {}): StaffView {
     role: "cashier",
     jobTitle: null,
     appAccess: true,
-    payModel: "fixed_daily_rate",
     locationId: "loc-r",
     locationName: "Restaurant",
     dailyRate: "800.00",
@@ -131,15 +124,14 @@ function pay(over: Partial<StaffPay> = {}): StaffPay {
     staffId: "s1",
     staffName: "Grace Wanjiru",
     month: "2026-09",
-    payModel: "fixed_daily_rate",
     dailyRate: "800.00",
     payableDays: 26,
     daysPresent: 26,
     daysAbsent: 0,
     grossPay: "20800.00",
-    dailyPay: [],
     advances: "5000.00",
     deductions: "500.00",
+    bonuses: "0.00",
     netPay: "15300.00",
     adjustments: [],
     netPaid: "0.00",
@@ -170,6 +162,7 @@ function payroll(rows: StaffPay[]): PayrollSummary {
       grossPay: num((r) => r.grossPay),
       advances: num((r) => r.advances),
       deductions: num((r) => r.deductions),
+      bonuses: num((r) => r.bonuses),
       netPay: num((r) => r.netPay),
       netPaid: num((r) => r.netPaid),
       netUnpaid: rows
@@ -213,26 +206,8 @@ beforeEach(() => {
   recordAdjustment.mockResolvedValue(undefined);
   correctAdjustment.mockResolvedValue(undefined);
   voidAdjustment.mockResolvedValue(undefined);
-  recordDailyPay.mockResolvedValue(undefined);
-  correctDailyPay.mockResolvedValue(undefined);
-  voidDailyPay.mockResolvedValue(undefined);
   changePin.mockResolvedValue(undefined);
 });
-
-function dailyPayEntry(
-  over: Partial<import("@/lib/domain/staff").DailyPayView> = {},
-) {
-  return {
-    id: "dp-1",
-    staffId: "s1",
-    amount: "900.00",
-    originalAmount: "900.00",
-    corrected: false,
-    date: "2026-09-02",
-    note: "long shift",
-    ...over,
-  };
-}
 
 function adj(over: Partial<import("@/lib/domain/staff").PayAdjustmentView> = {}) {
   return {
@@ -1058,176 +1033,62 @@ describe("Pay — correct / void an advance", () => {
 
 // ── Daily-entry pay model (ADR-76) ──────────────────────────────────
 
-describe("Pay — daily-entry pay model", () => {
+describe("Pay — record a bonus (ADR-79)", () => {
   function renderPay(todayStr = "2026-09-30") {
     render(
       <ToastProvider placement="top-right">
         <PayTab
           month="2026-09"
           today={todayStr}
-          registerRecordAdjustment={() => {}}
+          registerRecordAdjustment={(fn) => (openAdvance = fn)}
         />
       </ToastProvider>,
     );
   }
 
-  const cook = () =>
-    staff({
-      id: "s2",
-      name: "Mama Njeri",
-      role: null,
-      jobTitle: "Cook",
-      appAccess: false,
-      payModel: "daily_entry",
-    });
-
-  const cookPay = (over: Partial<StaffPay> = {}) =>
-    pay({
-      staffId: "s2",
-      staffName: "Mama Njeri",
-      payModel: "daily_entry",
-      dailyRate: "800.00",
-      grossPay: "1650.00",
-      dailyPay: [
-        dailyPayEntry({ id: "dp-1", staffId: "s2", amount: "900.00", date: "2026-09-01" }),
-        dailyPayEntry({ id: "dp-2", staffId: "s2", amount: "750.00", date: "2026-09-02", note: null }),
-      ],
-      advances: "0.00",
-      deductions: "0.00",
-      netPay: "1650.00",
-      ...over,
-    });
+  let openAdvance: () => void = () => {};
 
   beforeEach(() => {
-    rosterState = { staff: [cook()], loading: false, error: null };
-    payrollState = {
-      payroll: payroll([cookPay()]),
-      loading: false,
-      error: null,
-    };
+    rosterState = { staff: [staff()], loading: false, error: null };
+    payrollState = { payroll: payroll([pay()]), loading: false, error: null };
   });
 
-  it("logs a day's pay through the 'Log daily pay' drawer (no money leg)", async () => {
+  it("records a bonus through the advance/deduction/bonus drawer", async () => {
     const user = userEvent.setup();
     renderPay("2026-09-15");
-
-    await user.click(
-      screen.getByRole("button", { name: "Log daily pay" }),
-    );
+    openAdvance();
     const dialog = await screen.findByRole("dialog");
 
     await user.click(
       within(dialog).getByRole("combobox", { name: /Staff member/ }),
     );
-    await user.click(await screen.findByRole("option", { name: /Mama Njeri/ }));
-    await user.type(within(dialog).getByLabelText(/^Amount/), "1200");
-    await user.type(within(dialog).getByLabelText(/^Note/), "double shift");
-    await user.click(within(dialog).getByRole("button", { name: "Save" }));
-
-    await waitFor(() => expect(recordDailyPay).toHaveBeenCalledOnce());
-    expect(recordDailyPay).toHaveBeenCalledWith({
-      staffId: "s2",
-      amount: "1200",
-      date: "2026-09-15",
-      note: "double shift",
-    });
-    expect(await screen.findByText("Daily pay logged")).toBeInTheDocument();
-  });
-
-  it("opens the daily-pay review list from the Gross pay cell and corrects an entry", async () => {
-    const user = userEvent.setup();
-    renderPay();
-
-    await user.click(
-      screen.getAllByRole("button", { name: /Review daily pay for Mama Njeri/i })[0],
-    );
-    const list = await screen.findByRole("dialog");
-    await user.click(
-      within(list).getAllByRole("button", { name: "Correct" })[0],
-    );
-
-    const editor = await screen.findByRole("dialog", {
-      name: /Correct daily pay/i,
-    });
-    const amount = within(editor).getByLabelText(/Corrected amount/i);
-    await user.clear(amount);
-    await user.type(amount, "1000");
-    await user.click(
-      within(editor).getByRole("button", { name: "Save Correction" }),
-    );
-
-    await waitFor(() => expect(correctDailyPay).toHaveBeenCalledOnce());
-    expect(correctDailyPay).toHaveBeenCalledWith("dp-1", {
-      amount: "1000",
-      note: "long shift",
-    });
-    expect(await screen.findByText("Daily pay corrected")).toBeInTheDocument();
-  });
-
-  it("Void is behind a confirm step and posts no body", async () => {
-    const user = userEvent.setup();
-    renderPay();
-
-    await user.click(
-      screen.getAllByRole("button", { name: /Review daily pay for Mama Njeri/i })[0],
-    );
-    const list = await screen.findByRole("dialog");
-    await user.click(
-      within(list).getAllByRole("button", { name: "Correct" })[0],
-    );
-    const editor = await screen.findByRole("dialog", {
-      name: /Correct daily pay/i,
-    });
-
-    await user.click(
-      within(editor).getByRole("button", { name: /Void entry…/i }),
-    );
-    expect(voidDailyPay).not.toHaveBeenCalled();
-    await user.click(
-      within(editor).getByRole("button", { name: "Confirm void" }),
-    );
-
-    await waitFor(() => expect(voidDailyPay).toHaveBeenCalledOnce());
-    expect(voidDailyPay).toHaveBeenCalledWith("dp-1");
-  });
-
-  it("surfaces a same-day CONFLICT from the log drawer inline", async () => {
-    const user = userEvent.setup();
-    const { StaffRequestError } = await import("@/app/admin/staff/use-staff");
-    recordDailyPay.mockRejectedValueOnce(
-      new StaffRequestError(409, {
-        code: "CONFLICT",
-        message: "already has an entry",
-        field: "date",
-      }),
-    );
-    renderPay("2026-09-15");
-
-    await user.click(screen.getByRole("button", { name: "Log daily pay" }));
-    const dialog = await screen.findByRole("dialog");
-    await user.click(
-      within(dialog).getByRole("combobox", { name: /Staff member/ }),
-    );
-    await user.click(await screen.findByRole("option", { name: /Mama Njeri/ }));
+    await user.click(await screen.findByRole("option", { name: /Grace Wanjiru/ }));
+    await user.click(within(dialog).getByRole("radio", { name: "Bonus" }));
     await user.type(within(dialog).getByLabelText(/^Amount/), "500");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
-    expect(
-      await within(dialog).findByText(/already has a daily pay entry/i),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(recordAdjustment).toHaveBeenCalledOnce());
+    expect(recordAdjustment).toHaveBeenCalledWith(
+      expect.objectContaining({ staffId: "s1", type: "bonus", amount: "500" }),
+    );
+    expect(await screen.findByText("Bonus recorded")).toBeInTheDocument();
   });
 
-  it("a fixed_daily_rate row shows no daily-pay affordances", async () => {
-    rosterState = { staff: [staff()], loading: false, error: null };
-    payrollState = { payroll: payroll([pay()]), loading: false, error: null };
+  it("shows a non-zero Bonuses cell as a button that opens the adjustments drawer", async () => {
+    const user = userEvent.setup();
+    payrollState = {
+      payroll: payroll([pay({ bonuses: "500.00", adjustments: [adj({ type: "bonus", amount: "500.00" })] })]),
+      loading: false,
+      error: null,
+    };
     renderPay();
 
+    await user.click(
+      screen.getByRole("button", { name: /Review bonuses for Grace Wanjiru/i }),
+    );
     expect(
-      screen.queryByRole("button", { name: "Log daily pay" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Review daily pay/i }),
-    ).not.toBeInTheDocument();
+      await screen.findByRole("dialog", { name: /Advances, deductions & bonuses/i }),
+    ).toBeInTheDocument();
   });
 });
 

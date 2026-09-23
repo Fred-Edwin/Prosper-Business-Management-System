@@ -74,7 +74,6 @@ export async function makeBareStaff(
     jobTitle: string;
     locationId: string;
     dailyRate: string;
-    payModel: "fixed_daily_rate" | "daily_entry";
     active: boolean;
   }> = {},
 ): Promise<string> {
@@ -86,7 +85,6 @@ export async function makeBareStaff(
       jobTitle: rosterOnly ? (overrides.jobTitle ?? "Cook") : null,
       locationId: overrides.locationId ?? ctx.locationAId,
       dailyRate: new Prisma.Decimal(overrides.dailyRate ?? "500.00"),
-      payModel: overrides.payModel ?? "fixed_daily_rate",
       active: overrides.active ?? true,
     },
   });
@@ -122,13 +120,6 @@ export async function cleanupStaffTestData(scope: string): Promise<void> {
       });
     }
     await prisma.attendance.deleteMany({ where: { staffId: { in: staffIds } } });
-    // Daily pay: correction rows (self-FK) before their originals.
-    await prisma.staffDailyPay.deleteMany({
-      where: { staffId: { in: staffIds }, correctsDailyPayId: { not: null } },
-    });
-    await prisma.staffDailyPay.deleteMany({
-      where: { staffId: { in: staffIds } },
-    });
     await prisma.staffPayAdjustment.deleteMany({
       where: { staffId: { in: staffIds } },
     });

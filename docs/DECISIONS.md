@@ -5484,3 +5484,60 @@ reading across a row of bars).
   hover, no pre-opened tooltips"). The prop was removed from the
   component entirely rather than fixed-and-kept unused; hover/focus-only
   is the simpler, correct shape for this component's one real use case.
+
+## ADR-90: `daily_entry` pay model removed; `bonus` replaces it as a third `StaffPayAdjustment` type (Client feedback, 2026-09-23)
+
+**Status:** RATIFIED (owner request, live walkthrough).
+
+ADR-76 gave each staff member a `payModel` — `fixed_daily_rate` (gross =
+`dailyRate × daysPresent`) or `daily_entry` (the Admin hand-types each
+day's pay, replacing gross entirely for that staff member, via a
+dedicated `StaffDailyPay` ledger with its own ADR-72 correction/void
+path). The client could not make sense of it in practice: she did not
+understand what "switching a staff member to daily entry" meant or why
+gross pay for some staff came from a rate and others from typed-in
+amounts. What she actually wanted was simpler — every staff member paid
+`dailyRate × daysPresent`, plus the ability to give any staff member an
+arbitrary one-off top-up ("bonus") on any date.
+
+**Removed:** `StaffPayModel` enum, `Staff.payModel`, the `StaffDailyPay`
+table and its ADR-72 correction/void domain functions
+(`recordDailyPay`/`correctDailyPay`/`voidDailyPay`), the
+`/api/pay/daily-pay*` routes, and the "Log daily pay" / daily-pay review
+drawers. Dev/seed `StaffDailyPay` rows were dropped with the table (no
+client production usage — confirmed with the owner before the
+migration); there was no data-migration path to design.
+
+**Added:** `bonus` joins `advance`/`deduction` as a third
+`StaffPayAdjustmentType` on the *existing* `StaffPayAdjustment` table —
+not a new table. It is recorded, corrected, and voided through the exact
+same append-only ledger-row path (`recordPayAdjustment` /
+`correctPayAdjustment` / `voidPayAdjustment`, day-close gated on create
+per ADR-72, no `MoneyMovement` until a payout) that advance/deduction
+already used; only the sign at read time differs —
+`netPay = grossPay − advances − deductions + bonuses` instead of just
+subtracting. This is why it was a small change despite touching ~20
+files: the ledger-row-plus-correction-path pattern (CLAUDE.md's
+non-negotiable rule) already existed for `StaffPayAdjustment`, so adding
+a third type was mechanical everywhere except the `daily_entry` removal,
+which was the bulk of the diff.
+
+**Alternatives considered.**
+- *Keep `daily_entry` for staff who need a variable rate, add `bonus`
+  alongside it.* Rejected — the request was explicit: "we do not need
+  the daily rate as a separate feature… let's just have the fixed daily
+  rate and then add bonus." Keeping unused complexity around after the
+  client asked for its removal would contradict the maintenance-mode
+  brief (CLAUDE.md: turn the request around, don't leave stale surface
+  area behind).
+- *A separate `StaffBonus` table, parallel to `StaffPayAdjustment`.*
+  Rejected — a bonus is structurally identical to an advance/deduction
+  (staff, date, positive amount, note, needs correction/void); a new
+  type on the existing enum is strictly less code and keeps one ledger
+  to reason about instead of two.
+- *Write a data migration to convert existing `StaffDailyPay` rows into
+  `bonus`-typed `StaffPayAdjustment` rows.* Considered, not built — the
+  rows that existed were dev/seed fixtures only (confirmed with the
+  owner), so there was nothing in production to preserve; building a
+  migration path for data that didn't need migrating would have been
+  speculative work.

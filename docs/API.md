@@ -1316,36 +1316,33 @@ blocked state, not a toast. Clean ⇒ the row is deleted. Returns
 > payouts (instalments); each `amount` is Admin-entered but bounded to
 > the month's remaining net.
 >
-> **Pay model (ADR-76).** Each staff member is on `payModel`
-> `"fixed_daily_rate"` (default — gross = `dailyRate × daysPresent`, from
-> attendance) or `"daily_entry"` (the Admin types the day's amount per
-> staff member via `POST /api/pay/daily-pay`; gross = Σ `StaffDailyPay`
-> rows for the month, attendance is recorded and shown but does NOT feed
-> gross). `StaffDailyPay` is append-only with the same ADR-72
-> correction/void shape as `StaffPayAdjustment` and writes **no
-> `MoneyMovement`** — a pay entry is not a cash event until a payout.
+> **Pay model.** Every staff member is paid `dailyRate × daysPresent`
+> (from attendance) — the only model (ADR-79 removed the `daily_entry`
+> alternative, ADR-76: the client could not make sense of hand-typing a
+> per-day amount). A one-off top-up is a **bonus** — `POST /api/pay` with
+> `type: "bonus"` — a `StaffPayAdjustment` row that nets **up** into
+> `netPay`, alongside `advance`/`deduction` which net **down**.
 
 ### `POST /api/staff`
 Body is discriminated on `appAccess`:
 
 - `{ appAccess: true, name, role: "store_manager" | "cashier" |
-  "canteen_attendant", locationId, dailyRate, pin, payModel? }` (`pin` =
+  "canteen_attendant", locationId, dailyRate, pin }` (`pin` =
   exactly 4 digits) — a team member who signs in. Creates the `Staff` row
   **and** its linked login `User` in one transaction; the PIN is
   bcrypt-hashed exactly as the login flow expects (owner decision: the
   Admin sets the PIN; no first-login self-service). A login name already
   taken (`User.name` is unique) → `409 CONFLICT`.
-- `{ appAccess: false, name, jobTitle, locationId, dailyRate, payModel? }`
+- `{ appAccess: false, name, jobTitle, locationId, dailyRate }`
   — a **roster-only** staff member (a cook / casual the owner wants for
   attendance + pay but who never uses the app). Just a `Staff` row:
   `role` is `null`, `jobTitle` is a required free-text label, **no
   `User`, no PIN**. The name need not be unique.
 
-`payModel` (optional, either shape) is `"fixed_daily_rate"` (default) or
-`"daily_entry"` (ADR-76). `locationId` must be an existing **active**
+`locationId` must be an existing **active**
 location → else `400 VALIDATION_ERROR`. `201` with `{ data: StaffView }`.
 `StaffView` carries `role` (`null` for roster-only), `jobTitle` (`null`
-when `role` is set), `appAccess`, and `payModel`.
+when `role` is set), and `appAccess`.
 
 ### `GET /api/staff`
 Query: `?search=&active=&locationId=` (all optional; `active` is
@@ -1357,15 +1354,13 @@ Query: `?search=&active=&locationId=` (all optional; `active` is
 ### `PATCH /api/staff/:id`
 Two modes:
 
-- **Edit** (no query): body `{ name?, role?, jobTitle?, payModel?,
+- **Edit** (no query): body `{ name?, role?, jobTitle?,
   locationId?, dailyRate?, pin? }` (at least one key; `role` and
-  `jobTitle` are mutually exclusive). `payModel` switches the pay model
-  either way (existing rows of the now-inactive kind simply stop feeding
-  gross). `name` / `role` propagate to the linked `User`; a
-  name clash → `409 CONFLICT`. `locationId` (the field that drives
-  role-scoping) is validated against an active location. `pin` resets
-  `User.pinHash`. For a **roster-only** staff member (no `User`):
-  `jobTitle` edits, but `role` / `pin` → `400 VALIDATION_ERROR`
+  `jobTitle` are mutually exclusive). `name` / `role` propagate to the
+  linked `User`; a name clash → `409 CONFLICT`. `locationId` (the field
+  that drives role-scoping) is validated against an active location.
+  `pin` resets `User.pinHash`. For a **roster-only** staff member (no
+  `User`): `jobTitle` edits, but `role` / `pin` → `400 VALIDATION_ERROR`
   (granting app access is a deactivate-and-re-add); for a login-holding
   staff member, `jobTitle` → `400`. A true edit, not a correction row.
   `200` with `{ data: StaffView }`.
@@ -1377,7 +1372,7 @@ Two modes:
 - **Re-activate** (`?mode=reactivate`, body ignored): the mirror of
   Deactivate — sets `Staff.active = true` **and `User.active = true`** in
   one transaction, so the staff member signs in again with their prior
-  role, location, pay model and rate intact (deactivation only flips the
+  role, location, and rate intact (deactivation only flips the
   flags). Idempotent. `200` with `{ data: StaffView }`.
 
 ### `POST /api/attendance`
@@ -1398,75 +1393,37 @@ Query: `?from=&to=&staffId=` (`from`/`to` required, inclusive
 (PRD §4.8); the caller/pay treats a missing `(staffId, date)` as present.
 
 ### `POST /api/pay`
-Body: `{ staffId, type: "advance" | "deduction", amount, date, note? }`.
-Records a salary advance or deduction (positive magnitude; the sign is
-implied by `type` — **both** net off gross pay). This IS a
-`StaffPayAdjustment` append-only create path → **day-close gated**
-(`assertDayOpen(date)`). Undo a mistake by recording the opposite type
-for the same amount. `201` with `{ data: PayAdjustmentView }`.
-
-### `POST /api/pay/daily-pay`  — record one day's pay (daily-entry model)
-**Admin only** (ADR-76). Body: `{ staffId, amount, date: "YYYY-MM-DD",
-note? }`. Records one hand-typed daily pay amount for a `daily_entry`
-staff member. `StaffDailyPay` append-only create path → **day-close
-gated** (`assertDayOpen(date)`). Writes **no `MoneyMovement`**. `201`
-with `{ data: DailyPayView }` (`{ id, staffId, amount, originalAmount,
-corrected, date, note }`).
-
-Errors:
-- `400 VALIDATION_ERROR` (`field: "staffId"`) — the staff member is on
-  `fixed_daily_rate` (set their pay model to `daily_entry` first).
-- `409 CONFLICT` (`field: "date"`) — that staff-day already has an
-  original entry (correct it instead). Enforced in code **and** by a
-  partial unique index (`WHERE corrects_daily_pay_id IS NULL`).
-- `403 FORBIDDEN` — the `date`'s day is closed, or the caller is not an
-  admin.
-
-### `PATCH /api/pay/daily-pay/:id`  — correct one daily-pay entry
-**Admin only** (ADR-72). Body: `{ amount, note? }` — `amount` is the
-corrected **final** amount; the domain writes ONE linked signed-delta
-`StaffDailyPay` row (`corrects_daily_pay_id` set). **Not** day-close
-gated; **no `MoneyMovement`**. `:id` must be an original entry, never a
-correction → `400`. A no-op re-correct → `400 VALIDATION_ERROR`
-(`field: "amount"`). `201` with `{ data: DailyPayView }` (the new
-correction row).
-
-### `POST /api/pay/daily-pay/:id/void`  — void one daily-pay entry
-**Admin only** (ADR-72). No body. A correction to zero: one reversal
-`StaffDailyPay` row carrying the negated derived amount. **No
-`MoneyMovement`.** Voiding an already-voided entry → `400`. `201` with
-`{ data: DailyPayView }`.
+Body: `{ staffId, type: "advance" | "deduction" | "bonus", amount, date,
+note? }`. Records a salary advance, deduction, or bonus (positive
+magnitude; the sign is implied by `type` — advance/deduction net **off**
+gross pay, bonus nets **up**, ADR-79). This IS a `StaffPayAdjustment`
+append-only create path → **day-close gated** (`assertDayOpen(date)`).
+Undo a mistake by voiding the row (`POST /api/pay/adjustments/:id/void`)
+or, for advance ↔ deduction, recording the opposite type for the same
+amount. `201` with `{ data: PayAdjustmentView }`.
 
 ### `GET /api/pay?month=YYYY-MM`
 Payroll for **every active staff member**: `{ data: PayrollSummary }` —
 `{ month, rows: StaffPay[], totals: { grossPay, advances, deductions,
-netPay, netPaid, netUnpaid, paidCount, unpaidCount } }`. Set-wise (one
-attendance groupBy + one adjustments query + one payouts query).
+bonuses, netPay, netPaid, netUnpaid, paidCount, unpaidCount } }`. Set-wise
+(one attendance groupBy + one adjustments query + one payouts query).
 `netPaid` = Σ every live partial payout across the rows; `netUnpaid` =
 Σ `netRemaining` over the rows whose remaining net is > 0;
 `paidCount` = rows fully settled (`paid`), `unpaidCount` = the rest.
 
 ### `GET /api/pay?month=YYYY-MM&staffId=…`
 One staff member: `{ data: StaffPay }` —
-`{ staffId, staffName, month, payModel, dailyRate, payableDays,
-daysPresent, daysAbsent, grossPay, dailyPay, advances, deductions, netPay,
+`{ staffId, staffName, month, dailyRate, payableDays,
+daysPresent, daysAbsent, grossPay, advances, deductions, bonuses, netPay,
 adjustments, netPaid, netRemaining, paid, payouts }`.
-Nothing stored; all derived.
-- `payModel: "fixed_daily_rate"` → `grossPay = dailyRate × daysPresent`;
-  `dailyPay` is `[]`.
-- `payModel: "daily_entry"` (ADR-76) → `grossPay` = Σ the month's
-  `StaffDailyPay` rows (originals + correction deltas; a voided entry
-  contributes 0); `dailyRate` is carried for reference only; `dailyPay` is
-  `DailyPayView[]` — `{ id, staffId, amount, originalAmount, corrected,
-  date, note }`, one per original with corrections folded in. Attendance
-  (`payableDays` / `daysPresent` / `daysAbsent`) is still computed and
-  returned but does **not** feed `grossPay`.
+Nothing stored; all derived. `grossPay = dailyRate × daysPresent`.
 
 `daysPresent = payableDays − (explicit present:false rows)`; `payableDays`
 = calendar days from the 1st through `min(month-end, today)` (a wholly
-future month → `0`). `netPay = grossPay − Σ advances − Σ deductions` —
-**not floored**, so it may be negative (ADR-60). Handover shortfalls do
-**not** auto-deduct and never reduce a payout (PRD §4.8).
+future month → `0`). `netPay = grossPay − Σ advances − Σ deductions + Σ
+bonuses` (ADR-79) — **not floored**, so it may be negative (ADR-60).
+Handover shortfalls do **not** auto-deduct and never reduce a payout
+(PRD §4.8).
 
 **Partial payouts (ADR-77).** A staff-month accrues **many** payouts —
 instalments across the month:

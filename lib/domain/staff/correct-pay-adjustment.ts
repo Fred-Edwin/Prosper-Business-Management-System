@@ -12,6 +12,7 @@ const RATE_RE = /^\d+(\.\d{1,2})?$/;
 const TYPE_DISPLAY: Record<PayAdjustmentType, string> = {
   advance: "Advance",
   deduction: "Deduction",
+  bonus: "Bonus",
 };
 
 export type CorrectPayAdjustmentInput = {
@@ -115,8 +116,8 @@ async function currentDerivedAmount(
  *      was→now table.
  *
  * The `type` is never changed by a correction — an advance stays an
- * advance. To turn an advance into a deduction, void it and record the
- * other type. (Both net OFF pay identically anyway — PRD §4.8.)
+ * advance. To turn one type into another (e.g. advance → deduction), void
+ * it and record the new type.
  */
 export async function correctPayAdjustment(
   input: CorrectPayAdjustmentInput,

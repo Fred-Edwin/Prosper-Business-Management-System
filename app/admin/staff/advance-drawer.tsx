@@ -1,13 +1,16 @@
 "use client";
 
-// M4 S9B — the "Record advance / deduction" drawer (the Pay tab header
-// primary action). This is the MID-MONTH action (Moment 1 = advance, cash
-// leaves the till that day; Moment 2 = deduction, no cash moves) — it is
-// distinct from the payroll-day Pay out drawer.
+// M4 S9B — the "Record advance / deduction / bonus" drawer (the Pay tab
+// header primary action; `bonus` added by ADR-79 to replace the
+// daily-entry pay model). This is the MID-MONTH action (Moment 1 =
+// advance, cash leaves the till that day; Moment 2 = deduction / bonus, no
+// cash moves) — it is distinct from the payroll-day Pay out drawer.
 //
-// POST /api/pay — day-close gated (assertDayOpen on `date`). Both types
-// net OFF this month's pay. Undo a mistake by recording the opposite type
-// for the same amount (append-only — CONVENTIONS §4).
+// POST /api/pay — day-close gated (assertDayOpen on `date`). Advance and
+// deduction net OFF this month's pay; bonus nets it UP. Undo a mistake by
+// voiding the row from its adjustments list, or (advance ↔ deduction) by
+// recording the opposite type for the same amount (append-only —
+// CONVENTIONS §4).
 //
 // Composed from the frozen kit: <Drawer> + <Select> + <SegmentedControl> +
 // <FormField> + <Button> + <Toast>, following expense-drawer.tsx.
@@ -26,6 +29,7 @@ import { StaffRequestError, useRoster } from "./use-staff";
 
 const ADVANCE = "Advance";
 const DEDUCTION = "Deduction";
+const BONUS = "Bonus";
 
 const fieldBox =
   "flex items-center h-(--control-md) px-(--sp-5) rounded-sm shrink-0 bg-(--surface-page) border border-solid [border-color:var(--border-strong)] kit-field";
@@ -51,7 +55,9 @@ export function AdvanceDrawer({
   const { toast } = useToast();
   const { staff } = useRoster(null);
   const [staffId, setStaffId] = React.useState(presetStaffId ?? "");
-  const [type, setType] = React.useState<"advance" | "deduction">("advance");
+  const [type, setType] = React.useState<"advance" | "deduction" | "bonus">(
+    "advance",
+  );
   const [amount, setAmount] = React.useState("");
   const [date, setDate] = React.useState(today);
   const [note, setNote] = React.useState("");
@@ -87,10 +93,13 @@ export function AdvanceDrawer({
         date,
         note: note.trim() || undefined,
       });
-      toast(
-        type === "advance" ? "Advance recorded" : "Deduction recorded",
-        { tone: "success" },
-      );
+      const typeLabel =
+        type === "advance"
+          ? "Advance"
+          : type === "deduction"
+            ? "Deduction"
+            : "Bonus";
+      toast(`${typeLabel} recorded`, { tone: "success" });
       onClose();
     } catch (e) {
       if (e instanceof StaffRequestError) {
@@ -111,8 +120,8 @@ export function AdvanceDrawer({
     <Drawer
       open
       onClose={onClose}
-      title="Record advance / deduction"
-      subtitle={`Netted off ${monthLabel(month)} pay`}
+      title="Record advance / deduction / bonus"
+      subtitle={`Netted into ${monthLabel(month)} pay`}
       variant="rail"
       footer={
         <>
@@ -149,15 +158,21 @@ export function AdvanceDrawer({
 
       <SegmentedControl
         label="Type"
-        options={[ADVANCE, DEDUCTION]}
-        value={type === "advance" ? ADVANCE : DEDUCTION}
-        onChange={(v) => setType(v === ADVANCE ? "advance" : "deduction")}
+        options={[ADVANCE, DEDUCTION, BONUS]}
+        value={type === "advance" ? ADVANCE : type === "deduction" ? DEDUCTION : BONUS}
+        onChange={(v) =>
+          setType(v === ADVANCE ? "advance" : v === DEDUCTION ? "deduction" : "bonus")
+        }
       />
 
       <FormField
         label="Amount"
         required
-        hint="Subtracted from this month's net pay for this staff member."
+        hint={
+          type === "bonus"
+            ? "Added on top of this month's net pay for this staff member."
+            : "Subtracted from this month's net pay for this staff member."
+        }
       >
         {({ id, "aria-describedby": describedBy }) => (
           <div className={fieldBox}>
@@ -213,10 +228,9 @@ export function AdvanceDrawer({
       </FormField>
 
       <div className="font-ui [color:var(--text-secondary)] text-caption/micro">
-        Neither an advance nor a deduction moves cash now — both only net
-        off this month&apos;s payout when it is recorded. Record a mistake
-        the other way, or Correct / Void it from the row&apos;s advances /
-        deductions cell.
+        None of the three move cash now — each only nets into this
+        month&apos;s payout when it is recorded. Correct or void a mistake
+        from the row&apos;s advances / deductions / bonuses cell.
       </div>
     </Drawer>
   );

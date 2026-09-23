@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { closeDay, reopenDay } from "@/lib/domain/audit";
-import { businessDateOnly } from "@/lib/time";
 import { setAttendance, setAttendanceBulk } from "./attendance";
 import {
   getPayrollSummary,
@@ -164,7 +163,7 @@ describe("pay math", () => {
     await expect(
       recordPayAdjustment(
         // @ts-expect-error runtime guard
-        { staffId: id, type: "bonus", amount: "10.00", date: "2026-06-01" },
+        { staffId: id, type: "not_a_type", amount: "10.00", date: "2026-06-01" },
         admin(),
       ),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "type" });
@@ -220,6 +219,7 @@ describe("pay math", () => {
       expect(summary.totals.grossPay).toBe(sum((r) => r.grossPay));
       expect(summary.totals.advances).toBe(sum((r) => r.advances));
       expect(summary.totals.deductions).toBe(sum((r) => r.deductions));
+      expect(summary.totals.bonuses).toBe(sum((r) => r.bonuses));
       expect(summary.totals.netPay).toBe(sum((r) => r.netPay));
     } finally {
       await cleanupStaffTestData("pay-summary");
@@ -244,61 +244,45 @@ describe("pay math", () => {
     });
   });
 
-  // ── daily-entry pay model (ADR-76) ─────────────────────────────────
-  it("daily_entry: gross is the sum of the month's StaffDailyPay rows, not rate × days", async () => {
+  // ── bonus (ADR-79 — replaces the daily-entry pay model, ADR-76) ─────
+  it("bonus nets UP on top of gross pay, alongside advances/deductions netting down", async () => {
     const id = await makeBareStaff(ctx, {
-      name: `${ctx.prefix} DailyEntry`,
+      name: `${ctx.prefix} Bonus`,
       rosterOnly: true,
       dailyRate: "800.00",
     });
-    await prisma.staff.update({
-      where: { id },
-      data: { payModel: "daily_entry" },
-    });
-    // Three shifts in June + one advance.
-    await prisma.staffDailyPay.createMany({
-      data: [
-        { staffId: id, amount: "900.00", date: businessDateOnly("2026-06-03"), recordedById: ctx.adminId },
-        { staffId: id, amount: "750.00", date: businessDateOnly("2026-06-04"), recordedById: ctx.adminId },
-        { staffId: id, amount: "1100.00", date: businessDateOnly("2026-06-05"), recordedById: ctx.adminId },
-        // Out-of-month row must NOT count.
-        { staffId: id, amount: "500.00", date: businessDateOnly("2026-05-31"), recordedById: ctx.adminId },
-      ],
-    });
+    const localAdmin = { actorId: ctx.adminId, role: "admin" };
+    await setAttendance(id, "2026-06-10", false, localAdmin); // 29 present days
+    await recordPayAdjustment(
+      { staffId: id, type: "bonus", amount: "500.00", date: "2026-06-03" },
+      admin(),
+    );
     await recordPayAdjustment(
       { staffId: id, type: "advance", amount: "600.00", date: "2026-06-10" },
       admin(),
     );
 
     const pay = await getStaffPay(id, "2026-06");
-    expect(pay.payModel).toBe("daily_entry");
-    expect(pay.grossPay).toBe("2750.00"); // 900 + 750 + 1100
+    expect(pay.grossPay).toBe("23200.00"); // 800 × 29
+    expect(pay.bonuses).toBe("500.00");
     expect(pay.advances).toBe("600.00");
-    expect(pay.netPay).toBe("2150.00"); // gross − advance
-    expect(pay.dailyPay).toHaveLength(3);
-    // Attendance is still surfaced but does not feed gross.
-    expect(pay.payableDays).toBeGreaterThan(0);
+    expect(pay.netPay).toBe("23100.00"); // gross − advance + bonus
+    expect(pay.adjustments.some((a) => a.type === "bonus")).toBe(true);
 
     // getPayrollSummary agrees for the same staff-month.
     const summary = await getPayrollSummary("2026-06");
     const row = summary.rows.find((r) => r.staffId === id);
-    expect(row?.grossPay).toBe("2750.00");
-    expect(row?.netPay).toBe("2150.00");
-    expect(row?.dailyPay).toHaveLength(3);
+    expect(row?.bonuses).toBe("500.00");
+    expect(row?.netPay).toBe("23100.00");
   });
 
-  it("daily_entry: a month with no entries is gross 0", async () => {
+  it("a month with no bonus rows reads bonuses 0.00", async () => {
     const id = await makeBareStaff(ctx, {
-      name: `${ctx.prefix} DailyEntryEmpty`,
+      name: `${ctx.prefix} NoBonus`,
       rosterOnly: true,
       dailyRate: "800.00",
     });
-    await prisma.staff.update({
-      where: { id },
-      data: { payModel: "daily_entry" },
-    });
     const pay = await getStaffPay(id, "2026-06");
-    expect(pay.grossPay).toBe("0.00");
-    expect(pay.dailyPay).toEqual([]);
+    expect(pay.bonuses).toBe("0.00");
   });
 });

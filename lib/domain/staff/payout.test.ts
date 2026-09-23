@@ -4,7 +4,6 @@ import { prisma } from "@/lib/db";
 import { closeDay, reopenDay } from "@/lib/domain/audit";
 import { getFinancialSummary } from "@/lib/domain/financials";
 import { setAttendance } from "./attendance";
-import { recordDailyPay } from "./daily-pay";
 import {
   getPayrollSummary,
   getStaffPay,
@@ -526,24 +525,19 @@ describe("staff payout", () => {
     expect(row.payouts[0].paidFromAccount).toBe("mpesa_bank");
   });
 
-  it("a daily_entry staff-month is paid in two instalments (payModel is upstream of the draw-down)", async () => {
+  it("a staff-month with a bonus is paid in two instalments (bonus is upstream of the draw-down)", async () => {
     const id = await makeBareStaff(ctx, {
-      name: `${ctx.prefix} DailyEntry2x`,
+      name: `${ctx.prefix} Bonus2x`,
       dailyRate: "0.00",
-      payModel: "daily_entry",
     });
-    // Two hand-typed daily entries → gross 3500, net 3500.
-    await recordDailyPay(
-      { staffId: id, amount: "2000.00", date: "2026-06-03" },
-      admin(),
-    );
-    await recordDailyPay(
-      { staffId: id, amount: "1500.00", date: "2026-06-04" },
+    // A bonus with zero attendance-driven gross → net 3500 entirely from bonus.
+    await recordPayAdjustment(
+      { staffId: id, type: "bonus", amount: "3500.00", date: "2026-06-03" },
       admin(),
     );
     const pay = await getStaffPay(id, "2026-06");
-    expect(pay.payModel).toBe("daily_entry");
-    expect(pay.grossPay).toBe("3500.00");
+    expect(pay.grossPay).toBe("0.00");
+    expect(pay.bonuses).toBe("3500.00");
     expect(pay.netPay).toBe("3500.00");
 
     const after1 = await payStaff(

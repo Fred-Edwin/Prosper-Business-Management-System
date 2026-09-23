@@ -20,7 +20,6 @@ function staff(over: Partial<StaffView> = {}): StaffView {
     role: "canteen_attendant",
     jobTitle: null,
     appAccess: true,
-    payModel: "fixed_daily_rate",
     locationId: "loc-canteen",
     locationName: "Canteen",
     dailyRate: "0.00",

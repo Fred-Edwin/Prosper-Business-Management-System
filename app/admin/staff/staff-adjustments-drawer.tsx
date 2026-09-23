@@ -44,7 +44,7 @@ export function StaffAdjustmentsDrawer({
       <Drawer
         open
         onClose={onClose}
-        title="Advances & deductions"
+        title="Advances, deductions & bonuses"
         subtitle={`${pay.staffName} · ${monthLabel(month)}`}
         variant="rail"
         footer={
@@ -54,15 +54,15 @@ export function StaffAdjustmentsDrawer({
         }
       >
         <div className="font-ui [color:var(--text-secondary)] text-caption/micro">
-          Both advances and deductions are netted off this month&apos;s
-          pay. Correcting or voiding one adjusts the payout figure — no
-          cash moves until the payout is recorded.
+          Advances and deductions are netted off this month&apos;s pay;
+          bonuses are netted up. Correcting or voiding one adjusts the
+          payout figure — no cash moves until the payout is recorded.
         </div>
 
         {rows.length === 0 ? (
           <EmptyState
             title="No adjustments this month"
-            description="Advances and deductions recorded for this staff member appear here."
+            description="Advances, deductions, and bonuses recorded for this staff member appear here."
           />
         ) : (
           <div className="flex flex-col rounded-sm overflow-clip border border-solid [border-color:var(--border-subtle)]">
@@ -75,8 +75,12 @@ export function StaffAdjustmentsDrawer({
                 >
                   <div className="flex flex-col gap-(--sp-1) min-w-0">
                     <span className="font-ui [color:var(--text-primary)] text-sm/sm">
-                      {a.type === "advance" ? "Advance" : "Deduction"} ·{" "}
-                      {shortDate(a.date)}
+                      {a.type === "advance"
+                        ? "Advance"
+                        : a.type === "deduction"
+                          ? "Deduction"
+                          : "Bonus"}{" "}
+                      · {shortDate(a.date)}
                     </span>
                     <span className="font-ui [color:var(--text-tertiary)] text-caption/micro truncate">
                       {voided

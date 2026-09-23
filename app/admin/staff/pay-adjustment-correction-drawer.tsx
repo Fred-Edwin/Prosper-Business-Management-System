@@ -1,6 +1,7 @@
 "use client";
 
-// Correct or void one staff pay advance / deduction (ADR-15 / ADR-72).
+// Correct or void one staff pay advance / deduction / bonus (ADR-15 /
+// ADR-72; bonus added ADR-79).
 // Composed from the frozen kit rail <Drawer> + <FormField> + <Button> +
 // <Toast>, following purchase-payment-correction-drawer.tsx (the
 // confirm-step Void pattern). The form submits the CORRECTED FINAL
@@ -50,7 +51,12 @@ export function PayAdjustmentCorrectionDrawer({
   onClose: () => void;
 }) {
   const { toast } = useToast();
-  const typeLabel = adjustment.type === "advance" ? "Advance" : "Deduction";
+  const typeLabel =
+    adjustment.type === "advance"
+      ? "Advance"
+      : adjustment.type === "deduction"
+        ? "Deduction"
+        : "Bonus";
 
   const [amount, setAmount] = React.useState(adjustment.amount);
   const [note, setNote] = React.useState(adjustment.note ?? "");
@@ -161,7 +167,11 @@ export function PayAdjustmentCorrectionDrawer({
       <FormField
         label={`Corrected ${typeLabel.toLowerCase()} amount`}
         required
-        hint="Subtracted from this month's net pay for this staff member."
+        hint={
+          adjustment.type === "bonus"
+            ? "Added on top of this month's net pay for this staff member."
+            : "Subtracted from this month's net pay for this staff member."
+        }
       >
         {({ id, "aria-describedby": describedBy }) => (
           <div className={fieldBox}>
