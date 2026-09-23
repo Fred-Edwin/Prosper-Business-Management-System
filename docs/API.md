@@ -1157,6 +1157,56 @@ required; `400` if missing / malformed / `from > to`). Returns
 > `GET /api/money/balances` (M2 S3) still serves the bare account
 > balances for QA.
 
+### `GET /api/financials/cash-flow`
+Roles: **Admin only.** Query: `?from=YYYY-MM-DD&to=YYYY-MM-DD` (both
+required; `400` if missing / malformed / `from > to` — same schema as
+`/api/financials/summary`). Client feedback item #7 — a Cash Flow tab on
+`/admin/financials` explaining the "Total Business Liquidity" figure.
+**Pure report — nothing stored, nothing written.** Returns
+`CashFlowReport`:
+
+```jsonc
+{
+  "from": "2026-09-20", "to": "2026-09-21",
+  "openingBalances": { "cash": "11500.00", "mpesaBank": "7300.00" },
+  "closingBalances": { "cash": "11750.00", "mpesaBank": "7600.00" },
+  "entries": [
+    {
+      "id": "...", "occurredAt": "2026-09-20T06:00:00.000Z",
+      "account": "mpesa_bank", "sourceType": "repayment",
+      "amount": "300.00", "runningBalance": "7600.00", "note": null
+    }
+  ]
+}
+```
+
+- **Every `MoneyMovement` in `from..to`, unified across both accounts and
+  sorted chronologically** (oldest first) — the same rows the other
+  Financials tabs already read (Expenses, Owner Draws, Handovers, …), just
+  presented as one feed instead of split by type.
+- **Flows vs. balances (ADR-57), same split `/api/financials/summary`
+  uses.** `entries` is the FLOW side — every row with `occurredAt` in
+  `from..to`. `openingBalances` / `closingBalances` are BALANCES: a level
+  at one instant, read via the same `getAccountBalances({ asOf })`
+  primitive the summary uses. `closingBalances` is **as of the end of
+  `to`** (identical `asOf` to `summary.consolidated.cashBalance` /
+  `mpesaBankBalance` for the same `to`). `openingBalances` is as of the
+  end of the day *before* `from` — the instant just before the period
+  starts.
+- **`runningBalance`** on each entry is that row's account balance
+  immediately after it, within the period — seeded from
+  `openingBalances` and walked forward per account. Reconciles:
+  `openingBalances[account] + Σ entries.amount (that account) ===
+  closingBalances[account]`.
+- **`amount`** is signed exactly as stored — positive = inflow, negative
+  = outflow. No new sign logic; every ledger writer already decides the
+  sign at write time.
+- **`sourceType`** is the raw `MoneySourceType` enum value (`expense`,
+  `handover_receipt`, `purchase_payment`, `owner_draw`, `owner_return`,
+  `order`, `repayment`, `canteen_sale`, `opening_balance`, …) — the
+  screen maps it to a label, same pattern as the Expenses tab's category
+  labels.
+
 ---
 
 ## Staff & Pay

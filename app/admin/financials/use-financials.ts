@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import type {
+  CashFlowReport,
   ExpenseView,
   FinancialSummary,
   OwnerTransactionView,
@@ -232,6 +233,42 @@ export function useFinancialSummary(from: string, to: string) {
   }, [refresh]);
 
   return { summary, loading, error, refresh };
+}
+
+// ── Cash Flow (client feedback item #7) ────────────────────────────────
+
+/**
+ * The unified Cash Flow report for a business-date RANGE (`from`..`to`
+ * inclusive) — read-only, no mutations (unlike the other tabs, nothing is
+ * recorded here). The domain applies the same ADR-57 split as the
+ * summary: `entries` is a FLOW over the range; `openingBalances` /
+ * `closingBalances` are BALANCES read as of an instant.
+ */
+export function useCashFlow(from: string, to: string) {
+  const [report, setReport] = React.useState<CashFlowReport | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const refresh = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await request<CashFlowReport>(
+        `/api/financials/cash-flow?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      );
+      setReport(r);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load cash flow.");
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to]);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { report, loading, error, refresh };
 }
 
 // ── Debts card — customers who currently owe (v2) ──────────────────────

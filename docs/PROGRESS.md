@@ -16,6 +16,66 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature: Cash Flow report, its own page on Financials (2026-09-23) — DONE
+
+Client feedback item #7 (`docs/client/2026-09-cash-flow-statement-scope.md`):
+a report explaining the Dashboard's "Total Business Liquidity" figure —
+money moving in and out over time, not just a live balance. Pure read/
+report; no schema change, no new ledger-writing logic.
+
+- **Domain**: `lib/domain/financials/get-cash-flow.ts` — `getCashFlow(from, to)`.
+  Every `MoneyMovement` in the range, unified across both accounts and
+  sorted chronologically, with a per-account running balance seeded from
+  the ADR-57 opening balance (`getAccountBalances({ asOf })`, same
+  primitive `getFinancialSummary` already uses — reused, not
+  re-derived). Extracted the shared `assertRange` range-validation helper
+  from `get-financial-summary.ts` into `internal.ts` so both share it.
+  New types `CashFlowEntry` / `CashFlowReport` in `types.ts`.
+- **API**: `GET /api/financials/cash-flow?from=&to=` — thin handler,
+  reuses `financialSummaryQuerySchema` (identical `{from, to}` shape).
+  Documented in `docs/API.md`.
+- **Screen — revised mid-session on owner feedback.** Shipped first as a
+  7th Financials tab; after review the owner asked for it to be its own
+  page instead (the opening/closing summary needed real visual
+  hierarchy the tab couldn't give it, filters, and a 7th tab would have
+  crowded an already six-tab-wide screen). Rebuilt as
+  `app/admin/financials/cash-flow/` (`page.tsx` + `cash-flow-client.tsx`
+  + `cash-flow-kpi-strip.tsx`), following the `financials/opening`
+  page-per-report pattern instead of the tab pattern:
+  - Own `useAdminDateRange` + `<AdminDateRangeControl>` (left the shared
+    Financials toolbar).
+  - Own 4-tile KPI strip — Cash/M-Pesa opening→closing and net change —
+    a new small component, **not** a change to the shared
+    `kpi-strip.tsx` (which stays hard-coded to one tile per Financials
+    transaction tab; owner explicitly confirmed leaving it alone).
+  - Account / Source / Direction filters (`<FilterToolbar>`, client-side
+    over the fetched range, same trade-off as Expenses' filters).
+  - Sidebar nav: added as its own entry under Financials in
+    `components/shells/admin-nav-model.ts` (not a `?tab=` child).
+    Surfaced and fixed a real bug this exposed in `activeChildKey` —
+    it could only disambiguate children by `?tab=` value, so two
+    `tab: null` children (the section default and a standalone
+    sub-page) collided; fixed by adding an optional `pathname` param
+    and matching the longest href prefix, threaded through
+    `AdminShell` / `MobileShellAdmin` / `MobileNavDrawer` as
+    `activePathname`. Covered by `components/shells/admin-nav-model.test.ts`.
+  - Separately, owner feedback that Financials felt crowded: the Debts
+    owed to the business card (`debts-card.tsx`) is now collapsible,
+    state persisted to `localStorage` (`prosper.admin.debtsCardCollapsed`),
+    mirroring the existing sidebar-collapse precedent in
+    `admin-shell-client.tsx`. Total stays visible either way.
+- **Tests**: `lib/domain/financials/get-cash-flow.test.ts` (domain,
+  chronological ordering + running-balance reconciliation),
+  `app/api/financials/cash-flow/route.test.ts` (role gate + validation),
+  `tests/screens/admin-financials-cash-flow.screen.test.tsx` (KPI tiles,
+  filters, empty/error states), `tests/screens/admin-financials-debts-card.screen.test.tsx`
+  (collapse toggle + persistence), `components/shells/admin-nav-model.test.ts`.
+- Gates: `pnpm test` (1487 passed), `pnpm typecheck`, `pnpm build` all
+  green. Manually verified in-browser against the Dashboard's live
+  "Cash at hand" / "M-Pesa / Bank Till" figures (exact match).
+
+---
+
 ## Fix: dashboard chart tooltips + PageShell full-viewport layout (2026-09-23) — DONE
 
 Follow-up to the 2026-09-22 batch. Two client-reviewed changes:

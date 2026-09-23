@@ -8,8 +8,7 @@ import {
 import { getAccountBalances } from "./get-account-balances";
 import { getOwnerOwedToBusiness, getOwnerDrawsForPeriod } from "./owner-transactions";
 import { getDishWasteCostPercent } from "./config";
-import { DomainError } from "./errors";
-import { moneyString } from "./internal";
+import { assertRange, moneyString } from "./internal";
 import type {
   FinancialSummary,
   LocationFinancials,
@@ -17,27 +16,6 @@ import type {
 } from "./types";
 
 const ZERO = new Prisma.Decimal(0);
-const BUSINESS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-function assertRange(from: string, to: string): void {
-  if (!BUSINESS_DATE_RE.test(from)) {
-    throw new DomainError(
-      "VALIDATION_ERROR",
-      "from must be a YYYY-MM-DD business date.",
-      "from",
-    );
-  }
-  if (!BUSINESS_DATE_RE.test(to)) {
-    throw new DomainError(
-      "VALIDATION_ERROR",
-      "to must be a YYYY-MM-DD business date.",
-      "to",
-    );
-  }
-  if (from > to) {
-    throw new DomainError("VALIDATION_ERROR", "from must not be after to.", "from");
-  }
-}
 
 /**
  * The full financial picture for a business-date range (PRD §4.7 / SCHEMA

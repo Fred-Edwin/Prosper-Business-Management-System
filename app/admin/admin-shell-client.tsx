@@ -175,6 +175,7 @@ export function AdminShellClient({
             <AdminShell
               activeNavKey={activeNavKey}
               activeTabParam={tabParam}
+              activePathname={pathname}
               onNavigate={navigate}
               accountName="Admin"
               accountRole="Admin"
@@ -195,6 +196,7 @@ export function AdminShellClient({
             <MobileShellAdmin
               activeNavKey={activeNavKey}
               activeTabParam={tabParam}
+              activePathname={pathname}
               onNavigate={navigate}
               brandLabel="Prosper"
               brandSubLabel="Admin"
