@@ -16,7 +16,7 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
-## Feature: "Home / owner use" non-sale reason (2026-09-30) — DONE
+## Feature: "Home" non-sale reason (2026-09-30) — DONE
 
 Client feedback: the owner takes some stock home unpaid; it belongs under
 non-sale consumption. See ADR-95.
@@ -26,7 +26,7 @@ non-sale consumption. See ADR-95.
 - **Domain/validation** — `lib/validation/stock.ts` accepts `home`;
   `getFinancialSummary` returns `nonSaleConsumption.byReason.home`, costed
   like the other reasons (buying price; dish = selling price × waste %).
-- **UI** — "Home / owner use" option/label in the ledger record + correction
+- **UI** — "Home" option/label in the ledger record + correction
   drawers, Financials Non-sale drawer/tab, store-manager picker and format.
 - **Docs** — API.md, SCHEMA.md, help topic, ADR-95.
 - Gate: typecheck + build green; affected tests (152) green. Full `pnpm test` showed intermittent unrelated failures in some runs.
