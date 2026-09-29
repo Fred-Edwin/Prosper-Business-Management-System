@@ -31,6 +31,7 @@ const REASON_OPTIONS = [
   { value: "staff_meal", label: "Staff meal" },
   { value: "complimentary", label: "Complimentary" },
   { value: "damaged", label: "Damaged" },
+  { value: "home", label: "Home / owner use" },
   { value: "other", label: "Other" },
 ] as const;
 

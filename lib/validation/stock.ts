@@ -57,6 +57,7 @@ const nonSaleReason = z.enum([
   "complimentary",
   "spoiled",
   "damaged",
+  "home",
   "other",
 ]);
 

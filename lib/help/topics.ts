@@ -242,7 +242,7 @@ export const HELP_TOPICS: HelpTopic[] = [
       "non-sale": {
         title: "Non-Sale Consumption",
         whatItIs:
-          "Stock that left without being sold — spoilage, staff meals, and complimentary items — recorded by any staff member. This is shown as a separate figure, not mixed into normal cost of goods.",
+          "Stock that left without being sold — spoilage, staff meals, complimentary items, and stock taken home — recorded by any staff member. This is shown as a separate figure, not mixed into normal cost of goods.",
         goodToKnow: [
           "For prepared dishes, the value here uses a percentage of the selling price as a stand-in for cost, because dishes don't have a purchase price.",
         ],

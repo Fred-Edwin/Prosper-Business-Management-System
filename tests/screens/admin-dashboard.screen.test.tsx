@@ -214,7 +214,7 @@ function summary(over: Partial<FinancialSummary["consolidated"]> = {}): Financia
     },
     nonSaleConsumption: {
       total: "740.00",
-      byReason: { staffMeal: "240.00", complimentary: "0.00", spoiled: "500.00", damaged: "0.00", other: "0.00" },
+      byReason: { staffMeal: "240.00", complimentary: "0.00", spoiled: "500.00", damaged: "0.00", home: "0.00", other: "0.00" },
       dishWasteCostPercent: "0.60",
     },
   };

@@ -63,6 +63,7 @@ const NON_SALE_LABEL: Record<NonSaleReason, string> = {
   complimentary: "Complimentary",
   spoiled: "Spoiled",
   damaged: "Damaged",
+  home: "Home / owner use",
   other: "Other",
 };
 

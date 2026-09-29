@@ -303,6 +303,7 @@ export type NonSaleConsumptionCost = {
     complimentary: string;
     spoiled: string;
     damaged: string;
+    home: string;
     other: string;
   };
   /** The `dishWasteCostPercent` in effect (decimal string, e.g. "0.60"). */

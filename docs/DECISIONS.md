@@ -5808,3 +5808,19 @@ receipt completes that dispatch" and as "this delta corrects that row":
 **Data.** The 24 Sep rows were repaired by appending +95 (Restaurant) and
 −28 (Canteen) transfer deltas — `scripts/data-fixes/2026-09-24-mandazi-transfer.sql`,
 run by the owner 2026-09-29. Both closings are 0.
+
+---
+
+## ADR-95: "Home / owner use" is a non-sale reason, stock-only (Client feedback, 2026-09-30)
+
+**Context.** The owner takes some stock home without paying. It must leave
+stock and be visible, but it is not a sale, expense or wastage.
+
+**Decision.**
+1. Add `home` to `NonSaleReason` (label "Home / owner use"). Same rules as
+   every other reason: any role that may record non-sale consumption may use
+   it; no note required; corrections/audit unchanged.
+2. Reported as its own line in the Non-sale breakdown (not merged into
+   `other`), costed like other reasons.
+3. Stock-only: no owner-transaction/drawing row in the money ledger. Revisit
+   if the accountant wants it treated as a drawing.

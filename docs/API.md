@@ -287,7 +287,7 @@ applies the sign.
 - `issue` — Store Manager. `{ movementType: "issue", productId, locationId, quantity, businessDate? }`. `−quantity` at the Store (Store → cooking; single row).
 - `production` — Store Manager. `{ movementType: "production", productId, locationId, quantity, businessDate? }`. `+quantity` at `locationId`, which **must be a `restaurant` location**; `productId` **must be `kind = "dish"`** → `400` otherwise.
 - `transfer` — Store Manager / Canteen Attendant. `{ movementType: "transfer", productId, fromLocationId, toLocationId, quantity }`. **Phase 1 of 2:** writes the `−quantity` dispatch row at `fromLocationId` only (stock leaves now; `toLocationId` in `transferCounterpartLocationId`). Same from/to → `400`. Completed by `POST .../:id/accept`.
-- `non_sale_consumption` — Admin / Store Manager / Canteen Attendant, location-scoped. `{ movementType: "non_sale_consumption", productId, locationId, quantity, reason, reasonNote?, businessDate? }`. `−quantity`. `reason` ∈ `staff_meal | complimentary | spoiled | damaged | other`; `reasonNote` **required iff `reason = "other"`** → `400` on `reasonNote`.
+- `non_sale_consumption` — Admin / Store Manager / Canteen Attendant, location-scoped. `{ movementType: "non_sale_consumption", productId, locationId, quantity, reason, reasonNote?, businessDate? }`. `−quantity`. `reason` ∈ `staff_meal | complimentary | spoiled | damaged | home | other`; `reasonNote` **required iff `reason = "other"`** → `400` on `reasonNote`.
 
 **`businessDate` (Admin Stock Ledger blank-cell backfill, 2026-09-17):**
 optional on `purchase_receipt` / `issue` / `production` /
@@ -1238,7 +1238,7 @@ required; `400` if missing / malformed / `from > to`). Returns
   "nonSaleConsumption": {
     "total": "740.00",
     "byReason": { "staffMeal": "240.00", "complimentary": "0.00",
-                  "spoiled": "500.00", "damaged": "0.00", "other": "0.00" },
+                  "spoiled": "500.00", "damaged": "0.00", "home": "0.00", "other": "0.00" },
     "dishWasteCostPercent": "0.60"
   }
 }

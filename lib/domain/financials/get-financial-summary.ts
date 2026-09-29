@@ -458,6 +458,7 @@ async function computeNonSaleCost(
     complimentary: ZERO,
     spoiled: ZERO,
     damaged: ZERO,
+    home: ZERO,
     other: ZERO,
   };
 
@@ -487,6 +488,7 @@ async function computeNonSaleCost(
       complimentary: moneyString(byReason.complimentary),
       spoiled: moneyString(byReason.spoiled),
       damaged: moneyString(byReason.damaged),
+      home: moneyString(byReason.home),
       other: moneyString(byReason.other),
     },
     dishWasteCostPercent: percent.toFixed(2),

@@ -141,7 +141,7 @@ product/location = signed sum of its rows.
 | quantity | signed NUMERIC |
 | recorded_by | FK → `User` |
 | occurred_at | timestamp (business-day relevant — see CONVENTIONS.md) |
-| reason | enum, nullable — required when `movement_type = non_sale_consumption`: `staff_meal`, `complimentary`, `spoiled`, `damaged`, `other` |
+| reason | enum, nullable — required when `movement_type = non_sale_consumption`: `staff_meal`, `complimentary`, `spoiled`, `damaged`, `home`, `other` |
 | reason_note | text, nullable — required if reason = `other` |
 | order_id | FK → `Order`, nullable — set when `movement_type = sale` (Restaurant) |
 | stock_count_id | FK → `StockCount`, nullable — set when derived from a canteen count |
