@@ -69,6 +69,8 @@ import {
  *   - canteen revenue    = Σ `canteen_sale` `MoneyMovement.amount` in the
  *     day (void writes an offsetting negative row, so a plain sum is
  *     live-only);
+ *   - sale adjustments   = Σ `sale_adjustment` `MoneyMovement.amount` in
+ *     the day with a paired stock row (ADR-92), matching the summary;
  *   - expenses           = Σ `Expense.amount` in the day (correction
  *     deltas are same-date rows, so a plain sum folds them).
  *
@@ -111,7 +113,7 @@ export async function dailyNetSeries(
   const dates: string[] = [];
   for (let d = from; d <= to; d = addBusinessDays(d, 1)) dates.push(d);
 
-  const [products, movements, orders, canteenSales, expenses] =
+  const [products, movements, orders, canteenSales, adjustments, expenses] =
     await Promise.all([
       prisma.product.findMany({
         select: { id: true, kind: true, buyingPrice: true },
@@ -142,6 +144,16 @@ export async function dailyNetSeries(
           sourceId: { not: null },
         },
         select: { amount: true, occurredAt: true, sourceId: true },
+      }),
+      // Owner sale adjustments (ADR-92) — same paired-stock-row rule as
+      // `saleAdjustmentRevenueByLocation`.
+      prisma.moneyMovement.findMany({
+        where: {
+          sourceType: "sale_adjustment",
+          occurredAt: { gte: spanStart, lt: spanEnd },
+          stockMovementId: { not: null },
+        },
+        select: { amount: true, occurredAt: true },
       }),
       prisma.expense.findMany({
         where: { date: { gte: spanStart, lt: spanEnd } },
@@ -235,6 +247,10 @@ export async function dailyNetSeries(
     if (!s.sourceId || !resolvedCountIds.has(s.sourceId)) continue;
     const b = bucket(toBusinessDate(s.occurredAt));
     b.revenue = b.revenue.add(s.amount);
+  }
+  for (const a of adjustments) {
+    const b = bucket(toBusinessDate(a.occurredAt));
+    b.revenue = b.revenue.add(a.amount);
   }
   for (const e of expenses) {
     const b = bucket(toBusinessDate(e.date));

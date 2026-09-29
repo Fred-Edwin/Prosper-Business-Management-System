@@ -247,6 +247,18 @@ export type CorrectStockBalanceBody = z.infer<
   typeof correctStockBalanceSchema
 >;
 
+// POST /api/stock-movements/adjust-sold — the Admin's corrected FINAL Sold
+// total for one (product, location, business day) (ADR-92). The domain
+// computes the delta and writes a `sale` StockMovement + its revenue.
+export const adjustSoldSchema = z.object({
+  productId: id,
+  locationId: id,
+  businessDate,
+  correctedSold: magnitudeString,
+  note: z.string().trim().min(1).nullable().optional(),
+});
+export type AdjustSoldBody = z.infer<typeof adjustSoldSchema>;
+
 // POST /api/stock-movements/:id/correct-purchase — the corrected FINAL
 // values of a `purchase_payment` row (Admin). The domain computes the cost
 // delta and writes an append-only correction row + a paired MoneyMovement.

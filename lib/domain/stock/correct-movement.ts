@@ -61,6 +61,18 @@ export async function correctMovement(
       );
     }
 
+    // A `sale` row is never restated here (ADR-92): this path writes stock
+    // only, so revenue would never follow. Orders, stock counts and credit
+    // sales have their own corrections; the Admin's ledger "Sold" edit goes
+    // through `adjustSold`, which moves stock and revenue together.
+    if (original.movementType === "sale") {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "Sales can't be corrected as a plain stock movement. Use the Sold adjustment so revenue updates too.",
+        "movementId",
+      );
+    }
+
     // Day-close gate — the ONE shared implementation (ADR-52). Closed day
     // → admin only; open day → admin or the original recorder.
     await assertActorMayCorrectOnDate(

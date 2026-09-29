@@ -16,6 +16,35 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: Ledger Sold corrections now update revenue — owner sale adjustment (2026-09-29) — DONE
+
+Client report: correcting the Sold column on the stock ledger changed
+stock but not the financial figures. Cause: the Sold cell ran the generic
+stock-only `correctMovement`. See ADR-92.
+
+- **Domain** — new `lib/domain/sales/adjust-sold.ts` (Admin: corrected
+  day total → `sale` stock row + Cash `sale_adjustment` money row);
+  `correctMovement` refuses `sale` rows; `recordMoneyMovement` accepts
+  `stockMovementId`.
+- **Schema** — `MoneySourceType.sale_adjustment`, migration
+  `20260929090000_add_sale_adjustment_money_source`.
+- **Revenue** — `get-financial-summary.ts`, `dashboard/trend-series.ts`,
+  `dashboard/todays-activity.ts`; Cash Flow + audit-trail labels.
+- **API** — `POST /api/stock-movements/adjust-sold` (+ `adjustSoldSchema`).
+- **Screen** — new `app/admin/stock/sale-adjustment-drawer.tsx`; every
+  Sold cell in `stock-client.tsx` opens it; KPI band refreshes after.
+- **Repair** — `scripts/repair-legacy-sold-corrections.ts` for the 13
+  production orphans (confirmed via Neon). **Run after deploy:** dry run,
+  review, then `--apply`.
+- **Tests** — `adjust-sold.test.ts` (9), `repair-legacy-sold.test.ts` (2),
+  `tests/screens/stock.screen.test.tsx` (Sold cell → drawer, 2).
+- **Follow-up** — Admin Sales screen doesn't show adjustments yet.
+
+Gates: `pnpm test` 181 files / 1529 tests green · `typecheck` green ·
+`build` green.
+
+---
+
 ## Fix: Canteen Attendant can search/create customers and record repayments (2026-09-23) — DONE
 
 Follow-up from manual QA of the canteen-credit-sale feature (same session,

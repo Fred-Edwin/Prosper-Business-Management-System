@@ -40,6 +40,7 @@ const SOURCE_LABEL: Record<string, string> = {
   order: "Order",
   repayment: "Repayment",
   canteen_sale: "Canteen sale",
+  sale_adjustment: "Sale adjustment",
 };
 
 const ACCOUNT_LABEL: Record<string, string> = {

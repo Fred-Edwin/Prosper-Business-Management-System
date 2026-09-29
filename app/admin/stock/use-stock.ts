@@ -108,6 +108,23 @@ export type CorrectStockBalanceInput = {
   note?: string;
 };
 
+/** Owner sale adjustment (ADR-92): the corrected FINAL Sold total for a day. */
+export type AdjustSoldInput = {
+  productId: string;
+  locationId: string;
+  businessDate: string;
+  correctedSold: string;
+  note?: string;
+};
+
+export type AdjustSoldResult = {
+  stockMovementId: string;
+  sold: string;
+  quantityDelta: string;
+  revenueDelta: string;
+  unitPrice: string;
+};
+
 export type CorrectPurchasePaymentInput = {
   movementId: string;
   /** Corrected FINAL values of the payment. Never a delta. */
@@ -235,6 +252,24 @@ export const stockApi = {
         productId: input.productId,
         locationId: input.locationId,
         correctedBalance: input.correctedBalance,
+        note: input.note && input.note.trim() !== "" ? input.note.trim() : undefined,
+      }),
+    });
+  },
+
+  /**
+   * Restate a product/location's Sold total for one business day (Admin,
+   * ADR-92). Writes stock and revenue together; the server computes the
+   * delta.
+   */
+  adjustSold(input: AdjustSoldInput): Promise<AdjustSoldResult> {
+    return request<AdjustSoldResult>(`/api/stock-movements/adjust-sold`, {
+      method: "POST",
+      body: JSON.stringify({
+        productId: input.productId,
+        locationId: input.locationId,
+        businessDate: input.businessDate,
+        correctedSold: input.correctedSold,
         note: input.note && input.note.trim() !== "" ? input.note.trim() : undefined,
       }),
     });

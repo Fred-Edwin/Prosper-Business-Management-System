@@ -323,6 +323,7 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
   order: "Order",
   stock_movement: "Stock movement",
   stock_count: "Stock count",
+  sale_adjustment: "Sale adjustment",
   handover: "Handover",
   receipt_of_handover: "Receipt",
   expense: "Expense",

@@ -70,6 +70,10 @@ import {
   BalanceCorrectionDrawer,
   type BalanceCorrectionTarget,
 } from "./balance-correction-drawer";
+import {
+  SaleAdjustmentDrawer,
+  type SaleAdjustmentTarget,
+} from "./sale-adjustment-drawer";
 
 // Human labels for the ledger's movement columns (correction-drawer field label).
 const COLUMN_LABEL: Record<string, string> = {
@@ -84,9 +88,8 @@ const COLUMN_LABEL: Record<string, string> = {
 
 // Which blank movement columns open the "record new entry" flow, and which
 // RecordEntryKind they map to (2026-09-17 client request). "sold" is
-// deliberately absent — a sale can't be fabricated as a standalone row (it
-// comes from an Order or a canteen stock count, both with their own
-// invariants); a blank Sold cell stays inert with an explanatory note.
+// absent because every Sold click, blank or not, opens the owner sale
+// adjustment instead (ADR-92), which moves stock AND revenue.
 const BLANK_CELL_KIND: Partial<Record<string, RecordEntryKind>> = {
   purchases: "purchases",
   issues: "issues",
@@ -312,6 +315,9 @@ export function StockClient() {
   const [balanceTarget, setBalanceTarget] = React.useState<BalanceCorrectionTarget | null>(
     null,
   );
+  const [saleTarget, setSaleTarget] = React.useState<SaleAdjustmentTarget | null>(
+    null,
+  );
   const [cellNote, setCellNote] = React.useState<string | null>(null);
   // Week/Month only — which row's "View days →" is open, if any. Reset
   // whenever the range or location scope changes so a stale drill-in never
@@ -524,6 +530,13 @@ export function StockClient() {
 
   const [kpiScope, setKpiScope] = React.useState<StockValueScope>("all");
 
+  // A sale adjustment moves revenue too (ADR-92), so the money KPI band
+  // must refetch alongside the grid.
+  const refreshAfterSaleAdjustment = React.useCallback(() => {
+    refreshAfterEdit();
+    void refreshSummary();
+  }, [refreshAfterEdit, refreshSummary]);
+
   const stockValueKpis = React.useMemo(() => {
     const closingByPair = isSingleDay
       ? singleDay.data.dayClosing
@@ -663,18 +676,57 @@ export function StockClient() {
     };
   }
 
+  // Owner sale adjustment (ADR-92) — the Sold cell, blank or not, opens a
+  // "correct the day's Sold total" drawer rather than a per-movement
+  // correction: she corrects the figure she sees, not a specific order or
+  // count, and revenue moves with the stock. The current total is the sum
+  // of that cell's `sale` movements (orders, counts, credit sales, earlier
+  // adjustments), shown as a positive magnitude.
+  function openSaleAdjustment(args: {
+    productId: string;
+    locationId: string;
+    businessDate: string;
+    saleIds: string[];
+    movements: { id: string; quantity: string }[];
+    products: typeof activeData.products;
+    subtitle: string;
+    unit: string;
+  }) {
+    const ids = new Set(args.saleIds);
+    const signed = args.movements
+      .filter((m) => ids.has(m.id))
+      .reduce((sum, m) => sum + Number(m.quantity), 0);
+    const product = args.products.find((p) => p.id === args.productId);
+    const sellingPrice =
+      product?.locations.find((l) => l.locationId === args.locationId)?.sellingPrice ??
+      null;
+    setSaleTarget({
+      productId: args.productId,
+      locationId: args.locationId,
+      businessDate: args.businessDate,
+      currentSold: String(Math.abs(signed)),
+      sellingPrice,
+      subtitle: args.subtitle,
+      unit: args.unit,
+    });
+  }
+
   function onCellClick(rowId: string, columnKey: string) {
     setCellNote(null);
 
-    // Sold is never a blank-cell record target — a `sale` row only ever
-    // comes out of an Order or a canteen stock count, both carrying
-    // invariants (payment, cashier/customer) a standalone backfilled row
-    // can't honestly represent. A non-blank Sold cell still opens the
-    // ordinary correction flow below; a blank one just explains itself.
-    if (columnKey === "sold" && (cellMovements.get(rowId)?.sold ?? []).length === 0) {
-      setCellNote(
-        "Sales are recorded through Orders or Canteen stock counts, not the ledger. Correct a wrong sale from the Sales screen.",
-      );
+    if (columnKey === "sold") {
+      const [productId, rowLocationId] = rowId.split("@");
+      const { subtitle, unit } = rowContext(rowId);
+      openSaleAdjustment({
+        productId,
+        locationId: rowLocationId,
+        businessDate: date,
+        saleIds: cellMovements.get(rowId)?.sold ?? [],
+        movements: singleDay.data.movements,
+        products: activeData.products,
+        subtitle,
+        unit,
+      });
       return;
     }
 
@@ -791,13 +843,17 @@ export function StockClient() {
     const unit = product?.unitLabel ?? unitOf(drillIn.productLabel);
     const subtitle = `${drillIn.locationLabel} · ${productLabel} · ${shortDate(businessDate)}`;
 
-    if (
-      columnKey === "sold" &&
-      (drillInCellMovements.get(businessDate)?.sold ?? []).length === 0
-    ) {
-      setCellNote(
-        "Sales are recorded through Orders or Canteen stock counts, not the ledger. Correct a wrong sale from the Sales screen.",
-      );
+    if (columnKey === "sold") {
+      openSaleAdjustment({
+        productId: drillIn.productId,
+        locationId: drillIn.locationId,
+        businessDate,
+        saleIds: drillInCellMovements.get(businessDate)?.sold ?? [],
+        movements: drillInDay.data.movements,
+        products: period.data.products,
+        subtitle,
+        unit,
+      });
       return;
     }
 
@@ -1285,6 +1341,13 @@ export function StockClient() {
           target={balanceTarget}
           onClose={() => setBalanceTarget(null)}
           onCorrected={refreshAfterEdit}
+        />
+      )}
+      {saleTarget && (
+        <SaleAdjustmentDrawer
+          target={saleTarget}
+          onClose={() => setSaleTarget(null)}
+          onAdjusted={refreshAfterSaleAdjustment}
         />
       )}
     </PageShell>
