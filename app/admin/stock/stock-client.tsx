@@ -41,6 +41,7 @@ import { useLedger, usePeriodLedger, useProductDayLedger, stockApi } from "./use
 import { deriveLedgerRows } from "./derive-ledger";
 import { derivePeriodSummaryRows } from "./derive-period-summary";
 import { deriveProductDayRows } from "./derive-product-days";
+import type { StockMovementView } from "@/lib/domain/stock";
 import {
   deriveStockValueKpis,
   type StockValueScope,
@@ -138,6 +139,26 @@ function unitOf(productLabel: string): string {
 }
 
 /** `KES 1,234` — matches the Financials KPI-tile figure convention. */
+/**
+ * A movement's current value: its own quantity plus every correction delta
+ * on it at the same location (a transfer receipt also links to its
+ * dispatch but is not a delta on it — ADR-94). What the correction drawer
+ * edits, since the server measures the new figure against the same thing.
+ */
+function currentQuantityOf(
+  movement: StockMovementView,
+  cellMovements: StockMovementView[],
+): string {
+  const total = cellMovements
+    .filter(
+      (m) =>
+        m.correctsMovementId === movement.id &&
+        m.locationId === movement.locationId,
+    )
+    .reduce((sum, m) => sum + Number(m.quantity), Number(movement.quantity));
+  return total.toFixed(4);
+}
+
 function money(dec: string | undefined): string {
   const n = Number(dec ?? "0");
   if (!Number.isFinite(n)) return "KES 0";
@@ -1314,6 +1335,7 @@ export function StockClient() {
               subtitle: breakdownTarget.subtitle,
               fieldLabel: breakdownTarget.fieldLabel,
               unit: breakdownTarget.unit,
+              currentQuantity: currentQuantityOf(movement, breakdownTarget.movements),
             });
             setBreakdownTarget(null);
           }}

@@ -16,6 +16,28 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: Transfer corrections — both legs, right column, never an acceptance (2026-09-29) — DONE
+
+Client report: mandazi 24 Sep — 95 sent to the Canteen instead of 67, and
+correcting it on the ledger made it worse. See ADR-94.
+
+- **Data** — repaired in prod by the owner with
+  `scripts/data-fixes/2026-09-24-mandazi-transfer.sql` (appends +95
+  Restaurant / −28 Canteen transfer deltas; self-checking, idempotent).
+  Both closings 0.
+- **Domain** — `correct-movement.ts`: current value counts same-location
+  deltas only; correcting either transfer leg mirrors the delta onto the
+  other; the receipt leg is correctable; sign guard. `transfer.ts`
+  `acceptTransfer`: only a destination row counts as accepted; accepts the
+  corrected amount.
+- **Screens** — new `app/admin/stock/transfer-direction.ts` used by
+  `derive-ledger` / `derive-period-summary` / `derive-product-days`;
+  `deriveIncomingTransfers` (`use-staff-stock.ts`); correction drawer edits
+  the current value and shows domain messages.
+- **Tests** — `correct-transfer.test.ts` (6), `derive-ledger.test.ts` (+2,
+  the real 24 Sep rows), `hub-timeline-scope.screen.test.tsx` (+1).
+- **Gates** — `pnpm test` 1556 ✓ · `typecheck` ✓ · `build` ✓.
+
 ## Feature: Customer location — filter customers by Restaurant / Canteen (2026-09-29) — DONE
 
 Client request: tell canteen customers from restaurant customers and see

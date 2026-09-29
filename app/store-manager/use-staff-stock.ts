@@ -387,8 +387,11 @@ export const stockApi = {
  * `transferCounterpartLocationId` is *this* location is an inbound one.
  *
  * `pending` = not yet accepted. The `+q` counterpart, once written, has
- * `correctsMovementId` set to the dispatch id — so a dispatch id present
- * in any row's `correctsMovementId` means it is already accepted.
+ * `correctsMovementId` set to the dispatch id and sits at the destination
+ * — so a dispatch id present in the `correctsMovementId` of a row at the
+ * dispatch's counterpart location means it is already accepted. (A
+ * correction of the dispatch carries the same link but sits at the
+ * sender, so it never counts — ADR-94.)
  *
  * `flagged` is the LEGACY flag-to-admin state — a dispatch row whose note
  * was set by `flagTransfer` (prefixed `"Discrepancy flagged:"`). Every
@@ -409,10 +412,14 @@ export function deriveIncomingTransfers(
   movements: StockMovementView[],
   myLocationId: string | null,
 ): IncomingTransfer[] {
-  const acceptedDispatchIds = new Set(
+  // `${dispatchId}@${locationId}` of every transfer row linked to a
+  // dispatch. Only a linked row AT THE DESTINATION is an acceptance — a
+  // correction of the dispatch is linked too, but sits at the sender
+  // (ADR-94); counting it hid the transfer from the receiver for good.
+  const linkedAt = new Set(
     movements
       .filter((m) => m.movementType === "transfer" && m.correctsMovementId)
-      .map((m) => m.correctsMovementId as string),
+      .map((m) => `${m.correctsMovementId}@${m.locationId}`),
   );
 
   return movements
@@ -421,7 +428,7 @@ export function deriveIncomingTransfers(
         m.movementType === "transfer" &&
         m.correctsMovementId === null &&
         Number.parseFloat(m.quantity) < 0 &&
-        !acceptedDispatchIds.has(m.id) &&
+        !linkedAt.has(`${m.id}@${m.transferCounterpartLocationId}`) &&
         (myLocationId
           ? m.transferCounterpartLocationId === myLocationId
           : true),

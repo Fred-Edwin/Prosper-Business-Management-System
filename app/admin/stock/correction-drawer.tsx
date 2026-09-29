@@ -27,6 +27,13 @@ export type CorrectionTarget = {
   fieldLabel: string;
   /** Unit label, e.g. "kg". */
   unit: string;
+  /**
+   * The movement's CURRENT value — its quantity plus any correction deltas
+   * already applied to it at the same location. The server measures the
+   * new figure against this (ADR-94), so the drawer must too. Omitted ⇒
+   * the movement has no corrections and its own quantity is current.
+   */
+  currentQuantity?: string;
 };
 
 const CODE_MESSAGE: Record<string, string> = {
@@ -53,10 +60,9 @@ export function CorrectionDrawer({
   onCorrected: () => void | Promise<void>;
 }) {
   const { toast } = useToast();
-  const original = Number(target.movement.quantity);
-  const [correctedRaw, setCorrectedRaw] = React.useState(
-    target.movement.quantity,
-  );
+  const current = target.currentQuantity ?? target.movement.quantity;
+  const original = Number(current);
+  const [correctedRaw, setCorrectedRaw] = React.useState(current);
   const [note, setNote] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -82,7 +88,13 @@ export function CorrectionDrawer({
       onClose();
     } catch (e) {
       if (e instanceof StockRequestError) {
-        setError(CODE_MESSAGE[e.code] ?? e.message);
+        // A domain VALIDATION_ERROR says exactly what to fix (e.g. "a
+        // transfer out stays negative") — show it, not the generic line.
+        setError(
+          e.code === "VALIDATION_ERROR" && e.message
+            ? e.message
+            : (CODE_MESSAGE[e.code] ?? e.message),
+        );
       } else {
         setError("Something went wrong. Try again.");
       }
