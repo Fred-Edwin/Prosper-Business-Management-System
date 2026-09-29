@@ -24,6 +24,7 @@ const REASON_OPTIONS: SelectOption[] = [
   { value: "complimentary", label: "Complimentary" },
   { value: "spoiled", label: "Spoiled" },
   { value: "damaged", label: "Damaged" },
+  { value: "home", label: "Home / owner use" },
   { value: "other", label: "Other" },
 ];
 
@@ -140,6 +141,7 @@ export function RecordEntryDrawer({
               | "complimentary"
               | "spoiled"
               | "damaged"
+              | "home"
               | "other",
             reasonNote: reasonNoteRequired ? reasonNote.trim() : undefined,
             businessDate: target.businessDate,

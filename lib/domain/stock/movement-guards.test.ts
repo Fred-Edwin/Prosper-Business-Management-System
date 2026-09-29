@@ -69,6 +69,19 @@ describe("stock movement guards", () => {
     expect(r.reasonNote).toBeNull();
   });
 
+  it("non_sale_consumption reason=home needs no note and stores the reason", async () => {
+    const r = await recordNonSaleConsumption({
+      productId: ctx.productId,
+      locationId: ctx.locationIds.store,
+      quantity: "1",
+      reason: "home",
+      recordedById: ctx.recorderId,
+    });
+    expect(r.quantity).toBe("-1.0000");
+    expect(r.reason).toBe("home");
+    expect(r.reasonNote).toBeNull();
+  });
+
   it("recordProduction on a non-dish product → VALIDATION_ERROR", async () => {
     await expect(
       recordProduction({

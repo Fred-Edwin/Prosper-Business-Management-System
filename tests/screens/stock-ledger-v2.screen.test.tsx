@@ -239,6 +239,7 @@ beforeEach(() => {
         staffMeal: "800.00",
         complimentary: "200.00",
         spoiled: "100.00",
+        home: "0.00",
         damaged: "100.00",
         other: "0.00",
       },

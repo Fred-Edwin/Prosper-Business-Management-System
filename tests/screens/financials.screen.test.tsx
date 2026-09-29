@@ -1007,6 +1007,7 @@ const SUMMARY = {
       complimentary: "0.00",
       spoiled: "0.00",
       damaged: "0.00",
+      home: "0.00",
       other: "0.00",
     },
     dishWasteCostPercent: "0.60",

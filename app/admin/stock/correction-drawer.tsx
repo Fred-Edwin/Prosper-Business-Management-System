@@ -224,6 +224,7 @@ const REASON_LABEL: Record<string, string> = {
   complimentary: "Complimentary",
   spoiled: "Spoiled",
   damaged: "Damaged",
+  home: "Home / owner use",
   other: "Other",
 };
 

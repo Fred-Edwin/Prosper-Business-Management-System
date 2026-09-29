@@ -45,6 +45,7 @@ const REASON_LABEL: Record<string, string> = {
   complimentary: "Complimentary",
   spoiled: "Spoiled",
   damaged: "Damaged",
+  home: "Home / owner use",
   other: "Other",
 };
 
@@ -58,6 +59,7 @@ const REASON_TONE: Record<string, string> = {
   complimentary: "[color:var(--color-info)] [background-color:var(--color-info-bg)]",
   staff_meal: "[color:var(--text-secondary)] [background-color:var(--surface-subtle)]",
   damaged: "[color:var(--text-secondary)] [background-color:var(--surface-subtle)]",
+  home: "[color:var(--color-info)] [background-color:var(--color-info-bg)]",
   other: "[color:var(--text-secondary)] [background-color:var(--surface-subtle)]",
 };
 

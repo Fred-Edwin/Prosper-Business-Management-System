@@ -164,7 +164,7 @@ export type RecordNonSaleConsumptionInput = {
   productId: string;
   locationId: string;
   quantity: string;
-  reason: "staff_meal" | "complimentary" | "spoiled" | "damaged" | "other";
+  reason: "staff_meal" | "complimentary" | "spoiled" | "damaged" | "home" | "other";
   reasonNote?: string;
   businessDate?: string;
 };
