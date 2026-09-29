@@ -395,6 +395,13 @@ revenueDelta, unitPrice }`. `400` for a zero delta, a future date, a
 store location, or a product with no selling price there. Entering the
 previous total again is the undo; there is no separate void.
 
+`GET /api/stock-movements/adjust-sold?from=YYYY-MM-DD&to=YYYY-MM-DD` —
+Admin only. The adjustments dated in the inclusive range, newest first:
+`SaleAdjustmentView[]` (`businessDate`, product, location + `locationType`,
+signed `unitsSold` (+ raised Sold), signed `revenue`, `note`,
+`recordedByName`). Feeds the Sales screen's Adjustments tab and KPI strip;
+sums to the adjustment revenue in the financial summary.
+
 ### `POST /api/stock-movements/:id/correct-purchase`
 Admin only. Body: `{ supplier?, orderedQty, cost, paidFromAccount, note? }`
 — the **corrected final** values of a `purchase_payment` row (ADR-15).

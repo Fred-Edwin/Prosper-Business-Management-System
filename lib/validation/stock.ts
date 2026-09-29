@@ -259,6 +259,11 @@ export const adjustSoldSchema = z.object({
 });
 export type AdjustSoldBody = z.infer<typeof adjustSoldSchema>;
 
+// GET /api/stock-movements/adjust-sold?from&to — list adjustments (Admin).
+export const listSaleAdjustmentsQuerySchema = z
+  .object({ from: businessDate, to: businessDate })
+  .refine((q) => q.from <= q.to, { message: "`from` must be on or before `to`", path: ["from"] });
+
 // POST /api/stock-movements/:id/correct-purchase — the corrected FINAL
 // values of a `purchase_payment` row (Admin). The domain computes the cost
 // delta and writes an append-only correction row + a paired MoneyMovement.

@@ -8,6 +8,9 @@
 //   • <Tabs> (underline) — "Restaurant Orders" / "Canteen Derived"
 //   • Tab 1 = <OrdersTab> (A3 — was app/admin/orders)
 //   • Tab 2 = <DerivedTab> (A4 — was app/admin/canteen/derived-sales)
+//   • Tab 3 = <AdjustmentsTab> (ADR-92) — the owner's Sold edits from the
+//     stock ledger. Its rows are fetched HERE and shared with the KPI
+//     strip, so the tab and the totals always agree.
 //
 // Paper: I00-0 (Restaurant Orders tab) / I5S-0 (Canteen Derived tab),
 // IJ1-0 / ILC-0 (mobile). Tab row = kit <Tabs>; 16px (--sp-6) gap between
@@ -37,18 +40,27 @@ import { AdminPageHeader } from "@/components/shells/admin-toolbar-context";
 import { Tabs } from "@/components/kit/tabs";
 import { OrdersTab } from "./orders-tab";
 import { DerivedTab } from "./derived-tab";
+import { AdjustmentsTab } from "./adjustments-tab";
+import { useSaleAdjustments } from "./use-sale-adjustments";
 import { SalesKpiStrip, type SalesKpiScope } from "./kpi-strip";
 import { AdminDateRangeControl } from "@/app/admin/date-range-control";
 import { useAdminDateRange } from "@/app/admin/use-date-range";
 import { useOrders } from "@/app/cashier/use-orders";
 import { useDerivedSales } from "@/app/canteen/use-stock-count";
 
-export type SalesTabKey = "orders" | "derived";
+export type SalesTabKey = "orders" | "derived" | "adjustments";
 
 const TABS = [
   { key: "orders" as const, label: "Restaurant Orders", panelId: "sales-panel-orders" },
   { key: "derived" as const, label: "Canteen Derived", panelId: "sales-panel-derived" },
+  { key: "adjustments" as const, label: "Adjustments", panelId: "sales-panel-adjustments" },
 ];
+
+const TAB_URL: Record<SalesTabKey, string> = {
+  orders: "/admin/sales",
+  derived: "/admin/sales?tab=derived",
+  adjustments: "/admin/sales?tab=adjustments",
+};
 
 export function SalesClient({ initialTab }: { initialTab: SalesTabKey }) {
   const router = useRouter();
@@ -63,11 +75,12 @@ export function SalesClient({ initialTab }: { initialTab: SalesTabKey }) {
 
   const changeTab = React.useCallback(
     (key: string) => {
-      const next = key === "derived" ? "derived" : "orders";
+      const next: SalesTabKey =
+        key === "derived" ? "derived" : key === "adjustments" ? "adjustments" : "orders";
       setTab(next);
       // Keep the URL in sync so a refresh / shared link lands on this tab.
       // `replace` (not push) — a tab switch isn't a new history entry.
-      router.replace(next === "derived" ? "/admin/sales?tab=derived" : "/admin/sales");
+      router.replace(TAB_URL[next]);
     },
     [router],
   );
@@ -89,6 +102,8 @@ export function SalesClient({ initialTab }: { initialTab: SalesTabKey }) {
     error: kpiDerivedError,
     refresh: refreshKpiDerived,
   } = useDerivedSales({ from: range.from, to: range.to });
+
+  const adjustments = useSaleAdjustments({ from: range.from, to: range.to });
 
   const [kpiScope, setKpiScope] = React.useState<SalesKpiScope>("all");
 
@@ -133,11 +148,13 @@ export function SalesClient({ initialTab }: { initialTab: SalesTabKey }) {
           onScopeChange={setKpiScope}
           orders={kpiOrders}
           derivedRows={kpiDerivedRows}
+          adjustments={adjustments.rows}
           caption={`${rangeCaption} at a glance`}
-          error={kpiOrdersError ?? kpiDerivedError}
+          error={kpiOrdersError ?? kpiDerivedError ?? adjustments.error}
           onRetry={() => {
             void refreshKpiOrders();
             void refreshKpiDerived();
+            void adjustments.refresh();
           }}
         />
       </div>
@@ -168,6 +185,21 @@ export function SalesClient({ initialTab }: { initialTab: SalesTabKey }) {
         hidden={tab !== "derived"}
       >
         {tab === "derived" && <DerivedTab range={range} />}
+      </div>
+      <div
+        id="sales-panel-adjustments"
+        role="tabpanel"
+        aria-labelledby="sales-tabs-tab-adjustments"
+        hidden={tab !== "adjustments"}
+      >
+        {tab === "adjustments" && (
+          <AdjustmentsTab
+            rows={adjustments.rows}
+            loading={adjustments.loading}
+            error={adjustments.error}
+            onRetry={() => void adjustments.refresh()}
+          />
+        )}
       </div>
     </PageShell>
   );

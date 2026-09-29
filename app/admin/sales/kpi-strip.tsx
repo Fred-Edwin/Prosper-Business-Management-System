@@ -24,11 +24,17 @@
 // already hold in memory — no new endpoint; row counts here are small
 // (a single business's daily orders / canteen product list), matching how
 // the tabs themselves already fetch and reduce client-side.
+//
+// Owner sale adjustments (ADR-92) — the Admin's Sold edits from the stock
+// ledger — are revenue too, so each side's total folds its own
+// adjustments in (by the adjustment's location type), with a caption
+// saying how much. The Cash / M-Pesa / Credit tiles stay "orders by
+// payment method" and deliberately exclude them.
 
 import * as React from "react";
 import { SegmentedControl } from "@/components/kit/segmented-control";
 import { ErrorState } from "@/components/kit/error-state";
-import type { OrderView, DerivedSaleView } from "@/lib/domain/sales";
+import type { OrderView, DerivedSaleView, SaleAdjustmentView } from "@/lib/domain/sales";
 
 export type SalesKpiScope = "all" | "restaurant" | "canteen";
 
@@ -53,17 +59,43 @@ function money(n: number): string {
 
 type Tile = { label: string; figure: string; caption: string };
 
+type AdjustmentSums = { revenue: number; units: number; count: number };
+
+function sumAdjustments(
+  adjustments: SaleAdjustmentView[],
+  side: "restaurant" | "canteen",
+): AdjustmentSums {
+  const own = adjustments.filter((a) => a.locationType === side);
+  return {
+    revenue: own.reduce((sum, a) => sum + Number(a.revenue), 0),
+    units: own.reduce((sum, a) => sum + Number(a.unitsSold), 0),
+    count: own.length,
+  };
+}
+
+/** "incl. KES 225.00 adjustments" — blank when there are none. */
+function adjCaption(adj: AdjustmentSums, prefix = ""): string {
+  if (adj.count === 0) return prefix || " ";
+  const sign = adj.revenue < 0 ? "−" : "";
+  const text = `incl. ${sign}${money(Math.abs(adj.revenue))} adjustments`;
+  return prefix ? `${prefix} · ${text}` : text;
+}
+
 /** Restaurant Orders figures, summed over whatever rows are passed in (the
  *  page-level date range already narrows them — same convention as the
  *  Financials KPIs summing over `from..to`). */
-function restaurantTiles(orders: OrderView[]): Tile[] {
-  const totalSales = orders.reduce((sum, o) => sum + Number(o.total), 0);
+function restaurantTiles(orders: OrderView[], adj: AdjustmentSums): Tile[] {
+  const totalSales = orders.reduce((sum, o) => sum + Number(o.total), 0) + adj.revenue;
   const byMethod = { cash: 0, mpesa: 0, credit: 0 };
   for (const o of orders) byMethod[o.paymentMethod] += Number(o.total);
   const corrections = orders.filter((o) => o.correctsOrderId !== null).length;
 
   return [
-    { label: "Total Sales", figure: money(totalSales), caption: `${orders.length} orders` },
+    {
+      label: "Total Sales",
+      figure: money(totalSales),
+      caption: adjCaption(adj, `${orders.length} orders`),
+    },
     { label: "Orders", figure: orders.length.toLocaleString("en-US"), caption: " " },
     { label: "Cash", figure: money(byMethod.cash), caption: " " },
     { label: "M-Pesa", figure: money(byMethod.mpesa), caption: " " },
@@ -77,28 +109,55 @@ function restaurantTiles(orders: OrderView[]): Tile[] {
 
 /** Canteen Derived figures — one row per product, `null` figures for a
  *  never-counted product excluded from the sums (nothing to add). */
-function canteenTiles(rows: DerivedSaleView[]): Tile[] {
+function canteenTiles(rows: DerivedSaleView[], adj: AdjustmentSums): Tile[] {
   const counted = rows.filter((r) => r.unitsSold != null);
-  const totalRevenue = counted.reduce((sum, r) => sum + Number(r.revenue), 0);
-  const totalUnits = counted.reduce((sum, r) => sum + Number(r.unitsSold), 0);
+  const totalRevenue = counted.reduce((sum, r) => sum + Number(r.revenue), 0) + adj.revenue;
+  const totalUnits = counted.reduce((sum, r) => sum + Number(r.unitsSold), 0) + adj.units;
 
   return [
-    { label: "Total Revenue", figure: money(totalRevenue), caption: `${counted.length} products` },
-    { label: "Units Sold", figure: totalUnits.toLocaleString("en-US"), caption: " " },
+    {
+      label: "Total Revenue",
+      figure: money(totalRevenue),
+      caption: adjCaption(adj, `${counted.length} products`),
+    },
+    {
+      label: "Units Sold",
+      figure: totalUnits.toLocaleString("en-US"),
+      caption: adj.count > 0 ? "incl. adjustments" : " ",
+    },
     { label: "Products Counted", figure: counted.length.toLocaleString("en-US"), caption: `of ${rows.length}` },
   ];
 }
 
-function combinedTiles(orders: OrderView[], rows: DerivedSaleView[]): Tile[] {
-  const restaurantSales = orders.reduce((sum, o) => sum + Number(o.total), 0);
-  const canteenRevenue = rows
-    .filter((r) => r.revenue != null)
-    .reduce((sum, r) => sum + Number(r.revenue), 0);
+function combinedTiles(
+  orders: OrderView[],
+  rows: DerivedSaleView[],
+  restaurantAdj: AdjustmentSums,
+  canteenAdj: AdjustmentSums,
+): Tile[] {
+  const restaurantSales =
+    orders.reduce((sum, o) => sum + Number(o.total), 0) + restaurantAdj.revenue;
+  const canteenRevenue =
+    rows.filter((r) => r.revenue != null).reduce((sum, r) => sum + Number(r.revenue), 0) +
+    canteenAdj.revenue;
+  const bothAdj: AdjustmentSums = {
+    revenue: restaurantAdj.revenue + canteenAdj.revenue,
+    units: restaurantAdj.units + canteenAdj.units,
+    count: restaurantAdj.count + canteenAdj.count,
+  };
 
   return [
-    { label: "Total Sales Revenue", figure: money(restaurantSales + canteenRevenue), caption: "Restaurant + Canteen" },
-    { label: "Restaurant Sales", figure: money(restaurantSales), caption: `${orders.length} orders` },
-    { label: "Canteen Revenue", figure: money(canteenRevenue), caption: " " },
+    {
+      label: "Total Sales Revenue",
+      figure: money(restaurantSales + canteenRevenue),
+      caption: adjCaption(bothAdj, "Restaurant + Canteen"),
+    },
+    {
+      label: "Restaurant Sales",
+      figure: money(restaurantSales),
+      caption: adjCaption(restaurantAdj, `${orders.length} orders`),
+    },
+    { label: "Canteen Revenue", figure: money(canteenRevenue), caption: adjCaption(canteenAdj) },
     { label: "Orders", figure: orders.length.toLocaleString("en-US"), caption: " " },
   ];
 }
@@ -129,6 +188,7 @@ export function SalesKpiStrip({
   onScopeChange,
   orders,
   derivedRows,
+  adjustments = [],
   caption,
   error,
   onRetry,
@@ -137,16 +197,20 @@ export function SalesKpiStrip({
   onScopeChange: (scope: SalesKpiScope) => void;
   orders: OrderView[];
   derivedRows: DerivedSaleView[];
+  /** Owner sale adjustments in the same range (ADR-92). */
+  adjustments?: SaleAdjustmentView[];
   /** e.g. "This week at a glance". */
   caption: string;
   error?: string | null;
   onRetry?: () => void;
 }) {
   const tiles = React.useMemo(() => {
-    if (scope === "restaurant") return restaurantTiles(orders);
-    if (scope === "canteen") return canteenTiles(derivedRows);
-    return combinedTiles(orders, derivedRows);
-  }, [scope, orders, derivedRows]);
+    const restaurantAdj = sumAdjustments(adjustments, "restaurant");
+    const canteenAdj = sumAdjustments(adjustments, "canteen");
+    if (scope === "restaurant") return restaurantTiles(orders, restaurantAdj);
+    if (scope === "canteen") return canteenTiles(derivedRows, canteenAdj);
+    return combinedTiles(orders, derivedRows, restaurantAdj, canteenAdj);
+  }, [scope, orders, derivedRows, adjustments]);
 
   const row =
     "flex w-full rounded-lg overflow-clip border border-solid [border-color:var(--border-subtle)] [background-color:var(--surface-page)]";

@@ -8,6 +8,7 @@ import { getFinancialSummary } from "@/lib/domain/financials";
 import { dailyNetSeries } from "@/lib/domain/dashboard/trend-series";
 import { DomainError } from "./errors";
 import { adjustSold } from "./adjust-sold";
+import { listSaleAdjustments } from "./list-sale-adjustments";
 import {
   cleanupSalesTestData,
   seedMovement,
@@ -199,5 +200,40 @@ describe("adjustSold (ADR-92)", () => {
         { userId: ctx.adminId, role: "admin", locationId: null },
       ),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "movementId" });
+  });
+  describe("listSaleAdjustments", () => {
+    it("lists the day's adjustments newest first with signed units and revenue, summing to Financials", async () => {
+      const [soda] = ctx.products;
+      const input = { productId: soda.id, locationId: ctx.canteenId, businessDate: DAY };
+      await adjustSold({ ...input, correctedSold: "5", note: "forgot 5 sodas" }, admin);
+      await adjustSold({ ...input, correctedSold: "2" }, admin);
+
+      const rows = (await listSaleAdjustments({ from: DAY, to: DAY }, admin)).filter(
+        (r) => r.productId === soda.id,
+      );
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => [r.unitsSold, r.revenue])).toEqual(
+        expect.arrayContaining([
+          ["5.0000", "300.00"],
+          ["-3.0000", "-180.00"],
+        ]),
+      );
+      expect(rows[0]).toMatchObject({
+        businessDate: DAY,
+        locationId: ctx.canteenId,
+        locationType: "canteen",
+        unitLabel: "pcs",
+      });
+      expect(rows.find((r) => r.unitsSold === "5.0000")?.note).toBe("forgot 5 sodas");
+
+      const total = rows.reduce((s, r) => s + Number(r.revenue), 0);
+      expect(total.toFixed(2)).toBe(canteenRevenue(await getFinancialSummary(DAY, DAY)));
+    });
+
+    it("non-admin: FORBIDDEN", async () => {
+      await expect(
+        listSaleAdjustments({ from: DAY, to: DAY }, { userId: ctx.attendantId, role: "canteen_attendant" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
   });
 });
