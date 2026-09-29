@@ -403,8 +403,23 @@ export async function acceptTransfer(
       );
     }
 
+    const toLocationId = dispatch.transferCounterpartLocationId;
+    if (!toLocationId) {
+      throw new DomainError(
+        "INTERNAL_ERROR",
+        "Pending transfer is missing its destination location.",
+      );
+    }
+
+    // Only a row AT THE DESTINATION is an acceptance. A correction of the
+    // dispatch also points at it via `correctsMovementId`, but sits at the
+    // sender — counting it blocked the transfer from ever landing (ADR-94).
     const alreadyAccepted = await tx.stockMovement.findFirst({
-      where: { correctsMovementId: dispatch.id, movementType: "transfer" },
+      where: {
+        correctsMovementId: dispatch.id,
+        movementType: "transfer",
+        locationId: toLocationId,
+      },
       select: { id: true },
     });
     if (alreadyAccepted) {
@@ -414,15 +429,21 @@ export async function acceptTransfer(
       );
     }
 
-    const toLocationId = dispatch.transferCounterpartLocationId;
-    if (!toLocationId) {
+    // What was sent is the dispatch as CORRECTED so far (original + any
+    // correction deltas at the sender), not the bare original row.
+    const dispatchDeltas = await tx.stockMovement.aggregate({
+      _sum: { quantity: true },
+      where: { correctsMovementId: dispatch.id, locationId: dispatch.locationId },
+    });
+    const dispatched = dispatch.quantity
+      .add(dispatchDeltas._sum.quantity ?? 0)
+      .negated(); // -(-q) = +q, the sent magnitude
+    if (!dispatched.isPositive() || dispatched.isZero()) {
       throw new DomainError(
-        "INTERNAL_ERROR",
-        "Pending transfer is missing its destination location.",
+        "CONFLICT",
+        "This transfer was corrected to nothing — there is nothing to accept.",
       );
     }
-
-    const dispatched = dispatch.quantity.negated(); // -(-q) = +q, the sent magnitude
     const landed = received ?? dispatched;
     const hasVariance = !landed.equals(dispatched);
     const occurredAt = new Date();

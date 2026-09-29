@@ -13,6 +13,7 @@
 
 import type { LedgerRow, LedgerCell } from "@/components/kit/dense-ledger";
 import type { MovementType, StockMovementView } from "@/lib/domain/stock";
+import { transferColumn } from "./transfer-direction";
 import type { ProductWithLocations } from "@/lib/domain/catalog";
 import { addBusinessDays, toBusinessDate } from "@/lib/time";
 
@@ -116,6 +117,7 @@ export function deriveProductDayRows(input: DeriveProductDaysInput): {
   cellMovements: Map<string, Partial<Record<string, string[]>>>;
 } {
   const { movements, from, to, closingByDay, product } = input;
+  const movementById = new Map(movements.map((m) => [m.id, m]));
   const costValue = costValueOf(product);
 
   const days: string[] = [];
@@ -146,7 +148,7 @@ export function deriveProductDayRows(input: DeriveProductDaysInput): {
       if (!target) continue;
       const q = num(m.quantity);
       const columnKey: keyof LedgerColumnSums =
-        target === "transfer" ? (q >= 0 ? "transferIn" : "transferOut") : target;
+        target === "transfer" ? transferColumn(m, movementById) : target;
       col[columnKey] += q;
       (perCell[columnKey] ??= []).push(m.id);
       if (m.correctsMovementId) correctedCols.add(columnKey);

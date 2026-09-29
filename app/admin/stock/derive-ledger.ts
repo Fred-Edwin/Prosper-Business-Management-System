@@ -35,6 +35,7 @@
 import type { LedgerRow, LedgerTotals, LedgerCell } from "@/components/kit/dense-ledger";
 import type { MovementType, StockMovementView } from "@/lib/domain/stock";
 import type { Location, ProductWithLocations } from "@/lib/domain/catalog";
+import { transferColumn } from "./transfer-direction";
 
 const DASH: LedgerCell = { dash: true };
 
@@ -169,6 +170,7 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
 
   const productById = new Map(products.map((p) => [p.id, p]));
   const locationById = new Map(locations.map((l) => [l.id, l]));
+  const movementById = new Map(movements.map((m) => [m.id, m]));
 
   // Collect every pair we need a row for: from movements + from the day's balances.
   const pairs = new Set<LedgerGroupKey>();
@@ -222,7 +224,7 @@ export function deriveLedgerRows(input: DeriveLedgerInput): {
       const q = num(m.quantity); // already signed from this location's POV
       let columnKey: keyof LedgerColumnSums;
       if (target === "transfer") {
-        columnKey = q >= 0 ? "transferIn" : "transferOut";
+        columnKey = transferColumn(m, movementById);
       } else {
         columnKey = target;
       }

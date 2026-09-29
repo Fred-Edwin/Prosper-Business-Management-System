@@ -5767,3 +5767,44 @@ customer is `both` today. Revisit if that grows.
 - *Split each balance by side (add a location to repayments).* Deferred:
   real schema and flow change for one `both` customer today.
 
+
+## ADR-94: Correcting a transfer moves both legs; a correction is never an acceptance (Client report, 2026-09-29)
+
+**Context.** Mandazi, 24 Sep: 95 was dispatched Restaurant → Canteen and
+accepted, but only 67 went. The Admin corrected the dispatch three times on
+the ledger and the numbers got worse (Restaurant closing −95, Canteen +28).
+Four defects, all from ADR-39 reusing `correctsMovementId` both as "this
+receipt completes that dispatch" and as "this delta corrects that row":
+1. `correctMovement` measured the dispatch's current value as original +
+   *every* row linked to it — including the Canteen's +95 receipt — so it
+   read 0, not −95. Typing −67 wrote a −67 delta instead of +28.
+2. Only the corrected leg moved; the other location kept the old figure. The
+   receipt leg couldn't be corrected at all ("this row is itself a
+   correction").
+3. The ledger routed every `transfer` row to Transfer In/Out by its own sign,
+   so a +28 delta on a Transfer Out landed under Transfer In (grid showed
+   In +162 / Out −229 with a correct closing).
+4. A correction of a still-pending dispatch counted as its acceptance
+   (`acceptTransfer`'s "already accepted" check, `deriveIncomingTransfers`),
+   so the transfer vanished from the receiver's list and could never land.
+
+**Decision.**
+1. A row linked by `correctsMovementId` to a row **at the same location** is
+   a correction delta; linked to a row at **another location** it is a
+   transfer receipt. Current value, acceptance and ledger routing all use
+   this rule.
+2. `correctMovement` on either leg of a transfer writes the delta on that
+   leg **and the opposite delta on the other leg** (if accepted), dated to
+   that leg's `occurredAt` and gated by that day's close too. The corrected
+   figure must keep the leg's sign; 0 voids the transfer on both sides.
+   A short-accept `variance` row (F6) is left alone — corrected separately.
+3. A correction delta goes in the ledger column of the row it corrects
+   (`app/admin/stock/transfer-direction.ts`, used by all three grids).
+4. Only a linked row at the destination is an acceptance. Accepting a
+   corrected pending dispatch lands the corrected amount.
+5. The correction drawer edits the row's current value (original + its
+   deltas), not the bare original, and shows domain validation messages.
+
+**Data.** The 24 Sep rows were repaired by appending +95 (Restaurant) and
+−28 (Canteen) transfer deltas — `scripts/data-fixes/2026-09-24-mandazi-transfer.sql`,
+run by the owner 2026-09-29. Both closings are 0.

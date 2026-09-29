@@ -36,6 +36,22 @@ import { assertActorMayCorrectOnDate } from "@/lib/domain/audit";
  * The target must be an **original** row: a correction delta (one whose
  * `correctsMovementId` is set) cannot itself be corrected — corrections
  * don't chain. Correct the original again instead.
+ *
+ * **Transfers move both legs (ADR-94).** A transfer is two rows — the
+ * sender's `-q` dispatch and the receiver's `+q` receipt, the receipt
+ * linked to the dispatch by `correctsMovementId` (ADR-39). Correcting
+ * either leg writes the delta on that leg AND the opposite delta on the
+ * other leg (when it exists — a still-pending dispatch has none), so the
+ * pair keeps netting to zero across the two locations. A receipt leg is an
+ * original here even though `correctsMovementId` is set: that link points
+ * at a row at ANOTHER location, which a correction delta never does.
+ * "Current value" only sums deltas at the target's own location — before
+ * this, a dispatch's current value wrongly included the receiver's `+q`,
+ * so correcting an accepted -95 dispatch to -67 wrote a -67 delta instead
+ * of +28 (client report 2026-09-29). A transfer correction must keep the
+ * leg's sign (zero allowed): typing "67" on a Transfer Out would otherwise
+ * turn the sender into a receiver. Any transfer `variance` row (short
+ * accept, F6) is left as is — the Admin corrects it separately.
  */
 export async function correctMovement(
   input: CorrectMovementInput,
@@ -51,9 +67,22 @@ export async function correctMovement(
       throw new DomainError("NOT_FOUND", "Movement not found.", "movementId");
     }
 
+    // The other leg of a transfer, if any (ADR-94). For a receipt leg it is
+    // the dispatch its `correctsMovementId` points at (another location);
+    // for a dispatch it is the receipt pointing back at it from the
+    // destination. `null` for every other movement type.
+    const linked =
+      original.movementType === "transfer" && original.correctsMovementId
+        ? await tx.stockMovement.findUnique({
+            where: { id: original.correctsMovementId },
+          })
+        : null;
+    const isReceiptLeg =
+      linked !== null && linked.locationId !== original.locationId;
+
     // Corrections don't chain — the target must be an original row, never a
     // delta written by an earlier `correctMovement` (Session 17 F-1).
-    if (original.correctsMovementId !== null) {
+    if (original.correctsMovementId !== null && !isReceiptLeg) {
       throw new DomainError(
         "VALIDATION_ERROR",
         "This row is itself a correction. Correct the original movement instead.",
@@ -86,9 +115,11 @@ export async function correctMovement(
     // original plus every correction delta already applied to it — so a
     // repeated identical correction is a no-op (delta 0) and is rejected,
     // rather than stacking another delta and moving the balance again.
+    // Same location only: a transfer receipt also points at its dispatch
+    // via `correctsMovementId` but is NOT a delta on it (ADR-94).
     const priorDeltas = await tx.stockMovement.aggregate({
       _sum: { quantity: true },
-      where: { correctsMovementId: original.id },
+      where: { correctsMovementId: original.id, locationId: original.locationId },
     });
     const currentValue = original.quantity.add(
       priorDeltas._sum.quantity ?? 0,
@@ -101,6 +132,58 @@ export async function correctMovement(
         "The corrected quantity is the same as the current one.",
         "correctedQuantity",
       );
+    }
+
+    if (original.movementType === "transfer") {
+      const leg = original.quantity.isNegative() ? -1 : 1;
+      if (!corrected.isZero() && (corrected.isNegative() ? -1 : 1) !== leg) {
+        throw new DomainError(
+          "VALIDATION_ERROR",
+          leg < 0
+            ? "A transfer out stays negative — enter the amount with a minus sign (e.g. -67)."
+            : "A transfer in stays positive — enter the amount without a minus sign.",
+          "correctedQuantity",
+        );
+      }
+    }
+
+    // The opposite leg of the transfer, which moves by the opposite delta.
+    const otherLeg = isReceiptLeg
+      ? linked
+      : original.movementType === "transfer" &&
+          original.correctsMovementId === null &&
+          original.transferCounterpartLocationId
+        ? await tx.stockMovement.findFirst({
+            where: {
+              movementType: "transfer",
+              correctsMovementId: original.id,
+              locationId: original.transferCounterpartLocationId,
+            },
+          })
+        : null;
+
+    if (otherLeg) {
+      // The other leg may sit on a different business day (accepted the
+      // next morning) — that day's close gates this write too.
+      await assertActorMayCorrectOnDate(
+        otherLeg.occurredAt,
+        actor,
+        original.recordedById,
+        tx,
+      );
+      await tx.stockMovement.create({
+        data: {
+          productId: otherLeg.productId,
+          locationId: otherLeg.locationId,
+          movementType: "transfer",
+          quantity: delta.negated(),
+          recordedById: input.recordedById,
+          occurredAt: otherLeg.occurredAt,
+          transferCounterpartLocationId: otherLeg.transferCounterpartLocationId,
+          correctsMovementId: otherLeg.id,
+          note: input.note?.trim() || otherLeg.note,
+        },
+      });
     }
 
     return tx.stockMovement.create({

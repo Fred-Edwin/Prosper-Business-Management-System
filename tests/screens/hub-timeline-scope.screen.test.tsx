@@ -112,6 +112,39 @@ describe("F7 — the hub timeline shows today only", () => {
     // ...and it is correctly absent from today's timeline.
     expect(todaysMovements([dispatch], TODAY)).toHaveLength(0);
   });
+
+  // ADR-94: a correction of the dispatch links to it too, but sits at the
+  // SENDER. It used to count as an acceptance and hid the transfer for good.
+  it("a corrected, still-pending dispatch stays incoming; a real receipt clears it", () => {
+    const dispatch = mv({
+      id: "dispatch",
+      locationId: "loc-restaurant",
+      movementType: "transfer",
+      quantity: "-95.0000",
+      transferCounterpartLocationId: "loc-canteen",
+    });
+    const correction = mv({
+      id: "fix",
+      locationId: "loc-restaurant",
+      movementType: "transfer",
+      quantity: "28.0000",
+      transferCounterpartLocationId: "loc-canteen",
+      correctsMovementId: "dispatch",
+    });
+    const receipt = mv({
+      id: "recv",
+      locationId: "loc-canteen",
+      movementType: "transfer",
+      quantity: "67.0000",
+      transferCounterpartLocationId: "loc-restaurant",
+      correctsMovementId: "dispatch",
+    });
+
+    expect(
+      deriveIncomingTransfers([dispatch, correction], "loc-canteen").map((i) => i.movement.id),
+    ).toEqual(["dispatch"]);
+    expect(deriveIncomingTransfers([dispatch, correction, receipt], "loc-canteen")).toHaveLength(0);
+  });
 });
 
 describe("F8 — money-only rows never render as stock", () => {

@@ -262,3 +262,68 @@ describe("deriveLedgerRows", () => {
     });
   });
 });
+
+// Client report 2026-09-29 (ADR-94): the real 24 Sep mandazi rows. A
+// transfer correction delta used to be routed by its OWN sign, so the
+// Restaurant showed Transfer In +162 / Out -229 and the Canteen In +95 /
+// Out -28 while both closings were right. A delta now follows the row it
+// corrects (at the same location); the receiver leg keeps its own sign.
+describe("deriveLedgerRows — transfer corrections (mandazi, 24 Sep)", () => {
+  const dish: ProductWithLocations = {
+    ...products[0],
+    id: "mandazi",
+    name: "Mandazi",
+    kind: "dish",
+    unitLabel: "pcs",
+  };
+  const locs = [
+    { id: "loc-rest", name: "Restaurant", type: "restaurant" },
+    { id: "loc-cant", name: "Canteen", type: "canteen" },
+  ] as unknown as Location[];
+  const at = (loc: string, p: Partial<StockMovementView>) =>
+    mv({ productId: "mandazi", locationId: loc, ...p });
+
+  const movements = [
+    at("loc-rest", { id: "prod", movementType: "production", quantity: "120" }),
+    at("loc-rest", { movementType: "production", quantity: "-28", correctsMovementId: "prod" }),
+    at("loc-rest", { id: "disp", movementType: "transfer", quantity: "-95", transferCounterpartLocationId: "loc-cant" }),
+    at("loc-cant", { id: "recv", movementType: "transfer", quantity: "95", transferCounterpartLocationId: "loc-rest", correctsMovementId: "disp" }),
+    at("loc-cant", { movementType: "sale", quantity: "-95" }),
+    at("loc-cant", { movementType: "sale", quantity: "28" }),
+    at("loc-rest", { movementType: "non_sale_consumption", quantity: "-3" }),
+    at("loc-rest", { movementType: "sale", quantity: "-22" }),
+    // Three UI corrections, then the SQL repair — all deltas on `disp`.
+    at("loc-rest", { movementType: "transfer", quantity: "-67", transferCounterpartLocationId: "loc-cant", correctsMovementId: "disp" }),
+    at("loc-rest", { movementType: "transfer", quantity: "67", transferCounterpartLocationId: "loc-cant", correctsMovementId: "disp" }),
+    at("loc-rest", { movementType: "transfer", quantity: "-67", transferCounterpartLocationId: "loc-cant", correctsMovementId: "disp" }),
+    at("loc-rest", { movementType: "transfer", quantity: "95", transferCounterpartLocationId: "loc-cant", correctsMovementId: "disp" }),
+    at("loc-cant", { movementType: "transfer", quantity: "-28", transferCounterpartLocationId: "loc-rest", correctsMovementId: "recv" }),
+  ];
+
+  const { rows } = deriveLedgerRows({
+    movements,
+    dayClosing: new Map([
+      ["mandazi@loc-rest", "0"],
+      ["mandazi@loc-cant", "0"],
+    ]),
+    products: [dish],
+    locations: locs,
+  });
+  const row = (id: string) => rows.find((r) => r.id === id)!;
+
+  it("Restaurant: Transfer Out -67, no Transfer In, opening 0", () => {
+    const r = row("mandazi@loc-rest");
+    expect(r.transferOut).toMatchObject({ value: "-67.0", corrected: true });
+    expect(r.transferIn).toEqual({ dash: true });
+    expect(r.production).toMatchObject({ value: "+92.0" });
+    expect(r.opening).toEqual({ value: "0.0" });
+  });
+
+  it("Canteen: Transfer In +67, no Transfer Out, opening 0", () => {
+    const c = row("mandazi@loc-cant");
+    expect(c.transferIn).toMatchObject({ value: "+67.0", corrected: true });
+    expect(c.transferOut).toEqual({ dash: true });
+    expect(c.sold).toMatchObject({ value: "-67.0" });
+    expect(c.opening).toEqual({ value: "0.0" });
+  });
+});

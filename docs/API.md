@@ -381,6 +381,12 @@ only** (`403` otherwise); if the day is still open → Admin **or the
 original recorder**. `delta = 0` → `400`. A `sale` row is refused
 (`400`, ADR-92): sales are restated through `adjust-sold` below (or the
 order / credit-sale corrections), which move revenue too.
+`delta` is measured against the row's *current* value (original + its
+same-location correction deltas). **Transfers (ADR-94):** either leg may be
+corrected; the opposite delta is also written on the other leg when the
+transfer has been accepted (gated by that leg's day too). The corrected
+figure must keep the leg's sign (`400` otherwise); `0` voids it on both
+sides. The response is the target leg's delta row.
 
 ### `POST /api/stock-movements/adjust-sold`
 Admin only (ADR-92). Body: `{ productId, locationId, businessDate

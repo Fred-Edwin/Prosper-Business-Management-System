@@ -29,6 +29,7 @@
 
 import type { LedgerRow, LedgerTotals, LedgerCell } from "@/components/kit/dense-ledger";
 import type { MovementType, StockMovementView } from "@/lib/domain/stock";
+import { transferColumn } from "./transfer-direction";
 import type { Location, ProductWithLocations } from "@/lib/domain/catalog";
 
 const DASH: LedgerCell = { dash: true };
@@ -138,6 +139,7 @@ export function derivePeriodSummaryRows(input: DerivePeriodSummaryInput): {
   totals: LedgerTotals;
 } {
   const { movements, periodClosing, products, locations } = input;
+  const movementById = new Map(movements.map((m) => [m.id, m]));
 
   const productById = new Map(products.map((p) => [p.id, p]));
   const locationById = new Map(locations.map((l) => [l.id, l]));
@@ -180,7 +182,7 @@ export function derivePeriodSummaryRows(input: DerivePeriodSummaryInput): {
       if (!target) continue;
       const q = num(m.quantity);
       const columnKey: keyof LedgerColumnSums =
-        target === "transfer" ? (q >= 0 ? "transferIn" : "transferOut") : target;
+        target === "transfer" ? transferColumn(m, movementById) : target;
       col[columnKey] += q;
       if (m.correctsMovementId) correctedCols.add(columnKey);
     }
