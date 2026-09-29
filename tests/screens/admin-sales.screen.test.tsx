@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "@/components/kit/toast";
-import type { OrderView, DerivedSaleView } from "@/lib/domain/sales";
+import type { OrderView, DerivedSaleView, SaleAdjustmentView } from "@/lib/domain/sales";
 import { SalesClient } from "@/app/admin/sales/sales-client";
 
 // ── next/navigation ─────────────────────────────────────────────────
@@ -71,6 +71,23 @@ vi.mock("@/app/canteen/use-stock-count", () => ({
     loading: mockDerivedState.loading,
     error: mockDerivedState.error,
     refresh: mockDerivedRefresh,
+  }),
+}));
+
+// ── use-sale-adjustments (Adjustments tab + KPI fold-in, ADR-92) ───
+const mockAdjustmentsRefresh = vi.fn();
+let mockAdjustmentsState: {
+  rows: SaleAdjustmentView[];
+  loading: boolean;
+  error: string | null;
+} = { rows: [], loading: false, error: null };
+
+vi.mock("@/app/admin/sales/use-sale-adjustments", () => ({
+  useSaleAdjustments: () => ({
+    rows: mockAdjustmentsState.rows,
+    loading: mockAdjustmentsState.loading,
+    error: mockAdjustmentsState.error,
+    refresh: mockAdjustmentsRefresh,
   }),
 }));
 
@@ -177,7 +194,40 @@ const DERIVED_SALE: DerivedSaleView = {
   stockCountId: "count-1",
 };
 
-function renderSales(initialTab: "orders" | "derived" = "orders") {
+const RESTAURANT_ADJ: SaleAdjustmentView = {
+  id: "adj-1",
+  stockMovementId: "sm-1",
+  businessDate: "2026-09-24",
+  occurredAt: "2026-09-24T20:59:59.999Z",
+  productId: "p-chips",
+  productName: "Chips Full",
+  unitLabel: "plates",
+  locationId: "loc-rest",
+  locationName: "Restaurant",
+  locationType: "restaurant",
+  unitsSold: "6.5000",
+  revenue: "650.00",
+  note: "staff forgot to record",
+  recordedByName: "Admin",
+};
+
+const CANTEEN_ADJ: SaleAdjustmentView = {
+  ...RESTAURANT_ADJ,
+  id: "adj-2",
+  stockMovementId: "sm-2",
+  businessDate: "2026-09-19",
+  productId: "p-eggs",
+  productName: "Eggs Layers",
+  unitLabel: "pcs",
+  locationId: "loc-canteen",
+  locationName: "Canteen",
+  locationType: "canteen",
+  unitsSold: "-40.0000",
+  revenue: "-1200.00",
+  note: null,
+};
+
+function renderSales(initialTab: "orders" | "derived" | "adjustments" = "orders") {
   return render(
     <ToastProvider>
       <SalesClient initialTab={initialTab} />
@@ -194,6 +244,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockOrdersState = { orders: [CASH_ORDER, MPESA_ORDER], loading: false, error: null };
   mockDerivedState = { rows: [DERIVED_SALE], loading: false, error: null };
+  mockAdjustmentsState = { rows: [], loading: false, error: null };
   ordersFilterCalls = [];
 });
 
@@ -549,3 +600,64 @@ describe("Sales KPI strip", () => {
     expect(screen.getByText("Couldn't load the period figures")).toBeDefined();
   });
 });
+
+// ── Owner sale adjustments (ADR-92) ─────────────────────────────
+
+describe("Adjustments tab + KPI fold-in", () => {
+  it("deep-links the Adjustments tab and lists each adjustment with signed units and revenue", () => {
+    mockAdjustmentsState = { rows: [RESTAURANT_ADJ, CANTEEN_ADJ], loading: false, error: null };
+    renderSales("adjustments");
+    expect(
+      screen.getByRole("tab", { name: "Adjustments" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    const table = desktop();
+    expect(table.getByText("Chips Full")).toBeDefined();
+    expect(table.getByText("+6.5 plates")).toBeDefined();
+    expect(table.getByText("+KES 650.00")).toBeDefined();
+    expect(table.getByText("−40 pcs")).toBeDefined();
+    expect(table.getByText("−KES 1,200.00")).toBeDefined();
+    expect(table.getByText("staff forgot to record · Admin")).toBeDefined();
+  });
+
+  it("the Location filter narrows to one side", async () => {
+    mockAdjustmentsState = { rows: [RESTAURANT_ADJ, CANTEEN_ADJ], loading: false, error: null };
+    const user = userEvent.setup();
+    renderSales("adjustments");
+    await user.click(screen.getByRole("combobox", { name: "Location" }));
+    await user.click(screen.getByRole("option", { name: "Location: Canteen" }));
+    expect(desktop().queryByText("Chips Full")).toBeNull();
+    expect(desktop().getByText("Eggs Layers")).toBeDefined();
+  });
+
+  it("empty state when there are no adjustments in the range", () => {
+    renderSales("adjustments");
+    expect(screen.getByText("No adjustments in this period")).toBeDefined();
+  });
+
+  it("switching to Adjustments syncs the URL", async () => {
+    const user = userEvent.setup();
+    renderSales("orders");
+    await user.click(screen.getByRole("tab", { name: "Adjustments" }));
+    expect(replace).toHaveBeenCalledWith("/admin/sales?tab=adjustments");
+  });
+
+  it("KPI totals include each side's adjustments, with a caption saying how much", async () => {
+    mockAdjustmentsState = { rows: [RESTAURANT_ADJ, CANTEEN_ADJ], loading: false, error: null };
+    const user = userEvent.setup();
+    renderSales();
+    // All: restaurant 1450 + 650 = 2100 ; canteen 5760 − 1200 = 4560 ; total 6660.
+    expect(screen.getAllByText("KES 6,660.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("KES 2,100.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("KES 4,560.00").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Restaurant + Canteen · incl. −KES 550.00 adjustments").length,
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getAllByRole("radio", { name: "Canteen" })[0]);
+    expect(screen.getAllByText("56").length).toBeGreaterThan(0); // 96 − 40 units
+    expect(
+      screen.getAllByText("1 products · incl. −KES 1,200.00 adjustments").length,
+    ).toBeGreaterThan(0);
+  });
+});
+

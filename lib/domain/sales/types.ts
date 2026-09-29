@@ -238,6 +238,33 @@ export type AdjustSoldResult = {
   unitPrice: string;
 };
 
+export type ListSaleAdjustmentsFilter = {
+  /** Inclusive `YYYY-MM-DD` business-date range. */
+  from: string;
+  to: string;
+};
+
+/** One owner sale adjustment (ADR-92), for the Admin Sales screen. */
+export type SaleAdjustmentView = {
+  /** The `sale_adjustment` `MoneyMovement.id`. */
+  id: string;
+  stockMovementId: string;
+  businessDate: string;
+  occurredAt: string;
+  productId: string;
+  productName: string;
+  unitLabel: string;
+  locationId: string;
+  locationName: string;
+  locationType: "restaurant" | "canteen" | "store";
+  /** Signed decimal string (4dp): + raised Sold, − lowered it. */
+  unitsSold: string;
+  /** Signed decimal string (2dp): revenue added (+) or removed (−). */
+  revenue: string;
+  note: string | null;
+  recordedByName: string;
+};
+
 /** One canteen credit sale, for the attendant's "today's credit sales" list. */
 export type CanteenCreditSaleListItem = {
   /** The original `sale` `StockMovement.id`. */

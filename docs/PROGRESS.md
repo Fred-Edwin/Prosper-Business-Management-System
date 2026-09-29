@@ -16,6 +16,27 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: Sales screen shows owner sale adjustments (2026-09-29) — DONE
+
+Follow-up to ADR-92: the Admin Sales screen's totals come from orders and
+canteen counts, so Sold edits made on the stock ledger were missing there.
+
+- **Domain/API** — `lib/domain/sales/list-sale-adjustments.ts` (Admin);
+  `GET /api/stock-movements/adjust-sold?from&to`
+  (+ `listSaleAdjustmentsQuerySchema`).
+- **Screen** — new **Adjustments** tab (`app/admin/sales/adjustments-tab.tsx`,
+  hook `use-sale-adjustments.ts`, `?tab=adjustments` deep link); the KPI
+  strip (`kpi-strip.tsx`) adds each side's adjustments to its total with an
+  "incl. KES X adjustments" caption.
+- **Tests** — `adjust-sold.test.ts` (+2, list sums to Financials),
+  `tests/screens/admin-sales.screen.test.tsx` (+5).
+- ADR-92 updated (the follow-up it listed is now done).
+
+Gates: `pnpm test` 181 files / 1536 tests green · `typecheck` green ·
+`build` green.
+
+---
+
 ## Fix: Ledger Sold corrections now update revenue — owner sale adjustment (2026-09-29) — DONE
 
 Client report: correcting the Sold column on the stock ledger changed
@@ -38,7 +59,7 @@ stock-only `correctMovement`. See ADR-92.
   review, then `--apply`.
 - **Tests** — `adjust-sold.test.ts` (9), `repair-legacy-sold.test.ts` (2),
   `tests/screens/stock.screen.test.tsx` (Sold cell → drawer, 2).
-- **Follow-up** — Admin Sales screen doesn't show adjustments yet.
+- **Follow-up** — Admin Sales screen: done in the next entry.
 
 Gates: `pnpm test` 181 files / 1529 tests green · `typecheck` green ·
 `build` green.

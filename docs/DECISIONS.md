@@ -5710,9 +5710,12 @@ revenue on another day. 13 such rows existed (net: restaurant revenue
    (count revenue ÷ units, or the order line's unit price; current price
    as fallback). Stock rows are untouched.
 
-**Not done (follow-up).** The Admin Sales screen totals are built from the
-orders list and each canteen product's latest count period, not from the
-money ledger, so adjustments don't appear there yet.
+**Sales screen (follow-up, same day).** The Admin Sales screen gained an
+**Adjustments** tab (`GET /api/stock-movements/adjust-sold`,
+`listSaleAdjustments`), and its KPI strip folds each side's adjustments
+into that side's total, with an "incl. KES X adjustments" caption. The
+Cash / M-Pesa / Credit tiles stay orders-by-payment-method and exclude
+them. One fetch in `sales-client.tsx` feeds both the tab and the strip.
 
 **Alternatives considered.**
 - *Route the Sold cell to the underlying order/count correction.* Rejected

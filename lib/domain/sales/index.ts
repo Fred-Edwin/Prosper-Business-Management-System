@@ -34,3 +34,4 @@ export { voidCanteenCreditSale } from "./void-canteen-credit-sale";
 export { correctCanteenCreditSale } from "./correct-canteen-credit-sale";
 export { listCanteenCreditSales } from "./list-canteen-credit-sales";
 export { adjustSold } from "./adjust-sold";
+export { listSaleAdjustments } from "./list-sale-adjustments";
