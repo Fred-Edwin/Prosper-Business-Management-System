@@ -30,8 +30,9 @@ import { TextInput } from "@/components/kit/text-input";
 import { EmptyState } from "@/components/kit/empty-state";
 import { ErrorState } from "@/components/kit/error-state";
 import { ConfirmDialog } from "@/components/kit/confirm-dialog";
+import { Select } from "@/components/kit/select";
 import { useToast } from "@/components/kit/toast";
-import type { CustomerListRow } from "@/lib/domain/customers";
+import type { CustomerListRow, CustomerLocation } from "@/lib/domain/customers";
 import { useCustomers } from "./use-customers";
 import { RepaymentForm, fmtMoney } from "./repayment-form";
 import { CustomersKpiStrip } from "./kpi-strip";
@@ -61,12 +62,25 @@ function BalanceCell({ balance }: { balance: string }) {
   return <span className="text-danger">KES {fmtMoney(balance)}</span>;
 }
 
+// Which side of the business a customer buys from (ADR-93).
+const LOCATION_LABEL: Record<CustomerLocation, string> = {
+  restaurant: "Restaurant",
+  canteen: "Canteen",
+  both: "Both",
+  unassigned: "Unassigned",
+};
+const LOCATION_OPTIONS = (Object.keys(LOCATION_LABEL) as CustomerLocation[]).map(
+  (value) => ({ value, label: LOCATION_LABEL[value] }),
+);
+const ALL_LOCATIONS = "__all__";
+
 type DrawerMode = "repayment" | "add-customer" | null;
 
 export function CustomersClient() {
   const [search, setSearch] = React.useState("");
   const [hasBalance, setHasBalance] = React.useState(false);
   const [includeArchived, setIncludeArchived] = React.useState(false);
+  const [locationFilter, setLocationFilter] = React.useState<string>(ALL_LOCATIONS);
 
   const {
     customers,
@@ -77,7 +91,14 @@ export function CustomersClient() {
     recordRepayment,
     archiveCustomer,
     unarchiveCustomer,
-  } = useCustomers({ search, hasBalance, includeArchived });
+    setCustomerLocation,
+  } = useCustomers({
+    search,
+    hasBalance,
+    includeArchived,
+    location:
+      locationFilter === ALL_LOCATIONS ? undefined : (locationFilter as CustomerLocation),
+  });
   const { toast } = useToast();
 
   const [drawerMode, setDrawerMode] = React.useState<DrawerMode>(null);
@@ -85,6 +106,7 @@ export function CustomersClient() {
 
   const [newName, setNewName] = React.useState("");
   const [newPhone, setNewPhone] = React.useState("");
+  const [newLocation, setNewLocation] = React.useState<CustomerLocation>("unassigned");
   const [adding, setAdding] = React.useState(false);
   const [addError, setAddError] = React.useState<string | null>(null);
   const addValid = newName.trim() !== "" && newPhone.trim() !== "";
@@ -94,6 +116,7 @@ export function CustomersClient() {
     setSelected(null);
     setNewName("");
     setNewPhone("");
+    setNewLocation("unassigned");
     setAddError(null);
   }
   function openRepayment(row: CustomerListRow) {
@@ -106,7 +129,11 @@ export function CustomersClient() {
     setAdding(true);
     setAddError(null);
     try {
-      await createCustomer({ name: newName.trim(), phone: newPhone.trim() });
+      await createCustomer({
+        name: newName.trim(),
+        phone: newPhone.trim(),
+        location: newLocation,
+      });
       toast("Customer added", { tone: "success" });
       closeDrawer();
     } catch (e) {
@@ -116,11 +143,31 @@ export function CustomersClient() {
     }
   }
 
-  const filtered = search.trim() !== "" || hasBalance || includeArchived;
+  const filtered =
+    search.trim() !== "" || hasBalance || includeArchived || locationFilter !== ALL_LOCATIONS;
   function clearFilters() {
     setSearch("");
     setHasBalance(false);
     setIncludeArchived(false);
+    setLocationFilter(ALL_LOCATIONS);
+  }
+
+  // Relabel from the row drawer — saves on pick, like a toggle.
+  const [savingLocation, setSavingLocation] = React.useState(false);
+  async function changeLocation(next: CustomerLocation) {
+    if (!selected || next === selected.location || savingLocation) return;
+    setSavingLocation(true);
+    try {
+      await setCustomerLocation(selected.id, next);
+      setSelected({ ...selected, location: next });
+      toast(`Location set to ${LOCATION_LABEL[next]}`, { tone: "success" });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not change the location.", {
+        tone: "danger",
+      });
+    } finally {
+      setSavingLocation(false);
+    }
   }
 
   const [archiving, setArchiving] = React.useState<CustomerListRow | null>(
@@ -157,6 +204,14 @@ export function CustomersClient() {
   }
 
   const filterControls: FilterControl[] = [
+    {
+      id: "location",
+      label: "Location",
+      kind: "select",
+      options: [{ value: ALL_LOCATIONS, label: "All" }, ...LOCATION_OPTIONS],
+      value: locationFilter,
+      default: ALL_LOCATIONS,
+    },
     {
       id: "hasBalance",
       label: "Has balance",
@@ -201,6 +256,22 @@ export function CustomersClient() {
       header: "Phone",
       width: "grow min-w-[120px]",
       render: (r) => r.phone,
+    },
+    {
+      key: "location",
+      header: "Location",
+      width: "grow min-w-[100px]",
+      render: (r) => (
+        <span
+          className={
+            r.location === "unassigned"
+              ? "[color:var(--text-tertiary)]"
+              : "[color:var(--text-secondary)]"
+          }
+        >
+          {LOCATION_LABEL[r.location]}
+        </span>
+      ),
     },
     {
       key: "balance",
@@ -282,6 +353,8 @@ export function CustomersClient() {
           onChange={(id, value) => {
             if (id === "hasBalance") setHasBalance(Boolean(value));
             if (id === "includeArchived") setIncludeArchived(Boolean(value));
+            if (id === "location")
+              setLocationFilter(value == null ? ALL_LOCATIONS : String(value));
           }}
           onReset={clearFilters}
           resultCount={customers.length}
@@ -367,7 +440,7 @@ export function CustomersClient() {
                           </span>
                         </span>
                         <span className="font-ui [color:var(--text-secondary)] text-sm/micro truncate">
-                          {c.phone}
+                          {c.phone} · {LOCATION_LABEL[c.location]}
                         </span>
                       </div>
                       <span className="font-mono text-sm/sm shrink-0">
@@ -387,7 +460,7 @@ export function CustomersClient() {
                           {c.name}
                         </span>
                         <span className="font-ui [color:var(--text-secondary)] text-sm/micro truncate">
-                          {c.phone}
+                          {c.phone} · {LOCATION_LABEL[c.location]}
                         </span>
                       </div>
                       <span className="font-mono text-sm/sm shrink-0">
@@ -448,6 +521,20 @@ export function CustomersClient() {
                 </div>
               )}
             />
+
+            {/* Location (ADR-93) — which side this customer buys from.
+                Saves on pick; drives the register's Location filter and
+                the per-side KPI split. */}
+            <div className="flex flex-col mt-[4px] pt-[20px] gap-[8px] border-t border-t-solid [border-top-color:var(--border-subtle)]">
+              <Select
+                label="Location"
+                options={LOCATION_OPTIONS}
+                value={selected.location}
+                onChange={(v) => void changeLocation(v as CustomerLocation)}
+                disabled={savingLocation}
+                helperText="Which side of the business this customer buys from."
+              />
+            </div>
 
             {/* Archive section — Assets' Edit-drawer danger-section pattern
                 (heading + description + inline destructive action below a
@@ -537,6 +624,13 @@ export function CustomersClient() {
           inputMode="tel"
           value={newPhone}
           onChange={(e) => setNewPhone(e.target.value)}
+        />
+        <Select
+          label="Location"
+          options={LOCATION_OPTIONS}
+          value={newLocation}
+          onChange={(v) => setNewLocation(v as CustomerLocation)}
+          helperText="Which side of the business this customer buys from."
         />
         {addError && (
           <div role="alert" className="font-ui text-danger text-sm/sm">

@@ -1,6 +1,6 @@
-import type { MoneyAccount, Prisma } from "@prisma/client";
+import type { CustomerLocation, MoneyAccount, Prisma } from "@prisma/client";
 
-export type { MoneyAccount } from "@prisma/client";
+export type { CustomerLocation, MoneyAccount } from "@prisma/client";
 
 /**
  * Customers & Credit domain shapes (ADR-19). The running balance is
@@ -12,12 +12,19 @@ export type { MoneyAccount } from "@prisma/client";
 export type CreateCustomerInput = {
   name: string;
   phone: string;
+  /**
+   * Which side the customer buys from (ADR-93). Honoured only for an Admin
+   * — a Cashier's customer is always `restaurant`, a Canteen Attendant's
+   * always `canteen`. Omitted by an Admin → `unassigned`.
+   */
+  location?: CustomerLocation;
 };
 
 export type Customer = {
   id: string;
   name: string;
   phone: string;
+  location: CustomerLocation;
   /** ISO timestamp the customer was archived at, or `null` if active. */
   archivedAt: string | null;
   createdAt: string;
@@ -44,12 +51,15 @@ export type ListCustomersFilter = {
    * new credit by accident.
    */
   includeArchived?: boolean;
+  /** Only customers with this location label (ADR-93). */
+  location?: CustomerLocation;
 };
 
 export type CustomerListRow = {
   id: string;
   name: string;
   phone: string;
+  location: CustomerLocation;
   /** Derived: `Σ debts − Σ repayments`, as a decimal string. */
   balance: string;
   /** ISO timestamp the customer was archived at, or `null` if active. */
@@ -163,7 +173,8 @@ export type CustomerContext = {
   /**
    * The acting user's role. Required by `recordRepayment` to enforce the
    * staff "today only" rule (ADR-53) — a non-admin may not record a
-   * repayment dated to any day but today. `createCustomer` ignores it.
+   * repayment dated to any day but today. `createCustomer` uses it to pick
+   * the new customer's location (ADR-93).
    */
   role?: string;
 };

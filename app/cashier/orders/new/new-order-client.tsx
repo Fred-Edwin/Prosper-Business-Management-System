@@ -706,6 +706,7 @@ function CustomerAttachSheet({
         id: created.id,
         name: created.name,
         phone: created.phone,
+        location: created.location,
         balance: "0.00",
         archivedAt: null,
         lastActivityAt: null,

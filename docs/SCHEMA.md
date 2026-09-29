@@ -428,6 +428,7 @@ Writes a `MoneyMovement` row per account for the received amounts.
 |---|---|
 | name | |
 | phone | |
+| location | `CustomerLocation` enum — `restaurant` / `canteen` / `both` / `unassigned` (default). Which side the customer buys from (ADR-93): a label for filtering and per-side totals, **not** a ledger scope. |
 | deleted_at | Nullable — archive timestamp (ADR-85). No hard-delete path. |
 
 Running balance is derived: sum of `Debt.amount` minus sum of

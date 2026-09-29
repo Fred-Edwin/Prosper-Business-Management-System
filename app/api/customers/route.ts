@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { ok, fail } from "@/lib/api/response";
+import { effectiveRole } from "@/lib/auth/roles";
 import {
   createCustomerSchema,
   listCustomersQuerySchema,
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest) {
     hasBalance: sp.get("hasBalance") ?? undefined,
     owingOnly: sp.get("owingOnly") ?? undefined,
     includeArchived: sp.get("includeArchived") ?? undefined,
+    location: sp.get("location") ?? undefined,
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -68,8 +70,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // The acting role picks the new customer's location (ADR-93): an Admin
+    // acting as Cashier creates a restaurant customer, like a Cashier would.
     const customer = await createCustomer(parsed.data, {
       actorId: auth.user.id,
+      role: effectiveRole(auth),
     });
     return ok(customer, { status: 201 });
   } catch (e) {

@@ -3,10 +3,12 @@ import type { Role } from "@prisma/client";
 import { requireApiRoleIn } from "@/lib/api/require-role-in";
 import { requireApiRole } from "@/lib/api/require-role";
 import { ok, fail } from "@/lib/api/response";
+import { setCustomerLocationSchema } from "@/lib/validation/customers";
 import {
   DomainError,
   archiveCustomer,
   getCustomerLedger,
+  setCustomerLocation,
   unarchiveCustomer,
 } from "@/lib/domain/customers";
 
@@ -44,6 +46,41 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     await unarchiveCustomer(id);
     return ok({ archived: false });
+  } catch (e) {
+    if (e instanceof DomainError) return fail(e.code, e.message, e.field);
+    throw e;
+  }
+}
+
+/**
+ * `PATCH /api/customers/:id` — body `{ location }`: set which side of the
+ * business the customer buys from (ADR-93). Admin only. Returns the
+ * customer.
+ */
+export async function PATCH(req: NextRequest, ctx: Ctx) {
+  const auth = await requireApiRole("admin");
+  if (auth instanceof NextResponse) return auth;
+  const { id } = await ctx.params;
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return fail("VALIDATION_ERROR", "Request body must be valid JSON.");
+  }
+  const parsed = setCustomerLocationSchema.safeParse(body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    return fail("VALIDATION_ERROR", issue.message, issue.path.join("."));
+  }
+
+  try {
+    return ok(
+      await setCustomerLocation(id, parsed.data.location, {
+        actorId: auth.user.id,
+        role: auth.user.role,
+      }),
+    );
   } catch (e) {
     if (e instanceof DomainError) return fail(e.code, e.message, e.field);
     throw e;

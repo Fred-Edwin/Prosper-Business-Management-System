@@ -14,6 +14,7 @@ export * from "./types";
 export { createCustomer } from "./create-customer";
 export { listCustomers } from "./list-customers";
 export { archiveCustomer, unarchiveCustomer } from "./archive-customer";
+export { setCustomerLocation } from "./set-customer-location";
 export { getCustomerLedger } from "./get-customer-ledger";
 export { recordRepayment } from "./record-repayment";
 export { correctRepayment, voidRepayment } from "./correct-repayment";

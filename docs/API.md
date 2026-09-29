@@ -962,9 +962,11 @@ Financials v2" Session A — only customers whose derived balance is
 **strictly positive**, i.e. they owe the business; takes precedence over
 `hasBalance` if both are passed), `?includeArchived=true` (added ADR-85 —
 defaults to `false`; when omitted, archived customers — `deletedAt` set —
-are excluded, including from the cashier's credit-order customer picker).
+are excluded, including from the cashier's credit-order customer picker),
+`?location=restaurant|canteen|both|unassigned` (ADR-93 — only customers
+with that label).
 Returns `{ data: CustomerListRow[] }`. Each item:
-`{ id, name, phone, balance, archivedAt, lastActivityAt, oldestDebtAt }` —
+`{ id, name, phone, location, balance, archivedAt, lastActivityAt, oldestDebtAt }` —
 `balance` is a signed decimal string (negative = overpaid / credit in
 hand); `archivedAt` is the ISO archive timestamp, or `null` if active;
 `lastActivityAt` is the ISO max of the customer's debt/repayment
@@ -991,11 +993,21 @@ debt.
   the open question this raises for the owner.
 
 ### `POST /api/customers`
-Roles: Admin, Cashier. Body: `{ "name": "...", "phone": "..." }` (both
-trimmed, non-empty; phone kept lenient — no format or uniqueness check).
+Roles: Admin, Cashier, Canteen Attendant. Body: `{ "name": "...", "phone":
+"...", "location"? }` (both trimmed, non-empty; phone kept lenient — no
+format or uniqueness check). `location` (ADR-93) is set from the **acting**
+role: Cashier → `restaurant`, Canteen Attendant → `canteen`; only an Admin's
+`location` is honoured (omitted → `unassigned`).
 Returns `{ data: Customer }`
-(`{ id, name, phone, archivedAt, createdAt, updatedAt }`), `201`. Writes an
-`AuditLog` row.
+(`{ id, name, phone, location, archivedAt, createdAt, updatedAt }`), `201`.
+Writes an `AuditLog` row.
+
+### `PATCH /api/customers/:id`
+Admin only (ADR-93). Body: `{ "location": "restaurant" | "canteen" | "both"
+| "unassigned" }`. Relabels the customer (a direct update, not a
+correction — it's a label, not a ledger fact); the change is audited
+was → now. Same value → no-op. Returns `{ data: Customer }`. `404` if the
+customer doesn't exist.
 
 ### `GET /api/customers/:id`
 Roles: Admin, Cashier. Returns `{ data: { customer, entries, balance } }`
