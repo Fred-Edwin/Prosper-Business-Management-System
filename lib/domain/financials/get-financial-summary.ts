@@ -25,7 +25,9 @@ const ZERO = new Prisma.Decimal(0);
  *   Sales     Σ (units sold × selling price). Restaurant: `Order.total`
  *             over the LIVE rows (superseded originals dropped, correction
  *             rows kept — the fold `listOrders` does). Canteen: Σ
- *             `canteen_sale` MoneyMovement in the period.
+ *             `canteen_sale` MoneyMovement in the period. Plus owner
+ *             sale adjustments (ADR-92): Σ `sale_adjustment` MoneyMovement,
+ *             attributed to the location of its paired `sale` StockMovement.
  *
  *   COGS      opening stock value + purchase-RECEIPT value − closing stock
  *             value, summed over EVERY product at EVERY location. Each
@@ -73,6 +75,7 @@ export async function getFinancialSummary(
     locations,
     restaurantRevenue,
     canteenRevenue,
+    adjustmentRevenue,
     cogsByLocation,
     expenseSum,
     debtSum,
@@ -85,6 +88,7 @@ export async function getFinancialSummary(
     prisma.location.findMany({ select: { id: true, name: true } }),
     restaurantRevenueByLocation(start, end),
     canteenRevenueByLocation(start, end),
+    saleAdjustmentRevenueByLocation(start, end),
     cogsByLocationSweep(start, end),
     prisma.expense.aggregate({
       _sum: { amount: true },
@@ -109,6 +113,9 @@ export async function getFinancialSummary(
     revenueByLocation.set(locId, (revenueByLocation.get(locId) ?? ZERO).add(amt));
   }
   for (const [locId, amt] of canteenRevenue) {
+    revenueByLocation.set(locId, (revenueByLocation.get(locId) ?? ZERO).add(amt));
+  }
+  for (const [locId, amt] of adjustmentRevenue) {
     revenueByLocation.set(locId, (revenueByLocation.get(locId) ?? ZERO).add(amt));
   }
 
@@ -222,6 +229,34 @@ async function canteenRevenueByLocation(
   const byLocation = new Map<string, Prisma.Decimal>();
   for (const r of rows) {
     const locId = r.sourceId ? locByCount.get(r.sourceId) : undefined;
+    if (!locId) continue;
+    byLocation.set(locId, (byLocation.get(locId) ?? ZERO).add(r.amount));
+  }
+  return byLocation;
+}
+
+/**
+ * Owner sale-adjustment revenue per location (ADR-92): Σ `sale_adjustment`
+ * MoneyMovement amounts in the window (signed — a reduced Sold figure is a
+ * negative row), grouped by the location of the paired `sale`
+ * StockMovement (`stockMovementId`). A row with no paired stock row is
+ * skipped, the same inner-join rule the canteen fold uses.
+ */
+export async function saleAdjustmentRevenueByLocation(
+  start: Date,
+  end: Date,
+): Promise<Map<string, Prisma.Decimal>> {
+  const rows = await prisma.moneyMovement.findMany({
+    where: {
+      sourceType: "sale_adjustment",
+      occurredAt: { gte: start, lt: end },
+      stockMovementId: { not: null },
+    },
+    select: { amount: true, stockMovement: { select: { locationId: true } } },
+  });
+  const byLocation = new Map<string, Prisma.Decimal>();
+  for (const r of rows) {
+    const locId = r.stockMovement?.locationId;
     if (!locId) continue;
     byLocation.set(locId, (byLocation.get(locId) ?? ZERO).add(r.amount));
   }

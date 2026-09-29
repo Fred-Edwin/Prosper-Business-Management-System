@@ -214,6 +214,30 @@ export type CorrectCanteenCreditSaleResult = {
   total: string;
 };
 
+/** Owner sale adjustment (ADR-92), Admin-only — restate a day's Sold total. */
+export type AdjustSoldInput = {
+  productId: string;
+  locationId: string;
+  /** `YYYY-MM-DD` Africa/Nairobi business date whose Sold total is restated. */
+  businessDate: string;
+  /** Decimal string; the corrected FINAL Sold total for the day, >= 0. */
+  correctedSold: string;
+  note?: string | null;
+};
+
+export type AdjustSoldResult = {
+  /** The adjustment `sale` `StockMovement.id` written. */
+  stockMovementId: string;
+  /** Decimal string (4dp) — the day's new Sold total. */
+  sold: string;
+  /** Decimal string (4dp) — units added (+) or removed (−) from Sold. */
+  quantityDelta: string;
+  /** Decimal string (2dp) — signed revenue written to Cash. */
+  revenueDelta: string;
+  /** Decimal string (2dp) — the selling price used. */
+  unitPrice: string;
+};
+
 /** One canteen credit sale, for the attendant's "today's credit sales" list. */
 export type CanteenCreditSaleListItem = {
   /** The original `sale` `StockMovement.id`. */

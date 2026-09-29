@@ -378,7 +378,22 @@ Body: `{ correctedQuantity (signed decimal string), note? }` — the
 `occurredAt` = the original's). Returns `201` with the delta row.
 Roles: if a `DayClose` exists for the original's business day → **Admin
 only** (`403` otherwise); if the day is still open → Admin **or the
-original recorder**. `delta = 0` → `400`.
+original recorder**. `delta = 0` → `400`. A `sale` row is refused
+(`400`, ADR-92): sales are restated through `adjust-sold` below (or the
+order / credit-sale corrections), which move revenue too.
+
+### `POST /api/stock-movements/adjust-sold`
+Admin only (ADR-92). Body: `{ productId, locationId, businessDate
+(YYYY-MM-DD), correctedSold (decimal string ≥ 0), note? }` — the
+**corrected final Sold total** for that product/location/day. The domain
+computes `delta` against the day's summed `sale` rows and writes one
+source-less `sale` `StockMovement` (`−delta`) plus one Cash
+`sale_adjustment` `MoneyMovement` (`delta × current selling price`,
+linked by `stockMovementId`). Dated now for today, else the day's last
+instant. Returns `201` `{ stockMovementId, sold, quantityDelta,
+revenueDelta, unitPrice }`. `400` for a zero delta, a future date, a
+store location, or a product with no selling price there. Entering the
+previous total again is the undo; there is no separate void.
 
 ### `POST /api/stock-movements/:id/correct-purchase`
 Admin only. Body: `{ supplier?, orderedQty, cost, paidFromAccount, note? }`

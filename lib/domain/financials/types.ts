@@ -48,6 +48,12 @@ export type RecordMoneyMovementInput = {
    * built.
    */
   correctsMovementId?: string;
+  /**
+   * The `StockMovement` this money row is the other half of. Set by
+   * `adjustSold` (ADR-92) so an owner sale adjustment's revenue can be
+   * attributed to the stock row's location.
+   */
+  stockMovementId?: string;
 };
 
 /**

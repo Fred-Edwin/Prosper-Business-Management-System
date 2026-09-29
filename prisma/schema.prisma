@@ -88,6 +88,10 @@ enum MoneySourceType {
   order
   repayment
   canteen_sale
+  // Owner sale adjustment (ADR-92): the revenue half of an Admin "Sold"
+  // restatement from the stock ledger. `stockMovementId` points at the
+  // paired source-less `sale` StockMovement; `sourceId` carries the same id.
+  sale_adjustment
 }
 
 enum ExpenseCategory {

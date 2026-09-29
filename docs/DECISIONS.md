@@ -5665,3 +5665,60 @@ recap in `app/canteen/hub-client.tsx`.
   sales are explicitly NOT Order-based per PRD §4.4's existing derived
   model; forcing them through `Order` would contradict that distinction
   rather than resolve it.
+
+## ADR-92: Owner sale adjustment — the ledger's Sold cell restates the day's total, moving stock AND revenue (Client feedback, 2026-09-29)
+
+**Context.** The owner corrects sales by reading the Admin stock ledger
+and typing the right figure into the Sold column. That is a restatement of
+the day's figure as she sees it, not a correction of a specific order or
+count. Until now a filled Sold cell ran the generic `correctMovement`,
+which wrote a stock-only `sale` delta (and a blank Sold cell was inert).
+The consequences, confirmed against production: closing stock moved,
+revenue never did, and COGS did, so gross profit fell. At the canteen the
+next stock count re-derived the units, shifting (or double-counting)
+revenue on another day. 13 such rows existed (net: restaurant revenue
+~KES 1,415 understated, canteen ~KES 3,675 overstated).
+
+**Decision.**
+1. New Admin-only `adjustSold` (`lib/domain/sales/adjust-sold.ts`, route
+   `POST /api/stock-movements/adjust-sold`). Input is the corrected FINAL
+   Sold total for (product, location, business day). It writes ONE
+   source-less `sale` `StockMovement` (no `orderId`/`stockCountId`/
+   `customerId`; that absence is what marks an owner adjustment) and ONE
+   Cash `MoneyMovement` with the new `MoneySourceType.sale_adjustment`,
+   linked by the existing `money_movement.stock_movement_id` column.
+   Priced at the product's **current** selling price at the location
+   (there is no single original sale to snapshot); no selling price →
+   `VALIDATION_ERROR`. Dated now for today, else the day's last instant
+   (after that day's counts, so it never re-orders them).
+2. Revenue readers fold it in by the stock row's location:
+   `getFinancialSummary` (`saleAdjustmentRevenueByLocation`),
+   `dailyNetSeries` (still equal to the summary), `getTodaysActivity`.
+   Cash balance and Cash Flow pick it up automatically (plain money rows).
+   Handover reconciliation is unaffected; it compares declared with
+   received and has no "expected cash" figure.
+3. `correctMovement` now refuses `sale` rows, closing the stock-only
+   bypass. Orders, stock counts and credit sales keep their own paths.
+4. Every Sold cell (blank or filled, day view or drill-in) opens the new
+   `SaleAdjustmentDrawer`.
+5. ADR-72 correction path: re-entering a total IS the correction, and
+   entering the previous total is the full undo. No `voidSaleAdjustment`,
+   same precedent as `correctStockBalance` / `setOpeningStock`.
+6. One-off repair `scripts/repair-legacy-sold-corrections.ts` (dry run by
+   default, `--apply` to write, idempotent) gives each orphan row its
+   `sale_adjustment` money row, priced at the corrected sale's own price
+   (count revenue ÷ units, or the order line's unit price; current price
+   as fallback). Stock rows are untouched.
+
+**Not done (follow-up).** The Admin Sales screen totals are built from the
+orders list and each canteen product's latest count period, not from the
+money ledger, so adjustments don't appear there yet.
+
+**Alternatives considered.**
+- *Route the Sold cell to the underlying order/count correction.* Rejected
+  by the owner: she corrects the figure she sees, often where no single
+  order is at fault (e.g. staff forgot to record a sale).
+- *A new `MovementType` for adjustments.* Rejected: every ledger reader
+  folds `sale` into the Sold column already; a new type would need
+  touching each of them for no gain.
+

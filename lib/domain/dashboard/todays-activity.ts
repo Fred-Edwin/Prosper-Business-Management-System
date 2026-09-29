@@ -12,8 +12,9 @@ const ZERO = new Prisma.Decimal(0);
  *
  *   - `salesSoFar` — money IN today from restaurant orders + canteen
  *     sales: `Σ MoneyMovement.amount` where `sourceType ∈ {order,
- *     canteen_sale}`. (Matches the design's "money in from `order` +
- *     `canteen_sale` MoneyMovement today".)
+ *     canteen_sale, sale_adjustment}`. (Matches the design's "money in
+ *     from `order` + `canteen_sale` MoneyMovement today", plus owner sale
+ *     adjustments — ADR-92.)
  *   - `stockMovementCount` — rows in `StockMovement` today.
  *   - `purchaseReceiptCount` — of those, `movementType =
  *     "purchase_receipt"`.
@@ -39,7 +40,7 @@ export async function getTodaysActivity(
     prisma.moneyMovement.aggregate({
       _sum: { amount: true },
       where: {
-        sourceType: { in: ["order", "canteen_sale"] },
+        sourceType: { in: ["order", "canteen_sale", "sale_adjustment"] },
         occurredAt: { gte: start, lt: end },
       },
     }),

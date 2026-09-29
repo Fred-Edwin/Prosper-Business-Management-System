@@ -11,6 +11,7 @@ import type { MoneyWriteContext, RecordMoneyMovementInput } from "./types";
  *   - `recordRepayment` (this session) — `sourceType: "repayment"`.
  *   - `createOrder` (S4) — `sourceType: "order"` for a Cash/M-Pesa order.
  *   - `recordStockCount` (S5) — `sourceType: "canteen_sale"`.
+ *   - `adjustSold` (ADR-92) — `sourceType: "sale_adjustment"`.
  *
  * `amount` is **signed** — positive for money in, negative for money out —
  * so the derived balance is a plain `SUM(amount)` with no per-row sign
@@ -46,6 +47,7 @@ export async function recordMoneyMovement(
         occurredAt: input.occurredAt,
         note: input.note ?? null,
         correctsMovementId: input.correctsMovementId ?? null,
+        stockMovementId: input.stockMovementId ?? null,
       },
     });
 

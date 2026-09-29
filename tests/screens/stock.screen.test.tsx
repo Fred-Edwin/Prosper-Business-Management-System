@@ -72,6 +72,7 @@ const recordCompletedTransferFn = vi.hoisted(() =>
   vi.fn().mockResolvedValue({}),
 );
 const correctBalanceFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+const adjustSoldFn = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 const balancesFn = vi.hoisted(() =>
   vi.fn().mockResolvedValue([{ productId: "prod-1", locationId: "loc-store", quantity: "75.0000" }]),
 );
@@ -92,6 +93,7 @@ vi.mock("@/app/admin/stock/use-stock", async () => {
       setOpeningStock: setOpeningStockFn,
       recordCompletedTransfer: recordCompletedTransferFn,
       correctBalance: correctBalanceFn,
+      adjustSold: adjustSoldFn,
       balances: balancesFn,
     },
   };
@@ -381,18 +383,73 @@ describe("/admin/stock — kit composition", () => {
     );
   });
 
-  it("clicking a blank Sold cell shows an explanatory note, no drawer", async () => {
+  // Owner sale adjustment (ADR-92): every Sold click opens "Adjust Sold",
+  // which takes the corrected day TOTAL and moves stock + revenue together.
+  function seedSodaAtRestaurant(saleIds: string[], saleQuantities: string[]) {
+    rowsBox.rows = [{ ...makeRow("prod-2@loc-rest", "Soda (pcs)"), location: "Restaurant" }];
+    rowsBox.cellMovements = new Map([["prod-2@loc-rest", { sold: saleIds }]]);
+    hook.data.movements = saleIds.map((id, i) => ({
+      ...(hook.data.movements[0] as object),
+      id,
+      productId: "prod-2",
+      locationId: "loc-rest",
+      movementType: "sale",
+      quantity: saleQuantities[i],
+    }));
+    hook.data.products = [
+      {
+        id: "prod-2",
+        name: "Soda",
+        unitLabel: "pcs",
+        locations: [
+          { locationId: "loc-rest", locationName: "Restaurant", locationType: "restaurant", sellingPrice: "45.00", active: true },
+        ],
+      },
+    ];
+  }
+
+  it("a blank Sold cell opens Adjust Sold and submits the corrected day total", async () => {
+    seedSodaAtRestaurant([], []);
+    adjustSoldFn.mockResolvedValueOnce({});
     renderScreen();
     const user = userEvent.setup();
 
-    await user.click(
-      screen.getByRole("button", { name: "Correct Sold (-) for Beef Fillet (kg)" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Correct Sold (-) for Soda (pcs)" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Adjust Sold")).toBeInTheDocument();
 
-    expect(
-      (await screen.findAllByText(/Sales are recorded through Orders or Canteen stock counts/))[0],
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const field = within(dialog).getByLabelText(/Correct sold figure/);
+    await user.clear(field);
+    await user.type(field, "5");
+    expect(within(dialog).getByText(/KES 225 is added to revenue and Cash/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Confirm & Save Adjustment" }));
+
+    await waitFor(() => expect(adjustSoldFn).toHaveBeenCalledOnce());
+    expect(adjustSoldFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: "prod-2",
+        locationId: "loc-rest",
+        correctedSold: "5",
+        businessDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    );
+    expect(await screen.findByText("Sold figure adjusted")).toBeInTheDocument();
+    expect(correctFn).not.toHaveBeenCalled();
+  });
+
+  it("a filled Sold cell shows the day's summed total and previews a reduction", async () => {
+    seedSodaAtRestaurant(["s-1", "s-2"], ["-3", "-5"]);
+    renderScreen();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Correct Sold (-) for Soda (pcs)" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("8.0 pcs")).toBeInTheDocument();
+
+    const field = within(dialog).getByLabelText(/Correct sold figure/);
+    await user.clear(field);
+    await user.type(field, "6");
+    expect(within(dialog).getByText(/KES 90 is taken off revenue and Cash/)).toBeInTheDocument();
   });
 
   it("records a blank Transfer In cell via recordCompletedTransfer, picking the other location", async () => {

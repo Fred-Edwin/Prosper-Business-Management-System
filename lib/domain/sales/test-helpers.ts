@@ -332,6 +332,10 @@ export async function cleanupSalesTestData(scope: string): Promise<void> {
         where: { sourceType: "canteen_sale", sourceId: { in: countIds } },
       });
     }
+    // Owner sale adjustments (ADR-92): money rows FK their `sale` stock row.
+    await prisma.moneyMovement.deleteMany({
+      where: { stockMovement: { productId: { in: productIds } } },
+    });
     await prisma.stockMovement.deleteMany({ where: { productId: { in: productIds } } });
     await prisma.stockCount.deleteMany({ where: { productId: { in: productIds } } });
     await prisma.orderLine.deleteMany({ where: { productId: { in: productIds } } });
