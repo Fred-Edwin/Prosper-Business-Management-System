@@ -16,6 +16,16 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: flaky canteen credit-sale screen test (2026-09-29) — DONE
+
+CI on main failed after merging #41 in `tests/screens/canteen-credit-sale.screen.test.tsx`
+("pointer-events: none" on the Confirm button). This was not caused by #41: the
+test clicked Confirm while the customer `BottomSheet` was still closing, and the
+kit keeps the page `inert` until it has. The test now waits for the sheet to be
+gone. Test-only change; 5/5 local runs green.
+
+---
+
 ## Fix: Sales screen shows owner sale adjustments (2026-09-29) — DONE
 
 Follow-up to ADR-92: the Admin Sales screen's totals come from orders and

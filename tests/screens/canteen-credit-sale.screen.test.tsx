@@ -115,6 +115,12 @@ describe("Canteen Credit Sale Screen", () => {
     await waitFor(() => expect(within(dialog).getByText("Jane Doe")).toBeDefined());
     await user.click(within(dialog).getByText("Jane Doe"));
 
+    // The kit BottomSheet makes the page behind it `inert` while open and
+    // lifts that only once it has finished closing. Clicking Confirm before
+    // then is blocked ("pointer-events: none"), a race that failed CI on
+    // main (2026-09-29). Wait for the sheet to be gone first.
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
     const confirmBtn = await screen.findByRole("button", { name: /Record credit sale/i });
     expect((confirmBtn as HTMLButtonElement).disabled).toBe(false);
 
