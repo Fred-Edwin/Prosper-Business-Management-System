@@ -25,6 +25,7 @@ const ROWS: CustomerListRow[] = [
     name: "Grace Wanjiru",
     phone: "0722000111",
     balance: "1200.00",
+    location: "restaurant",
     archivedAt: null,
     lastActivityAt: "2026-08-28T09:00:00.000Z",
     oldestDebtAt: "2026-08-20T09:00:00.000Z",
@@ -34,6 +35,7 @@ const ROWS: CustomerListRow[] = [
     name: "John Otieno",
     phone: "0733222444",
     balance: "0.00",
+    location: "restaurant",
     archivedAt: null,
     lastActivityAt: null,
     oldestDebtAt: null,
@@ -45,6 +47,7 @@ const LEDGER: CustomerLedger = {
     id: "c1",
     name: "Grace Wanjiru",
     phone: "0722000111",
+    location: "restaurant",
     archivedAt: null,
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-28T09:00:00.000Z",
@@ -78,6 +81,8 @@ const listState = {
   recordRepayment: vi.fn().mockResolvedValue(undefined),
   archiveCustomer: vi.fn().mockResolvedValue(undefined),
   unarchiveCustomer: vi.fn().mockResolvedValue(undefined),
+  setCustomerLocation: vi.fn().mockResolvedValue(undefined),
+  lastFilter: {} as Record<string, unknown>,
 };
 const ledgerState = {
   ledger: LEDGER as CustomerLedger | null,
@@ -96,7 +101,9 @@ vi.mock("@/app/admin/customers/use-customers", async () => {
   >("@/app/admin/customers/use-customers");
   return {
     ...actual,
-    useCustomers: () => ({
+    useCustomers: (filter: Record<string, unknown>) => {
+      listState.lastFilter = filter;
+      return {
       customers: listState.customers,
       loading: listState.loading,
       error: listState.error,
@@ -105,7 +112,9 @@ vi.mock("@/app/admin/customers/use-customers", async () => {
       recordRepayment: listState.recordRepayment,
       archiveCustomer: listState.archiveCustomer,
       unarchiveCustomer: listState.unarchiveCustomer,
-    }),
+      setCustomerLocation: listState.setCustomerLocation,
+      };
+    },
     useCustomerLedger: () => ({
       ledger: ledgerState.ledger,
       loading: ledgerState.loading,
@@ -261,6 +270,7 @@ describe("A1 — Customers & Credit register", () => {
     expect(listState.createCustomer).toHaveBeenCalledWith({
       name: "New Person",
       phone: "0700123123",
+      location: "unassigned",
     });
     expect(await screen.findByText("Customer added")).toBeInTheDocument();
   });
@@ -592,3 +602,73 @@ describe("A2 — repayment corrections (ADR-72)", () => {
     expect(await screen.findByText("Repayment voided")).toBeInTheDocument();
   });
 });
+
+// ── Customer location (ADR-93) ─────────────────────────────────────
+
+describe("A1 — customer location", () => {
+  it("shows each customer's location in the register", () => {
+    listState.customers = [ROWS[0], { ...ROWS[1], location: "canteen" }];
+    renderA1();
+    const table = within(screen.getByRole("table"));
+    expect(table.getByText("Location")).toBeInTheDocument();
+    expect(table.getByText("Restaurant")).toBeInTheDocument();
+    expect(table.getByText("Canteen")).toBeInTheDocument();
+  });
+
+  it("the Location filter re-queries with the chosen side and Reset clears it", async () => {
+    renderA1();
+    const user = userEvent.setup();
+    const toolbar = within(screen.getByRole("search", { name: "Filter customers" }));
+    expect(listState.lastFilter.location).toBeUndefined();
+
+    await user.click(toolbar.getByRole("combobox", { name: "Location" }));
+    await user.click(screen.getByRole("option", { name: "Location: Canteen" }));
+    expect(listState.lastFilter.location).toBe("canteen");
+
+    await user.click(await toolbar.findByRole("button", { name: "Reset" }));
+    expect(listState.lastFilter.location).toBeUndefined();
+  });
+
+  it("adding a customer can pick a location", async () => {
+    renderA1();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Add customer" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText(/^Name/), "Canteen Person");
+    await user.type(within(dialog).getByLabelText(/^Phone/), "0700");
+    await user.click(within(dialog).getByRole("combobox", { name: /Location/ }));
+    await user.click(screen.getByRole("option", { name: "Canteen" }));
+    await user.click(within(dialog).getByRole("button", { name: "Add customer" }));
+    expect(listState.createCustomer).toHaveBeenCalledWith({
+      name: "Canteen Person",
+      phone: "0700",
+      location: "canteen",
+    });
+  });
+
+  it("the row drawer relabels a customer's location and confirms with a toast", async () => {
+    renderA1();
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("button", { name: "Record repayment for Grace Wanjiru" })[0]);
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("combobox", { name: /Location/ }));
+    await user.click(screen.getByRole("option", { name: "Both" }));
+    await waitFor(() =>
+      expect(listState.setCustomerLocation).toHaveBeenCalledWith("c1", "both"),
+    );
+    expect(await screen.findByText("Location set to Both")).toBeInTheDocument();
+  });
+
+  it("KPI: unfiltered, Total Outstanding splits the owed figure by side", () => {
+    listState.customers = [
+      { ...ROWS[0], location: "restaurant", balance: "1200.00" },
+      { ...ROWS[1], location: "canteen", balance: "300.00" },
+    ];
+    renderA1();
+    expect(screen.getAllByText("KES 1,500.00").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Restaurant KES 1,200.00 · Canteen KES 300.00").length,
+    ).toBeGreaterThan(0);
+  });
+});
+

@@ -524,6 +524,12 @@ model Customer {
   id        String    @id @default(uuid())
   name      String
   phone     String
+  // Which side of the business this customer buys from (client request
+  // 2026-09-29, ADR-93). A plain label for filtering and per-side totals,
+  // NOT a ledger scope: balances stay `Σ debts − Σ repayments` across both
+  // sides. Set automatically at creation (cashier → restaurant, canteen
+  // attendant → canteen), editable by the Admin.
+  location  CustomerLocation @default(unassigned)
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -535,6 +541,13 @@ model Customer {
   stockMovements StockMovement[] @relation("StockMovementCanteenCreditCustomer")
 
   @@map("customer")
+}
+
+enum CustomerLocation {
+  restaurant
+  canteen
+  both
+  unassigned
 }
 
 // ── Suppliers & Vendors ──────────────────────────────────────────────────

@@ -1,7 +1,24 @@
 import { prisma } from "@/lib/db";
 import { DomainError } from "./errors";
 import { toCustomerView } from "./internal";
-import type { CreateCustomerInput, Customer, CustomerContext } from "./types";
+import type {
+  CreateCustomerInput,
+  Customer,
+  CustomerContext,
+  CustomerLocation,
+} from "./types";
+
+/**
+ * The new customer's location (ADR-93). Staff can only create customers
+ * for their own side, so their role decides it; only the Admin (who sees
+ * both sides) picks, defaulting to `unassigned`.
+ */
+function locationFor(role: string | undefined, requested?: CustomerLocation): CustomerLocation {
+  if (role === "cashier") return "restaurant";
+  if (role === "canteen_attendant") return "canteen";
+  if (role === "admin") return requested ?? "unassigned";
+  return "unassigned";
+}
 
 /**
  * Create a customer record (ADR-19). Admin, Cashier, or Canteen Attendant
@@ -12,6 +29,8 @@ import type { CreateCustomerInput, Customer, CustomerContext } from "./types";
  * lenient on purpose — Kenyan numbers vary in format (07…, +2547…, 01…)
  * and SCHEMA.md places no format or uniqueness constraint on the column,
  * so neither does this.
+ *
+ * `location` (ADR-93) comes from the actor's role — see `locationFor`.
  *
  * Writes an `AuditLog` row (ADR-25) — a customer is not a ledger entity,
  * so its creation isn't otherwise self-evident from a ledger.
@@ -31,14 +50,15 @@ export async function createCustomer(
   }
 
   const row = await prisma.$transaction(async (tx) => {
-    const created = await tx.customer.create({ data: { name, phone } });
+    const location = locationFor(ctx.role, input.location);
+    const created = await tx.customer.create({ data: { name, phone, location } });
     await tx.auditLog.create({
       data: {
         userId: ctx.actorId,
         action: "create",
         entityType: "customer",
         entityId: created.id,
-        newValue: { name: created.name, phone: created.phone },
+        newValue: { name: created.name, phone: created.phone, location: created.location },
         occurredAt: created.createdAt,
       },
     });

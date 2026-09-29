@@ -13,6 +13,7 @@ import type { CustomerListRow, ListCustomersFilter } from "./types";
  * `occurredAt` across both tables, grouped.
  *
  * `search` matches name OR phone, case-insensitive contains.
+ * `location` keeps only customers with that label (ADR-93).
  * `hasBalance` keeps only rows whose derived balance ≠ 0 (either
  * direction — including overpaid/credit-in-hand customers, whose balance
  * is negative).
@@ -49,6 +50,7 @@ export async function listCustomers(
   const search = filter.search?.trim();
   const where: Prisma.CustomerWhereInput = {
     ...(filter.includeArchived ? {} : { deletedAt: null }),
+    ...(filter.location ? { location: filter.location } : {}),
     ...(search && search.length > 0
       ? {
           OR: [
@@ -125,6 +127,7 @@ export async function listCustomers(
       id: c.id,
       name: c.name,
       phone: c.phone,
+      location: c.location,
       balance: moneyString(balance),
       archivedAt: c.deletedAt ? c.deletedAt.toISOString() : null,
       lastActivityAt: last ? last.toISOString() : null,

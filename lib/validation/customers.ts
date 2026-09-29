@@ -17,10 +17,20 @@ const decimalString = z
 
 const moneyAccount = z.enum(["cash", "mpesa_bank"]);
 
+// Which side of the business a customer buys from (ADR-93).
+export const customerLocation = z.enum(["restaurant", "canteen", "both", "unassigned"]);
+
 export const createCustomerSchema = z.object({
   name: z.string().trim().min(1, "Customer name is required"),
   // Lenient — Kenyan numbers vary; no format regex (SCHEMA.md sets none).
   phone: z.string().trim().min(1, "Phone number is required"),
+  // Honoured for an Admin only; staff customers take their own side.
+  location: customerLocation.optional(),
+});
+
+// `PATCH /api/customers/:id` — relabel a customer's location (Admin).
+export const setCustomerLocationSchema = z.object({
+  location: customerLocation,
 });
 
 export const listCustomersQuerySchema = z.object({
@@ -41,6 +51,7 @@ export const listCustomersQuerySchema = z.object({
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
+  location: customerLocation.optional(),
 });
 
 export const recordRepaymentSchema = z.object({

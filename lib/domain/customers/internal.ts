@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type CustomerLocation } from "@prisma/client";
 import type { Customer } from "./types";
 
 /** Prisma customer row → wire shape. */
@@ -6,6 +6,7 @@ export function toCustomerView(row: {
   id: string;
   name: string;
   phone: string;
+  location: CustomerLocation;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -14,6 +15,7 @@ export function toCustomerView(row: {
     id: row.id,
     name: row.name,
     phone: row.phone,
+    location: row.location,
     archivedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

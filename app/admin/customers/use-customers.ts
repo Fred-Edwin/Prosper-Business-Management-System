@@ -6,6 +6,7 @@ import type {
   Customer,
   CustomerLedger,
   CustomerListRow,
+  CustomerLocation,
   MoneyAccount,
 } from "@/lib/domain/customers";
 
@@ -60,6 +61,8 @@ export type CustomersListFilter = {
   hasBalance?: boolean;
   /** Defaults to false — archived customers hidden unless opted in. */
   includeArchived?: boolean;
+  /** Only customers with this location label (ADR-93). */
+  location?: CustomerLocation;
 };
 
 export type RecordRepaymentArgs = {
@@ -84,7 +87,7 @@ export function useCustomers(filter: CustomersListFilter) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  const { search, hasBalance, includeArchived } = filter;
+  const { search, hasBalance, includeArchived, location } = filter;
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -94,6 +97,7 @@ export function useCustomers(filter: CustomersListFilter) {
       if (search && search.trim() !== "") params.set("search", search.trim());
       if (hasBalance) params.set("hasBalance", "true");
       if (includeArchived) params.set("includeArchived", "true");
+      if (location) params.set("location", location);
       const rows = await request<CustomerListRow[]>(
         `/api/customers?${params.toString()}`,
       );
@@ -103,7 +107,7 @@ export function useCustomers(filter: CustomersListFilter) {
     } finally {
       setLoading(false);
     }
-  }, [search, hasBalance, includeArchived]);
+  }, [search, hasBalance, includeArchived, location]);
 
   React.useEffect(() => {
     void refresh();
@@ -152,6 +156,19 @@ export function useCustomers(filter: CustomersListFilter) {
     [refresh],
   );
 
+  /** Relabel which side a customer buys from (Admin, ADR-93). */
+  const setCustomerLocation = React.useCallback(
+    async (customerId: string, next: CustomerLocation): Promise<Customer> => {
+      const updated = await request<Customer>(`/api/customers/${customerId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ location: next }),
+      });
+      await refresh();
+      return updated;
+    },
+    [refresh],
+  );
+
   return {
     customers,
     loading,
@@ -161,6 +178,7 @@ export function useCustomers(filter: CustomersListFilter) {
     recordRepayment,
     archiveCustomer,
     unarchiveCustomer,
+    setCustomerLocation,
   };
 }
 

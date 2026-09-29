@@ -6,8 +6,9 @@
 // Adapted from `app/admin/sales/kpi-strip.tsx` (itself adapted from the
 // house pattern, `app/admin/financials/kpi-strip.tsx` — design-
 // principles.md §"Stat Tiles & KPI", 6R4-0). Purely informational, no
-// scope selector — Customers has no Restaurant/Canteen-style split to
-// pick between.
+// scope selector of its own: the register's Location filter (ADR-93)
+// narrows the customers passed in, so the tiles follow it. Unfiltered,
+// "Total Outstanding"'s caption splits the figure by side.
 //
 // Figures are computed client-side from the `customers: CustomerListRow[]`
 // array the register already holds in memory (no new endpoint) — same
@@ -27,6 +28,21 @@ type Tile = { label: string; figure: string; caption: string };
 function daysAgo(iso: string): number {
   const ms = Date.now() - new Date(iso).getTime();
   return Math.max(0, Math.floor(ms / (24 * 60 * 60 * 1000)));
+}
+
+/** "Restaurant KES 4,000.00 · Canteen KES 1,500.00" — only sides with debt. */
+function sideSplit(owing: CustomerListRow[]): string | null {
+  const sides: [string, number][] = [
+    ["Restaurant", 0],
+    ["Canteen", 0],
+    ["Both", 0],
+    ["Unassigned", 0],
+  ];
+  const idx = { restaurant: 0, canteen: 1, both: 2, unassigned: 3 } as const;
+  for (const c of owing) sides[idx[c.location]][1] += Number(c.balance);
+  const present = sides.filter(([, v]) => v > 0);
+  if (present.length < 2) return null; // one side: the figure already says it
+  return present.map(([k, v]) => `${k} ${money(v.toFixed(2))}`).join(" · ");
 }
 
 function tiles(customers: CustomerListRow[]): Tile[] {
@@ -51,7 +67,7 @@ function tiles(customers: CustomerListRow[]): Tile[] {
     {
       label: "Total Outstanding",
       figure: money(totalOutstanding.toFixed(2)),
-      caption: `${owing.length} owing`,
+      caption: sideSplit(owing) ?? `${owing.length} owing`,
     },
     {
       label: "Customers Owing",
@@ -87,7 +103,9 @@ function TileCell({ tile, mobile }: { tile: Tile; mobile?: boolean }) {
     >
       <span className={LABEL}>{tile.label}</span>
       <span className={`${FIGURE} truncate`}>{tile.figure}</span>
-      <span className={`${CAPTION} truncate`}>{tile.caption}</span>
+      <span className={`${CAPTION} truncate`} title={tile.caption}>
+        {tile.caption}
+      </span>
     </div>
   );
 }

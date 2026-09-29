@@ -16,6 +16,33 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature: Customer location — filter customers by Restaurant / Canteen (2026-09-29) — DONE
+
+Client request: tell canteen customers from restaurant customers and see
+what each side is owed. See ADR-93.
+
+- **Schema** — `Customer.location` (`CustomerLocation` enum), migration
+  `20260929120000_add_customer_location` **with the backfill** (runs via
+  `migrate.yml` on merge; no manual step).
+- **Domain** — `createCustomer` sets location from the acting role (Admin
+  picks); `listCustomers` `location` filter + field; new
+  `set-customer-location.ts` (Admin, audited).
+- **API** — `?location=` on `GET /api/customers`, `location` on `POST`,
+  new `PATCH /api/customers/:id`.
+- **Screen** — `app/admin/customers/customers-client.tsx`: Location filter,
+  column, mobile subtitle, row-drawer picker, Add-customer picker;
+  `kpi-strip.tsx` per-side split caption. Cashier/canteen quick-create pass
+  the server's location through.
+- **Tests** — `customer-location.test.ts` (6), `admin-customers.screen.test.tsx`
+  (+5); fixtures updated in 5 screen tests.
+- **Not done** — repayments carry no location, so a "Both" customer's
+  balance isn't split between sides (ADR-93).
+
+Gates: `pnpm test` 182 files / 1547 tests green · `typecheck` green ·
+`build` green.
+
+---
+
 ## Fix: flaky canteen credit-sale screen test (2026-09-29) — DONE
 
 CI on main failed after merging #41 in `tests/screens/canteen-credit-sale.screen.test.tsx`

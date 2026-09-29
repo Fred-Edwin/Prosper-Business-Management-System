@@ -5725,3 +5725,45 @@ them. One fetch in `sales-client.tsx` feeds both the tab and the strip.
   folds `sale` into the Sold column already; a new type would need
   touching each of them for no gain.
 
+## ADR-93: Customer location — a label on the customer, not a split ledger (Client feedback, 2026-09-29)
+
+**Context.** The owner wants to tell canteen customers from restaurant
+customers on the Customers page, and see what each side is owed. Customers
+carried no location. Debts can be traced to a side (restaurant credit
+orders via `Order.locationId`, canteen credit sales via the sale
+`StockMovement`), but repayments can't, so a single customer's balance
+can't honestly be divided between sides.
+
+**Decision.**
+1. `Customer.location` — enum `CustomerLocation` (`restaurant` / `canteen`
+   / `both` / `unassigned`, default `unassigned`). A label for filtering
+   and per-side totals; balances stay `Σ debts − Σ repayments` per
+   customer, unchanged.
+2. Set at creation from the **acting** role: Cashier → `restaurant`,
+   Canteen Attendant → `canteen`. Only the Admin picks (default
+   `unassigned`). The Admin relabels anytime via `PATCH
+   /api/customers/:id` (`setCustomerLocation`), audited was → now. A direct
+   update, since it's a label, not a ledger fact.
+3. Existing customers backfilled **in the migration**
+   (`20260929120000_add_customer_location`): credit history first
+   (restaurant only → `restaurant`, canteen only → `canteen`, both →
+   `both`), else the creating user's role from the `AuditLog`, else
+   `unassigned`. The owner reviewed the same rules against production
+   beforehand: 13 canteen, 10 restaurant, 1 both, 3 unassigned.
+4. Customers screen: Location filter (server-side `?location=`), a
+   Location column (and on the mobile row), a Location picker in the row
+   drawer (saves on pick) and in Add customer. The KPI strip follows the
+   filter; unfiltered, "Total Outstanding"'s caption splits the owed figure
+   by customer location.
+
+**Not done.** Repayments still carry no location, so a `both` customer's
+balance isn't split between sides; it counts under "Both". Only one
+customer is `both` today. Revisit if that grows.
+
+**Alternatives considered.**
+- *Derive the side from credit history on every read, no column.*
+  Rejected: new customers with no debt land nowhere, and it can't be
+  corrected when history is misleading.
+- *Split each balance by side (add a location to repayments).* Deferred:
+  real schema and flow change for one `both` customer today.
+
