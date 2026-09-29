@@ -131,7 +131,7 @@ const NON_SALE_REASONS: { value: NonSaleReason; label: string }[] = [
   { value: "complimentary", label: "Complimentary" },
   { value: "spoiled", label: "Spoiled" },
   { value: "damaged", label: "Damaged" },
-  { value: "home", label: "Home / owner use" },
+  { value: "home", label: "Home" },
   { value: "other", label: "Other (note required)" },
 ];
 
