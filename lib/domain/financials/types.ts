@@ -131,6 +131,18 @@ export type CorrectExpenseInput = {
   note?: string;
 };
 
+/**
+ * Input to `voidExpense` — the "delete" an Admin sees on an expense (ADR-96).
+ * Append-only: writes a reversing `Expense` row (delta = −current derived
+ * amount) plus the paired money row, so the expense nets to zero. Admin-only,
+ * **not** day-close gated (same as `correctExpense`).
+ */
+export type VoidExpenseInput = {
+  expenseId: string;
+  /** Optional reason, stored on the reversing row (default: "Voided"). */
+  note?: string;
+};
+
 /** Actor context for expense / owner-transaction writes. */
 export type FinancialsActor = {
   actorId: string;
@@ -150,6 +162,8 @@ export type ExpenseView = {
   recordedById: string;
   /** True when at least one correction row points at this one. */
   corrected: boolean;
+  /** True when the expense was voided (derived amount is zero). */
+  voided: boolean;
   occurredAt: string;
 };
 
@@ -158,6 +172,8 @@ export type ListExpensesFilter = {
   from?: string;
   to?: string;
   category?: ExpenseCategory;
+  /** Include voided expenses (derived amount zero). Default false. */
+  includeVoided?: boolean;
 };
 
 // ── Owner transactions (PRD §4.7) ──────────────────────────────────────

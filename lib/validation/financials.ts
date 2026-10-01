@@ -47,8 +47,14 @@ export const correctExpenseSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
-/** `GET /api/expenses?from=&to=&category=` — Admin list. */
+/** `POST /api/expenses/:id/void` — append-only reversal to zero (Admin). */
+export const voidExpenseSchema = z.object({
+  note: z.string().trim().max(500).optional(),
+});
+
+/** `GET /api/expenses?from=&to=&category=&includeVoided=` — Admin list. */
 export const listExpensesQuerySchema = z.object({
+  includeVoided: z.enum(["true", "false"]).optional(),
   from: businessDate.optional(),
   to: businessDate.optional(),
   category: expenseCategory.optional(),
@@ -110,6 +116,7 @@ export const financialSummaryQuerySchema = z.object({
 
 export type RecordExpenseBody = z.infer<typeof recordExpenseSchema>;
 export type CorrectExpenseBody = z.infer<typeof correctExpenseSchema>;
+export type VoidExpenseBody = z.infer<typeof voidExpenseSchema>;
 export type SetOpeningBalanceBody = z.infer<typeof setOpeningBalanceSchema>;
 export type RecordOwnerTransactionBody = z.infer<
   typeof recordOwnerTransactionSchema

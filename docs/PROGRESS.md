@@ -16,6 +16,25 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Feature: Delete (void) an expense (2026-10-01) — DONE
+
+Client feedback: "give me an option of deleting an expense permanently" —
+she had set two expenses to 1 bob because correction can't reach zero. We
+void rather than hard-delete (ledger stays append-only). See ADR-96.
+
+- **Domain** — `voidExpense` (reversing expense row + paired money row +
+  audit); `ExpenseView.voided`; `listExpenses({ includeVoided })`.
+- **API** — `POST /api/expenses/:id/void`; `GET /api/expenses?includeVoided=`.
+- **UI** — Delete action + confirm drawer on each expense row; deleted rows
+  hidden behind a "Show deleted" toggle.
+- **Data fix** — her two 1-bob expenses voided by SQL beforehand
+  (`scripts/data-fixes/2026-10-01-void-expenses.sql`), verified net 0 on
+  expense and cash.
+- **Deferred** — backdating (change an expense's date), next change.
+- Gate: `pnpm test` (183 files, 1568 tests), `typecheck`, `build` green.
+
+---
+
 ## Feature: "Home" non-sale reason (2026-09-30) — DONE
 
 Client feedback: the owner takes some stock home unpaid; it belongs under

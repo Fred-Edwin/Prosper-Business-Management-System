@@ -1,7 +1,8 @@
 "use client";
 
 // M3 S4 — the Expenses view: business expenses for the toolbar business
-// date, with an entry drawer and a per-row correction action. Rendered as
+// date, with an entry drawer and per-row Correct / Delete (void, ADR-96)
+// actions; deleted rows are hidden unless "Show deleted" is on. Rendered as
 // an inner tab of /admin/financials (no own date picker — `date` comes
 // down as a prop). Composed from the kit: <SimpleTable> + <StatusChip> +
 // <Button> + <EmptyState> / <ErrorState>, following handovers-tab.tsx.
@@ -17,6 +18,7 @@ import { FilterToolbar, type FilterControl } from "@/components/kit/filter-toolb
 import type { ExpenseView } from "@/lib/domain/financials";
 import { useExpenses } from "./use-financials";
 import { ExpenseDrawer } from "./expense-drawer";
+import { ExpenseVoidDrawer } from "./expense-void-drawer";
 
 const ALL_CATEGORIES = "all";
 const ALL_ACCOUNTS = "all";
@@ -66,10 +68,8 @@ export function ExpensesView({
   /** Called after a create / correct so the parent refreshes the summary + KPIs. */
   onMutated?: () => void;
 }) {
-  const { expenses, loading, error, refresh, create, correct } = useExpenses(
-    from,
-    to,
-  );
+  const { expenses, loading, error, refresh, create, correct, voidExpense } =
+    useExpenses(from, to);
   /** A new expense is dated to the range's END day (the day a create makes sense on). */
   const entryDate = to;
 
@@ -80,10 +80,13 @@ export function ExpensesView({
   const [search, setSearch] = React.useState("");
   const [category, setCategory] = React.useState<string>(ALL_CATEGORIES);
   const [account, setAccount] = React.useState<string>(ALL_ACCOUNTS);
+  /** Voided ("deleted") expenses are hidden unless the Admin asks (ADR-96). */
+  const [showDeleted, setShowDeleted] = React.useState(false);
 
   const visibleExpenses = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     return expenses.filter((e) => {
+      if (e.voided && !showDeleted) return false;
       if (category !== ALL_CATEGORIES && e.category !== category) return false;
       if (account !== ALL_ACCOUNTS && e.paidFromAccount !== account) return false;
       if (q === "") return true;
@@ -92,7 +95,7 @@ export function ExpensesView({
         (e.note ?? "").toLowerCase().includes(q) || categoryLabel.includes(q)
       );
     });
-  }, [expenses, search, category, account]);
+  }, [expenses, search, category, account, showDeleted]);
 
   const filtered =
     search.trim() !== "" || category !== ALL_CATEGORIES || account !== ALL_ACCOUNTS;
@@ -101,6 +104,7 @@ export function ExpensesView({
     setSearch("");
     setCategory(ALL_CATEGORIES);
     setAccount(ALL_ACCOUNTS);
+    setShowDeleted(false);
   }
 
   const filterControls: FilterControl[] = [
@@ -126,11 +130,19 @@ export function ExpensesView({
       value: account,
       default: ALL_ACCOUNTS,
     },
+    {
+      id: "deleted",
+      kind: "toggle",
+      label: "Show deleted",
+      value: showDeleted,
+      default: false,
+    },
   ];
 
   function onFilterChange(id: string, value: string | boolean | null) {
     if (id === "category") setCategory(value == null ? ALL_CATEGORIES : String(value));
     else if (id === "account") setAccount(value == null ? ALL_ACCOUNTS : String(value));
+    else if (id === "deleted") setShowDeleted(value === true);
   }
 
   const handleCreate = React.useCallback(
@@ -150,8 +162,20 @@ export function ExpensesView({
     [correct, onMutated],
   );
 
+  const handleVoid = React.useCallback(
+    async (id: string, note?: string) => {
+      const row = await voidExpense(id, note);
+      onMutated?.();
+      return row;
+    },
+    [voidExpense, onMutated],
+  );
+
   const [drawer, setDrawer] = React.useState<
-    { mode: "create" } | { mode: "correct"; target: ExpenseView } | null
+    | { mode: "create" }
+    | { mode: "correct"; target: ExpenseView }
+    | { mode: "void"; target: ExpenseView }
+    | null
   >(null);
 
   const total = visibleExpenses.reduce((s, e) => s + Number(e.amount), 0);
@@ -194,7 +218,11 @@ export function ExpensesView({
       cell: "mono",
       render: (e) => (
         <span className="flex items-center justify-end gap-(--sp-3)">
-          {e.corrected && <StatusChip variant="neutral">Corrected</StatusChip>}
+          {e.voided ? (
+            <StatusChip variant="neutral">Deleted</StatusChip>
+          ) : (
+            e.corrected && <StatusChip variant="neutral">Corrected</StatusChip>
+          )}
           {money(e.amount)}
         </span>
       ),
@@ -202,17 +230,27 @@ export function ExpensesView({
     {
       key: "action",
       header: "",
-      width: "w-[110px] shrink-0",
+      width: "w-[180px] shrink-0",
       align: "right",
-      render: (e) => (
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setDrawer({ mode: "correct", target: e })}
-        >
-          Correct
-        </Button>
-      ),
+      render: (e) =>
+        e.voided ? null : (
+          <span className="flex items-center justify-end gap-(--sp-3)">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setDrawer({ mode: "correct", target: e })}
+            >
+              Correct
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setDrawer({ mode: "void", target: e })}
+            >
+              Delete
+            </Button>
+          </span>
+        ),
     },
   ];
 
@@ -329,16 +367,29 @@ export function ExpensesView({
                   {fmtDate(e.date)}
                 </div>
                 <div className="flex items-center gap-(--sp-4)">
-                  {e.corrected && (
-                    <StatusChip variant="neutral">Corrected</StatusChip>
+                  {e.voided ? (
+                    <StatusChip variant="neutral">Deleted</StatusChip>
+                  ) : (
+                    <>
+                      {e.corrected && (
+                        <StatusChip variant="neutral">Corrected</StatusChip>
+                      )}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setDrawer({ mode: "correct", target: e })}
+                      >
+                        Correct
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setDrawer({ mode: "void", target: e })}
+                      >
+                        Delete
+                      </Button>
+                    </>
                   )}
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setDrawer({ mode: "correct", target: e })}
-                  >
-                    Correct
-                  </Button>
                 </div>
               </div>
             ))}
@@ -346,7 +397,15 @@ export function ExpensesView({
         </>
       )}
 
-      {drawer && (
+      {drawer?.mode === "void" && (
+        <ExpenseVoidDrawer
+          expense={drawer.target}
+          onVoid={handleVoid}
+          onClose={() => setDrawer(null)}
+        />
+      )}
+
+      {drawer && drawer.mode !== "void" && (
         <ExpenseDrawer
           mode={drawer.mode}
           date={entryDate}

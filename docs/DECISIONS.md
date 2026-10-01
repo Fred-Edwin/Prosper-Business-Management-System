@@ -5824,3 +5824,34 @@ stock and be visible, but it is not a sale, expense or wastage.
    `other`), costed like other reasons.
 3. Stock-only: no owner-transaction/drawing row in the money ledger. Revisit
    if the accountant wants it treated as a drawing.
+
+---
+
+## ADR-96: Deleting an expense is a void — a reversing row, never a hard delete (Client feedback, 2026-10-01)
+
+**Context.** The Admin asked to "delete an expense permanently" (and to
+backdate). She had zeroed an expense by correcting it to 1 bob because
+`correctExpense` cannot reach zero (`amount > 0`). A hard delete would have to
+erase the expense, its money row(s), correction rows and audit rows — it breaks
+"ledgers are append-only" and silently rewrites closed days (ADR-23 only allows
+hard-delete where no linked history exists, and an expense always has some).
+
+**Decision.**
+1. `voidExpense` (ADR-72's `voidX`, sibling of `correctExpense`) appends one
+   reversing `Expense` row (delta = −current derived amount) + a paired money
+   row returning the cash + an audit row (`action: correct`, `void: true`).
+   The expense nets to zero; every balance and profit figure follows.
+2. `ExpenseView.voided` = corrected and derived amount zero. `listExpenses`
+   hides voided rows unless `includeVoided`; the screen labels the action
+   "Delete" and offers a "Show deleted" toggle. No hard delete exists.
+3. Admin-only, not day-close gated (same as `correctExpense`). Refused for a
+   correction row, an already-voided expense, and a Salaries expense that is
+   a staff payout's (reverse the payout instead — that also releases the link).
+4. A voided expense can be revived by `correctExpense` to a positive amount
+   (delta is measured against the derived 0).
+
+**Data.** On 2026-10-01 two expenses the client had set to 1 bob were voided
+by SQL ahead of this feature — `scripts/data-fixes/2026-10-01-void-expenses.sql`
+(Airtime Mine, 4 Oct; Paid Till Fuliza Loan, 30 Sep). Cash verified net 0.
+
+**Deferred.** Backdating (changing an expense's date) — separate change.

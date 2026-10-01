@@ -17,6 +17,7 @@ export {
 export {
   recordExpense,
   correctExpense,
+  voidExpense,
   listExpenses,
   businessDateNoonUtc,
 } from "./expenses";

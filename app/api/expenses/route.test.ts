@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 
-// Role gates only for /api/expenses and /api/expenses/:id/correct. Domain
+// Role gates only for /api/expenses and /api/expenses/:id/{correct,void}. Domain
 // logic (paired MoneyMovement, correction-stacking, day-close) is covered
 // by the financials domain suite.
 
@@ -45,6 +45,19 @@ async function postCorrect(id: string, payload: unknown) {
     new NextRequest(`http://test/api/expenses/${id}/correct`, {
       method: "POST",
       body: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    }),
+    { params: Promise.resolve({ id }) },
+  );
+  return { status: res.status, body: await res.json() };
+}
+
+async function postVoid(id: string, payload?: unknown) {
+  const { POST } = await import("./[id]/void/route");
+  const res = await POST(
+    new NextRequest(`http://test/api/expenses/${id}/void`, {
+      method: "POST",
+      body: payload === undefined ? undefined : JSON.stringify(payload),
       headers: { "content-type": "application/json" },
     }),
     { params: Promise.resolve({ id }) },
@@ -116,6 +129,7 @@ describe("/api/expenses role gates", () => {
     expect((await postExpense(body)).status).toBe(403);
     expect((await getExpenses()).status).toBe(403);
     expect((await postCorrect("whatever", { amount: "1.00" })).status).toBe(403);
+    expect((await postVoid("whatever")).status).toBe(403);
   });
 
   it("admin can create, list and correct", async () => {
@@ -132,6 +146,31 @@ describe("/api/expenses role gates", () => {
     const corrected = await postCorrect(id, { amount: "750.00" });
     expect(corrected.status).toBe(200);
     expect(corrected.body.data.amount).toBe("750.00");
+  });
+
+  it("admin can void (empty body), after which the list hides it unless includeVoided", async () => {
+    mockSession.current = sessionFor("admin", adminId);
+
+    const created = await postExpense(body);
+    const id = created.body.data.id as string;
+
+    const voided = await postVoid(id);
+    expect(voided.status).toBe(200);
+    expect(voided.body.data.voided).toBe(true);
+    expect(voided.body.data.amount).toBe("0.00");
+
+    const again = await postVoid(id);
+    expect(again.status).toBe(400);
+
+    const hidden = await getExpenses();
+    expect(hidden.body.data.some((e: { id: string }) => e.id === id)).toBe(false);
+
+    const { GET } = await import("./route");
+    const res = await GET(
+      new NextRequest("http://test/api/expenses?includeVoided=true"),
+    );
+    const shown = await res.json();
+    expect(shown.data.some((e: { id: string }) => e.id === id)).toBe(true);
   });
 
   it("400 on a bad category", async () => {
