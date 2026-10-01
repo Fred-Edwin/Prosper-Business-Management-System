@@ -76,7 +76,7 @@ export function useExpenses(from: string, to: string) {
     setError(null);
     try {
       const rows = await request<ExpenseView[]>(
-        `/api/expenses?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+        `/api/expenses?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&includeVoided=true`,
       );
       setExpenses(rows);
     } catch (e) {
@@ -114,7 +114,19 @@ export function useExpenses(from: string, to: string) {
     [refresh],
   );
 
-  return { expenses, loading, error, refresh, create, correct };
+  const voidExpense = React.useCallback(
+    async (id: string, note?: string): Promise<ExpenseView> => {
+      const row = await request<ExpenseView>(`/api/expenses/${id}/void`, {
+        method: "POST",
+        body: JSON.stringify({ note }),
+      });
+      await refresh();
+      return row;
+    },
+    [refresh],
+  );
+
+  return { expenses, loading, error, refresh, create, correct, voidExpense };
 }
 
 // ── Owner transactions ────────────────────────────────────────────────

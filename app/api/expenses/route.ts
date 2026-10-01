@@ -17,7 +17,8 @@ import {
  * > 0, the paired MoneyMovement, day-close gating) lives in the domain.
  *
  *   GET  — list expenses, corrections folded into each row's amount.
- *          Filterable by `from` / `to` business date and `category`.
+ *          Filterable by `from` / `to` business date and `category`;
+ *          voided rows only with `includeVoided=true`.
  *   POST — record an expense (+ its paired negative MoneyMovement).
  */
 export async function GET(req: NextRequest) {
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
     from: sp.get("from") ?? undefined,
     to: sp.get("to") ?? undefined,
     category: sp.get("category") ?? undefined,
+    includeVoided: sp.get("includeVoided") ?? undefined,
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -36,7 +38,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    return ok(await listExpenses(parsed.data));
+    return ok(
+      await listExpenses({
+        ...parsed.data,
+        includeVoided: parsed.data.includeVoided === "true",
+      }),
+    );
   } catch (e) {
     if (e instanceof DomainError) return fail(e.code, e.message, e.field);
     throw e;

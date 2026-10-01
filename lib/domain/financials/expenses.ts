@@ -11,6 +11,7 @@ import type {
   FinancialsActor,
   ListExpensesFilter,
   RecordExpenseInput,
+  VoidExpenseInput,
 } from "./types";
 
 const BUSINESS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -59,6 +60,7 @@ function toExpenseView(
     supplier: row.supplier,
     recordedById: row.recordedById,
     corrected,
+    voided: corrected && derivedAmount.isZero(),
     occurredAt: row.date.toISOString(),
   };
 }
@@ -277,6 +279,127 @@ export async function correctExpense(
 }
 
 /**
+ * Void an expense (ADR-96) — the Admin's "delete". A full undo built from the
+ * same append-only pieces as `correctExpense`: one reversing `Expense` row
+ * (`correctsExpenseId = original.id`, `amount` = −current derived amount) and
+ * a paired money row that returns the cash to the account, so the expense
+ * nets to zero and every balance / profit figure follows. The original is
+ * never mutated or deleted; `listExpenses` hides voided rows by default.
+ *
+ * Rejected when the target is a correction row, is already voided, or is the
+ * Salaries expense behind a staff payout (reverse the payout instead — that
+ * path also releases the payout record). Admin-only. **Not** day-close gated.
+ */
+export async function voidExpense(
+  input: VoidExpenseInput,
+  actor: FinancialsActor,
+): Promise<ExpenseView> {
+  if (actor.role !== "admin") {
+    throw new DomainError(
+      "FORBIDDEN",
+      "Only an administrator can void an expense.",
+    );
+  }
+  const reason = input.note?.trim() ? input.note.trim() : "Voided";
+
+  const originalId = await prisma.$transaction(async (tx) => {
+    const original = await tx.expense.findUnique({
+      where: { id: input.expenseId },
+      include: { staffPayout: { select: { id: true } } },
+    });
+    if (!original) {
+      throw new DomainError("NOT_FOUND", "Expense not found.", "expenseId");
+    }
+    if (original.correctsExpenseId !== null) {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "This row is itself a correction. Void the original expense instead.",
+        "expenseId",
+      );
+    }
+    if (original.staffPayout) {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "This expense is a staff payout. Reverse the payout from the Pay tab instead.",
+        "expenseId",
+      );
+    }
+
+    const priorDeltas = await tx.expense.aggregate({
+      _sum: { amount: true },
+      where: { correctsExpenseId: original.id },
+    });
+    const currentValue = original.amount.add(priorDeltas._sum.amount ?? 0);
+    if (currentValue.isZero()) {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "This expense is already voided.",
+        "expenseId",
+      );
+    }
+    const delta = currentValue.negated();
+
+    const reversal = await tx.expense.create({
+      data: {
+        category: original.category,
+        amount: delta,
+        date: original.date,
+        paidFromAccount: original.paidFromAccount,
+        note: reason,
+        recordedById: actor.actorId,
+        correctsExpenseId: original.id,
+      },
+    });
+
+    // Money comes back: the reversal delta is negative, so the paired
+    // movement is positive (mirrors correctExpense's `delta.negated()`).
+    await recordMoneyMovement(
+      {
+        account: original.paidFromAccount,
+        amount: delta.negated(),
+        sourceType: "expense",
+        sourceId: reversal.id,
+        occurredAt: original.date,
+        note: reason,
+      },
+      { actorId: actor.actorId, tx },
+    );
+
+    await tx.auditLog.create({
+      data: {
+        userId: actor.actorId,
+        action: "correct",
+        entityType: "expense",
+        entityId: original.id,
+        oldValue: { amount: currentValue.toFixed(2) },
+        newValue: {
+          correctionId: reversal.id,
+          amountTo: "0.00",
+          amountDelta: delta.toFixed(2),
+          void: true,
+        },
+        occurredAt: original.date,
+      },
+    });
+
+    return original.id;
+  });
+
+  const original = await prisma.expense.findUniqueOrThrow({
+    where: { id: originalId },
+  });
+  const deltas = await prisma.expense.aggregate({
+    _sum: { amount: true },
+    where: { correctsExpenseId: originalId },
+  });
+  return toExpenseView(
+    original,
+    original.amount.add(deltas._sum.amount ?? 0),
+    true,
+  );
+}
+
+/**
  * List expenses for the Admin financials view, corrections folded into
  * each row's `amount` (correction rows are never returned on their own).
  * Filterable by inclusive business-date range and category. Newest first.
@@ -320,7 +443,7 @@ export async function listExpenses(
     }
   }
 
-  return rows.map((r) => {
+  const views = rows.map((r) => {
     const delta = deltaById.get(r.id);
     return toExpenseView(
       r,
@@ -328,4 +451,5 @@ export async function listExpenses(
       delta !== undefined,
     );
   });
+  return filter.includeVoided ? views : views.filter((v) => !v.voided);
 }

@@ -1146,7 +1146,7 @@ debiting `paidFromAccount`, in one transaction. Day-close gated — a fresh
 expense on a sealed day → `403 FORBIDDEN` (correct it instead). `201` with
 the created `ExpenseView`
 (`{ id, category, amount, date, paidFromAccount, note, supplier, recordedById,
-corrected, occurredAt }`).
+corrected, voided, occurredAt }`).
 
 ### `POST /api/expenses/:id/correct`
 Roles: **Admin only.** Body: `{ amount, note? }` — `amount` is the
@@ -1159,12 +1159,25 @@ deltas), so a re-submit of the same amount → `400 VALIDATION_ERROR`
 correction row → `400 VALIDATION_ERROR` (corrections don't chain).
 **Not** day-close gated. `200` with the folded `ExpenseView`.
 
+### `POST /api/expenses/:id/void`
+**Added 2026-10-01, ADR-96.** Roles: **Admin only.** Body: optional
+`{ note? }` (reason; default "Voided"). The Admin's "delete": appends a
+reversing `Expense` row (delta = −current derived amount, linked via
+`correctsExpenseId`) plus a paired positive `MoneyMovement`, so the expense
+nets to zero and the cash returns to its account. Nothing is deleted or
+overwritten. `:id` must be an original expense — a correction row, an
+already-voided expense, or the Salaries expense behind a staff payout →
+`400 VALIDATION_ERROR` (reverse the payout instead). **Not** day-close
+gated. `200` with the `ExpenseView` (`amount: "0.00"`, `voided: true`).
+
 ### `GET /api/expenses`
-Roles: **Admin only.** Query: `?from=&to=&category=` (all optional;
-`from`/`to` are inclusive `YYYY-MM-DD` business dates). Returns
+Roles: **Admin only.** Query: `?from=&to=&category=&includeVoided=` (all
+optional; `from`/`to` are inclusive `YYYY-MM-DD` business dates;
+`includeVoided=true` also returns voided expenses, default hidden). Returns
 `ExpenseView[]`, newest first, corrections folded into each row's
 `amount` (correction rows never returned on their own; `corrected: true`
-flags a row that has been corrected).
+flags a row that has been corrected; `voided: true` flags one whose
+derived amount is zero).
 
 ### `POST /api/owner-transactions`
 Roles: **Admin only.** Body: `{ type: "draw" | "return", amount, date, note? }`.

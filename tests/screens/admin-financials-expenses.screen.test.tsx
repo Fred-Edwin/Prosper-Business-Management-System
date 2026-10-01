@@ -42,6 +42,7 @@ vi.mock("@/app/admin/financials/use-suppliers", async () => {
 // ── mock use-financials ────────────────────────────────────────────────
 const createExpense = vi.fn();
 const correctExpense = vi.fn();
+const voidExpense = vi.fn();
 const createOwnerTxn = vi.fn();
 const refreshExpenses = vi.fn();
 const refreshOwner = vi.fn();
@@ -71,6 +72,7 @@ vi.mock("@/app/admin/financials/use-financials", async (importOriginal) => {
       refresh: refreshExpenses,
       create: createExpense,
       correct: correctExpense,
+      voidExpense,
     }),
     useOwnerTransactions: () => ({
       transactions: ownerState.transactions,
@@ -98,6 +100,7 @@ function expense(over: Partial<ExpenseView> = {}): ExpenseView {
     supplier: null,
     recordedById: "admin",
     corrected: false,
+    voided: false,
     occurredAt: "2026-09-02T09:00:00.000Z",
     ...over,
   };
@@ -109,6 +112,9 @@ beforeEach(() => {
   ownerState = { transactions: [], loading: false, error: null };
   createExpense.mockResolvedValue(expense());
   correctExpense.mockResolvedValue(expense({ amount: "950.00", corrected: true }));
+  voidExpense.mockResolvedValue(
+    expense({ amount: "0.00", corrected: true, voided: true }),
+  );
   createOwnerTxn.mockResolvedValue({
     id: "o1",
     type: "draw",
@@ -122,6 +128,62 @@ beforeEach(() => {
 // ── Expenses tab ───────────────────────────────────────────────────────
 
 describe("Admin Financials — Expenses tab", () => {
+  it("deletes (voids) an expense through a confirm drawer, with an optional reason", async () => {
+    const user = userEvent.setup();
+    render(
+      <ToastProvider placement="top-right">
+        <ExpensesView from="2026-09-02" to="2026-09-02" />
+      </ToastProvider>,
+    );
+
+    await user.click(screen.getAllByRole("button", { name: "Delete" })[0]);
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/reversing row is added/i),
+    ).toBeInTheDocument();
+
+    await user.type(
+      within(dialog).getByLabelText("Reason (optional)"),
+      "entered twice",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Delete expense" }),
+    );
+
+    await waitFor(() =>
+      expect(voidExpense).toHaveBeenCalledWith("e1", "entered twice"),
+    );
+    expect(await screen.findByText("Expense deleted")).toBeInTheDocument();
+  });
+
+  it("hides deleted expenses until 'Show deleted' is on; deleted rows have no actions", async () => {
+    const user = userEvent.setup();
+    expensesState.expenses = [
+      expense(),
+      expense({
+        id: "e2",
+        note: "Duplicate airtime",
+        amount: "0.00",
+        corrected: true,
+        voided: true,
+      }),
+    ];
+    render(
+      <ToastProvider placement="top-right">
+        <ExpensesView from="2026-09-02" to="2026-09-02" />
+      </ToastProvider>,
+    );
+
+    expect(screen.queryByText("Duplicate airtime")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("switch", { name: "Show deleted" }));
+
+    expect(screen.getAllByText("Duplicate airtime").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Deleted").length).toBeGreaterThan(0);
+    // Only the live expense (e1) still offers Delete.
+    expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2); // table + card branches
+  });
+
   it("records an expense through the drawer and fires a toast", async () => {
     const user = userEvent.setup();
     render(
