@@ -5855,3 +5855,29 @@ by SQL ahead of this feature — `scripts/data-fixes/2026-10-01-void-expenses.sq
 (Airtime Mine, 4 Oct; Paid Till Fuliza Loan, 30 Sep). Cash verified net 0.
 
 **Deferred.** Backdating (changing an expense's date) — separate change.
+
+## ADR-97: A canteen credit sale is revenue when made — Financials and the Dashboard read it from `Debt` (Client report, 2026-10-02)
+
+**Status:** RATIFIED (bug fix — completes ADR-91).
+
+**Context.** The client recorded canteen credit sales and a test repayment
+and saw nothing move in Financials or on the Dashboard. ADR-91 made a
+credit sale a `Debt` + an immediate `sale` StockMovement with **no**
+`MoneyMovement` (nothing paid yet) and folded it into the canteen *sales
+report* — but `getFinancialSummary` and `dailyNetSeries` only summed
+`canteen_sale` MoneyMovements for canteen revenue. So the stock left (COGS
+counted it) while the revenue never arrived: net profit was understated by
+the sale value, permanently, since a repayment is cash in, not revenue.
+
+**Decision.** Canteen revenue also includes Σ signed `Debt.amount` where
+`sourceType = canteen_credit_sale`, dated in the period, located by the
+paired `sale` StockMovement (`canteenCreditRevenueByLocation`, shared by the
+summary and the dashboard series so they still agree to the cent). Void /
+correct already write signed offsetting `Debt` rows, so a plain sum is
+live-only. Repayments are unchanged: cash balance up, `debtsOwedToBusiness`
+down, revenue untouched. This mirrors the Restaurant, where a credit order's
+`Order.total` is already revenue at sale time.
+
+**Consequence.** Historic periods containing canteen credit sales now show
+higher revenue / net profit than they did before this fix — correct, but
+the owner may notice the change.

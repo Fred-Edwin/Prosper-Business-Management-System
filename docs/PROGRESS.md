@@ -16,6 +16,24 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: Canteen credit sales missing from Financials + Dashboard (2026-10-02) — DONE
+
+Client report: credit sales entered on the canteen side, and a test
+repayment, didn't show in the financial figures or on the Dashboard.
+Root cause: canteen revenue was only `canteen_sale` MoneyMovements, which a
+credit sale never writes (ADR-91) — stock cost counted, revenue didn't. See
+ADR-97. Repayment itself was verified correct (cash +, debts −); the
+test payment's production row still needs checking against the live DB.
+
+- `lib/domain/financials/get-financial-summary.ts` —
+  `canteenCreditRevenueByLocation`, added to revenue.
+- `lib/domain/dashboard/trend-series.ts` — same rule in the daily net series.
+- Test `lib/domain/sales/canteen-credit-financials.test.ts` — sale → revenue,
+  repayment → cash/debts only, void → reversed; series agrees with summary.
+- Gate: `pnpm test` 1569/1569 (one load-only flake in
+  `screens-dashboard.sim`, passes alone, also on main), `typecheck` clean,
+  `build` clean.
+
 ## Feature: Delete (void) an expense (2026-10-01) — DONE
 
 Client feedback: "give me an option of deleting an expense permanently" —
