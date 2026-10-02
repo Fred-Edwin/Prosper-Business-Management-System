@@ -69,6 +69,8 @@ import {
  *   - canteen revenue    = Σ `canteen_sale` `MoneyMovement.amount` in the
  *     day (void writes an offsetting negative row, so a plain sum is
  *     live-only);
+ *   - canteen credit sales = Σ signed `Debt.amount` (`canteen_credit_sale`)
+ *     in the day whose paired `sale` StockMovement exists (ADR-91);
  *   - sale adjustments   = Σ `sale_adjustment` `MoneyMovement.amount` in
  *     the day with a paired stock row (ADR-92), matching the summary;
  *   - expenses           = Σ `Expense.amount` in the day (correction
@@ -113,7 +115,15 @@ export async function dailyNetSeries(
   const dates: string[] = [];
   for (let d = from; d <= to; d = addBusinessDays(d, 1)) dates.push(d);
 
-  const [products, movements, orders, canteenSales, adjustments, expenses] =
+  const [
+    products,
+    movements,
+    orders,
+    canteenSales,
+    creditSales,
+    adjustments,
+    expenses,
+  ] =
     await Promise.all([
       prisma.product.findMany({
         select: { id: true, kind: true, buyingPrice: true },
@@ -145,6 +155,16 @@ export async function dailyNetSeries(
         },
         select: { amount: true, occurredAt: true, sourceId: true },
       }),
+      // Canteen credit sales (ADR-91) — signed `Debt` rows, same rule as
+      // `canteenCreditRevenueByLocation` (revenue when made, not when paid).
+      prisma.debt.findMany({
+        where: {
+          sourceType: "canteen_credit_sale",
+          sourceId: { not: null },
+          occurredAt: { gte: spanStart, lt: spanEnd },
+        },
+        select: { amount: true, occurredAt: true, sourceId: true },
+      }),
       // Owner sale adjustments (ADR-92) — same paired-stock-row rule as
       // `saleAdjustmentRevenueByLocation`.
       prisma.moneyMovement.findMany({
@@ -172,7 +192,13 @@ export async function dailyNetSeries(
         .filter((v): v is string => v != null),
     ),
   ];
-  const [supersedingRows, resolvedCounts] = await Promise.all([
+  const creditMovementIds = [
+    ...new Set(
+      creditSales.map((s) => s.sourceId).filter((v): v is string => v != null),
+    ),
+  ];
+  const [supersedingRows, resolvedCounts, resolvedCreditMovements] =
+    await Promise.all([
     prisma.order.findMany({
       where: { correctsOrderId: { in: orders.map((o) => o.id) } },
       select: { correctsOrderId: true },
@@ -183,11 +209,18 @@ export async function dailyNetSeries(
           select: { id: true },
         })
       : Promise.resolve([] as { id: string }[]),
+    creditMovementIds.length > 0
+      ? prisma.stockMovement.findMany({
+          where: { id: { in: creditMovementIds } },
+          select: { id: true },
+        })
+      : Promise.resolve([] as { id: string }[]),
   ]);
   const supersededOrderIds = new Set(
     supersedingRows.map((r) => r.correctsOrderId as string),
   );
   const resolvedCountIds = new Set(resolvedCounts.map((c) => c.id));
+  const resolvedCreditIds = new Set(resolvedCreditMovements.map((m) => m.id));
 
   const costValueById = new Map<string, Prisma.Decimal>(
     products.map((p) => [
@@ -247,6 +280,11 @@ export async function dailyNetSeries(
     if (!s.sourceId || !resolvedCountIds.has(s.sourceId)) continue;
     const b = bucket(toBusinessDate(s.occurredAt));
     b.revenue = b.revenue.add(s.amount);
+  }
+  for (const c of creditSales) {
+    if (!c.sourceId || !resolvedCreditIds.has(c.sourceId)) continue;
+    const b = bucket(toBusinessDate(c.occurredAt));
+    b.revenue = b.revenue.add(c.amount);
   }
   for (const a of adjustments) {
     const b = bucket(toBusinessDate(a.occurredAt));

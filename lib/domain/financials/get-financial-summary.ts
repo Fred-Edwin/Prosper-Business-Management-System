@@ -26,6 +26,10 @@ const ZERO = new Prisma.Decimal(0);
  *             over the LIVE rows (superseded originals dropped, correction
  *             rows kept — the fold `listOrders` does). Canteen: Σ
  *             `canteen_sale` MoneyMovement in the period. Plus owner
+ *             canteen credit sales (ADR-91): Σ signed `Debt` rows with
+ *             `sourceType = canteen_credit_sale` in the period — the sale
+ *             is revenue when made, not when collected (a Restaurant
+ *             credit order already is, via `Order.total`). Plus owner
  *             sale adjustments (ADR-92): Σ `sale_adjustment` MoneyMovement,
  *             attributed to the location of its paired `sale` StockMovement.
  *
@@ -75,6 +79,7 @@ export async function getFinancialSummary(
     locations,
     restaurantRevenue,
     canteenRevenue,
+    canteenCreditRevenue,
     adjustmentRevenue,
     cogsByLocation,
     expenseSum,
@@ -88,6 +93,7 @@ export async function getFinancialSummary(
     prisma.location.findMany({ select: { id: true, name: true } }),
     restaurantRevenueByLocation(start, end),
     canteenRevenueByLocation(start, end),
+    canteenCreditRevenueByLocation(start, end),
     saleAdjustmentRevenueByLocation(start, end),
     cogsByLocationSweep(start, end),
     prisma.expense.aggregate({
@@ -113,6 +119,9 @@ export async function getFinancialSummary(
     revenueByLocation.set(locId, (revenueByLocation.get(locId) ?? ZERO).add(amt));
   }
   for (const [locId, amt] of canteenRevenue) {
+    revenueByLocation.set(locId, (revenueByLocation.get(locId) ?? ZERO).add(amt));
+  }
+  for (const [locId, amt] of canteenCreditRevenue) {
     revenueByLocation.set(locId, (revenueByLocation.get(locId) ?? ZERO).add(amt));
   }
   for (const [locId, amt] of adjustmentRevenue) {
@@ -229,6 +238,47 @@ async function canteenRevenueByLocation(
   const byLocation = new Map<string, Prisma.Decimal>();
   for (const r of rows) {
     const locId = r.sourceId ? locByCount.get(r.sourceId) : undefined;
+    if (!locId) continue;
+    byLocation.set(locId, (byLocation.get(locId) ?? ZERO).add(r.amount));
+  }
+  return byLocation;
+}
+
+/**
+ * Canteen credit-sale revenue per location (ADR-91): Σ signed `Debt`
+ * amounts with `sourceType = canteen_credit_sale` dated in the window.
+ * A credit sale writes a `Debt` and a `sale` StockMovement but no
+ * `MoneyMovement` (nothing is paid yet), so the `canteen_sale` fold above
+ * never sees it — while its stock already left, so COGS counts it. Without
+ * this the sale cost the business money on paper until it was repaid, and
+ * a repayment (cash in, not revenue) never made it up. Void/correct write
+ * signed offsetting `Debt` rows, so a plain sum is live-only. Location is
+ * the paired `sale` StockMovement's (`sourceId`); a row whose movement
+ * can't be found is skipped, the same inner-join rule as the folds above.
+ */
+export async function canteenCreditRevenueByLocation(
+  start: Date,
+  end: Date,
+): Promise<Map<string, Prisma.Decimal>> {
+  const rows = await prisma.debt.findMany({
+    where: {
+      sourceType: "canteen_credit_sale",
+      sourceId: { not: null },
+      occurredAt: { gte: start, lt: end },
+    },
+    select: { amount: true, sourceId: true },
+  });
+  const movementIds = [
+    ...new Set(rows.map((r) => r.sourceId).filter((v): v is string => v != null)),
+  ];
+  const movements = await prisma.stockMovement.findMany({
+    where: { id: { in: movementIds } },
+    select: { id: true, locationId: true },
+  });
+  const locByMovement = new Map(movements.map((m) => [m.id, m.locationId]));
+  const byLocation = new Map<string, Prisma.Decimal>();
+  for (const r of rows) {
+    const locId = r.sourceId ? locByMovement.get(r.sourceId) : undefined;
     if (!locId) continue;
     byLocation.set(locId, (byLocation.get(locId) ?? ZERO).add(r.amount));
   }
