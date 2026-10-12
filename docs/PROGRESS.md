@@ -16,6 +16,25 @@ app is with the client. **The project is now in maintenance mode** — see
 
 ---
 
+## Fix: Restaurant manager never saw Canteen → Restaurant transfers (2026-10-12) — DONE
+
+Client report: 100 Blue Forms sent Canteen → Restaurant showed as sent but
+never received. Root cause: the Store Manager hub treated the "store"-type
+location as the manager's own, so transfers addressed to the *Restaurant*
+manager never matched `deriveIncomingTransfers`. Prod check: 0 transfers
+into the Restaurant had ever been accepted (all 151 accepted went
+Restaurant → Canteen); 5 were stuck, all Canteen → Restaurant.
+
+- `app/store-manager/page.tsx` resolves the manager's own location
+  (`resolveActorLocationId`) and passes it to the hub; `hub-client.tsx`
+  prefers it over the old store-type lookup.
+- Test in `tests/screens/store-manager-hub.screen.test.tsx` (fails before).
+- Data: the stuck Blue Forms receipt completed by hand-run SQL (an
+  ordinary `+q` accept row). Other stuck transfers are accepted by the
+  Restaurant manager from the hub once this deploys.
+- Not fixed (same assumption): `flows/movement-picker-flow.tsx:644`.
+- Gate: see PR.
+
 ## Fix: Canteen credit sales missing from Financials + Dashboard (2026-10-02) — DONE
 
 Client report: credit sales entered on the canteen side, and a test
