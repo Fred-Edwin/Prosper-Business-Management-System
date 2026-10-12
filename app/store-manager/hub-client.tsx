@@ -44,7 +44,14 @@ import type { StockMovementView } from "@/lib/domain/stock";
 
 const TILE_ICON_PROPS = { width: 20, height: 20, strokeWidth: 1.5, "aria-hidden": true } as const;
 
-export function StoreManagerHubClient({ locationLabel }: { locationLabel: string }) {
+export function StoreManagerHubClient({
+  locationLabel,
+  myLocationId: ownLocationId = null,
+}: {
+  locationLabel: string;
+  /** The signed-in manager's own location (server-resolved). */
+  myLocationId?: string | null;
+}) {
   const router = useRouter();
   const { toast } = useToast();
   const { data, loading, error, refresh } = useStaffStock();
@@ -68,9 +75,10 @@ export function StoreManagerHubClient({ locationLabel }: { locationLabel: string
   const [voidReceiptTarget, setVoidReceiptTarget] =
     React.useState<StockMovementView | null>(null);
 
-  // The Store's own locationId — resolved from any movement row at this
-  // location (the list is already scoped to it server-side).
+  // The manager's own locationId — the server-resolved prop; the fallbacks
+  // only cover callers that don't pass it (the Store manager's old path).
   const myLocationId =
+    ownLocationId ??
     data.locations.find((l) => l.type === "store")?.id ??
     data.movements[0]?.locationId ??
     null;

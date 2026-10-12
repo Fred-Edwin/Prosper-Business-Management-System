@@ -181,6 +181,28 @@ describe("/store-manager hub — kit composition", () => {
     promptSpy.mockRestore();
   });
 
+  it("a Restaurant manager sees a transfer addressed to the Restaurant (not only the Store)", () => {
+    hook.data.movements = [
+      mv({
+        id: "mv-blue",
+        locationId: "loc-canteen",
+        quantity: "-100.0000",
+        transferCounterpartLocationId: "loc-restaurant",
+      }),
+    ];
+    render(
+      <ToastProvider placement="bottom-center">
+        <StoreManagerHubClient
+          locationLabel="Store"
+          myLocationId="loc-restaurant"
+        />
+      </ToastProvider>,
+    );
+    expect(
+      screen.getByRole("region", { name: /Incoming transfer · Soda 300ml/ }),
+    ).toBeInTheDocument();
+  });
+
   it("a flagged incoming transfer shows the muted awaiting-admin line, no actions", () => {
     // FIX-2: `flagged` now keys off the real flag-note prefix that
     // `flagTransfer` writes, not merely "note is non-empty" (every pending
